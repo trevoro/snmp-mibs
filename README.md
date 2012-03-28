@@ -1,4 +1,4 @@
-# MIBS
+# SNMP-MIBS 
 
 This repository is a colleciton of SNMP mibs. Sometimes you only need a few, but
 the fact of the matter is - disk space is cheap. 
