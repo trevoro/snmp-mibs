@@ -1,0 +1,2654 @@
+
+-- *****************************************************************************
+-- Unisphere-Data-MPLS-MIB
+--
+-- Unisphere Networks Inc. Enterprise MIB
+-- Multiprotocol Label Switching (MPLS) MIB
+--
+-- Copyright (c) 2002 Unisphere Networks, Inc.
+-- Copyright (c) 2002 Juniper Networks, Inc.
+--   All Rights Reserved.
+-- *****************************************************************************
+
+Unisphere-Data-MPLS-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, IpAddress, Unsigned32
+        FROM SNMPv2-SMI
+    RowStatus, DisplayString, TruthValue, TEXTUAL-CONVENTION
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    InterfaceIndex, InterfaceIndexOrZero
+        FROM IF-MIB
+    usDataMibs
+        FROM Unisphere-Data-MIBs
+    UsdNextIfIndex
+        FROM Unisphere-Data-TC;
+
+usdMplsMIB MODULE-IDENTITY
+    LAST-UPDATED "200211041535Z"  -- 04-Nov-02 10:35 AM EST
+    ORGANIZATION "Juniper Networks, Inc."
+    CONTACT-INFO
+        "       Juniper Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@Juniper.net"
+    DESCRIPTION
+        "The MultiProtocol Label Switching (MPLS) MIB for the Unisphere Networks
+        enterprise.  This MIB contains managed objects for basic MPLS
+        configuration of:
+         1. Global tasks - common MPLS usage configurations on a given label
+                           switching router (LSR).
+         2. Interface tasks - MPLS interface (major interface) configurations.
+         3. Tunnel tasks - tunnel interface (minor interface) configurations.
+         4. Tunnel profile tasks - configured to be used by multiple MPLS
+                                   tunnels.
+         5. Explicit paths - supports dynamic and manual configurations of
+                             explicit paths.
+         6. VPNs - supports constraint-based routing label distribution protocol
+                   (CR-LDP) and BGP/MPLS virtual private network (VPN)
+                   configurations."
+    -- Revision History
+    REVISION    "200211041535Z"  -- 04-Nov-02 10:35 AM EST  - RX 4.1
+    DESCRIPTION
+        "Fixed SMIv2 conformance.
+         Added RowStatus support to usdMplsIfMinorPathOptionTable,
+            usdMplsTunnelProfilePathOptionTable,
+            usdMplsTunnelProfileDynamicEndpointTable and
+            usdMplsTunnelProfileTunnelEndpointTable."
+    REVISION    "200204032044Z"  -- 03-Apr-02 03:44 PM EST  - RX 4.0
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 54 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+UsdMajorCfgVciRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Generic VCI label range specifier for both resource reservation
+        protocol (RSVP) and label distribution protocol (LDP)."
+    SYNTAX      Integer32 (33..65535)
+
+UsdMajorCfgVpiRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Generic VPI label range specifier for both resource reservation
+        protocol (RSVP) and label distribution protocol (LDP)."
+    SYNTAX      Integer32 (0..255)
+
+UsdMinorCfgBWRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+       "Specifies bandwidth requirements for each MPLS tunnel."
+    SYNTAX      Unsigned32
+
+UsdMinorCfgHoldingAndSetupPriorityRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Each LSP has a setup and hold priority before setting it up or
+        preempting it relative to the other LSPs.  This convention specifies
+        those ranges."
+    SYNTAX      Integer32 (0..7)
+
+UsdMinorCfgRetryTimesAndNorouteRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "RSVP/LDP will have a number of retries for successfully setting up a
+        tunnel.  This value specifies retry value ranges for LDP/RSVP with or
+        without no-route notification."
+    SYNTAX      Integer32 (0..65535)
+
+UsdMinorCfgRetryIntervalAndNorouteRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "RSVP/LDP will have time interval between two successive retries for
+        setting up tunnel successfully.  This value specifies the interval
+        ranges for LDP/RSVP with or without no-route notification."
+    SYNTAX      Integer32 (0..60)
+
+UsdProfileCfgBWRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Bandwidth range specified for each tunnel in tunnel profiling."
+    SYNTAX      Unsigned32
+
+UsdProfileCfgHoldingAndSetupPriorityRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Tunnel setup and hold priority range specified for each tunnel in
+        tunnel profile configuration."
+    SYNTAX      Integer32 (0..7)
+
+UsdProfileCfgRetryTimesAndNorouteRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Range specified for number of retries for tunnel with or without
+        no-route notification for RSVP/LDP."
+    SYNTAX      Integer32 (0..65535)
+
+UsdProfileCfgRetryIntervalAndNorouteRanges ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Range specified for retry interval for tunnel with or without no-route
+        notification for RSVP/LDP."
+    SYNTAX     Integer32 (0..60)
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdMplsObjects     OBJECT IDENTIFIER ::= { usdMplsMIB 1 }
+
+--
+-- MIB object definitions are organized into the following functional sections:
+--
+usdMplsLsrGlobalConfig     OBJECT IDENTIFIER ::= { usdMplsObjects 1 }
+usdMplsMajorLayer          OBJECT IDENTIFIER ::= { usdMplsObjects 2 }
+usdMplsMinorLayer          OBJECT IDENTIFIER ::= { usdMplsObjects 3 }
+usdMplsTunnelProfile       OBJECT IDENTIFIER ::= { usdMplsObjects 4 }
+usdMplsExplicitPath        OBJECT IDENTIFIER ::= { usdMplsObjects 5 }
+
+usdMplsGroup               OBJECT IDENTIFIER ::= { usdMplsLsrGlobalConfig  1 }
+usdMplsGroupList           OBJECT IDENTIFIER ::= { usdMplsLsrGlobalConfig  2 }
+
+usdMplsIfMajorLayer        OBJECT IDENTIFIER ::= { usdMplsMajorLayer 1 }
+
+usdMplsIfMinorLayer        OBJECT IDENTIFIER ::= { usdMplsMinorLayer 1 }
+usdMplsMinorLayerList      OBJECT IDENTIFIER ::= { usdMplsMinorLayer 2 }
+
+usdMplsTunnelProfileGroup  OBJECT IDENTIFIER ::= { usdMplsTunnelProfile  1 }
+usdMplsTunnelProfileList   OBJECT IDENTIFIER ::= { usdMplsTunnelProfile  2 }
+
+usdMplsExplicitPathGroup   OBJECT IDENTIFIER ::= { usdMplsExplicitPath 1 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- Global tasks configurations.
+--
+-- The set of objects defined under this section supports MPLS global
+-- configurations for each virtual router to function as a label switch router
+-- (LSR).
+-- Apart from that, the set of objects includes topology driven LSP setup
+-- configurations.
+--
+-- /////////////////////////////////////////////////////////////////////////////
+
+usdMplsGroupMplsEnable OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Enables or disables MPLS on the virtual router.  When MPLS is created
+        on the virtual router (VR), it remains adminstratively disabled untill
+        it is enabled explicitly.  Without administratively enabling the MPLS on
+        VR, it won't function as an LSR even though it holds the MPLS
+        configurations until the MPLS context is destroyed for the VR."
+    ::= { usdMplsGroup 1 }
+
+usdMplsGroupReopTimer OBJECT-TYPE
+    SYNTAX      Integer32 (0..604800)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "All LSPs setup in MPLS domain are reoptimized for better LSPs as and
+        when available.  This object allows configuration of the frequency of
+        reoptimization in time interval."
+    DEFVAL    { 3600 }
+    ::= { usdMplsGroup 2 }
+
+usdMplsGroupLabelRangeLow OBJECT-TYPE
+    SYNTAX      Integer32 (16..1048576)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The lower end of the range of the platform label space from which the
+        interfaces on a given LSR derive their label space.  Ethernet interfaces
+        can use only platform label space while ATM interfaces can use either
+        platform or interface label space.  For the successful configuration of
+        the label range both lower and higher end values must be set
+        cuncurrently."
+    DEFVAL    { 16 }
+    ::= { usdMplsGroup 3 }
+
+usdMplsGroupLabelRangeHigh OBJECT-TYPE
+    SYNTAX      Integer32 (16..1048576)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The higher end of the range of the platform label space from which the
+        interfaces on a given LSR derive their label space.  Ethernet interfaces
+        can use only platform label space while ATM interfaces can use either
+        platform or interface label space.  For the successful configuration of
+        the label range both lower and higher end values must be set
+        cuncurrently."
+    DEFVAL    { 1048575 }
+    ::= { usdMplsGroup 4 }
+
+usdMplsGroupLspRetryTimesNoroute OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object configures the number of retries for LSP setup after a
+        failure due to no available route."
+    DEFVAL    { 0 }
+    ::= { usdMplsGroup 5 }
+
+usdMplsGroupLspRetryIntervalNoroute OBJECT-TYPE
+    SYNTAX      Integer32 (0..60)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object configures the time interval between two successive LSP
+        setup retries after a failure due to no available route."
+    DEFVAL    { 5 }
+    ::= { usdMplsGroup 6 }
+
+usdMplsGroupLspRetryTimes OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Use this object to configure number of retries for LSP setup after a
+        failure other than one due to no available route."
+    DEFVAL    { 0 }
+    ::= { usdMplsGroup 7 }
+
+usdMplsGroupLspRetryInterval OBJECT-TYPE
+    SYNTAX      Integer32 (0..60)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Use this object to configure the time interval between two LSP setup
+        retries after a failure other than one due to no available route."
+    DEFVAL    { 5 }
+    ::= { usdMplsGroup 8 }
+
+usdMplsGroupLdpRetryTimesNoroute OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Use this object to configure the number of retries for LDP to setup LSP
+        after a failure due to no available route."
+    DEFVAL { 0 }
+    ::= { usdMplsGroup 9 }
+
+usdMplsGroupLdpRetryIntervalNoroute OBJECT-TYPE
+    SYNTAX      Integer32 (0..60)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Use this object to configure the time interval between two successive
+        LSP setup retries by LDP after a failure due to no available route."
+    DEFVAL    { 30 }
+    ::= { usdMplsGroup 10 }
+
+usdMplsGroupLdpRetryTimes OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Use this object to configure LSP setup retries by LDP after a failure
+        other than one due to no available route."
+    DEFVAL    { 0 }
+    ::= { usdMplsGroup 11 }
+
+usdMplsGroupLdpRetryInterval OBJECT-TYPE
+    SYNTAX      Integer32 (1..60)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Use this object to configure time interval between two LSP setup
+        retries by LDP after a failure other than one due to no available
+        route."
+    DEFVAL    { 30 }
+    ::= { usdMplsGroup 12 }
+
+usdMplsGroupLdpSessionRetries OBJECT-TYPE
+    SYNTAX      Integer32 (0..128)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Use this object to configure the number of LDP session retries."
+    DEFVAL    { 10 }
+    ::= { usdMplsGroup 13 }
+
+usdMplsGroupLdpSessionRetryTimer OBJECT-TYPE
+    SYNTAX      Integer32 (1..60)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Use this object to configure the time interval between two LDP session
+        retries."
+    DEFVAL    { 10 }
+    ::= { usdMplsGroup 14 }
+
+usdMplsGroupTopologyDrivenIpProfileName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Usually IP interfaces are stacked on top of the MPLS tunnels.  The
+        profiled tunnels are associated with IP interfaces with profile of IP
+        interfaces.  This object configures the name for the IP profile."
+    DEFVAL    { "" }
+    ::= { usdMplsGroup 15 }
+
+usdMplsGroupTopologyDrivenLdpEgressIpIntf OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object allows enabling/disabling of IP interfaces created over
+        egress LSPs setup by topology driven LSP setup configurations."
+    DEFVAL    { false }
+    ::= { usdMplsGroup 16 }
+
+usdMplsGroupTopologyDrivenLdpIngressIpIntf OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object allows enabling/disabling of IP interfaces created over
+        ingress LSPs setup by topology driven LSP setup configurations."
+    DEFVAL    { false }
+    ::= { usdMplsGroup 17 }
+
+usdMplsGroupTopologyDrivenLdpEgressIpIntfHostOnly OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object allows enabling/disabling of IP interfaces created over
+        egress LSPs to host only IP addresses setup by topology driven LSP setup
+        configurations."
+    DEFVAL    { false }
+    ::= { usdMplsGroup 18 }
+
+usdMplsGroupTopologyDrivenLdpIngressIpIntfHostOnly OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object allows enabling/disabling of IP interfaces created over
+        ingress LSPs to host only IP addresses setup by topology driven LSP
+        setup configurations."
+    DEFVAL    { false }
+    ::= { usdMplsGroup 19 }
+
+usdMplsGroupTopologyDrivenLdpEgressIpIntfPolicyListType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    accessList(1),
+                    prefixList(2),
+                    noPolicyList(3) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "There are two types of policy list type defined for the locally defined
+        labels advertisement to neighbors; viz. accessList and prefixList.  This
+        object allows configuration of the egress side of LSR for topology
+        driven LSPs.  Set the list type and list name cuncurrently."
+    DEFVAL    { noPolicyList }
+    ::= { usdMplsGroup 20 }
+
+usdMplsGroupTopologyDrivenLdpIngressIpIntfPolicyListType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    accessList(1),
+                    prefixList(2),
+                    noPolicyList(3) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "There are two types of policy list type defined for the locally defined
+        labels advertisement to neighbors; viz. accessList and prefixList.  This
+        object allows configuration of the ingress side of LSR for topology
+        driven LSPs.  Set the list type and list name cuncurrently."
+    DEFVAL    { noPolicyList }
+    ::= { usdMplsGroup 21 }
+
+usdMplsGroupTopologyDrivenLdpEgressIpIntfPolicyList OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object used to configure egress list name of topology driven LSPs
+        over IP interfaces.  For successful configurations the egress list name
+        must be set cunncurently with egress list type.  Set the list type and
+        list name cuncurrently."
+    DEFVAL    { "" }
+    ::= { usdMplsGroup 22 }
+
+usdMplsGroupTopologyDrivenLdpIngressIpIntfPolicyList OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object used to configure ingress list name of topology driven LSPs
+        over IP interfaces.  For successful configurations ingress listname set
+        cunncurently with ingress list type.  Set the list type and list name
+        cuncurrently."
+    DEFVAL    { "" }
+    ::= { usdMplsGroup 23 }
+
+usdMplsGroupTopologyDrivenLdp OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "LDP is used for label distributions control for setting up the LSPs.
+        Topology driven LSPs also setup using LDP label distribution control.
+        This object allows to enable/disable LDP admin state used for
+        topology driven LSPs setup."
+    DEFVAL    { disable }
+    ::= { usdMplsGroup 24 }
+
+usdMplsGroupLspLabelDistCtrlMode OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ordered(0),
+                    independent(1),
+                    undefined(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Some FECs correspond to address prefixes which are distributed via a
+        dynamic routing algorithm.  The setup of the LSPs for these FECs can be
+        done in one of two ways: Independent LSP Control or Ordered LSP Control.
+        This object displays the LSP lable distribution control mode."
+    DEFVAL    { ordered }
+    ::= { usdMplsGroup 25 }
+
+usdMplsGroupLdpAdvHostOnly OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object allows to enable/disable LDP label advertisement mode for
+        host only LSPs."
+    DEFVAL    { false }
+    ::= { usdMplsGroup 26 }
+
+usdMplsGroupLsrState OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This object value displays the status of MPLS enabled LSR such as state
+        is up or down etc."
+    ::= { usdMplsGroup 27 }
+
+usdMplsGroupReopNow OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "All LSPs setup in MPLS domain are reoptimized for better LSPs as and
+        when available.  Setting this object forces an immediate check for
+        better paths for the existing LSPs."
+    DEFVAL    { false }
+    ::= { usdMplsGroup 28 }
+
+--
+-- Targeted hello send table
+--
+usdMplsGroupTargetedHelloSendTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsGroupTargetedHelloSendEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains list of send side IP addresses for LDP targeted
+        hello messages."
+    ::= { usdMplsGroupList 1 }
+
+usdMplsGroupTargetedHelloSendEntry OBJECT-TYPE
+    SYNTAX      UsdMplsGroupTargetedHelloSendEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents send IP address for targeted hello message."
+    INDEX     { usdMplsGroupTargetedHelloSendAddress }
+    ::= { usdMplsGroupTargetedHelloSendTable 1 }
+
+UsdMplsGroupTargetedHelloSendEntry ::= SEQUENCE {
+    usdMplsGroupTargetedHelloSendAddress    IpAddress,
+    usdMplsGroupLdpTargetedHelloSendMode    INTEGER }
+
+usdMplsGroupTargetedHelloSendAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Configure the send side address for targeted hello messages."
+    ::= { usdMplsGroupTargetedHelloSendEntry 1 }
+
+usdMplsGroupLdpTargetedHelloSendMode OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    add(0),
+                    delete(1),
+                    none(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Select mode to add/delete to the list of IP addresses for targeted
+        hello messages."
+    ::= { usdMplsGroupTargetedHelloSendEntry 2 }
+
+
+--
+-- Targeted hello receive table
+--
+usdMplsGroupTargetedHelloReceiveTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsGroupTargetedHelloReceiveEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains list of receive side IP addresses for LDP targeted
+        hello messages."
+    ::= { usdMplsGroupList 2 }
+
+usdMplsGroupTargetedHelloReceiveEntry OBJECT-TYPE
+    SYNTAX      UsdMplsGroupTargetedHelloReceiveEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents receive IP address for targeted hello message."
+    INDEX     { usdMplsGroupTargetedHelloReceiveAddress }
+    ::= { usdMplsGroupTargetedHelloReceiveTable 1 }
+
+UsdMplsGroupTargetedHelloReceiveEntry ::= SEQUENCE {
+    usdMplsGroupTargetedHelloReceiveAddress    IpAddress,
+    usdMplsGroupLdpTargetedHelloReceiveMode    INTEGER }
+
+usdMplsGroupTargetedHelloReceiveAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Configure the receive side address for targeted hello messages."
+    ::= { usdMplsGroupTargetedHelloReceiveEntry 1 }
+
+usdMplsGroupLdpTargetedHelloReceiveMode OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    add(0),
+                    delete(1),
+                    none(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Select mode to add/delete to the list of IP addresses for targeted
+        hello messages."
+    ::= { usdMplsGroupTargetedHelloReceiveEntry 2 }
+
+
+--
+-- Label Advertisement access list table
+--
+usdMplsGroupLdpLabelAdverRouteListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsGroupLdpLabelAdverRouteListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table is a list of LDP label advertisement entries."
+    ::= { usdMplsGroupList 3 }
+
+usdMplsGroupLdpLabelAdverRouteListEntry OBJECT-TYPE
+    SYNTAX      UsdMplsGroupLdpLabelAdverRouteListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents access list pairs for the LDP peers label
+        advertisement."
+    INDEX     { usdMplsGroupLdpLabelAdverRouteListName,
+                usdMplsGroupLdpLabelAdverNbrListName}
+    ::= { usdMplsGroupLdpLabelAdverRouteListTable 1 }
+
+UsdMplsGroupLdpLabelAdverRouteListEntry ::= SEQUENCE {
+    usdMplsGroupLdpLabelAdverRouteListName  DisplayString,
+    usdMplsGroupLdpLabelAdverNbrListName    DisplayString,
+    usdMplsGroupLabelAdverListMode          INTEGER }
+
+usdMplsGroupLdpLabelAdverRouteListName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..32))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This LDP label advertisement route list name for which this entry
+        contains information."
+    ::= { usdMplsGroupLdpLabelAdverRouteListEntry 1 }
+
+usdMplsGroupLdpLabelAdverNbrListName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..32))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The LDP label advertisement neighbor route list name for which this
+        entry contains information."
+    ::= { usdMplsGroupLdpLabelAdverRouteListEntry 2 }
+
+usdMplsGroupLabelAdverListMode OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    add(0),
+                    delete(1),
+                    none(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object selects the mode of addition/deletion to the list."
+    ::= { usdMplsGroupLdpLabelAdverRouteListEntry 3 }
+
+--
+-- LDP Profile table
+--
+usdMplsGroupLdpProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsGroupLdpProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table is a list of LDP Profile entries."
+    ::= { usdMplsGroupList 4 }
+
+usdMplsGroupLdpProfileEntry OBJECT-TYPE
+    SYNTAX      UsdMplsGroupLdpProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents one LDP profile settings."
+    INDEX     { usdMplsGroupLdpProfileName }
+    ::= { usdMplsGroupLdpProfileTable 1 }
+
+UsdMplsGroupLdpProfileEntry ::= SEQUENCE {
+    usdMplsGroupLdpProfileName              DisplayString,
+    usdMplsGroupLdpProfileHelloHoldTime     Integer32,
+    usdMplsGroupLdpProfileCrLdpAdminState   INTEGER,
+    usdMplsGroupLdpProfileRowStatus         RowStatus }
+
+usdMplsGroupLdpProfileName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "LDP profile name identifies unique entry in the table."
+    ::= { usdMplsGroupLdpProfileEntry 1 }
+
+usdMplsGroupLdpProfileHelloHoldTime OBJECT-TYPE
+    SYNTAX      Integer32 (0..120)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the LDP peers hello hold time period."
+    DEFVAL    { 0 }
+    ::= { usdMplsGroupLdpProfileEntry 2 }
+
+usdMplsGroupLdpProfileCrLdpAdminState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                 disable(0),
+                 enable(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable or disable the constraint-based routing label distribution
+        protocol (CR-LDP) admin state."
+    ::= { usdMplsGroupLdpProfileEntry 3 }
+
+usdMplsGroupLdpProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+           createAndGo
+           destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+           usdMplsGroupLdpProfileCrLdpAdminState
+           usdMplsGroupLdpProfileRowStatus "
+   ::= { usdMplsGroupLdpProfileEntry 4 }
+
+
+--
+-- RSVP Profile table
+--
+usdMplsGroupRsvpProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsGroupRsvpProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table is a list of LDP Profile entries."
+    ::= { usdMplsGroupList 5 }
+
+usdMplsGroupRsvpProfileEntry OBJECT-TYPE
+    SYNTAX      UsdMplsGroupRsvpProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents one LDP profile settings."
+    INDEX     { usdMplsGroupRsvpProfileName }
+    ::= {usdMplsGroupRsvpProfileTable 1 }
+
+UsdMplsGroupRsvpProfileEntry ::= SEQUENCE {
+    usdMplsGroupRsvpProfileName                 DisplayString,
+    usdMplsGroupRsvpProfileRefreshPeriod        Unsigned32,
+    usdMplsGroupRsvpProfileCleanupTimeoutFactor Integer32,
+    usdMplsGroupRsvpProfileRowStatus            RowStatus }
+
+usdMplsGroupRsvpProfileName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The RSVP profile name identifies unique entry in the table."
+    ::= { usdMplsGroupRsvpProfileEntry 1 }
+
+usdMplsGroupRsvpProfileRefreshPeriod OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..1000000000)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the time out period between the generation of two refresh
+        messages."
+    DEFVAL    { 30000 }
+    ::= { usdMplsGroupRsvpProfileEntry 2 }
+
+usdMplsGroupRsvpProfileCleanupTimeoutFactor OBJECT-TYPE
+    SYNTAX      Integer32 (1..10)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Confgure the number of refresh messages can be lost before PATH or RESV
+        state is ended."
+    DEFVAL    { 3 }
+    ::= { usdMplsGroupRsvpProfileEntry 3 }
+
+usdMplsGroupRsvpProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+           createAndGo
+           destroy
+
+       To create an entry in this table, the following entry object MUST be
+       explicitly configured:
+           usdMplsGroupRsvpProfileRowStatus "
+   ::= { usdMplsGroupRsvpProfileEntry 4 }
+
+
+-- //////////////////////////////////////////////////////////////////////////
+--
+-- MPLS  MAJOR INTERFACE LAYER
+--
+-- The set of obejcts supports the MPLS major interface specific configurations.
+-- Interface specific label space configurations are also part of this.
+--
+-- Management objects are provided to query for an available interface index,
+-- and to create/delete interface of this type.
+-- Creating/deleting interface of this type using this MIB has
+-- the side effect of creating/deleting corresponding entries
+-- in the Interface MIB ifTable/ifXTable, and in the Unisphere
+-- Enterprise Interface MIB usdIfTable.
+--
+-- //////////////////////////////////////////////////////////////////////////
+
+usdMplsIfMajorNextIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in the
+        usdMplsIfMajorTable.  A GET of this object returns the next available
+        ifIndex value to be used to create an entry in the associated interface
+        table; or zero, if no valid ifIndex value is available.  This object
+        also returns a value of zero when it is the lexicographic successor of a
+        varbind presented in an SNMP GETNEXT or GETBULK request, for which
+        circumstance it is assumed that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdMplsIfMajorLayer 1 }
+
+
+--
+-- The MPLS Major Interface Table
+--
+usdMplsIfMajorTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsIfMajorEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for MPLS Major interfaces present in the
+        system."
+    ::= { usdMplsIfMajorLayer 2 }
+
+usdMplsIfMajorEntry OBJECT-TYPE
+    SYNTAX      UsdMplsIfMajorEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an MPLS Major interface.
+        Creating/deleting entries in this table causes corresponding entries to
+        be created/deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdMplsIfMajorIndex }
+    ::= { usdMplsIfMajorTable 1 }
+
+UsdMplsIfMajorEntry ::= SEQUENCE {
+    usdMplsIfMajorIndex             InterfaceIndex,
+    usdMplsIfMajorRowStatus         RowStatus,
+    usdMplsIfMajorLowerIfIndex      InterfaceIndexOrZero,
+    usdMplsIfMajorAdminStatus       INTEGER,
+    usdMplsIfMajorLdpAdminStatus    INTEGER,
+    usdMplsIfMajorLdpProfileName    DisplayString,
+    usdMplsIfMajorLdpVpiStart       UsdMajorCfgVpiRanges,
+    usdMplsIfMajorLdpVpiStop        UsdMajorCfgVpiRanges,
+    usdMplsIfMajorLdpVciStart       UsdMajorCfgVciRanges,
+    usdMplsIfMajorLdpVciStop        UsdMajorCfgVciRanges,
+    usdMplsIfMajorRsvpAdminStatus   INTEGER,
+    usdMplsIfMajorRsvpProfileName   DisplayString,
+    usdMplsIfMajorRsvpVpiStart      UsdMajorCfgVpiRanges,
+    usdMplsIfMajorRsvpVpiStop       UsdMajorCfgVpiRanges,
+    usdMplsIfMajorRsvpVciStart      UsdMajorCfgVciRanges,
+    usdMplsIfMajorRsvpVciStop       UsdMajorCfgVciRanges,
+    usdMplsIfMajorLabelSpaceType    INTEGER,
+    usdMplsIfMajorOpState           INTEGER,
+    usdMplsIfMajorCrLdpAdminState   INTEGER }
+
+usdMplsIfMajorIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the MPLS Major interface.  When creating entries in this
+        table, suitable values for this object are determined by reading
+        usdMplsIfMajorNextIfIndex."
+    ::= { usdMplsIfMajorEntry 1 }
+
+usdMplsIfMajorRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdMplsIfMajorRowStatus
+            usdMplsIfMajorLowerIfIndex
+
+        In addition, when creating an entry the following conditions must hold:
+            A value for usdMplsIfMajorIndex must have been determined
+            previously, by reading usdMplsIfMajorNextIfIndex.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created/
+        destroyed as a result of creating/destroying an entry in this table."
+    ::= { usdMplsIfMajorEntry 2 }
+
+usdMplsIfMajorLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an interface over which this MPLS Major interface to be
+        layered.  A value of zero indicates no layering.  An implementation may
+        choose to require that a nonzero value be configured at entry creation."
+    ::= { usdMplsIfMajorEntry 3 }
+
+usdMplsIfMajorAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Use this object to create MPLS major interface stacked over any link
+        layer interface.  Lower layer(index) over which major stacks has to be
+        specified for successful creation of the major interface."
+    ::= { usdMplsIfMajorEntry  4 }
+
+usdMplsIfMajorLdpAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object enables/disables LDP admin status on the MPLS interface."
+    ::= { usdMplsIfMajorEntry 5 }
+
+usdMplsIfMajorLdpProfileName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "All the LDP settings on the MPLS interface be will associated with the
+        profile.  This object allows to associate those configured settings to
+        interface by using the LDP profile name."
+     DEFVAL    { "" }
+    ::= { usdMplsIfMajorEntry 6 }
+
+usdMplsIfMajorLdpVpiStart OBJECT-TYPE
+    SYNTAX      UsdMajorCfgVpiRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is defined to support configurations of interface label
+        space.  This configures the start range of the LDP VPI.  For successful
+        configuration of interface label space LDP VPI ranges, set this object
+        with the stop range cunncurrently."
+    DEFVAL    { 0 }
+    ::= { usdMplsIfMajorEntry 7 }
+
+usdMplsIfMajorLdpVpiStop OBJECT-TYPE
+    SYNTAX      UsdMajorCfgVpiRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is defined to support configurations of interface label
+        space.  This configures the stop range of the LDP VPI.  For successful
+        configuration of interface label space LDP VPI ranges, set this object
+        with the start range cunncurrently."
+    DEFVAL    { 0 }
+    ::= { usdMplsIfMajorEntry 8 }
+
+usdMplsIfMajorLdpVciStart OBJECT-TYPE
+    SYNTAX      UsdMajorCfgVciRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is defined to support configurations of interface label
+        space.  This configures the start range of the LDP VCI.  For successful
+        configuration of interface label space LDP VCI ranges, set this object
+        with the stop range cunncurrently."
+    ::= { usdMplsIfMajorEntry 9 }
+
+usdMplsIfMajorLdpVciStop OBJECT-TYPE
+    SYNTAX      UsdMajorCfgVciRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is defined to support configurations of interface label
+        space.  This configures the stop range of the LDP VCI.  For successful
+        configuration of interface label space LDP VCI ranges, set this object
+        with the start range cunncurrently."
+    ::= { usdMplsIfMajorEntry 10 }
+
+usdMplsIfMajorRsvpAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object configures RSVP admin status for MPLS interface."
+    DEFVAL    { enable }
+    ::= { usdMplsIfMajorEntry 11 }
+
+usdMplsIfMajorRsvpProfileName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20) )
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "All the RSVP settings on the MPLS interface be will associated with the
+        profile.  This object allows to associate those configured settings to
+        interface by using the RSVP profile name."
+    DEFVAL    { "" }
+    ::= { usdMplsIfMajorEntry 12 }
+
+usdMplsIfMajorRsvpVpiStart OBJECT-TYPE
+    SYNTAX      UsdMajorCfgVpiRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is defined to support configurations of interface label
+        space.  This configures the start range of the RSVP VPI.  For successful
+        configuration of interface label space RSVP VPI ranges, set this object
+        with the stop range cunncurrently."
+    DEFVAL    { 0 }
+    ::= { usdMplsIfMajorEntry 13 }
+
+usdMplsIfMajorRsvpVpiStop OBJECT-TYPE
+    SYNTAX      UsdMajorCfgVpiRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is defined to support configurations of interface label
+        space.  This configures the stop range of the RSVP VPI.  For successful
+        configuration of interface label space RSVP VPI ranges, set this object
+        with the start range cunncurrently."
+    DEFVAL    { 0 }
+    ::= { usdMplsIfMajorEntry 14 }
+
+usdMplsIfMajorRsvpVciStart OBJECT-TYPE
+    SYNTAX      UsdMajorCfgVciRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is defined to support configurations of interface label
+        space.  This configures the start range of the RSVP VCI.  For successful
+        configuration of interface label space RSVP VCI ranges, set this object
+        with the stop range cunncurrently."
+    ::= { usdMplsIfMajorEntry 15 }
+
+usdMplsIfMajorRsvpVciStop OBJECT-TYPE
+    SYNTAX      UsdMajorCfgVciRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is defined to support configurations of interface label
+        space.  This configures the stop range of the RSVP VCI.  For successful
+        configuration of interface label space RSVP VCI ranges, set this object
+        with the start range cunncurrently."
+    ::= { usdMplsIfMajorEntry 16 }
+
+usdMplsIfMajorLabelSpaceType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    rsvpVpiVci(1),
+                    rsvpVpi(2),
+                    rsvpVci(3),
+                    ldpVpiVci(4),
+                    ldpVpi(5),
+                    ldpVci(6) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Displays the label space type for the MPLS interface."
+    ::= { usdMplsIfMajorEntry  17 }
+
+usdMplsIfMajorOpState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    lowerLayerNotAvailable(0),
+                    lowerLayerDown(1),
+                    up(2),
+                    configIncompleteInterfaceEnabled(3),
+                    configIncompleteInterfaceDisabled(4),
+                    interfaceDisabled(5) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This object displays MPLS major interface operation state."
+    ::= { usdMplsIfMajorEntry 18 }
+
+usdMplsIfMajorCrLdpAdminState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This object displays the admin state of CR-LDP."
+    ::= { usdMplsIfMajorEntry  19 }
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- MPLS  MINOR INTERFACE LAYER
+--
+-- The set of obejcts supports the MPLS tunnel interface specific
+-- configurations.
+--
+-- Management objects are provided to query for an available interface index,
+-- and to create/delete interface of this type.
+-- Creating/deleting interface of this type using this MIB has
+-- the side effect of creating/deleting corresponding entries
+-- in the Interface MIB ifTable/ifXTable, and in the Unisphere
+-- Enterprise Interface MIB usdIfTable.
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- IfIndex selection for creating new MPLS Minor interfaces
+--
+usdMplsIfMinorNextIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinates ifIndex value allocation for entries in the
+        usdMplsIfMinorTable.  A GET of this object returns the next available
+        ifIndex value to be used to create an entry in the associated interface
+        table; or zero, if no valid ifIndex value is available.  This object
+        also returns a value of zero when it is the lexicographic successor of a
+        varbind presented in an SNMP GETNEXT or GETBULK request, for which
+        circumstance it is assumed that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdMplsIfMinorLayer 1 }
+
+--
+-- The MPLS Minor Interface Table
+--
+usdMplsIfMinorTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsIfMinorEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for MPLS Minor interfaces present in the
+        system."
+    ::= { usdMplsIfMinorLayer 2 }
+
+usdMplsIfMinorEntry OBJECT-TYPE
+    SYNTAX      UsdMplsIfMinorEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an MPLS Minor interface.
+        Creating/deleting entries in this table causes corresponding entries for
+        be created/deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdMplsIfMinorIndex }
+    ::= { usdMplsIfMinorTable 1 }
+
+UsdMplsIfMinorEntry ::= SEQUENCE {
+    usdMplsIfMinorIndex                    InterfaceIndex,
+    usdMplsIfMinorRowStatus                RowStatus,
+    usdMplsIfMinorLowerIfIndex             InterfaceIndexOrZero,
+    usdMplsIfMinorAdminStatus              INTEGER,
+    usdMplsIfMinorEndpointAddress          IpAddress,
+    usdMplsIfMinorEndpointDstMask          IpAddress,
+    usdMplsIfMinorTunnelMetricMode         INTEGER,
+    usdMplsIfMinorAbsoluteTunnelMetric     Unsigned32,
+    usdMplsIfMinorRelativeTunnelMetric     Integer32,
+    usdMplsIfMinorLabelDistProto           INTEGER,
+    usdMplsIfMinorAnnounceToOspf           TruthValue,
+    usdMplsIfMinorAnnounceToIsis           TruthValue,
+    usdMplsIfMinorAnnounceToBgp            TruthValue,
+    usdMplsIfMinorBandwidth                UsdMinorCfgBWRanges,
+    usdMplsIfMinorAffinity                 OCTET STRING,
+    usdMplsIfMinorAffinityMask             OCTET STRING,
+    usdMplsIfMinorSetupPriority
+        UsdMinorCfgHoldingAndSetupPriorityRanges,
+    usdMplsIfMinorHoldingPriority
+        UsdMinorCfgHoldingAndSetupPriorityRanges,
+    usdMplsIfMinorTunnelName               DisplayString,
+    usdMplsIfMinorTunnelRetryTimes
+        UsdMinorCfgRetryTimesAndNorouteRanges,
+    usdMplsIfMinorTunnelRetryInterval
+        UsdMinorCfgRetryIntervalAndNorouteRanges,
+    usdMplsIfMinorTunnelRetryTimesNoroute
+        UsdMinorCfgRetryTimesAndNorouteRanges,
+    usdMplsIfMinorTunnelRetryIntervalNoroute
+        UsdMinorCfgRetryIntervalAndNorouteRanges,
+    usdMplsIfMinorBaseTunnelName           DisplayString,
+    usdMplsIfMinorVpnOuiNumber             Integer32,
+    usdMplsIfMinorVpnIndex                 IpAddress,
+    usdMplsIfMinorTunnelOpState            INTEGER,
+    usdMplsIfMinorTargetedDynamicTunnel    TruthValue,
+    usdMplsIfMinorReoptimization           TruthValue }
+
+usdMplsIfMinorIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the MPLS Minor interface.  When creating entries in this
+        table, suitable values for this object are determined by reading
+        usdMplsMinorNextIfIndex."
+    ::= { usdMplsIfMinorEntry 1 }
+
+usdMplsIfMinorRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdMplsIfMinorRowStatus
+            usdMplsIfMinorTunnelName
+
+        In addition, when creating an entry the following conditions must hold:
+            A value for usdMplsIfMinorIndex must have been determined
+            previously, by reading usdMplsMinorNextIfIndex.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created/
+        destroyed as a result of creating/destroying an entry in this table."
+    ::= { usdMplsIfMinorEntry 2 }
+
+usdMplsIfMinorLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an interface over which this MPLS Minor interface is to
+        be layered.  A value of zero indicates no layering. As minor interface
+        can be created without stacking on major interface, as and when it
+        stacks on major interface by signalling protocol, it's value can be
+        read."
+    ::= { usdMplsIfMinorEntry 3 }
+
+usdMplsIfMinorAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "With this object minor interface admin status can be enabled/disabled."
+    ::= { usdMplsIfMinorEntry 4 }
+
+usdMplsIfMinorEndpointAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object configures the IP address of the tunnel destination.  This
+        object can be set along with the usdMplsIfMinorEndpointDstMask to
+        configure the tunnel destination mask, but it is optional."
+    ::= { usdMplsIfMinorEntry 5 }
+
+usdMplsIfMinorEndpointDstMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object configures the tunnel destination mask.  It can be set
+        along with the usdMplsIfMinorEndpointAddress."
+    DEFVAL    { 0 }
+    ::= { usdMplsIfMinorEntry 6 }
+
+usdMplsIfMinorTunnelMetricMode OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    absolute(0),
+                    relative(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Select the relative or absolute mode to configure the absolute or
+        relative tunnel metric.  To set the tunnel to relative metric,
+        usdMplsIfMinorRelativeTunnelMetric has to be set along with this object
+        option as relative.  To set the tunnel to absolute metric,
+        usdMplsIfMinorAbsoluteTunnelMetric has to be set along with this object
+        option as absolute."
+    ::= { usdMplsIfMinorEntry  7 }
+
+usdMplsIfMinorAbsoluteTunnelMetric OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..4294967295)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of absolute metric values.  Refer to
+        usdMplsIfMinorTunnelMetricMode for how set it."
+    ::= { usdMplsIfMinorEntry  8 }
+
+usdMplsIfMinorRelativeTunnelMetric OBJECT-TYPE
+    SYNTAX      Integer32 (-10..10)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of relative metric values.  Refer to
+        usdMplsIfMinorTunnelMetricMode for how set it."
+    ::= { usdMplsIfMinorEntry 9 }
+
+usdMplsIfMinorLabelDistProto OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    crLdp(0),
+                    rsvpTe(1),
+                    undefined(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows to select label distribution protocol.  Label
+        distribution protocols are used by two LSRs to negotiate label to FEC
+        binding to set up tunnels."
+    ::= { usdMplsIfMinorEntry 10 }
+
+usdMplsIfMinorAnnounceToOspf OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows to register LSP endpoints to OSPF to next hop
+        calculation."
+    DEFVAL    { false }
+    ::= { usdMplsIfMinorEntry 11 }
+
+usdMplsIfMinorAnnounceToIsis OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows to register LSP endpoints to IS-IS for next hop
+        calculation."
+    DEFVAL    { false }
+    ::= { usdMplsIfMinorEntry 12 }
+
+usdMplsIfMinorAnnounceToBgp OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows to register LSP endpoints to BGP for next hop
+        calculation."
+    DEFVAL    { false }
+    ::= { usdMplsIfMinorEntry 13 }
+
+usdMplsIfMinorBandwidth OBJECT-TYPE
+    SYNTAX      UsdMinorCfgBWRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of bandwidth requirements for the
+         tunnel."
+    DEFVAL    { 0 }
+    ::= { usdMplsIfMinorEntry 14 }
+
+usdMplsIfMinorAffinity OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..4))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of resource class affinity for the
+        tunnel."
+    DEFVAL    { '00000000'H }
+    ::= { usdMplsIfMinorEntry 15 }
+
+usdMplsIfMinorAffinityMask OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..4))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This allows to set the resource class affinity mask.  Since it is a
+        mask, set along with the affinity for successful configurations."
+    DEFVAL    { '0000ffff'H }
+    ::= { usdMplsIfMinorEntry 16 }
+
+usdMplsIfMinorSetupPriority OBJECT-TYPE
+    SYNTAX      UsdMinorCfgHoldingAndSetupPriorityRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of preemption setup priority for the
+        tunnel before and after it has been established.  Lower the value higher
+        the priority."
+    ::= { usdMplsIfMinorEntry 17 }
+
+usdMplsIfMinorHoldingPriority OBJECT-TYPE
+    SYNTAX      UsdMinorCfgHoldingAndSetupPriorityRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the preemption holding priority for
+        the tunnel before and after it has been established.  Lower the value
+        higher the priority."
+    ::= { usdMplsIfMinorEntry 18 }
+
+usdMplsIfMinorTunnelName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the tunnel name to be associated
+        with tunnel settings."
+    ::= { usdMplsIfMinorEntry 19 }
+
+usdMplsIfMinorTunnelRetryTimes OBJECT-TYPE
+    SYNTAX      UsdMinorCfgRetryTimesAndNorouteRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the number of retries for tunnel
+        setup."
+    DEFVAL    { 0 }
+    ::= { usdMplsIfMinorEntry 20 }
+
+usdMplsIfMinorTunnelRetryInterval OBJECT-TYPE
+    SYNTAX      UsdMinorCfgRetryIntervalAndNorouteRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of retry interval for tunnel setup."
+    DEFVAL    { 5 }
+    ::= { usdMplsIfMinorEntry 21 }
+
+usdMplsIfMinorTunnelRetryTimesNoroute OBJECT-TYPE
+    SYNTAX      UsdMinorCfgRetryTimesAndNorouteRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the tunnel retries when no route
+        notifications are received."
+    DEFVAL    { 0 }
+    ::= { usdMplsIfMinorEntry 22 }
+
+usdMplsIfMinorTunnelRetryIntervalNoroute OBJECT-TYPE
+    SYNTAX      UsdMinorCfgRetryIntervalAndNorouteRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the tunnel retry interval when no
+        route notifications are received."
+    DEFVAL    { 5 }
+    ::= { usdMplsIfMinorEntry 23 }
+
+usdMplsIfMinorBaseTunnelName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the base tunnel name over which all
+        the tunnels are stacked over."
+    DEFVAL    { "" }
+    ::= { usdMplsIfMinorEntry 24 }
+
+usdMplsIfMinorVpnOuiNumber OBJECT-TYPE
+    SYNTAX      Integer32 (0..16777215)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the OUI part of VPN ID."
+    ::= { usdMplsIfMinorEntry 25 }
+
+usdMplsIfMinorVpnIndex OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the index part of VPN ID."
+    ::= { usdMplsIfMinorEntry 26 }
+
+usdMplsIfMinorTunnelOpState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    established(0),
+                    teNegotiation(1),
+                    up(2),
+                    down(3),
+                    cfgChanged(4),
+                    cfgIncEn(5),
+                    cfgIncDis(6),
+                    disabled(7),
+                    rel(8),
+                    noChange(9) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This object displays the tunnel operation state.
+             established    : Tunnel established
+             teNegotiation  : TE Negotiation
+             up             : Tunnel Up
+             down           : Tunnel Down
+             cfgChanged     : Tunnel config changed
+             cfgIncEn       : Tunnel incomplete Config Admin State Enable
+             cfgIncDis      : Tunnel incomplete Config Admin State Disable
+             disabled       : Tunnel disabled
+             rel            :
+             noChange       : Tunnel state no change "
+    ::= { usdMplsIfMinorEntry 27 }
+
+usdMplsIfMinorTargetedDynamicTunnel OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure targeted dynamic tunnel."
+    DEFVAL    { false }
+    ::= { usdMplsIfMinorEntry 28 }
+
+usdMplsIfMinorReoptimization OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure tunnel reoptimization."
+    DEFVAL    { false }
+    ::= { usdMplsIfMinorEntry 29 }
+
+
+--
+-- Path Option table for minor interface
+--
+usdMplsIfMinorPathOptionTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsIfMinorPathOptionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table is a list of different LSP paths as option for each LSP setup."
+    ::= { usdMplsMinorLayerList 1 }
+
+usdMplsIfMinorPathOptionEntry OBJECT-TYPE
+    SYNTAX      UsdMplsIfMinorPathOptionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents one path option for the LSP."
+    INDEX     { usdMplsIfMinorPathOptionIndex,
+                usdMplsIfMinorPathOptionNumber }
+    ::= { usdMplsIfMinorPathOptionTable 1 }
+
+UsdMplsIfMinorPathOptionEntry ::= SEQUENCE {
+    usdMplsIfMinorPathOptionIndex       InterfaceIndex,
+    usdMplsIfMinorPathOptionNumber      Integer32,
+    usdMplsIfMinorPathOptionProtocol    INTEGER,
+    usdMplsIfMinorPathOptionLockdown    TruthValue,
+    usdMplsIfMinorPathOptionPathName    DisplayString,
+    usdMplsIfMinorPathOptionPathId      Integer32,
+    usdMplsIfMinorPathOptionRowStatus   RowStatus  }
+
+usdMplsIfMinorPathOptionIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Minor interface uid."
+    ::= { usdMplsIfMinorPathOptionEntry 1 }
+
+usdMplsIfMinorPathOptionNumber OBJECT-TYPE
+    SYNTAX      Integer32 (1..1000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Unique number to identify each path option configured."
+    ::= { usdMplsIfMinorPathOptionEntry 2 }
+
+usdMplsIfMinorPathOptionProtocol OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    hopByHop(0),
+                    isis(1),
+                    ospf(2),
+                    none(3) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Select the each path option explicit routing protocol."
+    ::= { usdMplsIfMinorPathOptionEntry 3 }
+
+usdMplsIfMinorPathOptionLockdown OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable each configured path option reoptimization."
+    ::= { usdMplsIfMinorPathOptionEntry 4 }
+
+usdMplsIfMinorPathOptionPathName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the name for each path option."
+    ::= { usdMplsIfMinorPathOptionEntry 5 }
+
+usdMplsIfMinorPathOptionPathId OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the path option ID.  Either the name or ID will be associated
+        with a path at a time.  If the path name and ID are set at a same time
+        for the path, the name will have precedence over ID."
+    ::= { usdMplsIfMinorPathOptionEntry 6 }
+
+usdMplsIfMinorPathOptionRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdMplsIfMinorPathOptionRowStatus."
+    ::= { usdMplsIfMinorPathOptionEntry 7 }
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- MPLS Tunnel Profile
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- The MPLS Tunnel Profile Table
+--
+usdMplsTunnelProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsTunnelProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table is a list of tunnel profiles for a given VR."
+    ::= { usdMplsTunnelProfileGroup 1 }
+
+usdMplsTunnelProfileEntry OBJECT-TYPE
+    SYNTAX      UsdMplsTunnelProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents one tunnel profile."
+    INDEX     { usdMplsTunnelProfileName }
+    ::= { usdMplsTunnelProfileTable 1 }
+
+UsdMplsTunnelProfileEntry ::= SEQUENCE {
+    usdMplsTunnelProfileName                    DisplayString,
+    usdMplsTunnelProfileAdminStatus             INTEGER,
+    usdMplsTunnelProfileBaseTunnelName          DisplayString,
+    usdMplsTunnelProfileIpProfileName           DisplayString,
+    usdMplsTunnelProfileLabelDistProto          INTEGER,
+    usdMplsTunnelProfileAnnounceToOspf          TruthValue,
+    usdMplsTunnelProfileAnnounceToIsis          TruthValue,
+    usdMplsTunnelProfileAnnounceToBgp           TruthValue,
+    usdMplsTunnelProfileMetricMode              INTEGER,
+    usdMplsTunnelProfileAbsoluteMetric          Unsigned32,
+    usdMplsTunnelProfileRelativeMetric          Integer32,
+    usdMplsTunnelProfileBandwidth               UsdProfileCfgBWRanges,
+    usdMplsTunnelProfileAffinity                OCTET STRING,
+    usdMplsTunnelProfileAffinityMask            OCTET STRING,
+    usdMplsTunnelProfileSetupPriority
+        UsdProfileCfgHoldingAndSetupPriorityRanges,
+    usdMplsTunnelProfileHoldingPriority
+        UsdProfileCfgHoldingAndSetupPriorityRanges,
+    usdMplsTunnelProfileRetryTimes
+        UsdProfileCfgRetryTimesAndNorouteRanges,
+    usdMplsTunnelProfileRetryInterval
+        UsdProfileCfgRetryIntervalAndNorouteRanges,
+    usdMplsTunnelProfileRetryTimesNoroute
+        UsdProfileCfgRetryTimesAndNorouteRanges,
+    usdMplsTunnelProfileRetryIntervalNoroute
+        UsdProfileCfgRetryIntervalAndNorouteRanges,
+    usdMplsTunnelProfileVpnOuiNumber            Integer32,
+    usdMplsTunnelProfileVpnIndex                IpAddress,
+    usdMplsTunnelProfileRowStatus               RowStatus,
+    usdMplsTunnelProfileTargetedDynamicTunnel   TruthValue }
+
+usdMplsTunnelProfileName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Associate a name for the configured tunnel profile settings."
+    ::= { usdMplsTunnelProfileEntry 1 }
+
+usdMplsTunnelProfileAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable the adminstatus of the tunnel profile."
+    ::= { usdMplsTunnelProfileEntry 2 }
+
+usdMplsTunnelProfileBaseTunnelName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the base tunnel name in tunnel profile settings.  This base
+        tunnel is the one over which all the other tunnels are stacked over.
+        Configured base tunnel name in profile settings will be associated with
+        the actual configured base tunnel name."
+    DEFVAL    { "" }
+    ::= { usdMplsTunnelProfileEntry 3 }
+
+usdMplsTunnelProfileIpProfileName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configures the name for IP profile settings for the IP interfaces over
+        which MPLS tunnels are stacked."
+    DEFVAL    { "" }
+    ::= { usdMplsTunnelProfileEntry 4 }
+
+usdMplsTunnelProfileLabelDistProto OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    crLdp(0),
+                    rsvpTe(1),
+                    undefined(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the label distribution protocol to associate with a tunnel
+        profile.  Label distribution protocols are used by two LSRs to negotiate
+        label to FEC binding to set up tunnels."
+    DEFVAL    { undefined }
+    ::= { usdMplsTunnelProfileEntry 5 }
+
+usdMplsTunnelProfileAnnounceToOspf OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the routing protocol for next hop calculations as OSPF."
+    DEFVAL    { false }
+    ::= { usdMplsTunnelProfileEntry 6 }
+
+usdMplsTunnelProfileAnnounceToIsis OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure routing protocol for next hop calculations as ISIS."
+    DEFVAL    { false }
+    ::= { usdMplsTunnelProfileEntry 7 }
+
+usdMplsTunnelProfileAnnounceToBgp OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure routing protocol for next hop calculations as BGP."
+    DEFVAL    { false }
+    ::= { usdMplsTunnelProfileEntry 8 }
+
+usdMplsTunnelProfileMetricMode OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    absolute(0),
+                    relative(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Select the relative or absolute mode to configure the absolute or
+        relative tunnel profile metric.  To set the tunnel profile to relative
+        metric, usdMplsTunnelProfileRelativeMetric has to be set along with
+        this object option as relative.  To set the tunnel profile to absolute
+        metric, usdMplsTunnelProfileAbsoluteMetric has to be set along with
+        this object option as absolute."
+    ::= { usdMplsTunnelProfileEntry 9 }
+
+usdMplsTunnelProfileAbsoluteMetric OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..4294967295)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the absolute metric values.  Refer
+        to usdMplsTunnelProfileMetricMode for how set it."
+    ::= { usdMplsTunnelProfileEntry 10 }
+
+usdMplsTunnelProfileRelativeMetric OBJECT-TYPE
+    SYNTAX      Integer32 (-10..10)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the relative metric values.  Refer
+        to usdMplsTunnelProfileMetricMode for how set it."
+    ::= { usdMplsTunnelProfileEntry 11 }
+
+usdMplsTunnelProfileBandwidth OBJECT-TYPE
+    SYNTAX      UsdProfileCfgBWRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of bandwidth requirements for the
+        tunnel."
+    DEFVAL    { 0 }
+    ::= { usdMplsTunnelProfileEntry 12 }
+
+usdMplsTunnelProfileAffinity OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..4))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the resource class affinity for the
+        tunnel.  This can set independently of
+        usdMplsTunnelProfileAffinityMask."
+    DEFVAL    { '00000000'H }
+    ::= { usdMplsTunnelProfileEntry 13 }
+
+usdMplsTunnelProfileAffinityMask OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..4))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This allows configuration of which bits in the affinity must match the
+        resource class bits.  Can't be set independently; always with
+        usdMplsTunnelProfileAffinity.  Specify the value in bit mask format."
+    DEFVAL    { '0000ffff'H }
+    ::= { usdMplsTunnelProfileEntry 14 }
+
+usdMplsTunnelProfileSetupPriority OBJECT-TYPE
+    SYNTAX      UsdProfileCfgHoldingAndSetupPriorityRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object configuration of the preemption setup priority for the
+        tunnel before and after it has been established.  Lower the value higher
+        the priority."
+    DEFVAL    { 0 }
+    ::= { usdMplsTunnelProfileEntry 15 }
+
+usdMplsTunnelProfileHoldingPriority OBJECT-TYPE
+    SYNTAX      UsdProfileCfgHoldingAndSetupPriorityRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the preemption holding priority for
+        the tunnel before and after it has been established.  Lower the value
+        higher the priority."
+    DEFVAL    { 0 }
+    ::= { usdMplsTunnelProfileEntry 16 }
+
+usdMplsTunnelProfileRetryTimes OBJECT-TYPE
+    SYNTAX      UsdProfileCfgRetryTimesAndNorouteRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the number of retries for the
+        tunnel setup."
+    DEFVAL    { 0 }
+    ::= { usdMplsTunnelProfileEntry 17 }
+
+usdMplsTunnelProfileRetryInterval OBJECT-TYPE
+    SYNTAX      UsdProfileCfgRetryIntervalAndNorouteRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of retry interval for tunnel setup."
+    DEFVAL    { 5 }
+    ::= { usdMplsTunnelProfileEntry 18 }
+
+usdMplsTunnelProfileRetryTimesNoroute OBJECT-TYPE
+    SYNTAX      UsdProfileCfgRetryTimesAndNorouteRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the tunnel retries when no route
+        notifications are received."
+    DEFVAL    { 0 }
+    ::= { usdMplsTunnelProfileEntry 19 }
+
+usdMplsTunnelProfileRetryIntervalNoroute OBJECT-TYPE
+    SYNTAX      UsdProfileCfgRetryIntervalAndNorouteRanges
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the tunnel retry interval when no
+        route notifications are received."
+    DEFVAL    { 5 }
+    ::= { usdMplsTunnelProfileEntry 20 }
+
+usdMplsTunnelProfileVpnOuiNumber OBJECT-TYPE
+    SYNTAX      Integer32 (0..16777215)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the OUI part of VPN ID."
+    ::= { usdMplsTunnelProfileEntry 21 }
+
+usdMplsTunnelProfileVpnIndex OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the index part of VPN ID."
+    ::= { usdMplsTunnelProfileEntry 22 }
+
+usdMplsTunnelProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+           createAndGo
+           destroy
+
+       To create an entry in this table, the following entry objects MUST be
+       explicitly configured:
+           usdMplsTunnelProfileRowStatus "
+   ::= { usdMplsTunnelProfileEntry 23 }
+
+usdMplsTunnelProfileTargetedDynamicTunnel OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure targeted dynamic tunnel."
+    DEFVAL    { false }
+    ::= { usdMplsTunnelProfileEntry 24 }
+
+
+--
+-- Path Option table for tunnel profile
+--
+usdMplsTunnelProfilePathOptionTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsTunnelProfilePathOptionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table is a list of different LSP paths as option for each LSP setup,
+        configured as part of tunnel profile settings"
+    ::= { usdMplsTunnelProfileList 1 }
+
+usdMplsTunnelProfilePathOptionEntry OBJECT-TYPE
+    SYNTAX      UsdMplsTunnelProfilePathOptionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents one path option for the LSP setup, configured as
+        a part of tunnel profile settings."
+    INDEX     { usdMplsTunnelProfileNamePathOption,
+                usdMplsTunnelProfilePathOptionNumber }
+    ::= { usdMplsTunnelProfilePathOptionTable 1 }
+
+UsdMplsTunnelProfilePathOptionEntry ::= SEQUENCE {
+    usdMplsTunnelProfileNamePathOption      DisplayString,
+    usdMplsTunnelProfilePathOptionNumber    Integer32,
+    usdMplsTunnelProfilePathOptionProtocol  INTEGER,
+    usdMplsTunnelProfilePathOptionLockdown  TruthValue,
+    usdMplsTunnelProfilePathOptionPathName  DisplayString,
+    usdMplsTunnelProfilePathOptionPathId    Integer32,
+    usdMplsTunnelProfilePathOptionRowStatus RowStatus }
+
+usdMplsTunnelProfileNamePathOption OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Name of the path option."
+    ::= { usdMplsTunnelProfilePathOptionEntry 1 }
+
+usdMplsTunnelProfilePathOptionNumber OBJECT-TYPE
+    SYNTAX      Integer32 (1..1000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Unique identifier for the path option."
+    ::= { usdMplsTunnelProfilePathOptionEntry 2 }
+
+usdMplsTunnelProfilePathOptionProtocol OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    hopByHop(0),
+                    isis(1),
+                    ospf(2),
+                    none(3) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Path selection option protocol."
+    ::= { usdMplsTunnelProfilePathOptionEntry 3 }
+
+usdMplsTunnelProfilePathOptionLockdown OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable path selection option reoptimization."
+    ::= { usdMplsTunnelProfilePathOptionEntry 4 }
+
+usdMplsTunnelProfilePathOptionPathName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Associate a name with each explicit path."
+    ::= { usdMplsTunnelProfilePathOptionEntry 5 }
+
+usdMplsTunnelProfilePathOptionPathId OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Each explicit path can be associated either name or ID.  This object
+        allows configuration of the ID for the explicit path."
+    ::= { usdMplsTunnelProfilePathOptionEntry 6 }
+
+usdMplsTunnelProfilePathOptionRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+        usdMplsTunnelProfilePathOptionRowStatus."
+    ::= { usdMplsTunnelProfilePathOptionEntry 7 }
+
+
+--
+-- Dynamic endpoint table for tunnel profile
+--
+usdMplsTunnelProfileDynamicEndpointTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsTunnelProfileDynamicEndpointEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for the dynamic endpoints configured for
+        each tunnel profile."
+   ::= { usdMplsTunnelProfileList 2 }
+
+usdMplsTunnelProfileDynamicEndpointEntry OBJECT-TYPE
+    SYNTAX      UsdMplsTunnelProfileDynamicEndpointEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Dynamic endpoint entries for each tunnel profile."
+    INDEX     { usdMplsTunnelProfileNameDynamicEndpoint, 
+                usdMplsTunnelProfileDynamicEndpointType,
+                usdMplsTunnelProfileDynamicEndpointPolicyListType,
+                usdMplsTunnelProfileDynamicEndpointListName }
+    ::= { usdMplsTunnelProfileDynamicEndpointTable 1 }
+
+UsdMplsTunnelProfileDynamicEndpointEntry ::= SEQUENCE {
+    usdMplsTunnelProfileNameDynamicEndpoint             DisplayString,
+    usdMplsTunnelProfileDynamicEndpointType             INTEGER,
+    usdMplsTunnelProfileDynamicEndpointPolicyListType   INTEGER,
+    usdMplsTunnelProfileDynamicEndpointListName         DisplayString,
+    usdMplsTunnelProfileDynamicEndpointRowStatus        RowStatus }
+
+usdMplsTunnelProfileNameDynamicEndpoint OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible 
+    STATUS      current
+    DESCRIPTION
+        "Configure the tunnel dynamic endpoint in tunnel profile settings."
+    ::= { usdMplsTunnelProfileDynamicEndpointEntry 1 }
+
+usdMplsTunnelProfileDynamicEndpointType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    isisLevel2(0),
+                    ospfBorder(1) }
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Configure the dynamic endpoint type for the tunnel."
+    ::= { usdMplsTunnelProfileDynamicEndpointEntry 2 }
+
+usdMplsTunnelProfileDynamicEndpointPolicyListType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    accessList(1),
+                    prefixList(2),
+                    noPolicyList(3) }
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the dynamic tunnel policy type
+        selection."
+     ::= { usdMplsTunnelProfileDynamicEndpointEntry 3 }
+
+usdMplsTunnelProfileDynamicEndpointListName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This object allows configuration of the dynamic endpoints access list
+        name."
+     ::= { usdMplsTunnelProfileDynamicEndpointEntry 4 }
+
+usdMplsTunnelProfileDynamicEndpointRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry object MUST be
+        explicitly configured:
+            usdMplsTunnelProfileDynamicEndpointRowStatus."
+     ::= { usdMplsTunnelProfileDynamicEndpointEntry 5 }
+
+
+--
+-- Tunnel static endpoints table for tunnel profile
+--
+usdMplsTunnelProfileTunnelEndpointTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsTunnelProfileTunnelEndpointEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table contains list of tunnel static enpoints configured for each
+        tunnel profile."
+   ::= { usdMplsTunnelProfileList 3 }
+
+usdMplsTunnelProfileTunnelEndpointEntry OBJECT-TYPE
+    SYNTAX      UsdMplsTunnelProfileTunnelEndpointEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents one static endpoint configuration for the
+        tunnel."
+    INDEX     { usdMplsTunnelProfileNameTunnelEndpoint,
+                usdMplsTunnelProfileTunnelEndpointAddress,
+                usdMplsTunnelProfileTunnelEndpointDstMask }
+    ::= { usdMplsTunnelProfileTunnelEndpointTable 1 }
+
+UsdMplsTunnelProfileTunnelEndpointEntry ::= SEQUENCE {
+    usdMplsTunnelProfileNameTunnelEndpoint      DisplayString,
+    usdMplsTunnelProfileTunnelEndpointAddress   IpAddress,
+    usdMplsTunnelProfileTunnelEndpointDstMask   IpAddress,
+    usdMplsTunnelProfileTunnelEndpointRowStatus RowStatus }
+
+usdMplsTunnelProfileNameTunnelEndpoint OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This object configures the tunnel profile name."
+    ::= { usdMplsTunnelProfileTunnelEndpointEntry 1 }
+
+usdMplsTunnelProfileTunnelEndpointAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This object configures the IP address of the tunnel destination."
+    ::= { usdMplsTunnelProfileTunnelEndpointEntry 2 }
+
+usdMplsTunnelProfileTunnelEndpointDstMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible 
+    STATUS      current
+    DESCRIPTION
+        "This object configures the tunnel destination mask."
+   ::= { usdMplsTunnelProfileTunnelEndpointEntry 3 }
+
+usdMplsTunnelProfileTunnelEndpointRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+        usdMplsTunnelProfileTunnelEndpointRowStatus."
+     ::= { usdMplsTunnelProfileTunnelEndpointEntry 4 }
+
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- Explicit Path Configurations
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- Explicit Path Table
+--
+usdMplsExplicitPathTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsExplicitPathEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table is a list of hops configurations for explicit paths."
+    ::= { usdMplsExplicitPathGroup 1 }
+
+usdMplsExplicitPathEntry OBJECT-TYPE
+    SYNTAX      UsdMplsExplicitPathEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents one hop configuration for the particular
+        explicit path."
+    INDEX     { usdMplsExplicitPathName }
+    ::= { usdMplsExplicitPathTable 1 }
+
+UsdMplsExplicitPathEntry ::= SEQUENCE {
+    usdMplsExplicitPathName         DisplayString,
+    usdMplsExplicitPathAdminState   INTEGER,
+    usdMplsExplicitPathRowStatus    RowStatus }
+
+usdMplsExplicitPathName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Configure the name for the explicit path used as table index."
+    ::= { usdMplsExplicitPathEntry 1 }
+
+usdMplsExplicitPathAdminState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable explicit path adminstatus."
+    DEFVAL    { disable }
+    ::= { usdMplsExplicitPathEntry 2 }
+
+usdMplsExplicitPathRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Creation/deletion of the explicit path is done through setting this
+        object."
+    ::= { usdMplsExplicitPathEntry 3 }
+
+--
+-- Explicit Path node Table
+--
+usdMplsExplicitPathNodeTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMplsExplicitPathNodeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table is a list of configured explicit paths."
+    ::= { usdMplsExplicitPathGroup 2 }
+
+usdMplsExplicitPathNodeEntry OBJECT-TYPE
+    SYNTAX      UsdMplsExplicitPathNodeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry represents one hop in a particular explicit path."
+    INDEX     { usdMplsExplicitPathNodeName,
+                usdMplsExplicitPathNodeIndexNumber }
+    ::= { usdMplsExplicitPathNodeTable 1 }
+
+UsdMplsExplicitPathNodeEntry ::= SEQUENCE {
+    usdMplsExplicitPathNodeName             DisplayString,
+    usdMplsExplicitPathNodeIndexNumber      Integer32,
+    usdMplsExplicitPathNodeLoose            TruthValue,
+    usdMplsExplicitPathNodeHopAddress       IpAddress,
+    usdMplsExplicitPathNodeHopAddressMask   IpAddress,
+    usdMplsExplicitPathNodeRowStatus        RowStatus }
+
+usdMplsExplicitPathNodeName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..20))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Configure the name for the explicit path used in the table index."
+    ::= { usdMplsExplicitPathNodeEntry 1 }
+
+usdMplsExplicitPathNodeIndexNumber OBJECT-TYPE
+    SYNTAX      Integer32 (1..255)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each explicit path hop will have an index associated with it.
+        Configure each path hop index using this object."
+    ::= { usdMplsExplicitPathNodeEntry 2 }
+
+usdMplsExplicitPathNodeLoose OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the explicit path hop as strict or loose.  Set along with
+        HopAddress."
+    DEFVAL    { false }
+    ::= { usdMplsExplicitPathNodeEntry 3 }
+
+usdMplsExplicitPathNodeHopAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the hop IP address to setup explicit path.  Explicit path
+        next hop will be created when the mentioned hop IP address doesn't
+        belong to any of the existing hop even without setting the rowStatus
+        createAndGo value.  The rowStatus value is used to destroy the node."
+    ::= { usdMplsExplicitPathNodeEntry 4 }
+
+usdMplsExplicitPathNodeHopAddressMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Configure the hop IP address mask.  Set along with hop address."
+    DEFVAL    { 'ffffffff'H }
+    ::= { usdMplsExplicitPathNodeEntry 5 }
+
+usdMplsExplicitPathNodeRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Use this object for deletion of the node.  For node creation, this
+        value have no effect.  Setting the node with IP address create the node.
+        To delete the node set only this object."
+    ::= { usdMplsExplicitPathNodeEntry 6 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB.
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdMplsConformance OBJECT IDENTIFIER ::= { usdMplsMIB 2 }
+usdMplsCompliances OBJECT IDENTIFIER ::= { usdMplsConformance 1 }
+usdMplsConfGroups  OBJECT IDENTIFIER ::= { usdMplsConformance 2 }
+
+--
+-- compliance statements
+--
+usdMplsCompliance MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere MPLS MIB.  This statement became obsolete when RowStatus
+        support was added to some of the minor layer and tunnel profile tables."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+        usdMplsLsrGlobalConfGroup,
+        usdMplsMajorLayerConfGroup,
+        usdMplsMinorLayerConfGroup,
+        usdMplsTunnelProfileConfGroup,
+        usdMplsExplicitPathConfGroup }
+    ::= { usdMplsCompliances 1 }                                       -- RX 4.0
+
+usdMplsCompliance2 MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for entities which implement the Unisphere
+        MPLS MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+        usdMplsLsrGlobalConfGroup,
+        usdMplsMajorLayerConfGroup,
+        usdMplsMinorLayerConfGroup2,
+        usdMplsTunnelProfileConfGroup2,
+        usdMplsExplicitPathConfGroup }
+    ::= { usdMplsCompliances 2 }                                       -- RX 4.1
+
+--
+-- units of conformance
+--
+usdMplsLsrGlobalConfGroup OBJECT-GROUP
+    OBJECTS {
+        usdMplsGroupMplsEnable,
+        usdMplsGroupReopTimer,
+        usdMplsGroupLabelRangeLow,
+        usdMplsGroupLabelRangeHigh,
+        usdMplsGroupLspRetryTimesNoroute,
+        usdMplsGroupLspRetryIntervalNoroute,
+        usdMplsGroupLspRetryTimes,
+        usdMplsGroupLspRetryInterval,
+        usdMplsGroupLdpRetryTimesNoroute,
+        usdMplsGroupLdpRetryIntervalNoroute,
+        usdMplsGroupLdpRetryTimes,
+        usdMplsGroupLdpRetryInterval,
+        usdMplsGroupLdpSessionRetries,
+        usdMplsGroupLdpSessionRetryTimer,
+        usdMplsGroupTopologyDrivenIpProfileName,
+        usdMplsGroupTopologyDrivenLdpEgressIpIntf,
+        usdMplsGroupTopologyDrivenLdpIngressIpIntf,
+        usdMplsGroupTopologyDrivenLdpEgressIpIntfHostOnly,
+        usdMplsGroupTopologyDrivenLdpIngressIpIntfHostOnly,
+        usdMplsGroupTopologyDrivenLdpEgressIpIntfPolicyListType,
+        usdMplsGroupTopologyDrivenLdpIngressIpIntfPolicyListType,
+        usdMplsGroupTopologyDrivenLdpEgressIpIntfPolicyList,
+        usdMplsGroupTopologyDrivenLdpIngressIpIntfPolicyList,
+        usdMplsGroupTopologyDrivenLdp,
+        usdMplsGroupLspLabelDistCtrlMode,
+        usdMplsGroupLdpAdvHostOnly,
+        usdMplsGroupLsrState,
+        usdMplsGroupReopNow,
+
+        usdMplsGroupLdpTargetedHelloSendMode,
+
+        usdMplsGroupLdpTargetedHelloReceiveMode,
+
+        usdMplsGroupLabelAdverListMode,
+
+        usdMplsGroupLdpProfileHelloHoldTime,
+        usdMplsGroupLdpProfileCrLdpAdminState,
+        usdMplsGroupLdpProfileRowStatus,
+
+        usdMplsGroupRsvpProfileRefreshPeriod,
+        usdMplsGroupRsvpProfileCleanupTimeoutFactor,
+        usdMplsGroupRsvpProfileRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of MPLS label switching
+        routers (LSRs) in a Unisphere product."
+    ::= { usdMplsConfGroups 1 }
+
+usdMplsMajorLayerConfGroup OBJECT-GROUP
+    OBJECTS {
+        usdMplsIfMajorNextIfIndex,
+
+        usdMplsIfMajorRowStatus,
+        usdMplsIfMajorLowerIfIndex,
+        usdMplsIfMajorAdminStatus,
+        usdMplsIfMajorLdpAdminStatus,
+        usdMplsIfMajorLdpProfileName,
+        usdMplsIfMajorLdpVpiStart,
+        usdMplsIfMajorLdpVpiStop,
+        usdMplsIfMajorLdpVciStart,
+        usdMplsIfMajorLdpVciStop,
+        usdMplsIfMajorRsvpAdminStatus,
+        usdMplsIfMajorRsvpProfileName,
+        usdMplsIfMajorRsvpVpiStart,
+        usdMplsIfMajorRsvpVpiStop,
+        usdMplsIfMajorRsvpVciStart,
+        usdMplsIfMajorRsvpVciStop,
+        usdMplsIfMajorLabelSpaceType,
+        usdMplsIfMajorOpState,
+        usdMplsIfMajorCrLdpAdminState }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of major MPLS interfaces
+        in a Unisphere product."
+    ::= { usdMplsConfGroups 2 }
+
+usdMplsMinorLayerConfGroup OBJECT-GROUP
+    OBJECTS {
+        usdMplsIfMinorNextIfIndex,
+
+        usdMplsIfMinorRowStatus,
+        usdMplsIfMinorLowerIfIndex,
+        usdMplsIfMinorAdminStatus,
+        usdMplsIfMinorEndpointAddress,
+        usdMplsIfMinorEndpointDstMask,
+        usdMplsIfMinorTunnelMetricMode,
+        usdMplsIfMinorAbsoluteTunnelMetric,
+        usdMplsIfMinorRelativeTunnelMetric,
+        usdMplsIfMinorLabelDistProto,
+        usdMplsIfMinorAnnounceToOspf,
+        usdMplsIfMinorAnnounceToIsis,
+        usdMplsIfMinorAnnounceToBgp,
+        usdMplsIfMinorBandwidth,
+        usdMplsIfMinorAffinity,
+        usdMplsIfMinorAffinityMask,
+        usdMplsIfMinorSetupPriority,
+        usdMplsIfMinorHoldingPriority,
+        usdMplsIfMinorTunnelName,
+        usdMplsIfMinorTunnelRetryTimes,
+        usdMplsIfMinorTunnelRetryInterval,
+        usdMplsIfMinorTunnelRetryTimesNoroute,
+        usdMplsIfMinorTunnelRetryIntervalNoroute,
+        usdMplsIfMinorBaseTunnelName,
+        usdMplsIfMinorVpnOuiNumber,
+        usdMplsIfMinorVpnIndex,
+        usdMplsIfMinorTunnelOpState,
+        usdMplsIfMinorTargetedDynamicTunnel,
+        usdMplsIfMinorReoptimization,
+
+        usdMplsIfMinorPathOptionProtocol,
+        usdMplsIfMinorPathOptionLockdown,
+        usdMplsIfMinorPathOptionPathName,
+        usdMplsIfMinorPathOptionPathId }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of minor MPLS
+        (tunnel) in a Unisphere product.  This group became obsolete when the
+        usdMplsIfMinorPathOptionRowStatus object was added."
+    ::= { usdMplsConfGroups 3 }
+
+usdMplsTunnelProfileConfGroup OBJECT-GROUP
+    OBJECTS {
+        usdMplsTunnelProfileAdminStatus,
+        usdMplsTunnelProfileBaseTunnelName,
+        usdMplsTunnelProfileIpProfileName,
+        usdMplsTunnelProfileLabelDistProto,
+        usdMplsTunnelProfileAnnounceToOspf,
+        usdMplsTunnelProfileAnnounceToIsis,
+        usdMplsTunnelProfileAnnounceToBgp,
+        usdMplsTunnelProfileMetricMode,
+        usdMplsTunnelProfileAbsoluteMetric,
+        usdMplsTunnelProfileRelativeMetric,
+        usdMplsTunnelProfileBandwidth,
+        usdMplsTunnelProfileAffinity,
+        usdMplsTunnelProfileAffinityMask,
+        usdMplsTunnelProfileSetupPriority,
+        usdMplsTunnelProfileHoldingPriority,
+        usdMplsTunnelProfileRetryTimes,
+        usdMplsTunnelProfileRetryInterval,
+        usdMplsTunnelProfileRetryTimesNoroute,
+        usdMplsTunnelProfileRetryIntervalNoroute,
+        usdMplsTunnelProfileVpnOuiNumber,
+        usdMplsTunnelProfileVpnIndex,
+        usdMplsTunnelProfileRowStatus,
+        usdMplsTunnelProfileTargetedDynamicTunnel,
+
+        usdMplsTunnelProfilePathOptionProtocol,
+        usdMplsTunnelProfilePathOptionLockdown,
+        usdMplsTunnelProfilePathOptionPathName,
+        usdMplsTunnelProfilePathOptionPathId }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of MPLS tunnel 
+        profiles in a Unisphere product.  This group became obsolete when the
+        objects usdMplsTunnelProfilePathOptionRowStatus, 
+                usdMplsTunnelProfileDynamicEndpointRowStatus and 
+                usdMplsTunnelProfileTunnelEndpointRowStatus were added." 
+    ::= { usdMplsConfGroups 4 }
+
+usdMplsExplicitPathConfGroup OBJECT-GROUP
+    OBJECTS {
+        usdMplsExplicitPathAdminState,
+        usdMplsExplicitPathRowStatus,
+
+        usdMplsExplicitPathNodeLoose,
+        usdMplsExplicitPathNodeHopAddress,
+        usdMplsExplicitPathNodeHopAddressMask,
+        usdMplsExplicitPathNodeRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of MPLS explicit paths in
+        a Unisphere product."
+    ::= { usdMplsConfGroups 5 }
+
+usdMplsMinorLayerConfGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdMplsIfMinorNextIfIndex,
+
+        usdMplsIfMinorRowStatus,
+        usdMplsIfMinorLowerIfIndex,
+        usdMplsIfMinorAdminStatus,
+        usdMplsIfMinorEndpointAddress,
+        usdMplsIfMinorEndpointDstMask,
+        usdMplsIfMinorTunnelMetricMode,
+        usdMplsIfMinorAbsoluteTunnelMetric,
+        usdMplsIfMinorRelativeTunnelMetric,
+        usdMplsIfMinorLabelDistProto,
+        usdMplsIfMinorAnnounceToOspf,
+        usdMplsIfMinorAnnounceToIsis,
+        usdMplsIfMinorAnnounceToBgp,
+        usdMplsIfMinorBandwidth,
+        usdMplsIfMinorAffinity,
+        usdMplsIfMinorAffinityMask,
+        usdMplsIfMinorSetupPriority,
+        usdMplsIfMinorHoldingPriority,
+        usdMplsIfMinorTunnelName,
+        usdMplsIfMinorTunnelRetryTimes,
+        usdMplsIfMinorTunnelRetryInterval,
+        usdMplsIfMinorTunnelRetryTimesNoroute,
+        usdMplsIfMinorTunnelRetryIntervalNoroute,
+        usdMplsIfMinorBaseTunnelName,
+        usdMplsIfMinorVpnOuiNumber,
+        usdMplsIfMinorVpnIndex,
+        usdMplsIfMinorTunnelOpState,
+        usdMplsIfMinorTargetedDynamicTunnel,
+        usdMplsIfMinorReoptimization,
+
+        usdMplsIfMinorPathOptionProtocol,
+        usdMplsIfMinorPathOptionLockdown,
+        usdMplsIfMinorPathOptionPathName,
+        usdMplsIfMinorPathOptionPathId,
+        usdMplsIfMinorPathOptionRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of minor MPLS (tunnel)
+        interfaces in a Unisphere product."
+    ::= { usdMplsConfGroups 6 }
+
+usdMplsTunnelProfileConfGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdMplsTunnelProfileAdminStatus,
+        usdMplsTunnelProfileBaseTunnelName,
+        usdMplsTunnelProfileIpProfileName,
+        usdMplsTunnelProfileLabelDistProto,
+        usdMplsTunnelProfileAnnounceToOspf,
+        usdMplsTunnelProfileAnnounceToIsis,
+        usdMplsTunnelProfileAnnounceToBgp,
+        usdMplsTunnelProfileMetricMode,
+        usdMplsTunnelProfileAbsoluteMetric,
+        usdMplsTunnelProfileRelativeMetric,
+        usdMplsTunnelProfileBandwidth,
+        usdMplsTunnelProfileAffinity,
+        usdMplsTunnelProfileAffinityMask,
+        usdMplsTunnelProfileSetupPriority,
+        usdMplsTunnelProfileHoldingPriority,
+        usdMplsTunnelProfileRetryTimes,
+        usdMplsTunnelProfileRetryInterval,
+        usdMplsTunnelProfileRetryTimesNoroute,
+        usdMplsTunnelProfileRetryIntervalNoroute,
+        usdMplsTunnelProfileVpnOuiNumber,
+        usdMplsTunnelProfileVpnIndex,
+        usdMplsTunnelProfileRowStatus,
+        usdMplsTunnelProfileTargetedDynamicTunnel,
+ 
+        usdMplsTunnelProfilePathOptionProtocol,
+        usdMplsTunnelProfilePathOptionLockdown,
+        usdMplsTunnelProfilePathOptionPathName,
+        usdMplsTunnelProfilePathOptionPathId,
+        usdMplsTunnelProfilePathOptionRowStatus,
+        
+        usdMplsTunnelProfileDynamicEndpointRowStatus,
+      
+        usdMplsTunnelProfileTunnelEndpointRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of MPLS tunnel profiles in
+        a Unisphere product."
+    ::= { usdMplsConfGroups 7 }
+
+END

@@ -1,0 +1,2967 @@
+
+-- *****************************************************************************
+-- Unisphere-Data-ATM-MIB
+--
+-- Unisphere Networks Inc. Enterprise MIB
+-- ATM MIB
+--
+-- Copyright (c) 1999 Redstone Communications, Incorporated.
+-- Copyright (c) 1999, 2002 Unisphere Networks, Incorporated.
+-- All Rights Reserved.
+-- *****************************************************************************
+
+Unisphere-Data-ATM-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, Integer32,
+    Unsigned32, Counter64, Counter32, IpAddress
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, RowStatus, TruthValue, TimeStamp
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+        FROM SNMPv2-CONF
+    InterfaceIndex, InterfaceIndexOrZero, ifIndex
+        FROM IF-MIB
+    AtmVpIdentifier, AtmVcIdentifier, AtmVorXAdminStatus, AtmAddr
+        FROM ATM-TC-MIB
+    atmVplVpi, atmVclVpi, atmVclVci
+        FROM ATM-MIB
+    atmfM4VpTestObject, atmfM4VpTestId, atmfM4VpTestType, atmfM4VpTestResult,
+    atmfM4VcTestObject, atmfM4VcTestId, atmfM4VcTestType, atmfM4VcTestResult
+        FROM ATM-FORUM-SNMP-M4-MIB
+    usDataMibs
+        FROM Unisphere-Data-MIBs
+    UsdNextIfIndex, UsdEnable
+        FROM Unisphere-Data-TC;
+
+usdAtmMIB  MODULE-IDENTITY
+    LAST-UPDATED "200208091340Z"  -- 09-Aug-02 09:40 AM EDT
+    ORGANIZATION "Juniper Networks, Inc."
+    CONTACT-INFO
+        "       Juniper Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The ATM MIB for the Unisphere Networks Inc. enterprise."
+    -- Revision History
+    REVISION    "200208091340Z"  -- 09-Aug-02 09:40 AM EDT  - RX 4.0
+    DESCRIPTION
+        "Added support for CAC used bandwidth.
+         Added ATM switched virtual connection (SVC) support.
+         Added usdAtmSubIfAddress to the usdAtmSubIfTable."
+    REVISION    "200201241400Z"  -- 24-Jan-02 09:00 AM EST  - RX 3.4
+    DESCRIPTION
+        "Added support for connection admission control (CAC)."
+    REVISION    "200112141804Z"  -- 14-Dec-01 01:04 PM EST  - RX 3.3
+    DESCRIPTION
+        "Added support from ATM traffic shaping."
+    REVISION    "200111261639Z"  -- 26-Nov-01 11:39 AM EST  - RX 3.2
+    DESCRIPTION
+        "Added support for NBMA map lists.
+         Added support for ATM ping.
+         Changed usdAtmSubIfVccVcd and usdAtmIfIlmiVcd range to (0..2147483647).
+         Added range to usdAtmIfCapabilityMaxVcd.
+         Added rtVbr service catagory to usdAtmSubIfVccTable.
+         Added support for OAM cell filter.
+         Added PVC counter for reveived unknown protocol."
+    REVISION    "200011271951Z"  -- 27-Nov-00 02:51 PM EST  - RX 3.0
+    DESCRIPTION
+        "Added autoconfig value for usdAtmSubIfVccType.
+         Added in/out summary cell counters.
+         Added usdVpTunnelServiceCategory to usdAtmVpTunnelTable.
+         Added support for atm interface capability traversal."
+    REVISION    "200008020000Z"  -- 02-Aug-00               - RX 2.3
+    DESCRIPTION
+        "Added the usdAtmCircuitOamTable."
+    REVISION    "200005120000Z"  -- 12-May-00               - RX 2.0
+    DESCRIPTION
+        "Added the usdAtmVpTunnelTable."
+    REVISION    "200001130000Z"  -- 13-Jan-00               - RX 1.3
+    DESCRIPTION
+        "Added the usdAtmPvcStatisticsTable."
+    REVISION      "9908040000Z"  -- 04-Aug-99               - RX 1.1
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 8 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+UsdAtmNbmaMapName ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "32a"
+    STATUS      current
+    DESCRIPTION
+        "An administratively assigned map name.  Represents textual information
+        taken from the NVT ASCII character set.  The name must be unique per
+        system."
+    REFERENCE
+        "RFC 854: NVT ASCII character set.  See SNMPv2-TC.DisplayString
+        DESCRIPTION for a summary."
+    SYNTAX      OCTET STRING (SIZE(1..32))
+
+UsdAtmNbmaMapNameOrNull ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "32a"
+    STATUS      current
+    DESCRIPTION
+        "An administratively assigned map name.  Represents textual information
+        taken from the NVT ASCII character set.  The name must be unique per
+        system.
+
+        Differs from UsdAtmNbmaMapName in that it permits a zero-length string."
+    REFERENCE
+        "RFC 854: NVT ASCII character set.  See SNMPv2-TC.DisplayString
+        DESCRIPTION for a summary."
+    SYNTAX      OCTET STRING (SIZE(0..32))
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAtmObjects     OBJECT IDENTIFIER ::= { usdAtmMIB 1 }
+
+--
+-- This MIB contains managed objects for each of three interface layers:  ATM;
+-- AAL5; and ATM Subinterface.  For each of these layers, management objects are
+-- provided to query for an available interface index, and to create/delete
+-- interfaces of that type.  Creating/deleting these interface types using this
+-- MIB has the side effect of creating/deleting corresponding entries in the
+-- Interface MIB ifTable/ifXTable, and in the Unisphere Enterprise Interface MIB
+-- usdIfTable.
+--
+usdAtmIfLayer        OBJECT IDENTIFIER ::= { usdAtmObjects 1 }
+usdAtmAal5IfLayer    OBJECT IDENTIFIER ::= { usdAtmObjects 2 }
+usdAtmSubIfLayer     OBJECT IDENTIFIER ::= { usdAtmObjects 3 }
+usdAtmNbma           OBJECT IDENTIFIER ::= { usdAtmObjects 4 }
+usdAtmPing           OBJECT IDENTIFIER ::= { usdAtmObjects 5 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- ATM LAYER
+--
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- IfIndex selection for creating new ATM interfaces
+--
+usdAtmNextIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in usdAtmIfTable.
+
+        A GET of this object returns the next available ifIndex value to be used
+        to create an entry in the associated interface table; or zero, if no
+        valid ifIndex value is available.  This object also returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdAtmIfLayer 1 }
+
+--
+-- The ATM Interface Table
+--
+usdAtmIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for ATM interfaces present in the system."
+    ::= { usdAtmIfLayer 2 }
+
+usdAtmIfEntry OBJECT-TYPE
+    SYNTAX      UsdAtmIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an ATM interface.
+        Creating/deleting entries in this table causes corresponding entries for
+        be created/deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdAtmIfIndex }
+    ::= { usdAtmIfTable 1 }
+
+UsdAtmIfEntry ::= SEQUENCE {
+    usdAtmIfIndex                       InterfaceIndex,
+    usdAtmIfRowStatus                   RowStatus,
+    usdAtmIfLowerIfIndex                InterfaceIndexOrZero,
+    usdAtmIfIlmiVpi                     AtmVpIdentifier,
+    usdAtmIfIlmiVci                     AtmVcIdentifier,
+    usdAtmIfIlmiVcd                     Integer32,
+    usdAtmIfIlmiPollFrequency           Integer32,
+    usdAtmIfIlmiAdminState              INTEGER,
+    usdAtmIfUniVersion                  INTEGER,
+    usdAtmIfOamCellRxAdminState         INTEGER,
+    usdAtmIfInCells                     Counter64,
+    usdAtmIfOutCells                    Counter64,
+    usdAtmIfVcCount                     INTEGER,
+    usdAtmIfMapGroup                    UsdAtmNbmaMapNameOrNull,
+    usdAtmIfCacAdminState               UsdEnable,
+    usdAtmIfCacUbrWeight                Integer32,
+    usdAtmIfCacSubscriptionBandwidth    Integer32,
+    usdAtmIfCacAvailableBandwidth       Integer32,
+    usdAtmIfOamCellFilter               INTEGER,
+    usdAtmIfCacUsedBandwidthUpper       Unsigned32,
+    usdAtmIfCacUsedBandwidthLower       Unsigned32 }
+
+usdAtmIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the ATM interface.  When creating entries in this table,
+        suitable values for this object are determined by reading
+        usdAtmNextIfIndex."
+    ::= { usdAtmIfEntry 1 }
+
+usdAtmIfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdAtmIfRowStatus
+            usdAtmIfLowerIfIndex
+
+        In addition, when creating an entry the following condition must hold:
+            A value for usdAtmIfIndex must have been determined previously, by
+            reading usdAtmNextIfIndex.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created or
+        destroyed as a result of creating/destroying an entry in this table."
+    ::= { usdAtmIfEntry 2 }
+
+usdAtmIfLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an interface over which this ATM interface is to be
+        layered.  A value of zero indicates no layering.  An implementation may
+        choose to require that a nonzero value be configured at entry creation."
+    ::= { usdAtmIfEntry 3 }
+
+usdAtmIfIlmiVpi OBJECT-TYPE
+    SYNTAX      AtmVpIdentifier
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The VPI of the ILMI of a major ATM interface."
+    DEFVAL    { 0 }
+    ::= { usdAtmIfEntry 4 }
+
+usdAtmIfIlmiVci OBJECT-TYPE
+    SYNTAX      AtmVcIdentifier
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The VCI of the ILMI of a major ATM interface."
+    DEFVAL    { 16 }
+    ::= { usdAtmIfEntry 5 }
+
+usdAtmIfIlmiVcd OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An integer identifier for the ILMI, used in conjunction with the
+        command-line interface.
+
+        The value must be unique among VCs configured on the same ATM
+        interface."
+    DEFVAL    { 0 }
+    ::= { usdAtmIfEntry 6 }
+
+usdAtmIfIlmiPollFrequency OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The amount of time in seconds between successive transmissions of ILMI
+        messages on this interface for the purpose of detecting loss of ILMI
+        connectivity.  The distinguished value zero disables ILMI connectivity
+        procedures on this interface."
+    ::= { usdAtmIfEntry 7 }
+
+usdAtmIfIlmiAdminState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disabled(0),
+                    enabled(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The administrative status of ILMI in the ATM interface."
+    ::= { usdAtmIfEntry 8 }
+
+usdAtmIfUniVersion OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    version3Dot0(0),
+                    version3Dot1(1),
+                    version4Dot0(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Use to specify the User Network Interface (UNI) the router should use
+        when ILMI link auto determination is unsuccesful or ILMI is disabled."
+    ::= { usdAtmIfEntry 9 }
+
+usdAtmIfOamCellRxAdminState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    oamCellAdminStateDisabled(0),
+                    oamCellAdminStateEnabled(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Use to specify the OAM Cell Receive Administrative state on this interface."
+    DEFVAL { oamCellAdminStateEnabled }
+    ::= { usdAtmIfEntry 10 }
+
+usdAtmIfInCells OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of cells received on this major interface."
+    ::= { usdAtmIfEntry 11 }
+
+usdAtmIfOutCells OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of cells transmitted on this major interface."
+    ::= { usdAtmIfEntry 12 }
+
+usdAtmIfVcCount  OBJECT-TYPE
+    SYNTAX      INTEGER (0..268431360)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of circuits configured on this interface."
+    ::= { usdAtmIfEntry 13 }
+
+usdAtmIfMapGroup OBJECT-TYPE
+    SYNTAX      UsdAtmNbmaMapNameOrNull
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The NBMA map group this interface is associated with."
+    DEFVAL    { "" }
+    ::= { usdAtmIfEntry 14 }
+
+usdAtmIfCacAdminState OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The administrative staus of CAC on this ATM major interface."
+    DEFVAL    { disable }
+    ::= { usdAtmIfEntry 15 }
+
+usdAtmIfCacUbrWeight OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The bandwidth associated with every UBR and UBR with PCR connection
+        configured on the ATM major interface.  This value is used for CAC
+        computation.  The units are kilo-bits per second (kbps)."
+    DEFVAL    { 0 }
+    ::= { usdAtmIfEntry 16 }
+
+usdAtmIfCacSubscriptionBandwidth OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The subscribed bandwidth of the ATM major interface.  If this value is
+        not specified or set to 0, the effective port bandwidth is used.  When a
+        Get operation is performed the current effective bandwidth is returned.
+        The units are kilo-bits per second (kbps)."
+    DEFVAL    { 0 }
+    ::= { usdAtmIfEntry 17 }
+
+usdAtmIfCacAvailableBandwidth OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "kbps"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The available bandwidth of the ATM major interface.  As connections are
+        added or deleted on the interface, this value is updated.  The units are
+        kilo-bits per second (kbps)."
+    ::= { usdAtmIfEntry 18 }
+
+usdAtmIfOamCellFilter OBJECT-TYPE
+    SYNTAX      INTEGER {
+                   oamCellFilterAll(0),
+                   oamCellFilterAlarm(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of OAM cells to discard when usdAtmIfOamCellRxAdminState is
+        set to oamCellAdminStateDisabled.  The value oamCellFilterAlarm discards
+        received OAM AIS and RDI cells.  The value oamCellFilterAll discards all
+        received OAM cells.  Note that when usdAtmIfOamCellRxAdminState is set
+        to oamCellAdminStateEnabled, this object has no effect."
+    DEFVAL    { oamCellFilterAll }
+    ::= { usdAtmIfEntry 23 }
+
+usdAtmIfCacUsedBandwidthUpper OBJECT-TYPE
+    SYNTAX       Unsigned32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The most significant 32 bits of the CAC used bandwidth on the ATM major
+        interface.  The least significant 32 bits of the CAC used bandwidth are
+        specified by usdAtmIfCacUsedBandwidthLower."
+    ::= { usdAtmIfEntry 24 }
+
+usdAtmIfCacUsedBandwidthLower OBJECT-TYPE
+    SYNTAX       Unsigned32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The least significant 32 bits of the CAC used bandwidth on the ATM
+        major interface.  The most significant 32 bits of the CAC used bandwidth
+        are specified by usdAtmIfCacUsedBandwidthUpper."
+    ::= { usdAtmIfEntry 25 }
+
+
+--
+-- The ATM VPI/VCI Statistics Table
+--
+usdAtmPvcStatisticsTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmPvcStatisticsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains statistics for PVC entries."
+    ::= { usdAtmIfLayer 3 }
+
+usdAtmPvcStatisticsEntry OBJECT-TYPE
+    SYNTAX      UsdAtmPvcStatisticsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry provides statistics on an ATM PVC."
+    INDEX     { usdAtmPvcStatsIfIndex,
+                usdAtmPvcStatsVpi,
+                usdAtmPvcStatsVci }
+    ::= { usdAtmPvcStatisticsTable 1 }
+
+UsdAtmPvcStatisticsEntry ::= SEQUENCE {
+    usdAtmPvcStatsIfIndex                       InterfaceIndex,
+    usdAtmPvcStatsVpi                           AtmVpIdentifier,
+    usdAtmPvcStatsVci                           AtmVcIdentifier,
+    usdAtmPvcStatsInCells                       Counter64,
+    usdAtmPvcStatsInCellOctets                  Counter64,
+    usdAtmPvcStatsInPackets                     Counter64,
+    usdAtmPvcStatsInPacketOctets                Counter64,
+    usdAtmPvcStatsOutCells                      Counter64,
+    usdAtmPvcStatsOutCellOctets                 Counter64,
+    usdAtmPvcStatsOutPackets                    Counter64,
+    usdAtmPvcStatsOutPacketOctets               Counter64,
+    usdAtmPvcStatsInCellErrors                  Counter32,
+    usdAtmPvcStatsinPacketErrors                Counter32,
+    usdAtmPvcStatsOutCellErrors                 Counter32,
+    usdAtmPvcStatsOutPacketErrors               Counter32,
+    usdAtmPvcStatsInPacketDiscards              Counter32,
+    usdAtmPvcStatsInPacketOctetDiscards         Counter32,
+    usdAtmPvcStatsInPacketUnknownProtocol       Counter32 }
+
+usdAtmPvcStatsIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the ATM interface."
+    ::= { usdAtmPvcStatisticsEntry 1 }
+
+usdAtmPvcStatsVpi OBJECT-TYPE
+    SYNTAX      AtmVpIdentifier
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VPI of the ATM VCC used by this ATM interface and PVC."
+    ::= { usdAtmPvcStatisticsEntry 2 }
+
+usdAtmPvcStatsVci OBJECT-TYPE
+    SYNTAX      AtmVcIdentifier
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VCI of the ATM VCC used by this ATM interface and PVC."
+    ::= { usdAtmPvcStatisticsEntry 3 }
+
+usdAtmPvcStatsInCells OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received cells."
+    ::= { usdAtmPvcStatisticsEntry 4 }
+
+usdAtmPvcStatsInCellOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received cells octets."
+    ::= { usdAtmPvcStatisticsEntry 5 }
+
+usdAtmPvcStatsInPackets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received AAL PDUs."
+    ::= { usdAtmPvcStatisticsEntry 6 }
+
+usdAtmPvcStatsInPacketOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received AAL PDU octets."
+    ::= { usdAtmPvcStatisticsEntry 7 }
+
+usdAtmPvcStatsOutCells OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Transmitted cells."
+    ::= { usdAtmPvcStatisticsEntry 8 }
+
+usdAtmPvcStatsOutCellOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Transmitted cell octets."
+    ::= { usdAtmPvcStatisticsEntry 9 }
+
+usdAtmPvcStatsOutPackets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Transmitted AAL PDUs."
+    ::= { usdAtmPvcStatisticsEntry 10 }
+
+usdAtmPvcStatsOutPacketOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Transmitted AAL PDU octets."
+    ::= { usdAtmPvcStatisticsEntry 11 }
+
+usdAtmPvcStatsInCellErrors OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received cells dropped due to errors."
+    ::= { usdAtmPvcStatisticsEntry 12 }
+
+usdAtmPvcStatsinPacketErrors OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received packets dropped due to errors."
+    ::= { usdAtmPvcStatisticsEntry 13 }
+
+usdAtmPvcStatsOutCellErrors OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Cells not transmitted due to errors."
+    ::= { usdAtmPvcStatisticsEntry 14 }
+
+usdAtmPvcStatsOutPacketErrors OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Packets not transmitted due to errors."
+    ::= { usdAtmPvcStatisticsEntry 15 }
+
+usdAtmPvcStatsInPacketDiscards OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received packets w/o errors discarded."
+    ::= { usdAtmPvcStatisticsEntry 16 }
+
+usdAtmPvcStatsInPacketOctetDiscards OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received bytes w/o errors discarded."
+    ::= { usdAtmPvcStatisticsEntry 17 }
+
+usdAtmPvcStatsInPacketUnknownProtocol OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received packets that are discarded because the interface can not discern or is not configured to support this protocol."
+    ::= { usdAtmPvcStatisticsEntry 18 }
+
+--
+-- The ATM Virtual Path Tunnel Table
+--
+usdAtmVpTunnelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmVpTunnelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for ATM VP Tunnels present in the system."
+    ::= { usdAtmIfLayer 4 }
+
+usdAtmVpTunnelEntry OBJECT-TYPE
+    SYNTAX      UsdAtmVpTunnelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an ATM VP Tunnel."
+    INDEX     { usdAtmVpTunnelIfIndex,
+                usdAtmVpTunnelVpi }
+    ::= { usdAtmVpTunnelTable 1 }
+
+UsdAtmVpTunnelEntry ::= SEQUENCE {
+    usdAtmVpTunnelIfIndex           InterfaceIndex,
+    usdAtmVpTunnelVpi               AtmVpIdentifier,
+    usdAtmVpTunnelKbps              Integer32,
+    usdAtmVpTunnelRowStatus         RowStatus,
+    usdAtmVpTunnelServiceCategory   INTEGER }
+
+usdAtmVpTunnelIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the ATM interface.  The value of this object is the same
+        as the usdAtmIfIndex object in the usdAtmIfTable.
+
+        Entries in this table cannot be created unless the underlying ATM
+        interface entry is created first in the usdAtmIfTable."
+    ::= { usdAtmVpTunnelEntry 1 }
+
+usdAtmVpTunnelVpi OBJECT-TYPE
+    SYNTAX      AtmVpIdentifier
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VPI value for this VP tunnel entry."
+    ::= { usdAtmVpTunnelEntry 2 }
+
+usdAtmVpTunnelKbps OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel rate in kilobits per second (kbps) for this entry."
+    ::= { usdAtmVpTunnelEntry 3 }
+
+usdAtmVpTunnelRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdAtmVpTunnelRowStatus
+            usdAtmVpTunnelKbps
+
+        In addition, when creating an entry the following condition must hold:
+            A correponding usdAtmVpTunnelIfIndex value must have been created in
+            the usdAtmIfTable previously."
+    ::= { usdAtmVpTunnelEntry 4 }
+
+usdAtmVpTunnelServiceCategory OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    nrtVbr(1),
+                    cbr(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ATM service category for the tunnel."
+    ::= { usdAtmVpTunnelEntry 5 }
+
+
+--
+-- The ATM Interface Capability Table
+--
+usdAtmIfCapabilityTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmIfCapabilityEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for ATM interfaces present in the system."
+    ::= { usdAtmIfLayer 5 }
+
+usdAtmIfCapabilityEntry OBJECT-TYPE
+    SYNTAX      UsdAtmIfCapabilityEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the capabilities of an ATM interface.  A
+        management client can use this table to determine differences in the
+        configurable level of support across entries in this table."
+    INDEX     { usdAtmIfCapabilityIndex }
+    ::= { usdAtmIfCapabilityTable 1 }
+
+UsdAtmIfCapabilityEntry ::= SEQUENCE {
+    usdAtmIfCapabilityIndex             InterfaceIndex,
+    usdAtmIfCapabilityTrafficShaping    TruthValue,
+    usdAtmIfCapabilityOam               TruthValue,
+    usdAtmIfCapabilityDefaultVcPerVp    INTEGER,
+    usdAtmIfCapabilityNumVpiVciBits     INTEGER,
+    usdAtmIfCapabilityMaxVcd            Integer32,
+    usdAtmIfCapabilityMaxVpi            AtmVpIdentifier,
+    usdAtmIfCapabilityMaxVci            AtmVcIdentifier,
+    usdAtmIfCapabilityOamCellFilter     TruthValue  }
+
+usdAtmIfCapabilityIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the ATM interface.  The value of this object is the same
+        as usdAtmIfIndex in the usdAtmIfTable."
+    ::= { usdAtmIfCapabilityEntry 1 }
+
+usdAtmIfCapabilityTrafficShaping OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether traffic shaping is supported on this interface;
+        true(1) indicates that it is, false(2) indicates that it is not."
+    ::= { usdAtmIfCapabilityEntry 2 }
+
+usdAtmIfCapabilityOam OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether OAM is supported on this interface; true(1) indicates
+        that it is, false(2) indicates that it is not."
+    ::= { usdAtmIfCapabilityEntry 3 }
+
+usdAtmIfCapabilityDefaultVcPerVp OBJECT-TYPE
+    SYNTAX      INTEGER (0..65535)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The default number of VCs per VP for this interface."
+    ::= { usdAtmIfCapabilityEntry 4 }
+
+usdAtmIfCapabilityNumVpiVciBits OBJECT-TYPE
+    SYNTAX      INTEGER (8..28)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total range of bits used for constructing VPI/VCI identifiers for
+        this interface."
+    ::= { usdAtmIfCapabilityEntry 5 }
+
+usdAtmIfCapabilityMaxVcd OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "The maximum configurable value for a VCD on this interface."
+    ::= { usdAtmIfCapabilityEntry 6 }
+
+usdAtmIfCapabilityMaxVpi OBJECT-TYPE
+    SYNTAX      AtmVpIdentifier
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum configurable value for a VPI on this interface."
+    ::= { usdAtmIfCapabilityEntry 7 }
+
+usdAtmIfCapabilityMaxVci OBJECT-TYPE
+    SYNTAX      AtmVcIdentifier
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum configurable value for a VCI on this interface."
+    ::= { usdAtmIfCapabilityEntry 8 }
+
+usdAtmIfCapabilityOamCellFilter OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether OAM cell filter is supported on this interface;
+        true(1) indicates that it is, false(2) indicates that it is not."
+    ::= { usdAtmIfCapabilityEntry 9 }
+
+
+--
+-- The usdAtmIfSvcSignallingTable extends the usdAtmIfTable for ATM switched
+-- virtual connections (SVCs).
+--
+usdAtmIfSvcSignallingTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmIfSvcSignallingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for extending the usdAtmIfTable for
+        configuring signalling information for switched virtual connection
+        (SVC)."
+    ::= { usdAtmIfLayer 6 }
+
+usdAtmIfSvcSignallingEntry OBJECT-TYPE
+    SYNTAX      UsdAtmIfSvcSignallingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry provides configuration parameters for ATM signalling on the
+        interface."
+    INDEX     { usdAtmIfIndex }
+    ::= { usdAtmIfSvcSignallingTable 1 }
+
+UsdAtmIfSvcSignallingEntry ::= SEQUENCE {
+    usdAtmIfSvcSignallingVpi            AtmVpIdentifier,
+    usdAtmIfSvcSignallingVci            AtmVcIdentifier,
+    usdAtmIfSvcSignallingVcd            AtmVcIdentifier,
+    usdAtmIfSvcSignallingAdminStatus    AtmVorXAdminStatus
+}
+
+usdAtmIfSvcSignallingVpi OBJECT-TYPE
+    SYNTAX      AtmVpIdentifier
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The VPI identifier of the ATM circuit used for signalling for this
+        interface."
+    ::= { usdAtmIfSvcSignallingEntry 1 }
+
+usdAtmIfSvcSignallingVci OBJECT-TYPE
+    SYNTAX      AtmVcIdentifier
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The VCI identifier of the ATM circuit used for signalling for this
+        interface."
+    ::= { usdAtmIfSvcSignallingEntry 2 }
+
+usdAtmIfSvcSignallingVcd OBJECT-TYPE
+    SYNTAX      AtmVcIdentifier
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The VCI identifier of the ATM circuit used for signalling for this
+        interface."
+    ::= { usdAtmIfSvcSignallingEntry 3 }
+
+usdAtmIfSvcSignallingAdminStatus OBJECT-TYPE
+    SYNTAX      AtmVorXAdminStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The administrative status of signalling in the ATM interface."
+    ::= { usdAtmIfSvcSignallingEntry 4 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- AAL5 LAYER
+--
+-- /////////////////////////////////////////////////////////////////////////////
+
+--
+-- IfIndex selection for creating new ATM AAL5 interfaces
+--
+usdAtmAal5NextIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in usdAtmAal5IfTable.
+
+        A GET of this object returns the next available ifIndex value to be used
+        to create an entry in the associated interface table; or zero, if no
+        valid ifIndex value is available.  This object also returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdAtmAal5IfLayer 1 }
+
+--
+-- The ATM AAL5 Interface Table
+--
+
+usdAtmAal5IfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmAal5IfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for ATM AAL5 interfaces present in the
+        system."
+    ::= { usdAtmAal5IfLayer 2 }
+
+usdAtmAal5IfEntry OBJECT-TYPE
+    SYNTAX      UsdAtmAal5IfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an ATM AAL5 interface.
+        Creating/deleting entries in this table causes corresponding entries for
+        be created/deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdAtmAal5IfIndex }
+    ::= { usdAtmAal5IfTable 1 }
+
+UsdAtmAal5IfEntry ::= SEQUENCE {
+    usdAtmAal5IfIndex           InterfaceIndex,
+    usdAtmAal5IfRowStatus       RowStatus,
+    usdAtmAal5IfLowerIfIndex    InterfaceIndexOrZero }
+
+usdAtmAal5IfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the ATM AAL5 interface.  When creating entries in this
+        table, suitable values for this object are determined by reading
+        usdAtmAal5NextIfIndex."
+    ::= { usdAtmAal5IfEntry 1 }
+
+usdAtmAal5IfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdAtmAal5IfRowStatus
+            usdAtmAal5IfLowerIfIndex
+
+        In addition, when creating an entry the following condition must hold:
+            A value for usdAtmAal5IfIndex must have been determined previously,
+            by reading usdAtmAal5NextIfIndex.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created or
+        destroyed as a result of creating/destroying an entry in this table."
+    ::= { usdAtmAal5IfEntry 2 }
+
+usdAtmAal5IfLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an ATM interface over which this ATM AAL5 interface is
+        to be layered.  A value of zero indicates no layering.  An
+        implementation may choose to require that a nonzero value be configured
+        at entry creation."
+    ::= { usdAtmAal5IfEntry 3 }
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- ATM SUBINTERFACE LAYER
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- IfIndex selection for creating new ATM Subinterfaces
+--
+usdAtmSubIfNextIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in usdAtmSubIfTable.
+
+        A GET of this object returns the next available ifIndex value to be used
+        to create an entry in the associated interface table; or zero, if no
+        valid ifIndex value is available.  This object also returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdAtmSubIfLayer 1 }
+
+--
+-- The ATM Subinterface Table
+--
+usdAtmSubIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmSubIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for ATM Subinterfaces present in the
+        system."
+    ::= { usdAtmSubIfLayer 2 }
+
+usdAtmSubIfEntry OBJECT-TYPE
+    SYNTAX      UsdAtmSubIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an ATM Subinterface.
+        Creating/deleting entries in this table causes corresponding entries for
+        be created/deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdAtmSubIfIndex }
+    ::= { usdAtmSubIfTable 1 }
+
+UsdAtmSubIfEntry ::= SEQUENCE {
+    usdAtmSubIfIndex            InterfaceIndex,
+    usdAtmSubIfRowStatus        RowStatus,
+    usdAtmSubIfDistinguisher    Integer32,
+    usdAtmSubIfLowerIfIndex     InterfaceIndexOrZero,
+    usdAtmSubIfNbma             TruthValue,
+    usdAtmSubIfAddress          AtmAddr }
+
+usdAtmSubIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the ATM Subinterface.  When creating entries in this
+        table, suitable values for this object are determined by reading
+        usdAtmSubNextIfIndex."
+    ::= { usdAtmSubIfEntry 1 }
+
+usdAtmSubIfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdAtmSubIfRowStatus
+            usdAtmSubIfLowerIndex
+
+        In addition, when creating an entry the following condition must hold:
+            A value for usdAtmSubIfIndex must have been determined previously,
+            by reading usdAtmSubIfNextIfIndex.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created or
+        destroyed as a result of creating/destroying an entry in this table."
+    ::= { usdAtmSubIfEntry 2 }
+
+usdAtmSubIfDistinguisher OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An integer identifier for the subinterface, used in conjunction with
+        the command-line interface.  It is provided here for cross-reference
+        purposes only.
+
+        The value must be unique among subinterfaces configured on the same
+        underlying ATM adaptation layer.  The upper bound for the value is
+        further constrained to be identical with the maximum number of
+        subinterfaces supported by the lower interface.
+
+        If this object is not configured, a value will be allocated internally
+        and can be queried after table entry creation has succeeded."
+    ::= { usdAtmSubIfEntry 3 }
+
+usdAtmSubIfLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an ATM AAL5 interface over which this ATM subinterface
+        is to be layered.  A value of zero indicates no layering.  An
+        implementation may choose to require that a nonzero value be configured
+        at entry creation."
+    ::= { usdAtmSubIfEntry 4 }
+
+usdAtmSubIfNbma OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The NBMA administrative setting.  Setting this value of this object to
+        true(1) will enable multipoint access on this interface.  Setting the
+        value to false(2), will enable point to point access on this interface."
+    DEFVAL    { false }
+    ::= { usdAtmSubIfEntry 5 }
+
+usdAtmSubIfAddress OBJECT-TYPE
+    SYNTAX      AtmAddr (SIZE(0|7|20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the local ATM NSAP address of the circuit.  A GET operation
+        returns a full 20-octet NSAP.  A SET operation only requires 7 octets,
+        since the prefix can be implied."
+    DEFVAL    { ''H }
+    ::= { usdAtmSubIfEntry 6 }
+
+
+--
+-- The ATM Subinterface VCC Table
+--
+usdAtmSubIfVccTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmSubIfVccEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for ATM VCCs configured on ATM
+        subinterfaces present in the system.
+
+        An implementation may constrain the number of VCCs permitted to be
+        configured per ATM Subinterface; in particular, an implementation may
+        restrict each ATM Subinterface to have a single VCC.
+
+        Attributes in this entry can only be configured at entry creation, and
+        remain fixed for the lifetime of the entry."
+    ::= { usdAtmSubIfLayer 3 }
+
+usdAtmSubIfVccEntry OBJECT-TYPE
+    SYNTAX      UsdAtmSubIfVccEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an ATM subinterface VCC."
+    INDEX     { usdAtmSubIfIndex,
+                usdAtmSubIfVccVpi,
+                usdAtmSubIfVccVci }
+    ::= { usdAtmSubIfVccTable 1 }
+
+UsdAtmSubIfVccEntry ::= SEQUENCE {
+    usdAtmSubIfVccVpi               AtmVpIdentifier,
+    usdAtmSubIfVccVci               AtmVcIdentifier,
+    usdAtmSubIfVccRowStatus         RowStatus,
+    usdAtmSubIfVccVcd               Integer32,
+    usdAtmSubIfVccType              INTEGER,
+    usdAtmSubIfVccServiceCategory   INTEGER,
+    usdAtmSubIfVccPcr               Integer32,
+    usdAtmSubIfVccScr               Integer32,
+    usdAtmSubIfVccMbs               Integer32,
+    usdAtmSubIfInverseArp           TruthValue,
+    usdAtmSubIfInverseArpRefresh    Integer32 }
+
+usdAtmSubIfVccVpi OBJECT-TYPE
+    SYNTAX      AtmVpIdentifier
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VPI of the ATM VCC used by this subinterface."
+    ::= { usdAtmSubIfVccEntry 1 }
+
+usdAtmSubIfVccVci OBJECT-TYPE
+    SYNTAX      AtmVcIdentifier
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VCI of the ATM VCC used by this subinterface."
+    ::= { usdAtmSubIfVccEntry 2 }
+
+usdAtmSubIfVccRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdAtmSubIfVccRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+            The ATM Subinterface identified by usdAtmSubIfIndex must exist.
+
+            A positive value configured for usdAtmSubIfVccVcd must not already be
+            assigned to an existing VCC.
+
+            For each value of usdAtmSubIfVccServiceCategory, additional dependent
+            objects in the entry require configuration as identified here:
+
+            usdAtmSubIfVccServiceCategory    Requires configuration of:
+            ------------------------------------------------------------
+            ubr                             <none>
+
+            ubrPcr                          usdAtmSubIfVccPcr
+
+            nrtVbr                          usdAtmSubIfVccPcr
+                                            usdAtmSubIfVccScr
+                                            usdAtmSubIfVccMbs
+
+            cbr                             usdAtmSubIfVccPcr
+
+            rtVbr                           usdAtmSubIfVccPcr
+                                            usdAtmSubIfVccScr
+                                            usdAtmSubIfVccMbs
+            ------------------------------------------------------------
+
+        Attributes in this entry can only be configured at entry creation,
+        and remain fixed for the lifetime of the entry."
+    ::= { usdAtmSubIfVccEntry 3 }
+
+usdAtmSubIfVccVcd OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An integer identifier for the circuit, used in conjunction with the
+        command-line interface.  It is provided here for cross-reference
+        purposes only.
+
+        The value must be unique among VCCs configured on the same underlying
+        ATM interface.
+
+        If this object is not configured, or is configured with a value of zero,
+        a value will be allocated internally and can be queried after table
+        entry creation has succeeded."
+    ::= { usdAtmSubIfVccEntry 4 }
+
+usdAtmSubIfVccType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    rfc1483VcMux(0),
+                    rfc1483Llc(1),
+                    autoconfig(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the encapsulation used by the circuit to carry IP datagrams.
+        Encapsulations are as specified in RFC1483 Multiprotocol Interconnect
+        over ATM.  'autoconfig' will recognize both VcMux and LLC formats."
+    DEFVAL    { rfc1483VcMux }
+    ::= { usdAtmSubIfVccEntry 5 }
+
+usdAtmSubIfVccServiceCategory OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ubr(0),
+                    ubrPcr(1),
+                    nrtVbr(2),
+                    cbr(3),
+                    rtVbr(4) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Service category for this circuit:
+            ubr         Unspecified Bit Rate (best effort).
+            ubrPcr      Unspecified Bit Rate with Peak Cell Rate limit.
+            nrtVbr      Non-RealTime Variable Bit Rate.
+            cbr         Constant Bit Rate.
+            rtVbr       Realtime Variable Bit Rate."
+    DEFVAL    { ubr }
+    ::= { usdAtmSubIfVccEntry 6 }
+
+usdAtmSubIfVccPcr OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Peak Cell Rate, in kilobits per second (kbps), of this circuit.
+
+        This parameter is only required when usdAtmSubIfVccServiceCategory is
+        configured to have one of the following values:
+            ubrPcr
+            nrtVbr
+            cbr
+            rtVbr "
+    DEFVAL    { 0 }
+    ::= { usdAtmSubIfVccEntry 7 }
+
+usdAtmSubIfVccScr OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Sustained Cell Rate, in kilobits per second (kbps), of this circuit.
+
+        This parameter is only required when usdAtmSubIfVccServiceCategory is
+        configured to have the following value:
+            nrtVbr
+            rtVbr "
+    DEFVAL    { 0 }
+    ::= { usdAtmSubIfVccEntry 8 }
+
+usdAtmSubIfVccMbs OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "cells"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Maximum Burst Size, in cells, of this circuit.
+
+        This parameter is only required when usdAtmSubIfVccServiceCategory is
+        configured to have the following value:
+            nrtVbr
+            rtVbr "
+    DEFVAL    { 0 }
+    ::= { usdAtmSubIfVccEntry 9 }
+
+usdAtmSubIfInverseArp OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enables the inverse ARP protocol on this VCC; true(1) enables the
+        protocol, false(2) disables it."
+    ::= { usdAtmSubIfVccEntry 10 }
+
+usdAtmSubIfInverseArpRefresh OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "minutes"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+       "The refresh rate in minutes between inverse ARP protocol messages."
+    ::= { usdAtmSubIfVccEntry 11 }
+
+
+--
+-- The ATM OAM Table
+--
+usdAtmCircuitOamTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmCircuitOamEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains circuit OAM data for a PVC."
+    ::= { usdAtmSubIfLayer 4 }
+
+usdAtmCircuitOamEntry OBJECT-TYPE
+    SYNTAX      UsdAtmCircuitOamEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry provides OAM data on an ATM PVC."
+    INDEX     { usdAtmCircuitOamIfIndex,
+                usdAtmCircuitOamVpi,
+                usdAtmCircuitOamVci }
+    ::= { usdAtmCircuitOamTable 1 }
+
+UsdAtmCircuitOamEntry ::= SEQUENCE {
+    usdAtmCircuitOamIfIndex                     InterfaceIndex,
+    usdAtmCircuitOamVpi                         AtmVpIdentifier,
+    usdAtmCircuitOamVci                         AtmVcIdentifier,
+    usdAtmCircuitOamAdminStatus                 INTEGER,
+    usdAtmCircuitOamLoopbackOperStatus          INTEGER,
+    usdAtmCircuitVcOamOperStatus                INTEGER,
+    usdAtmCircuitOamLoopbackFrequency           Integer32,
+    usdAtmCircuitInOamF5Cells                   Counter32,
+    usdAtmCircuitInOamCellsDropped              Counter32,
+    usdAtmCircuitOutOamF5Cells                  Counter32,
+    usdAtmCircuitInOamF5EndToEndLoopbackCells   Counter32,
+    usdAtmCircuitInOamF5SegmentLoopbackCells    Counter32,
+    usdAtmCircuitInOamF5AisCells                Counter32,
+    usdAtmCircuitInOamF5RdiCells                Counter32,
+    usdAtmCircuitOutOamF5EndToEndLoopbackCells  Counter32,
+    usdAtmCircuitOutOamF5SegmentLoopbackCells   Counter32,
+    usdAtmCircuitOutOamF5RdiCells               Counter32 }
+
+usdAtmCircuitOamIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the ATM subinterface."
+    ::= { usdAtmCircuitOamEntry 1 }
+
+usdAtmCircuitOamVpi OBJECT-TYPE
+    SYNTAX      AtmVpIdentifier
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VPI of the ATM VCC used by this ATM interface and PVC."
+    ::= { usdAtmCircuitOamEntry 2 }
+
+usdAtmCircuitOamVci OBJECT-TYPE
+    SYNTAX      AtmVcIdentifier
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VCI of the ATM VCC used by this ATM interface and PVC."
+    ::= { usdAtmCircuitOamEntry 3 }
+
+usdAtmCircuitOamAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    oamAdminStateDisabled(1),
+                    oamAdminStateEnabled(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The administrative state of OAM for the interface identified by this
+        entry."
+    DEFVAL    { oamAdminStateDisabled }
+    ::= { usdAtmCircuitOamEntry 4 }
+
+usdAtmCircuitOamLoopbackOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    oamOperStatusNotSupported(0),
+                    oamOperStatusDisabled(1),
+                    oamOperStatusSent(2),
+                    oamOperStatusReceived(3),
+                    oamOperStatusFailed(4) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The operational status of OAM for the interface identified by this
+        entry.
+            oamOperStatusNotSupported(0) - OAM not supported on this interface
+            oamOperStatusDisabled(1)     - VC integrity disabled
+            oamOperStatusSent(2)         - Loopback sent, awaiting response
+            oamOperStatusReceived(3)     - Loopback response received, awaiting
+                                           frequency
+            oamOperStatusFailed(4)       - Loopback response not received, or
+                                           invalid response received"
+    ::= { usdAtmCircuitOamEntry 5 }
+
+usdAtmCircuitVcOamOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                   oamVcOperStateAisState(0),
+                   oamVcOperStateRdiState(1),
+                   oamVcOperStateDownRetry(2),
+                   oamVcOperStateUpRetry(3),
+                   oamVcOperStateUp(4),
+                   oamVcOperStateDown(5),
+                   oamVcOperStateNotManaged(6)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The OAM VC operational status of this entry.
+            oamVcOperStateAisState(0)  - AIS cell received or underlying
+                                         physical layer reporting transmission
+                                         path AIS
+            oamVcOperStateRdiState(1)  - RDI cell received
+            oamVcOperStateDownRetry(2) - OAM loopback failed, using retry
+                                         frequency to verify that the VC is
+                                         really down
+            oamVcOperStateUpRetry(3)   - OAM loopback successful, using retry
+                                         frequency to verify that the VC is
+                                         really up
+            oamVcOperStateUp(4)        - OAM loopback successful after up retry
+                                         verification
+            oamVcOperStateDown(5)      - OAM loopback failed after down retry
+                                         verification
+            oamVcOperStateNotManaged(6)- No verification via loopback cells
+                                         being performed."
+    ::= { usdAtmCircuitOamEntry 6 }
+
+usdAtmCircuitOamLoopbackFrequency OBJECT-TYPE
+    SYNTAX      Integer32 (0..600)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The OAM loopback frequency for the interface identified by this entry."
+    DEFVAL    { 10 }
+    ::= { usdAtmCircuitOamEntry 7 }
+
+usdAtmCircuitInOamF5Cells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received OAM F5 cells."
+    ::= { usdAtmCircuitOamEntry 8 }
+
+usdAtmCircuitInOamCellsDropped OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received OAM cells that were dropped."
+    ::= { usdAtmCircuitOamEntry 9 }
+
+usdAtmCircuitOutOamF5Cells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Transmitted OAM F5 cells."
+    ::= { usdAtmCircuitOamEntry 10 }
+
+usdAtmCircuitInOamF5EndToEndLoopbackCells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received OAM F5 end-to-end loopback cells."
+    ::= { usdAtmCircuitOamEntry 11 }
+
+usdAtmCircuitInOamF5SegmentLoopbackCells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received OAM F5 segment loopback cells."
+    ::= { usdAtmCircuitOamEntry 12 }
+
+usdAtmCircuitInOamF5AisCells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received OAM F5 AIS cells."
+    ::= { usdAtmCircuitOamEntry 13 }
+
+usdAtmCircuitInOamF5RdiCells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Received OAM F5 RDI cells."
+    ::= { usdAtmCircuitOamEntry 14 }
+
+usdAtmCircuitOutOamF5EndToEndLoopbackCells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Transmitted OAM F5 end-to-end loopback cells."
+    ::= { usdAtmCircuitOamEntry 15 }
+
+usdAtmCircuitOutOamF5SegmentLoopbackCells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Transmitted OAM F5 segment loopback cells."
+    ::= { usdAtmCircuitOamEntry 16 }
+
+usdAtmCircuitOutOamF5RdiCells OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "cells"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Transmitted OAM F5 RDI cells."
+    ::= { usdAtmCircuitOamEntry 17 }
+
+
+--
+-- The ATM Subinterface VCC Traffic Shaping Table
+--
+usdAtmSubIfVccTrafficShapingTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmSubIfVccTrafficShapingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for traffic shaping of ATM VCCs configured
+        on ATM subinterfaces present in the system.  This table augments the
+        usdAtmSubIfVccTable only for VCCs that support traffic shapping.
+
+        Attributes in this entry can only be configured at entry creation, and
+        remain fixed for the lifetime of the entry."
+    ::= { usdAtmSubIfLayer 5 }
+
+usdAtmSubIfVccTrafficShapingEntry OBJECT-TYPE
+    SYNTAX      UsdAtmSubIfVccTrafficShapingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the traffic shping characteristics of an ATM
+        subinterface VCC."
+    AUGMENTS  { usdAtmSubIfVccEntry }
+    ::= { usdAtmSubIfVccTrafficShapingTable 1 }
+
+UsdAtmSubIfVccTrafficShapingEntry ::= SEQUENCE {
+    usdAtmSubIfVccTrafficShapingCdvt            Unsigned32,
+    usdAtmSubIfVccTrafficShapingClp0            TruthValue,
+    usdAtmSubIfVccTrafficShapingTagging         TruthValue,
+    usdAtmSubIfVccTrafficShapingPoliceObserve   TruthValue,
+    usdAtmSubIfVccTrafficShapingPacketShaping   TruthValue }
+
+usdAtmSubIfVccTrafficShapingCdvt OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "tenths of a microsecond"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The network cell delay variation tolerance (CDVT) in tenths of a
+        microsecond."
+    ::= { usdAtmSubIfVccTrafficShapingEntry 1 }
+
+usdAtmSubIfVccTrafficShapingClp0 OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies whether or not only CLP0 cells are to be policed according to
+        the traffic contract.  CLP1 cells are forwarded on a best-effort basis
+        CLP-significant model for (VBR.2, VBR.3 conformance).  Applicable only
+        for VBR circuits."
+    ::= { usdAtmSubIfVccTrafficShapingEntry 2 }
+
+usdAtmSubIfVccTrafficShapingTagging OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies whether or not CLP0 cells should be tagged for SCR policing
+        (VBR.3 conformance).  Applicable only for VBR circuits."
+    ::= { usdAtmSubIfVccTrafficShapingEntry 3 }
+
+usdAtmSubIfVccTrafficShapingPoliceObserve OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies whether of not no policing action is to be taken (note the
+        double negative; if true(1) then no policing action will be taken; if
+        false(2) then policing action will be taken).  Regardless of the state
+        of this object, all counters will be incremented."
+    ::= { usdAtmSubIfVccTrafficShapingEntry 4 }
+
+usdAtmSubIfVccTrafficShapingPacketShaping OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies whether of not to shape output traffic on a packet boundary."
+    ::= { usdAtmSubIfVccTrafficShapingEntry 5 }
+
+
+--
+-- The usdAtmSubIfSvcConfigTable for ATM switched
+-- virtual connections (SVCs).
+--
+usdAtmSubIfSvcConfigTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmSubIfSvcConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for extending the usdAtmSubIfTable to
+        configure switched virtual connection (SVC)on the subinterfaces."
+    ::= { usdAtmSubIfLayer 6 }
+
+usdAtmSubIfSvcConfigEntry OBJECT-TYPE
+    SYNTAX      UsdAtmSubIfSvcConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry provides configuration parameters for an ATM SVC
+        on the subinterface."
+    INDEX     { usdAtmSubIfIndex }
+    ::= { usdAtmSubIfSvcConfigTable 1 }
+
+UsdAtmSubIfSvcConfigEntry ::= SEQUENCE {
+    usdAtmSubIfSvcRowStatus             RowStatus,
+    usdAtmSubIfSvcConfigDestAtmAddress  AtmAddr,
+    usdAtmSubIfSvcConfigCircuitType     INTEGER,
+    usdAtmSubIfSvcConfigServiceCategory INTEGER,
+    usdAtmSubIfSvcConfigPcr             Unsigned32,
+    usdAtmSubIfSvcConfigScr             Unsigned32,
+    usdAtmSubIfSvcConfigMbs             Unsigned32,
+    usdAtmSubIfSvcConfigCdvt            Unsigned32,
+    usdAtmSubIfSvcConfigClp0            TruthValue,
+    usdAtmSubIfSvcConfigTagging         TruthValue,
+    usdAtmSubIfSvcConfigObserve         TruthValue,
+    usdAtmSubIfSvcConfigPacketDiscard   TruthValue
+}
+
+usdAtmSubIfSvcRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy "
+    ::= { usdAtmSubIfSvcConfigEntry 1 }
+
+usdAtmSubIfSvcConfigDestAtmAddress OBJECT-TYPE
+    SYNTAX      AtmAddr (SIZE(20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the destination ATM NSAP address of the circuit."
+    ::= { usdAtmSubIfSvcConfigEntry 2 }
+
+usdAtmSubIfSvcConfigCircuitType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    rfc1483VcMux(0),
+                    rfc1483Llc(1)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the encapsulation used by the circuit to carry IP datagrams.
+        Encapsulations are as specified in RFC1483 Multiprotocol Interconnect
+        over ATM."
+    DEFVAL    { rfc1483VcMux }
+    ::= { usdAtmSubIfSvcConfigEntry 3 }
+
+usdAtmSubIfSvcConfigServiceCategory OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ubr(0),
+                    ubrPcr(1),
+                    nrtVbr(2),
+                    cbr(3),
+                    rtVbr(4)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Service category for this circuit:
+            ubr         Unspecified Bit Rate (best effort).
+            ubrPcr      Unspecified Bit Rate with Peak Cell Rate limit.
+            nrtVbr      Non-RealTime Variable Bit Rate.
+            cbr         Constant Bit Rate.
+            rtVbr       Realtime Variable Bit Rate."
+    DEFVAL    { ubr }
+    ::= { usdAtmSubIfSvcConfigEntry 4 }
+
+usdAtmSubIfSvcConfigPcr OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Peak Cell Rate, in kilo-bits per second (kbps), of this circuit."
+    DEFVAL    { 0 }
+    ::= { usdAtmSubIfSvcConfigEntry 5 }
+
+usdAtmSubIfSvcConfigScr OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Sustained Cell Rate, in kilo-bits per second (kbps), of this circuit."
+    DEFVAL    { 0 }
+    ::= { usdAtmSubIfSvcConfigEntry 6 }
+
+usdAtmSubIfSvcConfigMbs OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "cells"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Maximum Burst Size, in cells, of this circuit."
+    DEFVAL    { 0 }
+    ::= { usdAtmSubIfSvcConfigEntry 7 }
+
+usdAtmSubIfSvcConfigCdvt OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "100us"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specify the network Cell Delay Variation Tolerance."
+    ::= { usdAtmSubIfSvcConfigEntry 8 }
+
+usdAtmSubIfSvcConfigClp0 OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specify that only CLP0 cells are to be policed according to the traffic
+        contract.  CLP1 cells are forwarded on a best-effort basis
+        CLP-significant model for (VBR.2, VBR.3 conformance)."
+    ::= { usdAtmSubIfSvcConfigEntry 9 }
+
+usdAtmSubIfSvcConfigTagging OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specify that CLP0 cells should be tagged for SCR policing (VBR.3
+        conformance)."
+    ::= { usdAtmSubIfSvcConfigEntry 10 }
+
+usdAtmSubIfSvcConfigObserve OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specify that no policing action is to be taken; only counters are
+        incremented."
+    ::= { usdAtmSubIfSvcConfigEntry 11 }
+
+usdAtmSubIfSvcConfigPacketDiscard OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable early packet Discard  for this circuit."
+    ::= { usdAtmSubIfSvcConfigEntry 12 }
+
+--
+-- The ATM NBMA table
+--
+usdAtmNbmaMapTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmNbmaMapEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for ATM NBMA maps."
+    ::= { usdAtmNbma 1 }
+
+usdAtmNbmaMapEntry OBJECT-TYPE
+    SYNTAX      UsdAtmNbmaMapEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an ATM NBMA map."
+    INDEX     { usdAtmNbmaMapName,
+                usdAtmNbmaMapVcd }
+    ::= { usdAtmNbmaMapTable 1 }
+
+UsdAtmNbmaMapEntry ::= SEQUENCE {
+    usdAtmNbmaMapName       UsdAtmNbmaMapName,
+    usdAtmNbmaMapVcd        Integer32,
+    usdAtmNbmaMapIpAddress  IpAddress,
+    usdAtmNbmaMapVpi        AtmVpIdentifier,
+    usdAtmNbmaMapVci        AtmVcIdentifier,
+    usdAtmNbmaMapIfIndex    InterfaceIndexOrZero,
+    usdAtmNbmaMapBroadcast  TruthValue,
+    usdAtmNbmaMapRowStatus  RowStatus }
+
+usdAtmNbmaMapName OBJECT-TYPE
+    SYNTAX      UsdAtmNbmaMapName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The NBMA map name."
+    ::= { usdAtmNbmaMapEntry 1 }
+
+usdAtmNbmaMapVcd OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An integer identifier for the ATM circuit, used in conjunction with the
+        command-line interface.
+
+        The value must be unique among VCs configured on the same ATM
+        interface."
+    ::= { usdAtmNbmaMapEntry 2 }
+
+usdAtmNbmaMapIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address associated with this entry."
+    ::= { usdAtmNbmaMapEntry 3 }
+
+usdAtmNbmaMapVpi OBJECT-TYPE
+    SYNTAX      AtmVpIdentifier
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The VPI identifier of the ATM circuit."
+    ::= { usdAtmNbmaMapEntry 4 }
+
+usdAtmNbmaMapVci OBJECT-TYPE
+    SYNTAX      AtmVcIdentifier
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The VCI identifier of the ATM circuit."
+    ::= { usdAtmNbmaMapEntry 5 }
+
+usdAtmNbmaMapIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the ATM major interface associated with this entry.
+         The value of this object will be zero when the map is not applied
+         to an interface. "
+    ::= { usdAtmNbmaMapEntry 6 }
+
+usdAtmNbmaMapBroadcast OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The broadcast enable/disable setting for this entry.  The value true(1)
+        enable broadcast support; disable(2) disabled broadcast support for this
+        entry."
+    ::= { usdAtmNbmaMapEntry 7 }
+
+usdAtmNbmaMapRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        Additional notes to aid the network manager:
+         - NBMA maps are not supported on dynamic interface.
+         - NBMA maps can only be applied to a single major ATM interface at a
+           time.
+         - NBMA maps cannot be deleted unless the map is removed from the ATM
+           interface (usdAtmNbmaMapIfIndex = 0).
+         - The values of usdAtmNbmaMapVpi, usdAtmNbmaMapVci and
+           usdAtmNbmaMapIfIndex are zero until the map is applied to a major ATM
+           interface.
+         - To create an entry in this table, the following objects must be
+           present in the set PDU:
+               usdAtmNbmaMapIpAddress
+               usdAtmNbmaMapBroadcast
+               usdAtmNbmaMapRowStatus
+         - Once created, only the following objects can be modified:
+               usdAtmNbmaMapBroadcast "
+    ::= { usdAtmNbmaMapEntry 8 }
+
+usdAtmNbmaMapListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmNbmaMapListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for ATM NBMA map lists."
+    ::= { usdAtmNbma 2 }
+
+usdAtmNbmaMapListEntry OBJECT-TYPE
+    SYNTAX      UsdAtmNbmaMapListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an ATM NBMA map."
+    INDEX     { IMPLIED usdAtmNbmaMapListName }
+    ::= { usdAtmNbmaMapListTable 1 }
+
+UsdAtmNbmaMapListEntry ::= SEQUENCE {
+    usdAtmNbmaMapListName       UsdAtmNbmaMapName,
+    usdAtmNbmaMapListRowStatus  RowStatus }
+
+usdAtmNbmaMapListName OBJECT-TYPE
+    SYNTAX      UsdAtmNbmaMapName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The NBMA Map List name."
+    ::= { usdAtmNbmaMapListEntry 1 }
+
+usdAtmNbmaMapListRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy "
+    ::= { usdAtmNbmaMapListEntry 2 }
+
+
+--
+-- The ATM ping tests.
+--
+
+--
+-- ATM ping test types.
+--
+usdAtmPingTestTypes  OBJECT IDENTIFIER
+    ::= { usdAtmPing 1 }
+
+usdAtmPingTestOamSeg  OBJECT-IDENTITY
+    STATUS    current
+    DESCRIPTION
+        "This identifies an OAM Ping (multiple loopbacks) Test on a VPL, VPC,
+        VCL, or VCC termination point, using segment OAM cells.
+
+        The test type must have appended to it a code that uniquely identifies
+        an intermediate point responsible for looping back each cell.  If this
+        is absent, the loopbacks are performed at the end of the segment or
+        connection.
+
+        E.g., the OID { usdAtmPingTestOamSeg 5 } identifies that the loopbacks
+        should be performed at the intermediate point labeled 5."
+    ::= { usdAtmPingTestTypes 1 }
+
+usdAtmPingTestOamE2E  OBJECT-IDENTITY
+    STATUS    current
+    DESCRIPTION
+        "This identifies an OAM Ping (multiple loopbacks) Test on a VPL, VPC,
+        VCL, or VCC termination point, using end-to-end OAM cells."
+    ::= { usdAtmPingTestTypes 2 }
+
+
+--
+-- The usdAtmVpPingTable extends the ATM-FORUM-SNMP-M4-MIB.atmM4VpTestTable.
+--
+usdAtmVpPingTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmVpPingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for extending the ATM-FORUM-SNMP-M4-MIB
+        atmM4VpTestTable to do ping (multiple loopback) type testing."
+    ::= { usdAtmPing 2 }
+
+usdAtmVpPingEntry OBJECT-TYPE
+    SYNTAX      UsdAtmVpPingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics, status and results of the
+        most recent ATM ping test."
+    INDEX     { ifIndex,
+                atmVplVpi,
+                atmfM4VpTestObject }
+    ::= { usdAtmVpPingTable 1 }
+
+UsdAtmVpPingEntry ::= SEQUENCE {
+    usdAtmVpPingProbeCount          Unsigned32,
+    usdAtmVpPingTimeOut             Unsigned32,
+    usdAtmVpPingCtlTrapGeneration   BITS,
+    usdAtmVpPingSentProbes          Unsigned32,
+    usdAtmVpPingProbeResponses      Unsigned32,
+    usdAtmVpPingStartTime           TimeStamp,
+    usdAtmVpPingMinRtt              Unsigned32,
+    usdAtmVpPingMaxRtt              Unsigned32,
+    usdAtmVpPingAverageRtt          Unsigned32 }
+
+usdAtmVpPingProbeCount OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..30)
+    UNITS       "probes"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of ping probes (OAM cells) to be sent to complete the test."
+    DEFVAL    { 5 }
+    ::= { usdAtmVpPingEntry 1 }
+
+usdAtmVpPingTimeOut OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..5)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies the time-out value, in seconds, for a remote ping operation."
+    DEFVAL    { 5 }
+    ::= { usdAtmVpPingEntry 2 }
+
+usdAtmVpPingCtlTrapGeneration OBJECT-TYPE
+    SYNTAX      BITS {
+                    testCompletion(0) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The value of this object determines when and if to generate a
+        notification for this entry:
+
+        testCompletion(0) - Generate a usdPingTestCompleted notification.
+
+        The value of this object defaults to zero, indicating that no
+        notification has been selected."
+    DEFVAL    { { } }
+    ::= { usdAtmVpPingEntry 3 }
+
+usdAtmVpPingSentProbes OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "probes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of ping probes (OAM cells) that have been sent thus far for
+        this test.  The value of this object MUST be set to zero when the
+        atmfM4VpTestStatus object transitions from notInUse(0) to inUse(1)."
+    DEFVAL    { 0 }
+    ::= { usdAtmVpPingEntry 4 }
+
+usdAtmVpPingProbeResponses OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "probes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of ping responses that have been received thus far for this
+        test.  The value of this object MUST be set to zero when the
+        atmfM4VpTestStatus object transitions from notInUse(0) to inUse(1)."
+    DEFVAL    { 0 }
+    ::= { usdAtmVpPingEntry 5 }
+
+usdAtmVpPingStartTime OBJECT-TYPE
+    SYNTAX      TimeStamp
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The time (sysUpTime) when the test started."
+    DEFVAL    { 0 }
+    ::= { usdAtmVpPingEntry 6 }
+
+usdAtmVpPingMinRtt OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The shortest round-trip-time (RTT) for the pings that have received
+        responses.  The value of this object MUST be set to zero when the
+        atmfM4VpTestStatus object transitions from notInUse(0) to inUse(1).  A
+        value of zero for this object implies that no ping responses have been
+        received for the current test."
+    ::= { usdAtmVpPingEntry 7 }
+
+usdAtmVpPingMaxRtt OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The longest round-trip-time (RTT) for the pings that have received
+        responses.  The value of this object MUST be set to zero when the
+        atmfM4VpTestStatus object transitions from notInUse(0) to inUse(1).  A
+        value of zero for this object implies that no ping responses have been
+        received for the current test."
+    ::= { usdAtmVpPingEntry 8 }
+
+usdAtmVpPingAverageRtt OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The average round-trip-time (RTT) for all the pings that have received
+        responses.  The value of this object MUST be set to zero when the
+        atmfM4VpTestStatus object transitions from notInUse(0) to inUse(1).  A
+        value of zero for this object implies that no ping responses have been
+        received for the current test."
+    ::= { usdAtmVpPingEntry 9 }
+
+
+--
+-- The usdAtmVcPingTable extends the ATM-FORUM-SNMP-M4-MIB.atmM4VcTestTable.
+--
+usdAtmVcPingTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAtmVcPingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for extending the ATM-FORUM-SNMP-M4-MIB
+        atmM4VcTestTable to do ping (multiple loopback) type testing."
+    ::= { usdAtmPing 3 }
+
+usdAtmVcPingEntry OBJECT-TYPE
+    SYNTAX      UsdAtmVcPingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics, status and results of the
+        most recent ATM ping test."
+    INDEX     { ifIndex,
+                atmVclVpi,
+                atmVclVci,
+                atmfM4VcTestObject }
+    ::= { usdAtmVcPingTable 1 }
+
+UsdAtmVcPingEntry ::= SEQUENCE {
+    usdAtmVcPingProbeCount          Unsigned32,
+    usdAtmVcPingTimeOut             Unsigned32,
+    usdAtmVcPingCtlTrapGeneration   BITS,
+    usdAtmVcPingSentProbes          Unsigned32,
+    usdAtmVcPingProbeResponses      Unsigned32,
+    usdAtmVcPingStartTime           TimeStamp,
+    usdAtmVcPingMinRtt              Unsigned32,
+    usdAtmVcPingMaxRtt              Unsigned32,
+    usdAtmVcPingAverageRtt          Unsigned32 }
+
+usdAtmVcPingProbeCount OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..30)
+    UNITS       "probes"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of ping probes (OAM cells) to be sent to complete the test."
+    DEFVAL    { 5 }
+    ::= { usdAtmVcPingEntry 1 }
+
+usdAtmVcPingTimeOut OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..5)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies the time-out value, in seconds, for a remote ping operation."
+    DEFVAL    { 5 }
+    ::= { usdAtmVcPingEntry 2 }
+
+usdAtmVcPingCtlTrapGeneration OBJECT-TYPE
+    SYNTAX      BITS {
+                    testCompletion(0) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The value of this object determines when and if to generate a
+        notification for this entry:
+            testCompletion(0) - Generate a usdPingTestCompleted notification.
+
+        The value of this object defaults to zero, indicating that no
+        notification has been selected."
+    DEFVAL    { { } }
+    ::= { usdAtmVcPingEntry 3 }
+
+usdAtmVcPingSentProbes OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "probes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of ping probes (OAM cells) that have been sent thus far for
+        this test.  The value of this object MUST be set to zero when the
+        atmfM4VcTestStatus object transitions from notInUse(0) to inUse(1)."
+    DEFVAL    { 0 }
+    ::= { usdAtmVcPingEntry 4 }
+
+usdAtmVcPingProbeResponses OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "probes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of ping responses that have been received thus far for this
+        test.  The value of this object MUST be set to zero when the
+        atmfM4VcTestStatus object transitions from notInUse(0) to inUse(1)."
+    DEFVAL    { 0 }
+    ::= { usdAtmVcPingEntry 5 }
+
+usdAtmVcPingStartTime OBJECT-TYPE
+    SYNTAX      TimeStamp
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The time (sysUpTime) when the test started."
+    DEFVAL    { 0 }
+    ::= { usdAtmVcPingEntry 6 }
+
+usdAtmVcPingMinRtt OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The shortest round-trip-time (RTT) for the pings that have received
+        responses.  The value of this object MUST be set to zero when the
+        atmfM4VcTestStatus object transitions from notInUse(0) to inUse(1).  A
+        value of zero for this object implies that no ping responses have been
+        received for the current test."
+    ::= { usdAtmVcPingEntry 7 }
+
+usdAtmVcPingMaxRtt OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The longest round-trip-time (RTT) for the pings that have received
+        responses.  The value of this object MUST be set to zero when the
+        atmfM4VcTestStatus object transitions from notInUse(0) to inUse(1).  A
+        value of zero for this object implies that no ping responses have been
+        received for the current test."
+    ::= { usdAtmVcPingEntry 8 }
+
+usdAtmVcPingAverageRtt OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The average round-trip-time (RTT) for all the pings that have received
+        responses.  The value of this object MUST be set to zero when the
+        atmfM4VcTestStatus object transitions from notInUse(0) to inUse(1).  A
+        value of zero for this object implies that no ping responses have been
+        received for the current test."
+    ::= { usdAtmVcPingEntry 9 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No global notification controls are defined.  Placeholder follows.
+-- usdAtmTrapControl      OBJECT IDENTIFIER ::= { usdAtmMIB 2 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- The following two OBJECT IDENTIFIERS are used to define SNMPv2
+-- Notifications that are easily translated into SNMPv1 Traps.
+
+usdAtmTraps            OBJECT IDENTIFIER ::= { usdAtmMIB 3 }
+usdAtmTrapPrefix       OBJECT IDENTIFIER ::= { usdAtmTraps 0 }
+
+usdAtmVpPingTestCompleted NOTIFICATION-TYPE
+    OBJECTS {
+        atmfM4VpTestId,
+        atmfM4VpTestType,
+        atmfM4VpTestResult,
+        usdAtmVpPingProbeCount,
+        usdAtmVpPingSentProbes,
+        usdAtmVpPingProbeResponses,
+        usdAtmVpPingMinRtt,
+        usdAtmVpPingMaxRtt,
+        usdAtmVpPingAverageRtt }
+    STATUS      current
+    DESCRIPTION
+        "Generated at the completion of a AtmfM4VpTest when the corresponding
+        usdAtmVpPingCtlTrapGeneration object has the testCompletion(0) bit set."
+    ::= { usdAtmTrapPrefix 1 }
+
+usdAtmVcPingTestCompleted NOTIFICATION-TYPE
+    OBJECTS {
+        atmfM4VcTestId,
+        atmfM4VcTestType,
+        atmfM4VcTestResult,
+        usdAtmVcPingProbeCount,
+        usdAtmVcPingSentProbes,
+        usdAtmVcPingProbeResponses,
+        usdAtmVcPingMinRtt,
+        usdAtmVcPingMaxRtt,
+        usdAtmVcPingAverageRtt }
+    STATUS      current
+    DESCRIPTION
+        "Generated at the completion of a AtmfM4VcTest when the corresponding
+        usdAtmVcPingCtlTrapGeneration object has the testCompletion(0) bit set."
+    ::= { usdAtmTrapPrefix 2 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAtmConformance OBJECT IDENTIFIER ::= { usdAtmMIB 4 }
+usdAtmCompliances OBJECT IDENTIFIER ::= { usdAtmConformance 1 }
+usdAtmGroups      OBJECT IDENTIFIER ::= { usdAtmConformance 2 }
+
+--
+-- compliance statements
+--
+usdAtmCompliance MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere ATM MIB.  This statement became obsolete when support was
+        added for NBMA map lists and ATM ping."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAtmGroup,
+            usdAtmAal5Group,
+            usdAtmSubIfGroup }
+        GROUP       usdAtmVpTunnelGroup
+            DESCRIPTION
+                "The usdAtmVpTunnelGroup is mandatory only for entities that
+                support a VP Tunnel functionality."
+    ::= { usdAtmCompliances 1 }                                        -- RX 3.0
+
+usdAtmCompliance2 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere ATM MIB.  This statement became obsolete when support was
+        added for traffic shapping on VCC subinterfaces."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAtmGroup2,
+            usdAtmAal5Group,
+            usdAtmSubIfGroup2,
+            usdAtmVpPingControlGroup,
+            usdAtmVcPingControlGroup,
+            usdAtmPingTrapGroup }
+        GROUP       usdAtmVpTunnelGroup
+            DESCRIPTION
+                "The usdAtmVpTunnelGroup is mandatory only for entities that
+                support a VP Tunnel functionality."
+        GROUP       usdAtmNbmaMapGroup
+            DESCRIPTION
+                "The usdAtmNbmaMapGroup is mandatory only for entities that
+                support NBMA interfaces over ATM."
+    ::= { usdAtmCompliances 2 }                                        -- RX 3.2
+
+usdAtmCompliance3 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere ATM MIB.  This statement became obsolete when support was
+        added for connection admission control (CAC)."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAtmGroup2,
+            usdAtmAal5Group,
+            usdAtmSubIfGroup2,
+            usdAtmVpPingControlGroup,
+            usdAtmVcPingControlGroup,
+            usdAtmPingTrapGroup }
+        GROUP       usdAtmVpTunnelGroup
+            DESCRIPTION
+                "The usdAtmVpTunnelGroup is mandatory only for entities that
+                support a VP Tunnel functionality."
+        GROUP       usdAtmNbmaMapGroup
+            DESCRIPTION
+                "The usdAtmNbmaMapGroup is mandatory only for entities that
+                support NBMA interfaces over ATM."
+        GROUP       usdAtmTrafficShapingGroup
+            DESCRIPTION
+                "The usdAtmTrafficShapingGroup is mandatory only for entities
+                that support ATM traffic shaping."
+    ::= { usdAtmCompliances 3 }                                        -- RX 3.3
+
+usdAtmCompliance4 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere ATM MIB.  This statement became obsolete when ATM SVC, CAC
+        used bandwidth and sub-interface address objects were added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAtmGroup3,
+            usdAtmAal5Group,
+            usdAtmSubIfGroup2,
+            usdAtmVpPingControlGroup,
+            usdAtmVcPingControlGroup,
+            usdAtmPingTrapGroup }
+        GROUP       usdAtmVpTunnelGroup
+            DESCRIPTION
+                "The usdAtmVpTunnelGroup is mandatory only for entities that
+                support a VP Tunnel functionality."
+        GROUP       usdAtmNbmaMapGroup
+            DESCRIPTION
+                "The usdAtmNbmaMapGroup is mandatory only for entities that
+                support NBMA interfaces over ATM."
+        GROUP       usdAtmTrafficShapingGroup
+            DESCRIPTION
+                "The usdAtmTrafficShapingGroup is mandatory only for entities
+                that support ATM traffic shaping."
+    ::= { usdAtmCompliances 4 }                                        -- RX 3.4
+
+usdAtmCompliance5 MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for entities which implement the Unisphere
+        ATM MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAtmGroup4,
+            usdAtmAal5Group,
+            usdAtmSubIfGroup3,
+            usdAtmVpPingControlGroup,
+            usdAtmVcPingControlGroup,
+            usdAtmPingTrapGroup,
+            usdAtmSvcGroup }
+        GROUP       usdAtmVpTunnelGroup
+            DESCRIPTION
+                "The usdAtmVpTunnelGroup is mandatory only for entities that
+                support a VP Tunnel functionality."
+        GROUP       usdAtmNbmaMapGroup
+            DESCRIPTION
+                "The usdAtmNbmaMapGroup is mandatory only for entities that
+                support NBMA interfaces over ATM."
+        GROUP       usdAtmTrafficShapingGroup
+            DESCRIPTION
+                "The usdAtmTrafficShapingGroup is mandatory only for entities
+                that support ATM traffic shaping."
+    ::= { usdAtmCompliances 5 }                                        -- RX 4.0
+
+
+--
+-- units of conformance
+--
+usdAtmGroup OBJECT-GROUP
+    OBJECTS {
+        usdAtmNextIfIndex,
+
+        usdAtmIfRowStatus,
+        usdAtmIfLowerIfIndex,
+        usdAtmIfIlmiVpi,
+        usdAtmIfIlmiVci,
+        usdAtmIfIlmiVcd,
+        usdAtmIfIlmiPollFrequency,
+        usdAtmIfIlmiAdminState,
+        usdAtmIfUniVersion,
+        usdAtmIfOamCellRxAdminState,
+        usdAtmIfInCells,
+        usdAtmIfOutCells,
+        usdAtmIfVcCount,
+        usdAtmPvcStatsInCells,
+        usdAtmPvcStatsInCellOctets,
+        usdAtmPvcStatsInPackets,
+        usdAtmPvcStatsInPacketOctets,
+        usdAtmPvcStatsOutCells,
+        usdAtmPvcStatsOutCellOctets,
+        usdAtmPvcStatsOutPackets,
+        usdAtmPvcStatsOutPacketOctets,
+        usdAtmPvcStatsInCellErrors,
+        usdAtmPvcStatsinPacketErrors,
+        usdAtmPvcStatsOutCellErrors,
+        usdAtmPvcStatsOutPacketErrors,
+        usdAtmPvcStatsInPacketDiscards,
+        usdAtmPvcStatsInPacketOctetDiscards,
+        usdAtmIfCapabilityTrafficShaping,
+        usdAtmIfCapabilityOam,
+        usdAtmIfCapabilityDefaultVcPerVp,
+        usdAtmIfCapabilityNumVpiVciBits,
+        usdAtmIfCapabilityMaxVcd,
+        usdAtmIfCapabilityMaxVpi,
+        usdAtmIfCapabilityMaxVci }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of ATM interfaces
+        in a Unisphere product.  This group became obsolete when the
+        usdAtmIfMapGroup object was added."
+    ::= { usdAtmGroups 1 }
+
+usdAtmAal5Group OBJECT-GROUP
+    OBJECTS {
+        usdAtmAal5NextIfIndex,
+
+        usdAtmAal5IfRowStatus,
+        usdAtmAal5IfLowerIfIndex }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of AAL5 interfaces in a
+        Unisphere product."
+    ::= { usdAtmGroups 2 }
+
+usdAtmSubIfGroup OBJECT-GROUP
+    OBJECTS {
+        usdAtmSubIfNextIfIndex,
+
+        usdAtmSubIfRowStatus,
+        usdAtmSubIfDistinguisher,
+        usdAtmSubIfLowerIfIndex,
+
+        usdAtmSubIfVccRowStatus,
+        usdAtmSubIfVccVcd,
+        usdAtmSubIfVccType,
+        usdAtmSubIfVccServiceCategory,
+        usdAtmSubIfVccPcr,
+        usdAtmSubIfVccScr,
+        usdAtmSubIfVccMbs,
+
+        usdAtmCircuitOamAdminStatus,
+        usdAtmCircuitOamLoopbackOperStatus,
+        usdAtmCircuitVcOamOperStatus,
+        usdAtmCircuitOamLoopbackFrequency,
+        usdAtmCircuitInOamF5Cells,
+        usdAtmCircuitInOamCellsDropped,
+        usdAtmCircuitOutOamF5Cells,
+        usdAtmCircuitInOamF5EndToEndLoopbackCells,
+        usdAtmCircuitInOamF5SegmentLoopbackCells,
+        usdAtmCircuitInOamF5AisCells,
+        usdAtmCircuitInOamF5RdiCells,
+        usdAtmCircuitOutOamF5EndToEndLoopbackCells,
+        usdAtmCircuitOutOamF5SegmentLoopbackCells,
+        usdAtmCircuitOutOamF5RdiCells }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of ATM
+        subinterfaces in a Unisphere product.  This group became obsolete when
+        usdAtmSubIfNbma, usdAtmSubIfInverseArp, and usdAtmSubIfInverseArpRefresh
+        were added."
+    ::= { usdAtmGroups 3 }
+
+usdAtmVpTunnelGroup OBJECT-GROUP
+    OBJECTS {
+        usdAtmVpTunnelKbps,
+        usdAtmVpTunnelRowStatus,
+        usdAtmVpTunnelServiceCategory }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of VP tunnels in a
+        Unisphere product."
+    ::= { usdAtmGroups 4 }
+
+usdAtmNbmaMapGroup OBJECT-GROUP
+    OBJECTS {
+        usdAtmNbmaMapIpAddress,
+        usdAtmNbmaMapVpi,
+        usdAtmNbmaMapVci,
+        usdAtmNbmaMapIfIndex,
+        usdAtmNbmaMapBroadcast,
+        usdAtmNbmaMapRowStatus,
+        usdAtmNbmaMapListRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "A collection of object providing management of NBMA in a Unisphere
+        product."
+    ::= { usdAtmGroups 5 }
+
+usdAtmSubIfGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdAtmSubIfNextIfIndex,
+
+        usdAtmSubIfRowStatus,
+        usdAtmSubIfDistinguisher,
+        usdAtmSubIfLowerIfIndex,
+        usdAtmSubIfNbma,
+
+        usdAtmSubIfVccRowStatus,
+        usdAtmSubIfVccVcd,
+        usdAtmSubIfVccType,
+        usdAtmSubIfVccServiceCategory,
+        usdAtmSubIfVccPcr,
+        usdAtmSubIfVccScr,
+        usdAtmSubIfVccMbs,
+        usdAtmSubIfInverseArp,
+        usdAtmSubIfInverseArpRefresh,
+
+        usdAtmCircuitOamAdminStatus,
+        usdAtmCircuitOamLoopbackOperStatus,
+        usdAtmCircuitVcOamOperStatus,
+        usdAtmCircuitOamLoopbackFrequency,
+        usdAtmCircuitInOamF5Cells,
+        usdAtmCircuitInOamCellsDropped,
+        usdAtmCircuitOutOamF5Cells,
+        usdAtmCircuitInOamF5EndToEndLoopbackCells,
+        usdAtmCircuitInOamF5SegmentLoopbackCells,
+        usdAtmCircuitInOamF5AisCells,
+        usdAtmCircuitInOamF5RdiCells,
+        usdAtmCircuitOutOamF5EndToEndLoopbackCells,
+        usdAtmCircuitOutOamF5SegmentLoopbackCells,
+        usdAtmCircuitOutOamF5RdiCells }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of ATM
+        subinterfaces in a Unisphere product.  This group became obsolete when
+        usdAtmSubIfAddress was added."
+    ::= { usdAtmGroups 6 }
+
+usdAtmVpPingControlGroup OBJECT-GROUP
+    OBJECTS {
+        usdAtmVpPingProbeCount,
+        usdAtmVpPingTimeOut,
+        usdAtmVpPingCtlTrapGeneration,
+        usdAtmVpPingSentProbes,
+        usdAtmVpPingProbeResponses,
+        usdAtmVpPingStartTime,
+        usdAtmVpPingMinRtt,
+        usdAtmVpPingMaxRtt,
+        usdAtmVpPingAverageRtt }
+    STATUS      current
+    DESCRIPTION
+        "A collection of object providing management of ATM VPL Ping testing in
+        a Unisphere product."
+    ::= { usdAtmGroups 7 }
+
+usdAtmVcPingControlGroup OBJECT-GROUP
+    OBJECTS {
+        usdAtmVcPingProbeCount,
+        usdAtmVcPingTimeOut,
+        usdAtmVcPingCtlTrapGeneration,
+        usdAtmVcPingSentProbes,
+        usdAtmVcPingProbeResponses,
+        usdAtmVcPingStartTime,
+        usdAtmVcPingMinRtt,
+        usdAtmVcPingMaxRtt,
+        usdAtmVcPingAverageRtt }
+    STATUS      current
+    DESCRIPTION
+        "A collection of object providing management of ATM VCL Ping testing in
+        a Unisphere product."
+    ::= { usdAtmGroups 8 }
+
+usdAtmPingTrapGroup NOTIFICATION-GROUP
+    NOTIFICATIONS {
+        usdAtmVpPingTestCompleted,
+        usdAtmVcPingTestCompleted }
+    STATUS      current
+    DESCRIPTION
+        "A collection of notifications supporting ATM Ping testing in a
+        Unisphere product."
+    ::= { usdAtmGroups 9 }
+
+usdAtmGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdAtmNextIfIndex,
+
+        usdAtmIfRowStatus,
+        usdAtmIfLowerIfIndex,
+        usdAtmIfIlmiVpi,
+        usdAtmIfIlmiVci,
+        usdAtmIfIlmiVcd,
+        usdAtmIfIlmiPollFrequency,
+        usdAtmIfIlmiAdminState,
+        usdAtmIfUniVersion,
+        usdAtmIfOamCellRxAdminState,
+        usdAtmIfInCells,
+        usdAtmIfOutCells,
+        usdAtmIfVcCount,
+        usdAtmIfMapGroup,
+        usdAtmIfOamCellFilter,
+
+        usdAtmPvcStatsInCells,
+        usdAtmPvcStatsInCellOctets,
+        usdAtmPvcStatsInPackets,
+        usdAtmPvcStatsInPacketOctets,
+        usdAtmPvcStatsOutCells,
+        usdAtmPvcStatsOutCellOctets,
+        usdAtmPvcStatsOutPackets,
+        usdAtmPvcStatsOutPacketOctets,
+        usdAtmPvcStatsInCellErrors,
+        usdAtmPvcStatsinPacketErrors,
+        usdAtmPvcStatsOutCellErrors,
+        usdAtmPvcStatsOutPacketErrors,
+        usdAtmPvcStatsInPacketDiscards,
+        usdAtmPvcStatsInPacketOctetDiscards,
+        usdAtmPvcStatsInPacketUnknownProtocol,
+
+        usdAtmIfCapabilityTrafficShaping,
+        usdAtmIfCapabilityOam,
+        usdAtmIfCapabilityDefaultVcPerVp,
+        usdAtmIfCapabilityNumVpiVciBits,
+        usdAtmIfCapabilityMaxVcd,
+        usdAtmIfCapabilityMaxVpi,
+        usdAtmIfCapabilityMaxVci,
+        usdAtmIfCapabilityOamCellFilter }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of ATM interfaces
+        in a Unisphere product.  This group became obsolete when support was
+        added for connection admission control (CAC)."
+    ::= { usdAtmGroups 10 }
+
+usdAtmTrafficShapingGroup OBJECT-GROUP
+    OBJECTS {
+        usdAtmSubIfVccTrafficShapingCdvt,
+        usdAtmSubIfVccTrafficShapingClp0,
+        usdAtmSubIfVccTrafficShapingTagging,
+        usdAtmSubIfVccTrafficShapingPoliceObserve,
+        usdAtmSubIfVccTrafficShapingPacketShaping }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of ATM traffic shaping in
+        a Unisphere product."
+    ::= { usdAtmGroups 11 }
+
+usdAtmGroup3 OBJECT-GROUP
+    OBJECTS {
+        usdAtmNextIfIndex,
+
+        usdAtmIfRowStatus,
+        usdAtmIfLowerIfIndex,
+        usdAtmIfIlmiVpi,
+        usdAtmIfIlmiVci,
+        usdAtmIfIlmiVcd,
+        usdAtmIfIlmiPollFrequency,
+        usdAtmIfIlmiAdminState,
+        usdAtmIfUniVersion,
+        usdAtmIfOamCellRxAdminState,
+        usdAtmIfInCells,
+        usdAtmIfOutCells,
+        usdAtmIfVcCount,
+        usdAtmIfMapGroup,
+        usdAtmIfCacAdminState,
+        usdAtmIfCacUbrWeight,
+        usdAtmIfCacSubscriptionBandwidth,
+        usdAtmIfCacAvailableBandwidth,
+        usdAtmIfOamCellFilter,
+
+        usdAtmPvcStatsInCells,
+        usdAtmPvcStatsInCellOctets,
+        usdAtmPvcStatsInPackets,
+        usdAtmPvcStatsInPacketOctets,
+        usdAtmPvcStatsOutCells,
+        usdAtmPvcStatsOutCellOctets,
+        usdAtmPvcStatsOutPackets,
+        usdAtmPvcStatsOutPacketOctets,
+        usdAtmPvcStatsInCellErrors,
+        usdAtmPvcStatsinPacketErrors,
+        usdAtmPvcStatsOutCellErrors,
+        usdAtmPvcStatsOutPacketErrors,
+        usdAtmPvcStatsInPacketDiscards,
+        usdAtmPvcStatsInPacketOctetDiscards,
+        usdAtmPvcStatsInPacketUnknownProtocol,
+
+        usdAtmIfCapabilityTrafficShaping,
+        usdAtmIfCapabilityOam,
+        usdAtmIfCapabilityDefaultVcPerVp,
+        usdAtmIfCapabilityNumVpiVciBits,
+        usdAtmIfCapabilityMaxVcd,
+        usdAtmIfCapabilityMaxVpi,
+        usdAtmIfCapabilityMaxVci,
+        usdAtmIfCapabilityOamCellFilter }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of ATM interfaces
+        in a Unisphere product.  This group became obsolete when support was
+        added for connection admission control (CAC) used bandwidth."
+    ::= { usdAtmGroups 12 }
+
+usdAtmGroup4 OBJECT-GROUP
+    OBJECTS {
+        usdAtmNextIfIndex,
+
+        usdAtmIfRowStatus,
+        usdAtmIfLowerIfIndex,
+        usdAtmIfIlmiVpi,
+        usdAtmIfIlmiVci,
+        usdAtmIfIlmiVcd,
+        usdAtmIfIlmiPollFrequency,
+        usdAtmIfIlmiAdminState,
+        usdAtmIfUniVersion,
+        usdAtmIfOamCellRxAdminState,
+        usdAtmIfInCells,
+        usdAtmIfOutCells,
+        usdAtmIfVcCount,
+        usdAtmIfMapGroup,
+        usdAtmIfCacAdminState,
+        usdAtmIfCacUbrWeight,
+        usdAtmIfCacSubscriptionBandwidth,
+        usdAtmIfCacAvailableBandwidth,
+        usdAtmIfOamCellFilter,
+        usdAtmIfCacUsedBandwidthUpper,
+        usdAtmIfCacUsedBandwidthLower,
+
+        usdAtmPvcStatsInCells,
+        usdAtmPvcStatsInCellOctets,
+        usdAtmPvcStatsInPackets,
+        usdAtmPvcStatsInPacketOctets,
+        usdAtmPvcStatsOutCells,
+        usdAtmPvcStatsOutCellOctets,
+        usdAtmPvcStatsOutPackets,
+        usdAtmPvcStatsOutPacketOctets,
+        usdAtmPvcStatsInCellErrors,
+        usdAtmPvcStatsinPacketErrors,
+        usdAtmPvcStatsOutCellErrors,
+        usdAtmPvcStatsOutPacketErrors,
+        usdAtmPvcStatsInPacketDiscards,
+        usdAtmPvcStatsInPacketOctetDiscards,
+        usdAtmPvcStatsInPacketUnknownProtocol,
+
+        usdAtmIfCapabilityTrafficShaping,
+        usdAtmIfCapabilityOam,
+        usdAtmIfCapabilityDefaultVcPerVp,
+        usdAtmIfCapabilityNumVpiVciBits,
+        usdAtmIfCapabilityMaxVcd,
+        usdAtmIfCapabilityMaxVpi,
+        usdAtmIfCapabilityMaxVci,
+        usdAtmIfCapabilityOamCellFilter }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of ATM interfaces in a
+        Unisphere product."
+    ::= { usdAtmGroups 13 }
+
+usdAtmSvcGroup OBJECT-GROUP
+    OBJECTS {
+        usdAtmIfSvcSignallingVpi,
+        usdAtmIfSvcSignallingVci,
+        usdAtmIfSvcSignallingVcd,
+        usdAtmIfSvcSignallingAdminStatus,
+
+        usdAtmSubIfSvcRowStatus,
+        usdAtmSubIfSvcConfigDestAtmAddress,
+        usdAtmSubIfSvcConfigCircuitType,
+        usdAtmSubIfSvcConfigServiceCategory,
+        usdAtmSubIfSvcConfigPcr,
+        usdAtmSubIfSvcConfigScr,
+        usdAtmSubIfSvcConfigMbs,
+        usdAtmSubIfSvcConfigCdvt,
+        usdAtmSubIfSvcConfigClp0,
+        usdAtmSubIfSvcConfigTagging,
+        usdAtmSubIfSvcConfigObserve,
+        usdAtmSubIfSvcConfigPacketDiscard }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of ATM SVC interfaces in a
+        Unisphere product."
+    ::= { usdAtmGroups 14 }
+
+usdAtmSubIfGroup3 OBJECT-GROUP
+    OBJECTS {
+        usdAtmSubIfNextIfIndex,
+
+        usdAtmSubIfRowStatus,
+        usdAtmSubIfDistinguisher,
+        usdAtmSubIfLowerIfIndex,
+        usdAtmSubIfNbma,
+        usdAtmSubIfAddress,
+
+        usdAtmSubIfVccRowStatus,
+        usdAtmSubIfVccVcd,
+        usdAtmSubIfVccType,
+        usdAtmSubIfVccServiceCategory,
+        usdAtmSubIfVccPcr,
+        usdAtmSubIfVccScr,
+        usdAtmSubIfVccMbs,
+        usdAtmSubIfInverseArp,
+        usdAtmSubIfInverseArpRefresh,
+
+        usdAtmCircuitOamAdminStatus,
+        usdAtmCircuitOamLoopbackOperStatus,
+        usdAtmCircuitVcOamOperStatus,
+        usdAtmCircuitOamLoopbackFrequency,
+        usdAtmCircuitInOamF5Cells,
+        usdAtmCircuitInOamCellsDropped,
+        usdAtmCircuitOutOamF5Cells,
+        usdAtmCircuitInOamF5EndToEndLoopbackCells,
+        usdAtmCircuitInOamF5SegmentLoopbackCells,
+        usdAtmCircuitInOamF5AisCells,
+        usdAtmCircuitInOamF5RdiCells,
+        usdAtmCircuitOutOamF5EndToEndLoopbackCells,
+        usdAtmCircuitOutOamF5SegmentLoopbackCells,
+        usdAtmCircuitOutOamF5RdiCells }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of ATM subinterfaces in a
+        Unisphere product."
+    ::= { usdAtmGroups 15 }
+
+END

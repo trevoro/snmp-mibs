@@ -1,0 +1,432 @@
+
+-- Note:
+-- This text file contains ASN.1 source describing MIB objects for SNMP.
+-- The enterprise MIB described is subject to change in a future
+-- release, and support for any object described in this MIB may be
+-- removed in a future release, as standard MIBs in the management domain
+-- described by this MIB become defined and published as Internet RFCs.
+
+
+
+-- the SNMP SUBAGENT MIB
+
+-- The MIB objects are implemented by the local SNMP agent
+
+-- This MIB is based on some experience with both DPI and SMUX
+-- subagents. As you can see, some of the ideas come from the
+-- original SMUX MIB (RFC1227) by Marshall Rose.
+-- We try to define a subagent MIB that represents subagents
+-- using different protocols.
+
+        SUBAGENT-MIB DEFINITIONS ::= BEGIN
+
+        IMPORTS
+                enterprises, TimeTicks, Counter
+                        FROM RFC1155-SMI
+                OBJECT-TYPE
+                        FROM RFC-1212
+                DisplayString
+                        FROM RFC1213-MIB;
+
+        ibm     OBJECT IDENTIFIER ::= { enterprises 2 }
+
+        ibmResearch OBJECT IDENTIFIER ::= { ibm 2 }
+
+        saMIB   OBJECT IDENTIFIER ::= { ibmResearch 12 }
+        --
+        -- Following can be used once we fit into SNMPv2
+        --
+        --      MODULE-IDENTITY, OBJECT-TYPE, snmpModules
+        --              FROM SNMPv2-SMI
+        --
+        -- saMIB MODULE-IDENTITY
+        --  LAST-UPDATED "9433500000Z"
+        --  ORGANIZATION "IBM Research - T.J. Watson Research Center"
+        --  CONTACT-INFO
+        --          "           Bert Wijnen
+        --
+        --           Postal:    IBM International Operations
+        --                      Watsonweg 2
+        --                      1423 ND Uithoorn
+        --                      The Netherlands
+        --
+        --           Tel:       +31 2975 53316
+        --           Fax:       +31 2975 62468
+        --
+        --           E-mail:    wijnen@vnet.ibm.com
+        --                      (IBM internal: wijnen at nlvm1)"
+        --   DESCRIPTION
+        --          "The MIB module describing SNMP subagents."
+        --   ::= { snmpModules x }
+
+        saDefaultTimeout OBJECT-TYPE
+                SYNTAX  INTEGER    -- (1..saMaxTimeout)
+        --      UNITS   "seconds"
+                ACCESS  read-write
+                STATUS  mandatory
+                DESCRIPTION
+                    "The default timeout (in seconds) that this agent
+                    waits for a response from a SubAgent. This value
+                    is used if a timeout value is not specified for
+                    the subtree nor for the subagent that exports
+                    the subtree."
+        --      DEFVAL  { 5 }
+                ::= { saMIB 1 }
+
+        saMaxTimeout OBJECT-TYPE
+                SYNTAX  INTEGER (1..3600) -- 3600 is 60 minutes,
+                                          -- so quite big already
+        --      UNITS   "seconds"
+                ACCESS  read-write
+                STATUS  mandatory
+                DESCRIPTION
+                    "The maximum timeout (in seconds) that this agent
+                    allows for timeout values for SubAgents. When you
+                    try to set any other timeout value it must be
+                    between 1 and this maximum value."
+        --      DEFVAL  { 60 }
+                ::= { saMIB 2 }
+
+        saAllowDuplicateIDs     OBJECT-TYPE
+                SYNTAX  INTEGER {
+                            yes(1),
+                            no(2)
+                        }
+                ACCESS  read-write
+                STATUS  mandatory
+                DESCRIPTION
+                    "Controls if multiple instances of a sub-agent (as
+                     identified by the sub-agent Identifier) are allowed.
+
+                     Setting this object to the value no(2) will prevent
+                     (new) duplicate sub-agentIDs. However, if any
+                     duplicates exist at that point in time, the agent
+                     will not remove them. That is considered a manager
+                     responsibility."
+        --      DEFVAL  { yes }
+                ::= { saMIB 3 }
+
+        saNumber        OBJECT-TYPE
+                SYNTAX  Counter
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The number of entries in the saTable"
+                ::= { saMIB 4 }
+
+        saAllPacketsIn  OBJECT-TYPE
+                SYNTAX  Counter
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "A count of packets received from all subagents."
+                ::= { saMIB 5 }
+
+        saAllPacketsOut OBJECT-TYPE
+                SYNTAX  Counter
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "A count of packets send to all subagents."
+                ::= { saMIB 6 }
+
+        saTable OBJECT-TYPE
+                SYNTAX  SEQUENCE OF SaEntry
+                ACCESS  not-accessible
+                STATUS  mandatory
+                DESCRIPTION
+                    "The SubAgent table, listing all subagents."
+                ::= { saMIB 7 }
+
+        saEntry OBJECT-TYPE
+                SYNTAX  SaEntry
+                ACCESS  not-accessible
+                STATUS  mandatory
+                DESCRIPTION
+                    "An entry in the SubAgent table."
+                INDEX   { saIndex }
+                ::= { saTable 1 }
+
+        SaEntry ::=
+           SEQUENCE {
+               saIndex
+                   INTEGER,
+               saIdentifier
+                   OBJECT IDENTIFIER,
+               saDescription
+                   DisplayString,
+               saStatus
+                   INTEGER,
+               saStatusChangeTime
+                   TimeTicks,
+               saProtocol
+                   INTEGER,
+               saProtocolVersion
+                   INTEGER,
+               saProtocolRelease
+                   INTEGER,
+               saTransport
+                   INTEGER,
+               saTransportAddress
+                   OCTET STRING,
+               saTimeout
+                   INTEGER,
+               saMaxVarBinds
+                   INTEGER,
+               saPacketsIn
+                   Counter,
+               saPacketsOut
+                   Counter
+           }
+
+        saIndex OBJECT-TYPE
+                SYNTAX  INTEGER (1..4294967295)
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "An index which uniquely identifies a SubAgent.
+                    The number is in the range from 1 up to and
+                    including the value of saNumber."
+                ::= { saEntry 1 }
+
+        saIdentifier    OBJECT-TYPE
+                SYNTAX  OBJECT IDENTIFIER
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The authoritative identification for a SubAgent."
+                ::= { saEntry 2 }
+
+        saDescription   OBJECT-TYPE
+                SYNTAX  DisplayString (SIZE (0..255))
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "A descriptive name for a SubAgent."
+                ::= { saEntry 3 }
+
+        saStatus        OBJECT-TYPE
+                SYNTAX  INTEGER {
+                            valid(1),
+                            invalid(2),
+                            connecting(3),
+                            disconnecting(4),
+                            closedByManager(5),
+                            closedByAgent(6),
+                            closedBySubAgent(7),
+                            closedBySubAgentTimeout(8),
+                            closedBySubAgentError(9)
+                        }
+                ACCESS  read-write
+                STATUS  mandatory
+                DESCRIPTION
+                    "The status of the SubAgent.
+
+                     The only value that can be set is invalid(2).
+                     This can only be done if the status is not already
+                     in a ClosedSomething status.
+
+                     Setting this object to the value invalid(2) has
+                     the effect of invalidating the entry upon which
+                     the agent will close the connection and turn it
+                     to status closedByManager(7).
+
+                     It is an implementation specific matter if an
+                     entry that is not valid(1) is removed from the
+                     table. However, if such an entry is kept and the
+                     subagent re-connects, then the same entry must
+                     be re-used."
+                ::= { saEntry 4 }
+
+        saStatusChangeTime OBJECT-TYPE
+                SYNTAX  TimeTicks
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The timestamp of the last status change of the
+                     SubAgent. Timestamp is taken from the sysUpTime."
+                ::= { saEntry 5 }
+
+        saProtocol      OBJECT-TYPE
+                SYNTAX  INTEGER {
+                            dpi(1),   -- SNMP DPI, RFC 1228 & 1592
+                            moh(2),   -- SNMP MIB Object Handler
+                            smux(3)   -- SNMP MUX, RFC 1227
+                        }
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The SubAgent protocol being used."
+                ::= { saEntry 6 }
+
+        saProtocolVersion       OBJECT-TYPE
+                SYNTAX  INTEGER
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The version of the SubAgent Protocol used."
+                ::= { saEntry 7 }
+
+        saProtocolRelease       OBJECT-TYPE
+                SYNTAX  INTEGER
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The release of the SubAgent Protocol used."
+                ::= { saEntry 8 }
+
+        saTransport     OBJECT-TYPE
+                SYNTAX  INTEGER {
+                            udp(1),     -- User Datagram
+                            tcp(2),     -- Transmission Control
+                            nmq(3),     -- Named Queue
+                            sna(4)      -- IBM SNA
+                        }
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The transport protocol used by the SubAgent."
+                ::= { saEntry 9 }
+
+        saTransportAddress      OBJECT-TYPE
+                SYNTAX  OCTET STRING
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The address of the subagent (transport specific
+                     address information)."
+                     -- IPaddress, Portnumber for UDP and TCP
+                     -- DisplayString for Named Queue
+                     -- DisplayString for SNA (LU-name)
+                ::= { saEntry 10 }
+
+        saTimeout       OBJECT-TYPE
+                SYNTAX  INTEGER    -- (1..saMaxTimeout)
+        --      UNITS   "seconds"
+                ACCESS  read-write
+                STATUS  mandatory
+                DESCRIPTION
+                    "The default timeout (seconds) for a SubAgent
+                     response. This value will be used if there is no
+                     timeout value specified for a particular subtree."
+        --      DEFVAL  { 0 }
+                ::= { saEntry 11 }
+
+        saMaxVarBinds   OBJECT-TYPE
+                SYNTAX  INTEGER (0..4294967295)
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "Max varBinds this subagent accepts per request."
+                ::= { saEntry 12 }
+
+        saPacketsIn     OBJECT-TYPE
+                SYNTAX  Counter
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "A count of packets received from this subagent."
+                ::= { saEntry 13 }
+
+        saPacketsOut    OBJECT-TYPE
+                SYNTAX  Counter
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "A count of packets send to this subagent."
+                ::= { saEntry 14 }
+
+        saTreeTable     OBJECT-TYPE
+                SYNTAX  SEQUENCE OF SaTreeEntry
+                ACCESS  not-accessible
+                STATUS  mandatory
+                DESCRIPTION
+                    "The SubAgent tree table."
+                ::= { saMIB 8 }
+
+        saTreeEntry     OBJECT-TYPE
+                SYNTAX  SaTreeEntry
+                ACCESS  not-accessible
+                STATUS  mandatory
+                DESCRIPTION
+                    "An entry in the SubAgent tree table."
+                INDEX   { saTsubtree, saTpriority }
+                ::= { saTreeTable 1 }
+
+        SaTreeEntry ::=
+            SEQUENCE {
+                saTsubtree
+                    OBJECT IDENTIFIER,
+                saTpriority
+                    INTEGER,
+                saTindex
+                    INTEGER,
+                saTstatus
+                    INTEGER,
+                saTtimeout
+                    INTEGER
+            }
+
+        saTsubtree      OBJECT-TYPE
+                SYNTAX  OBJECT IDENTIFIER
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The MIB subtree being exported by the SubAgent."
+                ::= { saTreeEntry 1 }
+
+        saTpriority     OBJECT-TYPE
+                SYNTAX  INTEGER (0..'7fffffff'h)
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The SubAgents Priority when exporting the MIB
+                     subtree. The lower the value the better the
+                     priority."
+                ::= { saTreeEntry 2 }
+
+        saTindex        OBJECT-TYPE
+                SYNTAX  INTEGER
+                ACCESS  read-only
+                STATUS  mandatory
+                DESCRIPTION
+                    "The SubAgent's identity (index into the saTable)."
+                ::= { saTreeEntry 3 }
+
+        saTstatus       OBJECT-TYPE
+                SYNTAX  INTEGER {
+                            valid(1),   -- registered, active entry
+                            invalid(2), -- invalid, unregistered
+                            waiting(3)  -- registered, waiting cause
+                                        -- higher priority entry is
+                                        -- valid/active now
+                        }
+                ACCESS  read-write
+                STATUS  mandatory
+                DESCRIPTION
+                    "The status of subtree exported by the SubAgent.
+
+                     The only value that can be set is invalid(2).
+
+                     Setting this object to the value invalid(2) has
+                     the effect of invalidating the entry.
+                     It is an implementation specific matter if an
+                     entry that is not valid(1) or waiting(3)
+                     is removed from the table."
+                ::= { saTreeEntry 4 }
+
+        saTtimeout      OBJECT-TYPE
+                SYNTAX  INTEGER    -- (1..saMaxTimeout)
+        --      UNITS   "seconds"
+                ACCESS  read-write
+                STATUS  mandatory
+                DESCRIPTION
+                    "The timeout (in seconds) for objects in this
+                     subtree. A value of zero (0) means that the
+                     overall timeout value (as specified in the
+                     saTableEntry for the SubAgent) will be used."
+        --      DEFVAL  { 0 }
+                ::= { saTreeEntry 5 }
+
+        END
+

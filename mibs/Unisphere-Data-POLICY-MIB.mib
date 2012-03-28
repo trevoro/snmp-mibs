@@ -1,0 +1,3344 @@
+
+-- *****************************************************************************
+-- Unisphere-Data-POLICY-MIB
+--
+-- Unisphere Networks Inc. Enterprise MIB
+-- Extensions for Policy management
+--
+-- Copyright (c) 2000, 2002 Unisphere Networks, Inc.  All Rights Reserved.
+-- *****************************************************************************
+
+Unisphere-Data-POLICY-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, Counter32, Counter64, IpAddress,
+    Unsigned32
+        FROM SNMPv2-SMI
+    RowStatus, TruthValue, DisplayString, TEXTUAL-CONVENTION
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    InterfaceIndex
+        FROM IF-MIB
+    usDataMibs
+        FROM Unisphere-Data-MIBs;
+
+usdPolicyMIB  MODULE-IDENTITY
+    LAST-UPDATED "200203281453Z"  -- 28-Mar-02 09:53 AM EST
+    ORGANIZATION "Unisphere Networks, Inc."
+    CONTACT-INFO
+        "       Unisphere Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The Policy MIB for the Unisphere Networks Inc. enterprise."
+    -- Revision History
+    REVISION    "200203281453Z"  -- 28-Mar-02 09:53 AM EST  - RX 4.0
+    DESCRIPTION
+        "Extended rate limit profile objects.
+         Added traffic class rule objects.
+         Obsoleted policy traffic shaped objects."
+    REVISION    "200109071448Z"  -- 07-Sep-01 10:48 AM EDT  - RX 3.2
+    DESCRIPTION
+        "Added TCP flag and IP flag support objects.
+         Replaced usdPolicyProfileTable with usdPolicyAttachProfileTable.
+         Created new confomance groupings."
+    REVISION    "200104171210Z"  -- 17-Apr-01 08:10 AM EDT  - RX 3.0
+    DESCRIPTION
+        "Added color rule objects.
+         Added Local Input Policy ID and Local Input Stats Enable objects to the
+           usdPolicyProfileTable.
+         Replaced usdPolicyIfTable with usdPolicyIfAttachTable.
+         Replaced usdPolicyIfStatsTable with usdPolicyIfAttachStatsTable."
+    REVISION    "200101232130Z"  -- 23-Jan-01 04:30 PM EST  - RX 2.8
+    DESCRIPTION
+        "Added log rule objects."
+    REVISION    "200011292030Z"  -- 29-Nov-00 03:30 PM EST  - RX 2.6
+    DESCRIPTION
+        "Added policy traffic shaped objects."
+    REVISION    "200005150000Z"  -- 15-May-00               - RX 1.3
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 27 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+UsdClaclPortOperator ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Enumerates valid operators for use as source and destination port
+        operators within a classifier control list."
+    SYNTAX      INTEGER {
+                    noOperator(0),
+                    lt(1),
+                    gt(2),
+                    eq(3),
+                    ne(4),
+                    range(5) }
+
+UsdPolicyAttachmentType ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Enumerates the types of policy attachments."
+    SYNTAX      INTEGER {
+                    inputPolicy(1),
+                    outputPolicy(2),
+                    localInputPolicy(3) }
+
+UsdPolicyForwardingType ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Enumerates the type of forwarding to which the policy is applied."
+    SYNTAX      INTEGER {
+                    ipForwarding(1),
+                    cbfForwarding(2) }
+
+UsdPolicyIpFragValue ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+        "Enumerates the values for IP frag offset classification."
+    SYNTAX       INTEGER {
+                     equalToZero(0),
+                     equalToOne(1),
+                     reserved1(2),
+                     greaterThenOne(3),
+                     notSpecified(4) }
+
+UsdRateLimitProfileType ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Enumerates the types of rate limit profiles."
+    SYNTAX      INTEGER {
+                    oneRate(1),
+                    twoRate(2) }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdPolicyObjects              OBJECT IDENTIFIER ::= { usdPolicyMIB 1 }
+usdClassifierControlList      OBJECT IDENTIFIER ::= { usdPolicyObjects 1 }
+usdRateLimitControlList       OBJECT IDENTIFIER ::= { usdPolicyObjects 2 }
+usdPolicy                     OBJECT IDENTIFIER ::= { usdPolicyObjects 3 }
+usdPolicyIf                   OBJECT IDENTIFIER ::= { usdPolicyObjects 4 }
+usdPolicyProfile              OBJECT IDENTIFIER ::= { usdPolicyObjects 5 }
+usdPolicyStatistics           OBJECT IDENTIFIER ::= { usdPolicyObjects 6 }
+usdTrafficShapeControlList    OBJECT IDENTIFIER ::= { usdPolicyObjects 7 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Policy Tables
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The policy table
+--
+usdPolicyNextIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This scalar object returns the index of the next available row in the
+        usdPolicyTable.  This object returns a value of zero when it is the
+        lexicographic successor of a varbind presented in an SNMP GETNEXT or
+        GETBULK request, for which circumstance it is assumed that index
+        allocation is unintended."
+    ::= { usdPolicy 1 }
+
+usdPolicyTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPolicyEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries which represent the non-repetive fields of
+        a policy definition."
+    ::= { usdPolicy 2 }
+
+usdPolicyEntry OBJECT-TYPE
+    SYNTAX      UsdPolicyEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains the non-repetitive fields of a policy definition."
+    INDEX     { usdPolicyId }
+    ::= { usdPolicyTable 1 }
+
+UsdPolicyEntry ::= SEQUENCE {
+    usdPolicyId             Integer32,
+    usdPolicyRowStatus      RowStatus,
+    usdPolicyAdminState     INTEGER,
+    usdPolicyOperStatus     INTEGER,
+    usdPolicyErrorValue     Integer32,
+    usdPolicyName           DisplayString,
+    usdPolicyReferenceCount Counter32,
+    usdPolicyRuleNextIndex  Integer32 }
+
+usdPolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The number of the policy table entry which is defined by this row."
+    ::= { usdPolicyEntry 1 }
+
+usdPolicyRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        *** LIMITED ACCESS LIST CONFIGURATION LEVEL ***
+
+        RowStatus createAndGo/destroy operations have the following
+        special-purpose semantics:
+            createAndGo     Create an entry having the specified configuration
+                            and append it to the target list, i.e. create a
+                            policy table entry with the associated policy name.
+            destroy         Destroy the specified list and all of  its
+                            constituent elements.
+
+        Policy row members may not be modified once the row has been created."
+    ::= { usdPolicyEntry 2 }
+
+usdPolicyAdminState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disable(0),
+                    enable(1) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to control the administrative state of a policy.
+        Enabling a policy will result in the rules which make up a policy being
+        applied to interfaces to which the policy is assigned.
+
+        Disabling a policy results in the the policy being taken out of service.
+
+        This object may be modified while the row is active."
+    DEFVAL    { disable }
+    ::= { usdPolicyEntry 3 }
+
+usdPolicyOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disabled(0),
+                    invalid(1),
+                    enabled(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This object is used to retrieve the operational state of a policy.
+
+        If a policy is disabled, it is not applied to any interfaces within the
+        system.
+
+        If a policy is invalid, there is a problem with the policy preventing it
+        from being applied to an interface.  An error code providing diagnostic
+        information about the problem is found in usdPolicyErrorValue.
+
+        If a policy is enabled, it has been applied to one or more interfaces
+        within the system."
+    ::= { usdPolicyEntry 4 }
+
+usdPolicyErrorValue OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An error code providing diagnostic information for invalid policies.
+        The enumeration of this field is TBD.  A zero (0) value indicates that
+        there is no error reported."
+    ::= { usdPolicyEntry 5 }
+
+usdPolicyName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(1..40))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the name of the policy defined by this row."
+    ::= { usdPolicyEntry 6 }
+
+usdPolicyReferenceCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Reflects the number of times this policy has been applied within the
+        chassis."
+    ::= { usdPolicyEntry 7 }
+
+usdPolicyRuleNextIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Read only variable which provides the next available PolicyRuleIndex
+        with respect to the policy defined by this row.  This object returns a
+        value of zero when it is the lexicographic successor of a varbind
+        presented in an SNMP GETNEXT or GETBULK request, for which circumstance
+        it is assumed that index allocation is unintended."
+    ::= { usdPolicyEntry 8 }
+
+
+--
+-- The Policy Rule table
+--
+usdPolicyRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPolicyRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry within this table defines a rule component of a policy.  The
+        entries in this table are created automatically when entries are created
+        in specific rule tables.  This table is read only"
+    ::= { usdPolicy 3 }
+
+usdPolicyRuleEntry OBJECT-TYPE
+    SYNTAX      UsdPolicyRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry defines a single rule component."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdPolicyRuleTable 1 }
+
+UsdPolicyRuleEntry ::= SEQUENCE {
+    usdPolicyRulePolicyId   Integer32,
+    usdPolicyRulePrec       Integer32,
+    usdPolicyRuleId         Integer32,
+    usdPolicyRuleType       INTEGER,
+    usdPolicySuspend        TruthValue,
+    usdPolicyEclipsed       TruthValue }
+
+usdPolicyRulePolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The PolicyTable index of the policy which owns this rule."
+    ::= { usdPolicyRuleEntry 1 }
+
+usdPolicyRulePrec OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The precedence of this rule within this group of policy rules."
+    ::= { usdPolicyRuleEntry 2 }
+
+usdPolicyRuleId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The index of this rule within the set of rules owned by the policy
+        defined by usdPolicyRulePolicyId."
+    ::= { usdPolicyRuleEntry 3 }
+
+usdPolicyRuleType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    noRule(0),
+                    nextHopRule(1),
+                    filterRule(2),
+                    nextInterfaceRule(3),
+                    rateLimitRule(4),
+                    markingRule(5),
+                    trafficClassRule(6),
+                    forwardRule(7),
+                    logRule(8),
+                    colorRule(10) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This field specifies the type of rule being defined.  The remaining
+        information which makes up this rule is found in the specific rule table
+        defined by usdPolicyRuleType.  The specific rule tables are indexed by
+        usdPolicyRulePolicyId.usdPolicyRuleId."
+    DEFVAL    { noRule }
+    ::= { usdPolicyRuleEntry 4 }
+
+usdPolicySuspend OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Setting this object to true results in the rule being suspended (taken
+        out of service).  Setting this value to false results in the rule being
+        returned to service.  "
+    DEFVAL    { false }
+    ::= { usdPolicyRuleEntry 5 }
+
+usdPolicyEclipsed OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This value is true if the policy rule is eclipsed.  A policy rule is
+        eclipsed if a conflicting rule with the same classifier control list
+        precedes the rule, and the preceding rule is not suspended.  A false
+        value indicates that the rule is not eclipsed."
+    ::= { usdPolicyRuleEntry 6 }
+
+
+--
+-- Policy Rule Specific rule tables
+--
+
+--
+-- Next-hop rule specific rule table.
+--
+usdNextHopRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdNextHopRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide next-hop rule data.  Rows created in
+        this table result in an entry being created in the policy rule table."
+    ::= { usdPolicy 4 }
+
+usdNextHopRuleEntry OBJECT-TYPE
+    SYNTAX      UsdNextHopRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A next-hop rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdNextHopRuleTable 1 }
+
+UsdNextHopRuleEntry ::= SEQUENCE {
+    usdNextHopRowStatus RowStatus,
+    usdNextHopIpAddress IpAddress,
+    usdNextHopClaclId   Integer32 }
+
+usdNextHopRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        The next-hop IP address is mandatory and must be specified.
+
+        Modes supported are create-and-go and destroy."
+    ::= { usdNextHopRuleEntry 1 }
+
+usdNextHopIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address to forward all packets to."
+    DEFVAL    { '00000000'H }  -- 0.0.0.0
+    ::= { usdNextHopRuleEntry 2 }
+
+usdNextHopClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which completes the NextHop policy
+        rule."
+    DEFVAL    { 0 }
+    ::= { usdNextHopRuleEntry 3 }
+
+
+--
+-- Filter rule augmentation table.
+--
+usdFilterRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdFilterRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide filter rule data.  Creation of an entry
+        in this table results in a corresponding entry being created in the
+        policy rule table."
+    ::= { usdPolicy 5 }
+
+usdFilterRuleEntry OBJECT-TYPE
+    SYNTAX      UsdFilterRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A filter rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdFilterRuleTable 1 }
+
+UsdFilterRuleEntry ::= SEQUENCE {
+    usdFilterRowStatus  RowStatus,
+    usdFilterClaclId    Integer32 }
+
+usdFilterRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+         Modes supported are create-and-go and destroy. "
+    ::= { usdFilterRuleEntry 1 }
+
+usdFilterClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which completes the filter policy rule."
+    DEFVAL    { 0 }
+    ::= { usdFilterRuleEntry 2 }
+
+
+--
+-- Next-Interface rule table.
+--
+usdNextInterfaceRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdNextInterfaceRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide NextInterface rule data.  Creation of
+        entries in the table result in a corresponding entry being created in
+        the policy rule table."
+    ::= { usdPolicy 6 }
+
+usdNextInterfaceRuleEntry OBJECT-TYPE
+    SYNTAX      UsdNextInterfaceRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A NextInterface rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdNextInterfaceRuleTable 1 }
+
+UsdNextInterfaceRuleEntry ::= SEQUENCE {
+    usdNextInterfaceRowStatus   RowStatus,
+    usdNextInterfaceId          InterfaceIndex,
+    usdNextInterfaceClaclId     Integer32,
+    usdNextInterfaceNextHop     IpAddress }
+
+usdNextInterfaceRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        The next-interface parameter is mandatory and must be specified.
+
+        Modes supported are create-and-go and destroy. "
+    ::= { usdNextInterfaceRuleEntry 1 }
+
+usdNextInterfaceId OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The interface index to which traffic matching the CLACL ID will be
+        routed."
+    ::= { usdNextInterfaceRuleEntry 2 }
+
+usdNextInterfaceClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which completes the NextInterface policy
+        rule."
+    DEFVAL    { 0 }
+    ::= { usdNextInterfaceRuleEntry 3 }
+
+usdNextInterfaceNextHop OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address to forward all packets to."
+    DEFVAL    { '00000000'H }  -- 0.0.0.0
+    ::= { usdNextInterfaceRuleEntry 4 }
+
+
+--
+-- RateLimit rule table.
+--
+usdRateLimitRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdRateLimitRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide RateLimit rule data.  Creation of
+        entries in the table result in a corresponding entry being created in
+        the policy rule table."
+    ::= { usdPolicy 7 }
+
+usdRateLimitRuleEntry OBJECT-TYPE
+    SYNTAX      UsdRateLimitRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A RateLimit rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdRateLimitRuleTable 1 }
+
+UsdRateLimitRuleEntry ::= SEQUENCE {
+    usdRateLimitRowStatus   RowStatus,
+    usdRateLimitId          Integer32,
+    usdRateLimitClaclId     Integer32 }
+
+usdRateLimitRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        The rate limit profile ID is mandatory and must be specified.
+
+        Modes supported are create-and-go and destroy."
+    ::= { usdRateLimitRuleEntry 1 }
+
+usdRateLimitId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The RLP ID which provides the rate limit data which completes the
+        RateLimit policy rule."
+    ::= { usdRateLimitRuleEntry 2 }
+
+usdRateLimitClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which fills out the RateLimit policy
+        rule."
+    DEFVAL    { 0 }
+    ::= { usdRateLimitRuleEntry 3 }
+
+
+--
+-- Marking rule table.
+--
+usdMarkingRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdMarkingRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide Marking rule data.  Creation of entries
+        in the table result in a corresponding entry being created in the policy
+        rule table."
+    ::= { usdPolicy 8 }
+
+usdMarkingRuleEntry OBJECT-TYPE
+    SYNTAX      UsdMarkingRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A Marking rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdMarkingRuleTable 1 }
+
+UsdMarkingRuleEntry ::= SEQUENCE {
+    usdMarkingRowStatus RowStatus,
+    usdMarkingTOSByte   Integer32,
+    usdMarkingMask      Integer32,
+    usdMarkingClaclId   Integer32 }
+
+usdMarkingRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        The IP precedence field is mandatory and must be specified.
+
+        Modes supported are create-and-go and destroy. "
+    ::= { usdMarkingRuleEntry 1 }
+
+usdMarkingTOSByte OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP precedence value associated with this policy rule."
+    ::= { usdMarkingRuleEntry 2 }
+
+usdMarkingMask OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The mask to use for TOS byte checks."
+    DEFVAL    { 0 }
+    ::= { usdMarkingRuleEntry 3 }
+
+usdMarkingClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which fills out the Marking policy
+        rule."
+    DEFVAL    { 0 }
+    ::= { usdMarkingRuleEntry 4 }
+
+
+--
+-- Forward rule augmentation table.
+--
+usdForwardRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdForwardRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide forward rule data.  Creation of an
+        entry in this table results in a corresponding entry being created in
+        the policy rule table."
+    ::= { usdPolicy 9 }
+
+usdForwardRuleEntry OBJECT-TYPE
+    SYNTAX      UsdForwardRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A forward rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdForwardRuleTable 1 }
+
+UsdForwardRuleEntry ::= SEQUENCE {
+    usdForwardRowStatus RowStatus,
+    usdForwardClaclId   Integer32 }
+
+usdForwardRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+         Modes supported are create-and-go and destroy. "
+    ::= { usdForwardRuleEntry 1 }
+
+usdForwardClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which completes the forward policy
+        rule."
+    DEFVAL    { 0 }
+    ::= { usdForwardRuleEntry 2 }
+
+
+--
+-- Traffic Shape rule table - Obsolete.
+--
+usdTrafficShapeRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdTrafficShapeRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete list of entries which provide Traffic Shape rule data.
+        Creation of entries in the table result in a corresponding entry being
+        created in the policy rule table.  This list became obsolete when the
+        policy shaper capability was moved into the quality of service
+        component."
+    ::= { usdPolicy 10 }
+
+usdTrafficShapeRuleEntry OBJECT-TYPE
+    SYNTAX      UsdTrafficShapeRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "A TrafficShape rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdTrafficShapeRuleTable 1 }
+
+UsdTrafficShapeRuleEntry ::= SEQUENCE {
+    usdTrafficShapeRowStatus    RowStatus,
+    usdTrafficShapeId           Integer32 }
+
+usdTrafficShapeRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+         The traffic shape profile ID is mandatory and must be specified.
+
+         Modes supported are create-and-go and destroy."
+    ::= { usdTrafficShapeRuleEntry 1 }
+
+usdTrafficShapeId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "The RLP ID which provides the rate limit data which completes the
+        traffic shape policy rule."
+    ::= { usdTrafficShapeRuleEntry 2 }
+
+
+--
+-- Color rule  table.
+--
+usdColorRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdColorRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide Color rule data.  Creation of entries
+        in the table result in a corresponding entry being created in the policy
+        rule table."
+    ::= { usdPolicy 11 }
+
+usdColorRuleEntry OBJECT-TYPE
+    SYNTAX      UsdColorRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A Color rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdColorRuleTable 1 }
+
+UsdColorRuleEntry ::= SEQUENCE {
+    usdColorRowStatus   RowStatus,
+    usdColor            INTEGER,
+    usdColorClaclId     Integer32 }
+
+usdColorRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        The color field is mandatory and must be specified.
+
+        Modes supported are create-and-go and destroy. "
+    ::= { usdColorRuleEntry 1 }
+
+usdColor OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    red(1),
+                    yellow(2),
+                    green(3) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The color with which to explicitly color packets associated with this
+        policy rule."
+    ::= { usdColorRuleEntry 2 }
+
+usdColorClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which fills out the Color policy rule."
+    DEFVAL    { 0 }
+    ::= { usdColorRuleEntry 3 }
+
+
+--
+-- Log rule augmentation table.
+--
+usdLogRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdLogRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide log rule data.  Creation of an entry in
+        this table results in a corresponding entry being created in the policy
+        rule table."
+    ::= { usdPolicy 12 }
+
+usdLogRuleEntry OBJECT-TYPE
+    SYNTAX      UsdLogRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A log rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdLogRuleTable 1 }
+
+UsdLogRuleEntry ::= SEQUENCE {
+    usdLogRowStatus RowStatus,
+    usdLogClaclId   Integer32 }
+
+usdLogRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+         Modes supported are create-and-go and destroy."
+    ::= { usdLogRuleEntry 1 }
+
+usdLogClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which completes the log policy rule."
+    DEFVAL    { 0 }
+    ::= { usdLogRuleEntry 2 }
+
+
+--
+-- Traffic Class rule  table.
+--
+usdTrafficClassRuleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdTrafficClassRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of entries which provide traffic Class rule data.  Creation of
+        entries in the table result in a corresponding entry being created in
+        the policy rule table."
+    ::= { usdPolicy 13 }
+
+usdTrafficClassRuleEntry OBJECT-TYPE
+    SYNTAX      UsdTrafficClassRuleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A Traffic Class rule entry."
+    INDEX     { usdPolicyRulePolicyId,
+                usdPolicyRulePrec,
+                usdPolicyRuleId }
+    ::= { usdTrafficClassRuleTable 1 }
+
+UsdTrafficClassRuleEntry ::= SEQUENCE {
+    usdTrafficClassRowStatus    RowStatus,
+    usdTrafficClassId           Integer32,
+    usdTrafficClassClaclId      Integer32 }
+
+usdTrafficClassRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        The usdTrafficClassId field is mandatory and must be specified.
+
+        Modes supported are create-and-go and destroy. "
+    ::= { usdTrafficClassRuleEntry 1 }
+
+usdTrafficClassId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The traffic class ID."
+    DEFVAL    { 0 }
+    ::= { usdTrafficClassRuleEntry 2 }
+
+usdTrafficClassClaclId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The classifier control list ID which fills out the traffic class policy
+        rule."
+    DEFVAL    { 0 }
+    ::= { usdTrafficClassRuleEntry 3 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Rate Limit Profile Lists
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The Rate Limit list
+--
+usdRateLimitProfileNextIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This scalar object returns the index of the next available row in the
+        usdRateLimitProfileTable.  This object returns a value of zero when it
+        is the lexicographic successor of a varbind presented in an SNMP GETNEXT
+        or GETBULK request, for which circumstance it is assumed that index
+        allocation is unintended."
+::= { usdRateLimitControlList 1 }
+
+usdRateLimitProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdRateLimitProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of Rate Limit Profile (RLP)
+        definitions."
+    ::= { usdRateLimitControlList 2 }
+
+usdRateLimitProfileEntry OBJECT-TYPE
+    SYNTAX      UsdRateLimitProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of a rate limit profile
+        element."
+    INDEX     { usdRateLimitProfileId }
+    ::= { usdRateLimitProfileTable 1 }
+
+UsdRateLimitProfileEntry ::= SEQUENCE {
+    usdRateLimitProfileId           Integer32,
+    usdRateLimitProfileRowStatus    RowStatus,
+    usdRateLimitProfileName         DisplayString,
+    usdRateLimitProfileType         UsdRateLimitProfileType,
+    usdRateLimitReferenceCount      Counter32,
+    usdRateLimitCommittedBps        Unsigned32,
+    usdRateLimitCommittedBurst      Unsigned32,
+    usdRateLimitExceedBps           Unsigned32,
+    usdRateLimitExceedBurst         Unsigned32,
+    usdRateLimitExcessBurst         Unsigned32,
+    usdRateLimitCommittedAction     INTEGER,
+    usdRateLimitConformedAction     INTEGER,
+    usdRateLimitExceededAction      INTEGER,
+    usdRateLimitCommittedMarkVal    Integer32,
+    usdRateLimitConformedMarkVal    Integer32,
+    usdRateLimitExceededMarkVal     Integer32,
+    usdRateLimitMask                Unsigned32 }
+
+usdRateLimitProfileId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ID number of the rate limit profile (RLP) entry which is defined by
+        this row."
+    ::= { usdRateLimitProfileEntry 1 }
+
+usdRateLimitProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        All rowStatus modes are supported.
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+             usdRateLimitProfileName "
+    ::= { usdRateLimitProfileEntry 2 }
+
+usdRateLimitProfileName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(1..40))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies the name of the rate limit profile defined by this row."
+    ::= { usdRateLimitProfileEntry 3 }
+
+usdRateLimitReferenceCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This object reflects the number of times a rate limit profile object is
+        referenced by policies. "
+    ::= { usdRateLimitProfileEntry 4 }
+
+usdRateLimitCommittedBps OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "bits per second"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The committed access rate in bits per second."
+    DEFVAL    { 0 }
+    ::= { usdRateLimitProfileEntry 5 }
+
+usdRateLimitCommittedBurst OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "bytes"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The committed access rate burst value in bytes."
+    DEFVAL    { 8192 }
+    ::= { usdRateLimitProfileEntry 6 }
+
+usdRateLimitExceedBps OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "bits per second"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The peak access rate in bits per second. To be configured only if
+         rate limit profile type is two-rate."
+    DEFVAL    { 0 }
+    ::= { usdRateLimitProfileEntry 7 }
+
+usdRateLimitExceedBurst OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "bytes"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The peak access rate burst value in bytes. To be configured only if
+         rate limit profile type is two-rate."
+    DEFVAL    { 8192 }
+    ::= { usdRateLimitProfileEntry 8 }
+
+usdRateLimitCommittedAction OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    transmit(0),
+                    drop(1),
+                    mark(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Action to be taken when the access rate is within the bounds of the
+        committed access rate."
+    DEFVAL    { transmit }
+    ::= { usdRateLimitProfileEntry 9 }
+
+usdRateLimitConformedAction OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    transmit(0),
+                    drop(1),
+                    mark(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Action to be taken when the access rate exceeds the bounds of the
+        committed access rate."
+    DEFVAL    { transmit }
+    ::= { usdRateLimitProfileEntry 10 }
+
+usdRateLimitExceededAction OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    transmit(0),
+                    drop(1),
+                    mark(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Action to be taken when the access rate exceeds the bounds of the peak
+        access rate."
+    DEFVAL    { transmit }
+    ::= { usdRateLimitProfileEntry 11 }
+
+usdRateLimitCommittedMarkVal OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "New IP precedence to be used when the usdRateLimitCommittedAction mark
+        action is applied."
+    DEFVAL    { 0 }
+    ::= { usdRateLimitProfileEntry 12 }
+
+usdRateLimitConformedMarkVal OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "New IP prececence to be used when the usdRateLimitExceedCommittedAction
+        mark action is applied."
+    DEFVAL    { 0 }
+    ::= { usdRateLimitProfileEntry 13 }
+
+usdRateLimitExceededMarkVal OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "New IP precedence to be used when the usdRateLimitExceedPeakAction mark
+        action is applied."
+    DEFVAL    { 0 }
+    ::= { usdRateLimitProfileEntry 14 }
+
+usdRateLimitMask OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..255)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Mask to be applied when executing a mark action."
+    DEFVAL    { 0 }
+    ::= { usdRateLimitProfileEntry 15 }
+
+usdRateLimitProfileType OBJECT-TYPE
+    SYNTAX      UsdRateLimitProfileType
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The rate limit profile type (i.e. one-rate or two-rate). Defaults 
+         to two-rate, if not specified."
+    DEFVAL    { twoRate }
+    ::= { usdRateLimitProfileEntry 16 }
+
+usdRateLimitExcessBurst OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "bytes"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The excess committed access rate burst value in bytes. To be 
+         configured only if rate limit profile type is one-rate."
+    DEFVAL    { 0 }
+    ::= { usdRateLimitProfileEntry 17 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Traffic Shape Profile Lists - Obsolete.
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The Traffic Shape list
+--
+usdTrafficShapeProfileNextIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete scalar object returns the index of the next available row in
+        the usdTrafficShapeProfileTable.  This object returns a value of zero
+        when it is the lexicographic successor of a varbind presented in an SNMP
+        GETNEXT or GETBULK request, for which circumstance it is assumed that
+        index allocation is unintended.  This object became obsolete when the
+        policy shaper capability was moved into the quality of service
+        component."
+::= { usdTrafficShapeControlList 1 }
+
+usdTrafficShapeProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdTrafficShapeProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "This table contains entries for elements of Traffic Shape Profile
+        definitions.  This table became obsolete when the policy shaper
+        capability was moved into the quality of service component."
+    ::= { usdTrafficShapeControlList 2 }
+
+usdTrafficShapeProfileEntry OBJECT-TYPE
+    SYNTAX      UsdTrafficShapeProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "Each entry describes the characteristics of a traffic shape profile
+        element."
+    INDEX     { usdTrafficShapeProfileId }
+    ::= { usdTrafficShapeProfileTable 1 }
+
+UsdTrafficShapeProfileEntry ::= SEQUENCE {
+    usdTrafficShapeProfileId        Integer32,
+    usdTrafficShapeProfileRowStatus RowStatus,
+    usdTrafficShapeProfileName      DisplayString,
+    usdTrafficShapeReferenceCount   Counter32,
+    usdTrafficShapeRate             Integer32,
+    usdTrafficShapeBurst            Integer32 }
+
+usdTrafficShapeProfileId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The number of the traffic shape profile entry which is defined by this
+        row."
+    ::= { usdTrafficShapeProfileEntry 1 }
+
+usdTrafficShapeProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        All rowStatus modes are supported.
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+             usdTrafficShapeProfileRowStatus "
+    ::= { usdTrafficShapeProfileEntry 2 }
+
+usdTrafficShapeProfileName OBJECT-TYPE
+    SYNTAX      DisplayString(SIZE(1..40))
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "Specifies the name of the traffic shape profile defined by this row."
+    ::= { usdTrafficShapeProfileEntry 3 }
+
+usdTrafficShapeReferenceCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+        "This object reflects the number of times a traffic shape profile object
+        is referenced by policies. "
+    ::= { usdTrafficShapeProfileEntry 4 }
+
+usdTrafficShapeRate OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "bits per second"
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "The traffic shape rate in bits per second."
+    DEFVAL    { 0 }
+    ::= { usdTrafficShapeProfileEntry 5 }
+
+usdTrafficShapeBurst OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "bytes"
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "The traffic shape burst in bytes."
+    DEFVAL    { 0 }
+    ::= { usdTrafficShapeProfileEntry 6 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Classifier Control Lists
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The Classifier control list
+--
+usdClassifierControlListNextIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This scalar object returns the index of the next available row in the
+        usdClassifierControlListTable.  This object returns a value of zero when
+        it is the lexicographic successor of a varbind presented in an SNMP
+        GETNEXT or GETBULK request, for which circumstance it is assumed that
+        index allocation is unintended."
+::= { usdClassifierControlList 1 }
+
+usdClassifierControlListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdClassifierControlListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of classifier control lists.
+        The details pertinent to each CLACL are found in the
+        usdClassifierControlDefTable."
+    ::= { usdClassifierControlList 2 }
+
+usdClassifierControlListEntry OBJECT-TYPE
+    SYNTAX      UsdClassifierControlListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP access list element."
+    INDEX     { usdClassifierControlListId }
+    ::= { usdClassifierControlListTable 1 }
+
+UsdClassifierControlListEntry ::= SEQUENCE {
+    usdClassifierControlListId                  Integer32,
+    usdClassifierControlListRowStatus           RowStatus,
+    usdClassifierControlListName                DisplayString,
+    usdClassifierControlListReferenceCount      Counter32,
+    usdClassifierControlListNextElementIndex    Integer32 }
+
+usdClassifierControlListId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The number of the classifier control list to which this entry belongs."
+    ::= { usdClassifierControlListEntry 1 }
+
+usdClassifierControlListRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        Modes supported are create-and-go and destroy.
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+             usdClassifierControlListRowStatus
+             usdClassifierControlListElemId "
+    ::= { usdClassifierControlListEntry 3 }
+
+usdClassifierControlListName OBJECT-TYPE
+    SYNTAX      DisplayString(SIZE(1..40))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The name of the CLACL being defined."
+    ::= { usdClassifierControlListEntry 4 }
+
+usdClassifierControlListReferenceCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times this CLACL is referenced by policies."
+    ::= { usdClassifierControlListEntry 5 }
+
+usdClassifierControlListNextElementIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Each get of this object will return a unique index which may be used to
+        create classifier control list elements.  This object returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that index allocation is unintended."
+    ::= { usdClassifierControlListEntry 6 }
+
+usdClassifierControlListElementTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdClassifierControlListElementEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of classifier control lists.
+        Entries belonging to the same control list are ordered, and comparisons
+        to those entries are performed in that order until a match is detected.
+        If no match is found, the default action is to 'deny'."
+    ::= { usdClassifierControlList 4 }
+
+usdClassifierControlListElementEntry OBJECT-TYPE
+    SYNTAX      UsdClassifierControlListElementEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP access list element."
+    INDEX     { usdClassifierControlListId,
+                usdClassifierControlListElemId }
+    ::= { usdClassifierControlListElementTable 1 }
+
+UsdClassifierControlListElementEntry ::= SEQUENCE {
+    usdClassifierControlListElemId          Integer32,
+    usdClassifierControlListElemRowStatus   RowStatus,
+    usdClassifierControlListNotSrc          TruthValue,
+    usdClassifierControlListSrc             IpAddress,
+    usdClassifierControlListSrcMask         IpAddress,
+    usdClassifierControlListNotDst          TruthValue,
+    usdClassifierControlListDst             IpAddress,
+    usdClassifierControlListDstMask         IpAddress,
+    usdClassifierControlListNotProtocol     TruthValue,
+    usdClassifierControlListProtocol        Integer32,
+    usdClassifierControlListTosByte         Integer32,
+    usdClassifierControlListMask            Integer32,
+-- TCP/UDP specific element data.
+    usdClassifierControlListSrcOperator     UsdClaclPortOperator,
+    usdClassifierControlListSrcFromPort     Integer32,
+    usdClassifierControlListSrcToPort       Integer32,
+    usdClassifierControlListDestOperator    UsdClaclPortOperator,
+    usdClassifierControlListDestFromPort    Integer32,
+    usdClassifierControlListDestToPort      Integer32,
+-- ICMP specific element data.
+    usdClassifierControlListICMPType        Integer32,
+    usdClassifierControlListICMPCode        Integer32,
+-- IGMP specific element data.
+    usdClassifierControlListIGMPType        Integer32,
+--- TCP flags classification data.
+    usdClassifierControlListTcpFlagsValue   Integer32,
+    usdClassifierControlListTcpFlagsMask    Integer32,
+--- IP flags and frag classification data.
+    usdClassifierControlListIpFlagsValue    Integer32,
+    usdClassifierControlListIpFlagsMask     Integer32,
+    usdClassifierControlListIpFragValue     UsdPolicyIpFragValue }
+
+usdClassifierControlListElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..10000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The relative position of this entry within its classifier control list.
+        Classifier control list entries are searched in this sequence (low to
+        high values) until a match is found."
+    ::= { usdClassifierControlListElementEntry 1 }
+
+usdClassifierControlListElemRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of conceptual rows within this table.
+
+        This table provides a partial implementation for rowStatus.  Rows may be
+        created using createAndGo and createAndWait.  Once a row has been made
+        active the row status may not be changed.  "
+    ::= { usdClassifierControlListElementEntry 2 }
+
+usdClassifierControlListNotSrc OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Invert the meaning of the source IP address and mask objects.  For
+        example 'not 10.10.0.90/255.255.255.255 (host address)' would result in
+        all source addresses except for host 10.19.9.90 being matched.  "
+    DEFVAL    { false }
+    ::= { usdClassifierControlListElementEntry 3 }
+
+usdClassifierControlListSrc OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A source IP address. A subject IP address is first masked with the
+        value of usdClassifierControlListSrcMask, then the result is compared to
+        this value.  Setting both this object and its corresponding mask to
+        0.0.0.0 acts as a wildcard, matching any source IP address."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdClassifierControlListElementEntry 4 }
+
+usdClassifierControlListSrcMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address mask to be applied to a subject source IP address before
+        comparing it to usdClassifierControlListSrc.  Ones in the mask identify
+        which bits in the subject IP address are significant for the comparison.
+
+        To be considered valid, a nonzero value for this object must contain a
+        single contiguous string of ones, beginning with the most significant
+        bit of the mask."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdClassifierControlListElementEntry 5 }
+
+usdClassifierControlListNotDst OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Invert the meaning of the destination IP address and mask objects.  For
+        example, 'not 10.10.0.90/255.255.255.255 (host address)' would result in
+        all source addresses except for host 10.19.9.90 being matched."
+    DEFVAL    { false }
+    ::= { usdClassifierControlListElementEntry 6 }
+
+usdClassifierControlListDst OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A destination IP address.  A subject IP address is first masked with
+        the value of usdClassifierControlListDstMask, then the result is
+        compared to this value.  Setting both this object and its corresponding
+        mask to 0.0.0.0 acts as a wildcard, matching any destination IP
+        address."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdClassifierControlListElementEntry 7 }
+
+usdClassifierControlListDstMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address mask to be applied to a subject destination IP address
+        before comparing it to usdClassifierControlListDst.  Ones in the mask
+        identify which bits in the IP address are significant for the
+        comparison.
+
+        To be considered valid, a nonzero value for this object must contain a
+        single contiguous string of ones, beginning with the most significant
+        bit of the mask."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdClassifierControlListElementEntry 8 }
+
+usdClassifierControlListNotProtocol OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Invert the meaning of the protocol object.  For example, 'not TCP'
+        matches any protocol except for TCP."
+    DEFVAL    { false }
+    ::= { usdClassifierControlListElementEntry 9 }
+
+usdClassifierControlListProtocol OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An IP Protocol value.  Nonzero values match a specific IP Protocol
+        value (e.g. 6 for TCP) carried in an IP packet; a value of zero acts as
+        a wildcard, matching any IP Protocol."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 10 }
+
+usdClassifierControlListTosByte OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP TOS byte value to match."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 11 }
+
+usdClassifierControlListMask OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The mask to use for TOS byte checks. Allowed values are 0, 224, 252, 255."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 12 }
+
+usdClassifierControlListSrcOperator OBJECT-TYPE
+    SYNTAX      UsdClaclPortOperator
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Operator for use in comparing source ports."
+    DEFVAL    { noOperator }
+    ::= { usdClassifierControlListElementEntry 13 }
+
+usdClassifierControlListSrcFromPort OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Source UDP or TCP 'from' port number."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 14 }
+
+usdClassifierControlListSrcToPort OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Source UDP or TCP 'to' port number."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 15 }
+
+usdClassifierControlListDestOperator OBJECT-TYPE
+    SYNTAX      UsdClaclPortOperator
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Operator for use in comparing Destination ports."
+    DEFVAL    { noOperator }
+    ::= { usdClassifierControlListElementEntry 16 }
+
+usdClassifierControlListDestFromPort OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Destination UDP or TCP 'from' port number."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 17 }
+
+usdClassifierControlListDestToPort OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Destination UDP or TCP 'to' port number."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 18 }
+
+usdClassifierControlListICMPType OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Optional ICMP message type for classification."
+    DEFVAL    { 255 }
+    ::= { usdClassifierControlListElementEntry 19 }
+
+usdClassifierControlListICMPCode OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Optional ICMP message code for classification."
+    DEFVAL    { 255 }
+    ::= { usdClassifierControlListElementEntry 20 }
+
+
+usdClassifierControlListIGMPType OBJECT-TYPE
+    SYNTAX      Integer32 (1..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Optional IGMP message type for classification."
+    DEFVAL    { 255 }
+    ::= { usdClassifierControlListElementEntry 21 }
+
+usdClassifierControlListTcpFlagsValue OBJECT-TYPE
+    SYNTAX      Integer32 (0..63)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Optional TCP flags value for classification."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 22 }
+
+usdClassifierControlListTcpFlagsMask OBJECT-TYPE
+    SYNTAX      Integer32 (0..63)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Optional TCP flags mask for classification. TCP flag bits
+         not specified in the mask are don't care bits."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 23 }
+
+usdClassifierControlListIpFlagsValue OBJECT-TYPE
+    SYNTAX      Integer32 (0..7)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Optional IP flags value for classification."
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 24 }
+
+usdClassifierControlListIpFlagsMask OBJECT-TYPE
+    SYNTAX      Integer32 (0..7)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Optional IP flags mask for classification. IP flag bits
+         not specified in the mask are don't care bits"
+    DEFVAL    { 0 }
+    ::= { usdClassifierControlListElementEntry 25 }
+
+usdClassifierControlListIpFragValue OBJECT-TYPE
+    SYNTAX      UsdPolicyIpFragValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Optional IP flags mask for classification. IP flag bits
+         not specified in the mask are don't care bits"
+    DEFVAL    { notSpecified }
+    ::= { usdClassifierControlListElementEntry 26 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Policy Interface Table - Obsolete.
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPolicyIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPolicyIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "This obsolete table contains entries which represent attachment of
+        policies to interfaces.  This table became obsolete when the
+        usdPolicyIfAttTable was added."
+    ::= { usdPolicyIf 1 }
+
+usdPolicyIfEntry OBJECT-TYPE
+    SYNTAX      UsdPolicyIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "Each entry contains the attachment of policy(s) to an interface."
+    INDEX     { usdPolicyIfInterfaceId }
+    ::= { usdPolicyIfTable 1 }
+
+UsdPolicyIfEntry ::= SEQUENCE {
+    usdPolicyIfInterfaceId          Unsigned32,
+    usdPolicyIfRowStatus            RowStatus,
+    usdPolicyIfInputPolicyId        Integer32,
+    usdPolicyIfOutputPolicyId       Integer32,
+    usdPolicyIfInputStatsEnable     TruthValue,
+    usdPolicyIfOutputStatsEnable    TruthValue }
+
+usdPolicyIfInterfaceId OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The interface number representing the interface to which policy(s) have
+        been attached."
+    ::= { usdPolicyIfEntry 1 }
+
+usdPolicyIfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        *** LIMITED ACCESS LIST CONFIGURATION LEVEL ***
+
+        RowStatus createAndGo/destroy operations have the following
+        special-purpose semantics:
+            createAndGo     Create an entry having the specified configuration
+                            and append it to the target list, i.e. create a
+                            policy table entry with the associated policy name.
+            destroy         Destroy the specified list and all of its
+                            constituent elements.
+
+        Policy row members may not be modified once the row has been created."
+    ::= { usdPolicyIfEntry 2 }
+
+usdPolicyIfInputPolicyId OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the attachment of input policies to the
+        interface specified by usdPolicyIfInterfaceId, usdPolicyIfForwardingType
+        and usdPolicyIfPolicyType.
+
+        Attach a policy by setting this value to the ID of the policy.
+
+        Remove a policy attachment by setting this value to zero.
+
+        This object may be modified while the row is active.  If so, the
+        attachment is immediate."
+    DEFVAL    { 0 }
+    ::= { usdPolicyIfEntry 3 }
+
+usdPolicyIfOutputPolicyId OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the attachment of output policies to the
+        interface specified by usdPolicyIfInterfaceId, usdPolicyIfForwardingType
+        and usdPolicyIfPolicyType.
+
+        Attach a policy by setting this value to the ID of the policy.
+
+        Remove a policy attachment by setting this value to zero.
+
+        This object may be modified while the row is active.  If so, the
+        attachment is immediate."
+    DEFVAL    { 0 }
+    ::= { usdPolicyIfEntry 4 }
+
+usdPolicyIfInputStatsEnable OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the enabling and disabling of statistics
+        for an input policy attachment.
+
+        Set this object to true to enable statistics.  Set this object to false
+        to disable statistics.
+
+        This object may be modified while the row is active.  The desired value
+        must be set before the policy is attached or in a multiple object
+        varbind.  Failure to do so will result in the policy being attached with
+        the previous value of usdPolicyInputStatsEnable."
+    DEFVAL    { false }
+    ::= { usdPolicyIfEntry 5 }
+
+usdPolicyIfOutputStatsEnable OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the enabling and disabling of statistics
+        for an output policy attachment.
+
+        Set this object to true to enable statistics.  Set this object to false
+        to disable statistics.
+
+        This object may be modified while the row is active.  The desired value
+        must be set before the policy is attached or in a multiple object
+        varbind.  Failure to do so will result in the policy being attached with
+        the previous value of usdPolicyOutputStatsEnable."
+    DEFVAL    { false }
+    ::= { usdPolicyIfEntry 6 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Policy Interface Attachment Table
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPolicyIfAttachTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPolicyIfAttachEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries which represent attachment of policies to
+        interfaces."
+    ::= { usdPolicyIf 2 }
+
+usdPolicyIfAttachEntry OBJECT-TYPE
+    SYNTAX      UsdPolicyIfAttachEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains the attachment of policy(s) to an interface."
+    INDEX     { usdPolicyIfAttachInterfaceId,
+                usdPolicyIfAttachForwardingType,
+                usdPolicyIfAttachPolicyType }
+    ::= { usdPolicyIfAttachTable 1 }
+
+UsdPolicyIfAttachEntry ::= SEQUENCE {
+    usdPolicyIfAttachInterfaceId    InterfaceIndex,
+    usdPolicyIfAttachForwardingType UsdPolicyForwardingType,
+    usdPolicyIfAttachPolicyType     UsdPolicyAttachmentType,
+    usdPolicyIfAttachRowStatus      RowStatus,
+    usdPolicyIfAttachPolicyId       Integer32,
+    usdPolicyIfAttachStatsEnable    TruthValue }
+
+usdPolicyIfAttachInterfaceId OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The interface number representing the interface to which policy(s) have
+        been attached."
+    ::= { usdPolicyIfAttachEntry 1 }
+
+usdPolicyIfAttachForwardingType OBJECT-TYPE
+    SYNTAX      UsdPolicyForwardingType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The interface type (i.e. IP or CBF) which the policy have been attached
+        to."
+    ::= { usdPolicyIfAttachEntry 2 }
+
+usdPolicyIfAttachPolicyType OBJECT-TYPE
+    SYNTAX      UsdPolicyAttachmentType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The policy type (i.e. input, output or local input)."
+    ::= { usdPolicyIfAttachEntry 3 }
+
+usdPolicyIfAttachRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        *** LIMITED ACCESS LIST CONFIGURATION LEVEL ***
+
+        RowStatus createAndGo/destroy operations have the following
+        special-purpose semantics:
+            createAndGo     Create an entry having the specified configuration
+                            and append it to the  target list, i.e. create a
+                            policy table entry with the associated policy name.
+            destroy         Destroy the specified list and all of its
+                            constituent elements.
+
+        Policy row members may not be modified once the row has been created."
+    ::= { usdPolicyIfAttachEntry 4 }
+
+usdPolicyIfAttachPolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to control the attachment of policies to the
+        interface specified by usdPolicyIfAttachInterfaceId,
+        usdPolicyIfAttachForwardingType and usdPolicyIfAttachPolicyType.
+
+        Attach a policy by setting this value to the ID of the policy.
+
+        Remove a policy attachment by setting this value to zero.
+
+        This object may be modified while the row is active.  If so, the
+        attachment is immediate."
+    DEFVAL    { 0 }
+    ::= { usdPolicyIfAttachEntry 5 }
+
+usdPolicyIfAttachStatsEnable OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to control the enabling and disabling of statistics
+        for a policy attachment.
+
+        Set this object to true to enable statistics.  Set this object to false
+        to disable statistics.
+
+        This object may be modified while the row is active.  The desired value
+        must be set before the policy is attached or in a multiple object
+        varbind.  Failure to do so will result in the policy being attached with
+        the previous value of usdPolicyStatsEnable."
+    DEFVAL    { false }
+    ::= { usdPolicyIfAttachEntry 6 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Policy Profile Table - Obsolete
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPolicyProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPolicyProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "This obsolete table contains entries which represent attachment of
+        policies to dynamic interfaces through profiles.  This table became
+        obsolete when the usdPolicyAttachProfileTable was added."
+    ::= { usdPolicyProfile 1 }
+
+usdPolicyProfileEntry OBJECT-TYPE
+    SYNTAX      UsdPolicyProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "Each entry contains the profile for attachment of policy(s) to a
+        dynamic interface."
+    INDEX     { usdPolicyProfileId }
+    ::= { usdPolicyProfileTable 1 }
+
+UsdPolicyProfileEntry ::= SEQUENCE {
+    usdPolicyProfileId                      Unsigned32,
+    usdPolicyProfileRowStatus               RowStatus,
+    usdPolicyProfileInputPolicyId           Integer32,
+    usdPolicyProfileOutputPolicyId          Integer32,
+    usdPolicyProfileInputStatsEnable        TruthValue,
+    usdPolicyProfileOutputStatsEnable       TruthValue,
+    usdPolicyProfileLocalInputPolicyId      Integer32,
+    usdPolicyProfileLocalInputStatsEnable   TruthValue }
+
+usdPolicyProfileId OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The profile to which the policy attachment profile data belongs.  When
+        this profile is applied to a dynamic interface the associated policies
+        will be applied to that interface."
+    ::= { usdPolicyProfileEntry 1 }
+
+usdPolicyProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        *** LIMITED ACCESS LIST CONFIGURATION LEVEL ***
+
+        RowStatus createAndGo/destroy operations have the following
+        special-purpose semantics:
+            createAndGo     Create an entry having the specified configuration
+                            and append it to the target list, i.e. create a
+                            policy table entry with the associated policy name.
+            destroy         Destroy the specified list and all of its
+                            constituent elements.
+
+        Policy row members may not be modified once the row has been created."
+    ::= { usdPolicyProfileEntry 2 }
+
+usdPolicyProfileInputPolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the attachment of input policies to
+        dynamic interfaces configured by the profile identified by
+        usdPolicyProfileId.
+
+        Attach a policy by setting this value to the ID of the policy.
+
+        Remove a policy attachment by setting this value to zero.
+
+        This object may be modified while the row is active.  Changes made to a
+        row in this table do not take effect until the profile is applied."
+    DEFVAL    { 0 }
+    ::= { usdPolicyProfileEntry 3 }
+
+usdPolicyProfileOutputPolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the attachment of output policies to
+        dynamic interfaces configured by the profile identified by
+        usdPolicyProfileId.
+
+        Attach a policy by setting this value to the ID of the policy.
+
+        Remove a policy attachment by setting this value to zero.
+
+        This object may be modified while the row is active.  Changes made to a
+        row in this table do not take effect until the profile is applied to an
+        interface."
+    DEFVAL    { 0 }
+    ::= { usdPolicyProfileEntry 4 }
+
+usdPolicyProfileInputStatsEnable OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the enabling and disabling of statistics
+        for an input policy attachment performed by a profile.
+
+        Set this object to true to enable statistics.  Set this object to false
+        to disable statistics.
+
+        This object may be modified while the row is active.  The changes will
+        not take effect until the profile is applied to an interface."
+    DEFVAL    { false }
+    ::= { usdPolicyProfileEntry 5 }
+
+usdPolicyProfileOutputStatsEnable OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the enabling and disabling of statistics
+        for an output policy attachment performed by a profile.
+
+        Set this object to true to enable statistics.  Set this object to false
+        to disable statistics.
+
+        This object may be modified while the row is active.  The changes will
+        not take effect until the profile is applied to an interface."
+    DEFVAL    { false }
+    ::= { usdPolicyProfileEntry 6 }
+
+usdPolicyProfileLocalInputPolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the attachment of local input policies
+        to dynamic interfaces configured by the profile identified by
+        usdPolicyProfileId.
+
+        Attach a policy by setting this value to the ID of the policy.
+
+        Remove a policy attachment by setting this value to zero.
+
+        This object may be modified while the row is active.  Changes made to a
+        row in this table do not take effect until the profile is applied."
+    DEFVAL    { 0 }
+    ::= { usdPolicyProfileEntry 7 }
+
+usdPolicyProfileLocalInputStatsEnable OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "This object is used to control the enabling and disabling of statistics
+        for a local input policy attachment performed by a profile.
+
+        Set this object to true to enable statistics.  Set this object to false
+        to disable statistics.
+
+        This object may be modified while the row is active.  The changes will
+        not take effect until the profile is applied to an interface."
+    DEFVAL    { false }
+    ::= { usdPolicyProfileEntry 8 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Policy Attachment Profile Table
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPolicyAttachProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPolicyAttachProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries which represent attachment of policies to
+        dynamic interfaces through profiles."
+    ::= { usdPolicyProfile 2 }
+
+usdPolicyAttachProfileEntry OBJECT-TYPE
+    SYNTAX      UsdPolicyAttachProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains the profile for attachment of policy(s) to a
+        dynamic interface."
+    INDEX     { usdPolicyAttachProfileId,
+                usdPolicyAttachProfileForwardingType,
+                usdPolicyAttachProfilePolicyType }
+    ::= { usdPolicyAttachProfileTable 1 }
+
+UsdPolicyAttachProfileEntry ::= SEQUENCE {
+    usdPolicyAttachProfileId                Unsigned32,
+    usdPolicyAttachProfileForwardingType    UsdPolicyForwardingType,
+    usdPolicyAttachProfilePolicyType        UsdPolicyAttachmentType,
+    usdPolicyAttachProfileRowStatus         RowStatus,
+    usdPolicyAttachProfilePolicyId          Integer32,
+    usdPolicyAttachProfileStatsEnable       TruthValue }
+
+usdPolicyAttachProfileId OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The profile to which the policy attachment profile data belongs.  When
+        this profile is applied to a dynamic interface the associated policies
+        will be applied to that interface."
+    ::= { usdPolicyAttachProfileEntry 1 }
+
+usdPolicyAttachProfileForwardingType OBJECT-TYPE
+    SYNTAX      UsdPolicyForwardingType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The interface type (i.e. IP or CBF) which the policy would be attached
+        to."
+    ::= { usdPolicyAttachProfileEntry 2 }
+
+usdPolicyAttachProfilePolicyType OBJECT-TYPE
+    SYNTAX      UsdPolicyAttachmentType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The policy type (i.e. input, output or local input)."
+    ::= { usdPolicyAttachProfileEntry 3 }
+
+usdPolicyAttachProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        *** LIMITED ACCESS LIST CONFIGURATION LEVEL ***
+
+        RowStatus createAndGo/destroy operations have the following
+        special-purpose semantics:
+            createAndGo     Create an entry having the specified configuration
+                            and append it to the target list, i.e. create a
+                            policy table entry with the associated policy name.
+            destroy         Destroy the specified list and all of its
+                            constituent elements.
+
+        Policy row members may not be modified once the row has been created."
+    ::= { usdPolicyAttachProfileEntry 4 }
+
+usdPolicyAttachProfilePolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to control the attachment of policies to dynamic
+        interfaces configured by the profile identified by
+        usdPolicyAttachProfileId, usdPolicyAttachProfileForwardingType and
+        usdPolicyAttachProfilePolicyType.
+
+        Attach a policy by setting this value to the ID of the policy.
+
+        Remove a policy attachment by setting this value to zero.
+
+        This object may be modified while the row is active.  Changes made to a
+        row in this table do not take effect until the profile is applied."
+    DEFVAL    { 0 }
+    ::= { usdPolicyAttachProfileEntry 5 }
+
+usdPolicyAttachProfileStatsEnable OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to control the enabling and disabling of statistics
+        for an policy attachment performed by a profile.
+
+        Set this object to true to enable statistics.  Set this object to false
+        to disable statistics.
+
+        This object may be modified while the row is active.  The changes will
+        not take effect until the profile is applied to an interface."
+    DEFVAL    { false }
+    ::= { usdPolicyAttachProfileEntry 6 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- The Policy interface statistics table - Obsolete
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPolicyIfStatsTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPolicyIfStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "Each entry within this obsolete table contains statistics data for an
+        interface/policy rule combination.  Interfaces with policies attached
+        and statistics disabled are not represented in this table."
+    ::= { usdPolicyStatistics 1 }
+
+usdPolicyIfStatsEntry OBJECT-TYPE
+    SYNTAX      UsdPolicyIfStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "Each entry defines a single statistics entry."
+    INDEX     { usdPolicyIfStatsIfId,
+                usdPolicyIfStatsPolicyType,
+                usdPolicyIfStatsPolicyId,
+                usdPolicyIfStatsRulePrec,
+                usdPolicyIfStatsRuleId,
+                usdPolicyIfStatsClaclEntryNumber }
+    ::= { usdPolicyIfStatsTable 1 }
+
+UsdPolicyIfStatsEntry ::= SEQUENCE {
+    usdPolicyIfStatsIfId                InterfaceIndex,
+    usdPolicyIfStatsPolicyType          UsdPolicyAttachmentType,
+    usdPolicyIfStatsPolicyId            Integer32,
+    usdPolicyIfStatsRulePrec            Integer32,
+    usdPolicyIfStatsRuleId              Integer32,
+    usdPolicyIfStatsClaclEntryNumber    Integer32,
+    usdPolicyIfStatsGreenPackets        Counter64,
+    usdPolicyIfStatsYellowPackets       Counter64,
+    usdPolicyIfStatsRedPackets          Counter64,
+    usdPolicyIfStatsGreenBytes          Counter64,
+    usdPolicyIfStatsYellowBytes         Counter64,
+    usdPolicyIfStatsRedBytes            Counter64 }
+
+usdPolicyIfStatsIfId OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The interface ID corresponding to the stats block represented by this
+        row."
+    ::= { usdPolicyIfStatsEntry 1 }
+
+usdPolicyIfStatsPolicyType OBJECT-TYPE
+    SYNTAX      UsdPolicyAttachmentType
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The attachment point for the policy."
+    ::= { usdPolicyIfStatsEntry 2 }
+
+usdPolicyIfStatsPolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The PolicyTable index of the policy corresponding to the stats block
+        represented by this row."
+    ::= { usdPolicyIfStatsEntry 3 }
+
+usdPolicyIfStatsRulePrec OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The precedence of the policy rule corresponding to the stats block
+        represented by this row."
+    ::= { usdPolicyIfStatsEntry 4 }
+
+usdPolicyIfStatsRuleId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The index of the policy rule corresponding to the stats block
+        represented by this row."
+    ::= { usdPolicyIfStatsEntry 5 }
+
+usdPolicyIfStatsClaclEntryNumber OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+        "The index of the clacl entry number corresponding to the stats block
+        represented by this row."
+    ::= { usdPolicyIfStatsEntry 6 }
+
+usdPolicyIfStatsGreenPackets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+        "The number of green packets policed by the policy rule."
+    ::= { usdPolicyIfStatsEntry 7 }
+
+usdPolicyIfStatsYellowPackets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+        "The number of yellow packets policed by the policy rule."
+    ::= { usdPolicyIfStatsEntry 8 }
+
+usdPolicyIfStatsRedPackets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+        "The number of red packets policed by the policy rule."
+    ::= { usdPolicyIfStatsEntry 9 }
+
+usdPolicyIfStatsGreenBytes OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+        "The number of green bytes policed by the policy rule."
+    ::= { usdPolicyIfStatsEntry 10 }
+
+usdPolicyIfStatsYellowBytes OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+        "The number of yellow bytes policed by the policy rule."
+    ::= { usdPolicyIfStatsEntry 11 }
+
+usdPolicyIfStatsRedBytes OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+        "The number of red bytes policed by the policy rule."
+    ::= { usdPolicyIfStatsEntry 12 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- The Policy interface attachment statistics table
+--
+-- The policy interface statistics table presents statistics as green,
+-- yellow, and red packets and bytes.  This is because the interpretation
+-- of the statistics is linked to the type of policy rule which has
+-- resulted in the generation of the statistics.
+--
+-- Each policy rule and how the statistics are interpreted is as follows:
+--
+-- nextHopRule:
+--     usdPolicyIfAttachStatsGreenPackets and usdPolicyIfAttachGreenBytes
+--     represent the number of packets and bytes routed to the next-hop IP
+--     address.
+--
+--     usdPolicyIfAttachStatsYellowPackets, usdPolicyIfAttachYellowBytes,
+--     usdPolicyIfAttachStatsRedPackets, and usdPolicyIfAttachRedBytes are always
+--     zero.
+--
+-- filterRule:
+--     usdPolicyIfAttachStatsGreenPackets and usdPolicyIfAttachGreenBytes
+--     represent the number of packets and bytes filtered (dropped) by the
+--     filter rule.
+--
+--     usdPolicyIfAttachStatsYellowPackets, usdPolicyIfAttachYellowBytes,
+--     usdPolicyIfAttachStatsRedPackets, and usdPolicyIfAttachRedBytes are always
+--     zero.
+--
+-- nextInterfaceRule:
+--     usdPolicyIfAttachStatsGreenPackets and usdPolicyIfAttachGreenBytes
+--     represent the number of packets and bytes routed to the next-interface
+--     interface.
+--
+--     usdPolicyIfAttachStatsYellowPackets, usdPolicyIfAttachYellowBytes,
+--     usdPolicyIfAttachStatsRedPackets, and usdPolicyIfAttachRedBytes are always
+--     zero.
+--
+-- rateLimitRule:
+--     usdPolicyIfAttachStatsGreenPackets and usdPolicyIfAttachGreenBytes
+--     represent the number of packets and bytes policed by the rate limit rule
+--     committed action.
+--
+--     usdPolicyIfAttachStatsYellowPackets and usdPolicyIfAttachYellowBytes
+--     represent the number of packets and bytes policed by the rate limit rule
+--     conformed action.
+--
+--     usdPolicyIfAttachStatsRedPackets and usdPolicyIfAttachRedBytes represent
+--     the number of packets and bytes policed by the rateLimitRule exceeded
+--     action.
+--
+-- markingRule:
+--     usdPolicyIfAttachStatsGreenPackets and usdPolicyIfAttachGreenBytes
+--     represent the number of packets and bytes marked by the marking rule.
+--
+--     usdPolicyIfAttachStatsYellowPackets, usdPolicyIfAttachYellowBytes,
+--     usdPolicyIfAttachStatsRedPackets, and usdPolicyIfAttachRedBytes are always
+--     zero.
+--
+-- forwardRule:
+--     usdPolicyIfAttachStatsGreenPackets and usdPolicyIfAttachGreenBytes
+--     represent the number of packets and bytes forwarded by the forwardRule.
+--
+--     usdPolicyIfAttachStatsYellowPackets, usdPolicyIfAttachYellowBytes,
+--     usdPolicyIfAttachStatsRedPackets, and usdPolicyIfAttachRedBytes are always
+--     zero.
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdPolicyIfAttachStatsTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPolicyIfAttachStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry within this table contains statistics data for an
+        interface/policy rule combination.  Interfaces with policies attached
+        and statistics disabled are not represented in this table."
+    ::= { usdPolicyStatistics 2 }
+
+usdPolicyIfAttachStatsEntry OBJECT-TYPE
+    SYNTAX      UsdPolicyIfAttachStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry defines a single statistics entry."
+    INDEX     { usdPolicyIfAttachStatsIfId,
+                usdPolicyIfAttachStatsForwardingType,
+                usdPolicyIfAttachStatsPolicyType,
+                usdPolicyIfAttachStatsPolicyId,
+                usdPolicyIfAttachStatsRulePrec,
+                usdPolicyIfAttachStatsRuleId,
+                usdPolicyIfAttachStatsClaclEntryNumber }
+    ::= { usdPolicyIfAttachStatsTable 1 }
+
+UsdPolicyIfAttachStatsEntry ::= SEQUENCE {
+    usdPolicyIfAttachStatsIfId              InterfaceIndex,
+    usdPolicyIfAttachStatsForwardingType    UsdPolicyForwardingType,
+    usdPolicyIfAttachStatsPolicyType        UsdPolicyAttachmentType,
+    usdPolicyIfAttachStatsPolicyId          Integer32,
+    usdPolicyIfAttachStatsRulePrec          Integer32,
+    usdPolicyIfAttachStatsRuleId            Integer32,
+    usdPolicyIfAttachStatsClaclEntryNumber  Integer32,
+    usdPolicyIfAttachStatsGreenPackets      Counter64,
+    usdPolicyIfAttachStatsYellowPackets     Counter64,
+    usdPolicyIfAttachStatsRedPackets        Counter64,
+    usdPolicyIfAttachStatsGreenBytes        Counter64,
+    usdPolicyIfAttachStatsYellowBytes       Counter64,
+    usdPolicyIfAttachStatsRedBytes          Counter64 }
+
+usdPolicyIfAttachStatsIfId OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The interface ID corresponding to the stats block represented by this
+        row."
+    ::= { usdPolicyIfAttachStatsEntry 1 }
+
+usdPolicyIfAttachStatsForwardingType OBJECT-TYPE
+    SYNTAX      UsdPolicyForwardingType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The forwarding type for the policy attachment."
+    ::= { usdPolicyIfAttachStatsEntry 2 }
+
+usdPolicyIfAttachStatsPolicyType OBJECT-TYPE
+    SYNTAX      UsdPolicyAttachmentType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The attachment point for the policy."
+    ::= { usdPolicyIfAttachStatsEntry 3 }
+
+usdPolicyIfAttachStatsPolicyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The PolicyTable index of the policy corresponding to the stats block
+        represented by this row."
+    ::= { usdPolicyIfAttachStatsEntry 4 }
+
+usdPolicyIfAttachStatsRulePrec OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The precedence of the policy rule corresponding to the stats block
+        represented by this row."
+    ::= { usdPolicyIfAttachStatsEntry 5 }
+
+usdPolicyIfAttachStatsRuleId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The index of the policy rule corresponding to the stats block
+        represented by this row."
+    ::= { usdPolicyIfAttachStatsEntry 6 }
+
+usdPolicyIfAttachStatsClaclEntryNumber OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The index of the clacl entry number corresponding to the stats block
+        represented by this row."
+    ::= { usdPolicyIfAttachStatsEntry 7 }
+
+usdPolicyIfAttachStatsGreenPackets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of green packets policed by the policy rule."
+    ::= { usdPolicyIfAttachStatsEntry 8 }
+
+usdPolicyIfAttachStatsYellowPackets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of yellow packets policed by the policy rule."
+    ::= { usdPolicyIfAttachStatsEntry 9 }
+
+usdPolicyIfAttachStatsRedPackets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of red packets policed by the policy rule."
+    ::= { usdPolicyIfAttachStatsEntry 10 }
+
+usdPolicyIfAttachStatsGreenBytes OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of green bytes policed by the policy rule."
+    ::= { usdPolicyIfAttachStatsEntry 11 }
+
+usdPolicyIfAttachStatsYellowBytes OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of yellow bytes policed by the policy rule."
+    ::= { usdPolicyIfAttachStatsEntry 12 }
+
+usdPolicyIfAttachStatsRedBytes OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of red bytes policed by the policy rule."
+    ::= { usdPolicyIfAttachStatsEntry 13 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdPolicyConformance OBJECT IDENTIFIER ::= { usdPolicyMIB 2 }
+usdPolicyCompliances OBJECT IDENTIFIER ::= { usdPolicyConformance 1 }
+usdPolicyGroups      OBJECT IDENTIFIER ::= { usdPolicyConformance 2 }
+
+-- compliance statements
+
+usdPolicyCompliance MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere policy management MIB.  This statement became obsolete when
+        policy traffic shape and color objects were added to the MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPolicyGroup,
+            usdRateLimitControlListGroup,
+            usdClassifierControlListGroup,
+            usdPolicyIfGroup,
+            usdPolicyProfileGroup,
+            usdPolicyStatisticsGroup }
+    ::= { usdPolicyCompliances 1 }                                     -- RX 1.3
+
+usdPolicyCompliance2 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere policy management MIB.  This statement was obsolete when
+        policy log rule objects were added to the MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPolicyGroup2,
+            usdRateLimitControlListGroup,
+            usdClassifierControlListGroup,
+            usdPolicyIfGroup,
+            usdPolicyProfileGroup,
+            usdPolicyStatisticsGroup,
+            usdTrafficShapeProfileGroup }
+    ::= { usdPolicyCompliances 2 }                                     -- RX 2.6
+
+usdPolicyCompliance3 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere policy management MIB.  This statement became obsolete when
+        policy color rule objects were added, the policy profile table was
+        extended and the policy interface attachement tables were replaced by
+        new versions."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPolicyGroup2,
+            usdRateLimitControlListGroup,
+            usdClassifierControlListGroup,
+            usdPolicyIfGroup,
+            usdPolicyProfileGroup,
+            usdPolicyStatisticsGroup,
+            usdTrafficShapeProfileGroup,
+            usdLogRuleGroup }
+    ::= { usdPolicyCompliances 3 }                                     -- RX 2.8
+
+usdPolicyCompliance4 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere policy management MIB.  This statement became obsolete when
+        TCP flag and IP flag classifier control list objects were added and the
+        usdPolicyProfileTable was repalced by the usdPolicyAttachProfileTable."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPolicyGroup2,
+            usdRateLimitControlListGroup,
+            usdClassifierControlListGroup,
+            usdPolicyIfAttachGroup,
+            usdPolicyProfileGroup2,
+            usdPolicyAttachStatisticsGroup,
+            usdTrafficShapeProfileGroup,
+            usdLogRuleGroup }
+    ::= { usdPolicyCompliances 4 }                                     -- RX 3.0
+
+usdPolicyCompliance5 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere policy management MIB.  This statement became obsolete when
+        traffic class rule objects and new rate limit objects were added and
+        when the policy shaper capability was moved into the quality of service
+        component."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPolicyBaseGroup,
+            usdClassifierControlListGroup2,
+            usdPolicyIfAttachGroup,
+            usdPolicyAttachProfileGroup,
+            usdPolicyAttachStatisticsGroup }
+        GROUP       usdRateLimitGroup
+            DESCRIPTION
+                "The rate limit group is mandatory only for entities that
+                implement rate limit policy management."
+        GROUP       usdTrafficShapeGroup
+            DESCRIPTION
+                "The traffic shape group is mandatory only for entities that
+                implement traffic shape policy management."
+        GROUP       usdLogRuleGroup
+            DESCRIPTION
+                "The log rule group is mandatory only for entities that
+                implement log policy management."
+        GROUP       usdNextHopRulesGroup
+            DESCRIPTION
+                "The next-hop rules group is mandatory only for entities that
+                implement next-hop policy management."
+        GROUP       usdFilterRulesGroup
+            DESCRIPTION
+                "The filter rules group is mandatory only for entities that
+                implement filter policy management."
+        GROUP       usdNextInterfaceRulesGroup
+            DESCRIPTION
+                "The next-interface rules group is mandatory only for entities
+                that implement next-interface policy management."
+        GROUP       usdMarkingRulesGroup
+            DESCRIPTION
+                "The marking rules group is mandatory only for entities that
+                implement marking policy management."
+        GROUP       usdForwardRulesGroup
+            DESCRIPTION
+                "The forward rules group is mandatory only for entities that
+                implement forward policy management."
+        GROUP       usdColorRulesGroup
+            DESCRIPTION
+                "The color rules group is mandatory only for entities that
+                implement color policy management."
+    ::= { usdPolicyCompliances 5 }                                     -- RX 3.2
+
+usdPolicyCompliance6 MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for entities which implement the Unisphere
+        policy management MIB."
+    MODULE  -- this module
+        MANDATORY-GROUPS {
+            usdPolicyBaseGroup,
+            usdClassifierControlListGroup2,
+            usdPolicyIfAttachGroup,
+            usdPolicyAttachProfileGroup,
+            usdPolicyAttachStatisticsGroup }
+        GROUP       usdRateLimitGroup2
+            DESCRIPTION
+                "The rate limit group is mandatory only for entities that
+                implement rate limit policy management."
+        GROUP       usdLogRuleGroup
+            DESCRIPTION
+                "The log rule group is mandatory only for entities that
+                implement log policy management."
+        GROUP       usdNextHopRulesGroup
+            DESCRIPTION
+                "The next-hop rules group is mandatory only for entities that
+                implement next-hop policy management."
+        GROUP       usdFilterRulesGroup
+            DESCRIPTION
+                "The filter rules group is mandatory only for entities that
+                implement filter policy management."
+        GROUP       usdNextInterfaceRulesGroup
+            DESCRIPTION
+                "The next-interface rules group is mandatory only for entities
+                that implement next-interface policy management."
+        GROUP       usdMarkingRulesGroup
+            DESCRIPTION
+                "The marking rules group is mandatory only for entities that
+                implement marking policy management."
+        GROUP       usdForwardRulesGroup
+            DESCRIPTION
+                "The forward rules group is mandatory only for entities that
+                implement forward policy management."
+        GROUP       usdColorRulesGroup
+            DESCRIPTION
+                "The color rules group is mandatory only for entities that
+                implement color policy management."
+        GROUP       usdTrafficClassRulesGroup
+            DESCRIPTION
+                "The traffic class rule group is mandatory only for entities
+                that implement traffic class policy management."
+    ::= { usdPolicyCompliances 6 }                                     -- RX 4.0
+
+
+-- units of conformance
+
+usdPolicyGroup OBJECT-GROUP
+    OBJECTS {
+        usdPolicyNextIndex,
+
+        usdPolicyRowStatus,
+        usdPolicyAdminState,
+        usdPolicyOperStatus,
+        usdPolicyErrorValue,
+        usdPolicyName,
+        usdPolicyReferenceCount,
+        usdPolicyRuleNextIndex,
+
+        usdPolicyRuleType,
+        usdPolicySuspend,
+        usdPolicyEclipsed,
+
+        usdNextHopRowStatus,
+        usdNextHopIpAddress,
+        usdNextHopClaclId,
+
+        usdFilterRowStatus,
+        usdFilterClaclId,
+
+        usdNextInterfaceRowStatus,
+        usdNextInterfaceId,
+        usdNextInterfaceClaclId,
+        usdNextInterfaceNextHop,
+
+        usdRateLimitRowStatus,
+        usdRateLimitId,
+        usdRateLimitClaclId,
+
+        usdMarkingRowStatus,
+        usdMarkingTOSByte,
+        usdMarkingMask,
+        usdMarkingClaclId,
+
+        usdForwardRowStatus,
+        usdForwardClaclId }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing policies in a Unisphere
+        product.  This group became obsolete when policy traffic shape and color
+        objects were added."
+    ::= { usdPolicyGroups 1 }
+
+usdRateLimitControlListGroup OBJECT-GROUP
+    OBJECTS {
+        usdRateLimitProfileNextIndex,
+
+        usdRateLimitProfileRowStatus,
+        usdRateLimitProfileName,
+        usdRateLimitReferenceCount,
+        usdRateLimitCommittedBps,
+        usdRateLimitCommittedBurst,
+        usdRateLimitExceedBps,
+        usdRateLimitExceedBurst,
+        usdRateLimitCommittedAction,
+        usdRateLimitConformedAction,
+        usdRateLimitExceededAction,
+        usdRateLimitCommittedMarkVal,
+        usdRateLimitConformedMarkVal,
+        usdRateLimitExceededMarkVal,
+        usdRateLimitMask }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing rate limit control lists in
+        a Unisphere product.  This group became obsolete when it was replaced by
+        the usdRateLimitGroup so that rate limit support could become optional."
+    ::= { usdPolicyGroups 2 }
+
+usdClassifierControlListGroup OBJECT-GROUP
+    OBJECTS {
+        usdClassifierControlListNextIndex,
+
+        usdClassifierControlListRowStatus,
+        usdClassifierControlListName,
+        usdClassifierControlListReferenceCount,
+        usdClassifierControlListNextElementIndex,
+
+        usdClassifierControlListElemRowStatus,
+        usdClassifierControlListNotSrc,
+        usdClassifierControlListSrc,
+        usdClassifierControlListSrcMask,
+        usdClassifierControlListNotDst,
+        usdClassifierControlListDst,
+        usdClassifierControlListDstMask,
+        usdClassifierControlListNotProtocol,
+        usdClassifierControlListProtocol,
+        usdClassifierControlListTosByte,
+        usdClassifierControlListMask,
+        usdClassifierControlListSrcOperator,
+        usdClassifierControlListSrcFromPort,
+        usdClassifierControlListSrcToPort,
+        usdClassifierControlListDestOperator,
+        usdClassifierControlListDestFromPort,
+        usdClassifierControlListDestToPort,
+        usdClassifierControlListICMPType,
+        usdClassifierControlListICMPCode,
+        usdClassifierControlListIGMPType }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing elements of classifier
+        control lists in a Unisphere product.  This group became obsolete when
+        support was added for TCP flag and IP flag control objects."
+    ::= { usdPolicyGroups 3 }
+
+usdPolicyIfGroup OBJECT-GROUP
+    OBJECTS {
+        usdPolicyIfRowStatus,
+        usdPolicyIfInputPolicyId,
+        usdPolicyIfOutputPolicyId,
+        usdPolicyIfInputStatsEnable,
+        usdPolicyIfOutputStatsEnable
+    }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing attachment of policies to
+        interfaces in a Unisphere product.  This group became obsolete when the
+        usdPolicyIfTable was replaced by the usdPolicyIfAttachTable."
+    ::= { usdPolicyGroups 4 }
+
+usdPolicyProfileGroup OBJECT-GROUP
+    OBJECTS {
+        usdPolicyProfileRowStatus,
+        usdPolicyProfileInputPolicyId,
+        usdPolicyProfileOutputPolicyId,
+        usdPolicyProfileInputStatsEnable,
+        usdPolicyProfileOutputStatsEnable }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing attachment of policies to
+        dynamic interfaces through profiles in a Unisphere product.  This group
+        became obsolete when the usdPolicyProfileLocalInputPolicyId and the
+        usdPolicyProfileLocalInputStatsEnable objects were added."
+    ::= { usdPolicyGroups 5 }
+
+usdPolicyStatisticsGroup OBJECT-GROUP
+    OBJECTS {
+        usdPolicyIfStatsGreenPackets,
+        usdPolicyIfStatsYellowPackets,
+        usdPolicyIfStatsRedPackets,
+        usdPolicyIfStatsGreenBytes,
+        usdPolicyIfStatsYellowBytes,
+        usdPolicyIfStatsRedBytes }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing statistics data for an
+        interface/policy rule combination in a Unisphere product.  This group
+        became obsolete when the usdPolicyIfStatsTable was replaced by the
+        usdPolicyIfAttachStatsTable."
+    ::= { usdPolicyGroups 6 }
+
+usdPolicyGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdPolicyNextIndex,
+
+        usdPolicyRowStatus,
+        usdPolicyAdminState,
+        usdPolicyOperStatus,
+        usdPolicyErrorValue,
+        usdPolicyName,
+        usdPolicyReferenceCount,
+        usdPolicyRuleNextIndex,
+
+        usdPolicyRuleType,
+        usdPolicySuspend,
+        usdPolicyEclipsed,
+
+        usdNextHopRowStatus,
+        usdNextHopIpAddress,
+        usdNextHopClaclId,
+
+        usdFilterRowStatus,
+        usdFilterClaclId,
+
+        usdNextInterfaceRowStatus,
+        usdNextInterfaceId,
+        usdNextInterfaceClaclId,
+        usdNextInterfaceNextHop,
+
+        usdRateLimitRowStatus,
+        usdRateLimitId,
+        usdRateLimitClaclId,
+
+        usdMarkingRowStatus,
+        usdMarkingTOSByte,
+        usdMarkingMask,
+        usdMarkingClaclId,
+
+        usdForwardRowStatus,
+        usdForwardClaclId,
+
+        usdTrafficShapeRowStatus,
+        usdTrafficShapeId,
+
+        usdColorRowStatus,
+        usdColor,
+        usdColorClaclId }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing policies in a Unisphere
+        product.  This group became obsolete when the specific rules objects
+        were broken out into separte groups."
+    ::= { usdPolicyGroups 7 }
+
+usdTrafficShapeProfileGroup OBJECT-GROUP
+    OBJECTS {
+        usdTrafficShapeProfileNextIndex,
+        usdTrafficShapeProfileRowStatus,
+        usdTrafficShapeProfileName,
+        usdTrafficShapeReferenceCount,
+        usdTrafficShapeRate,
+        usdTrafficShapeBurst }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for traffic shaping data for a policy
+        rule in a Unisphere product.  This group became obsolete when it was
+        combined with the traffic shape policy rules objects."
+    ::= { usdPolicyGroups 8 }
+
+usdLogRuleGroup OBJECT-GROUP
+    OBJECTS {
+        usdLogRowStatus,
+        usdLogClaclId }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for log data for a policy rule in a Unisphere
+        product."
+    ::= { usdPolicyGroups 9 }
+
+usdPolicyIfAttachGroup OBJECT-GROUP
+    OBJECTS {
+        usdPolicyIfAttachRowStatus,
+        usdPolicyIfAttachPolicyId,
+        usdPolicyIfAttachStatsEnable }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing attachment of policies to
+        interfaces in a Unisphere product."
+    ::= { usdPolicyGroups 10 }
+
+usdPolicyProfileGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdPolicyProfileRowStatus,
+        usdPolicyProfileInputPolicyId,
+        usdPolicyProfileOutputPolicyId,
+        usdPolicyProfileInputStatsEnable,
+        usdPolicyProfileOutputStatsEnable,
+        usdPolicyProfileLocalInputPolicyId,
+        usdPolicyProfileLocalInputStatsEnable }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing attachment of policies to
+        dynamic interfaces through profiles.  This group became obsolete when
+        the usdPolicyProfileTable was replaced by the
+        usdPolicyAttachProfileTable."
+    ::= { usdPolicyGroups 11 }
+
+usdPolicyAttachStatisticsGroup OBJECT-GROUP
+    OBJECTS {
+        usdPolicyIfAttachStatsGreenPackets,
+        usdPolicyIfAttachStatsYellowPackets,
+        usdPolicyIfAttachStatsRedPackets,
+        usdPolicyIfAttachStatsGreenBytes,
+        usdPolicyIfAttachStatsYellowBytes,
+        usdPolicyIfAttachStatsRedBytes }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing statistics data for an
+        interface/policy rule combination in a Unisphere product."
+    ::= { usdPolicyGroups 12 }
+
+usdClassifierControlListGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdClassifierControlListNextIndex,
+
+        usdClassifierControlListRowStatus,
+        usdClassifierControlListName,
+        usdClassifierControlListReferenceCount,
+        usdClassifierControlListNextElementIndex,
+
+        usdClassifierControlListElemRowStatus,
+        usdClassifierControlListNotSrc,
+        usdClassifierControlListSrc,
+        usdClassifierControlListSrcMask,
+        usdClassifierControlListNotDst,
+        usdClassifierControlListDst,
+        usdClassifierControlListDstMask,
+        usdClassifierControlListNotProtocol,
+        usdClassifierControlListProtocol,
+        usdClassifierControlListTosByte,
+        usdClassifierControlListMask,
+        usdClassifierControlListSrcOperator,
+        usdClassifierControlListSrcFromPort,
+        usdClassifierControlListSrcToPort,
+        usdClassifierControlListDestOperator,
+        usdClassifierControlListDestFromPort,
+        usdClassifierControlListDestToPort,
+        usdClassifierControlListICMPType,
+        usdClassifierControlListICMPCode,
+        usdClassifierControlListIGMPType,
+        usdClassifierControlListTcpFlagsValue,
+        usdClassifierControlListTcpFlagsMask,
+        usdClassifierControlListIpFlagsValue,
+        usdClassifierControlListIpFlagsMask,
+        usdClassifierControlListIpFragValue }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing elements of classifier control
+        lists in a Unisphere product."
+    ::= { usdPolicyGroups 13 }
+
+usdPolicyAttachProfileGroup OBJECT-GROUP
+    OBJECTS {
+        usdPolicyAttachProfileRowStatus,
+        usdPolicyAttachProfilePolicyId,
+        usdPolicyAttachProfileStatsEnable }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing attachment of policies to dynamic
+        interfaces through profiles."
+    ::= { usdPolicyGroups 14 }
+
+usdPolicyBaseGroup OBJECT-GROUP
+    OBJECTS {
+        usdPolicyNextIndex,
+
+        usdPolicyRowStatus,
+        usdPolicyAdminState,
+        usdPolicyOperStatus,
+        usdPolicyErrorValue,
+        usdPolicyName,
+        usdPolicyReferenceCount,
+        usdPolicyRuleNextIndex,
+
+        usdPolicyRuleType,
+        usdPolicySuspend,
+        usdPolicyEclipsed }
+    STATUS      current
+    DESCRIPTION
+        "A collection of basic objects for managing policies in a Unisphere
+        product."
+    ::= { usdPolicyGroups 15 }
+
+usdNextHopRulesGroup OBJECT-GROUP
+    OBJECTS {
+        usdNextHopRowStatus,
+        usdNextHopIpAddress,
+        usdNextHopClaclId }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing next-hop policy rules in a
+        Unisphere product."
+    ::= { usdPolicyGroups 16 }
+
+usdFilterRulesGroup OBJECT-GROUP
+    OBJECTS {
+        usdFilterRowStatus,
+        usdFilterClaclId }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing filter policy rules in a Unisphere
+        product."
+    ::= { usdPolicyGroups 17 }
+
+usdNextInterfaceRulesGroup OBJECT-GROUP
+    OBJECTS {
+        usdNextInterfaceRowStatus,
+        usdNextInterfaceId,
+        usdNextInterfaceClaclId,
+        usdNextInterfaceNextHop }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing next-interface policy rules in a
+        Unisphere product."
+    ::= { usdPolicyGroups 18 }
+
+usdRateLimitGroup OBJECT-GROUP
+    OBJECTS {
+        usdRateLimitRowStatus,
+        usdRateLimitId,
+        usdRateLimitClaclId,
+
+        usdRateLimitProfileNextIndex,
+
+        usdRateLimitProfileRowStatus,
+        usdRateLimitProfileName,
+        usdRateLimitReferenceCount,
+        usdRateLimitCommittedBps,
+        usdRateLimitCommittedBurst,
+        usdRateLimitExceedBps,
+        usdRateLimitExceedBurst,
+        usdRateLimitCommittedAction,
+        usdRateLimitConformedAction,
+        usdRateLimitExceededAction,
+        usdRateLimitCommittedMarkVal,
+        usdRateLimitConformedMarkVal,
+        usdRateLimitExceededMarkVal,
+        usdRateLimitMask }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing rate limit policy rules and
+        profile lists in a Unisphere product.  This group became obsolete when
+        new rate limit profile objects were added."
+    ::= { usdPolicyGroups 19 }
+
+usdMarkingRulesGroup OBJECT-GROUP
+    OBJECTS {
+        usdMarkingRowStatus,
+        usdMarkingTOSByte,
+        usdMarkingMask,
+        usdMarkingClaclId }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing policy rules for marking in a
+        Unisphere product."
+    ::= { usdPolicyGroups 20 }
+
+usdForwardRulesGroup OBJECT-GROUP
+    OBJECTS {
+        usdForwardRowStatus,
+        usdForwardClaclId }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing forward policy rules in a
+        Unisphere product."
+    ::= { usdPolicyGroups 21 }
+
+usdTrafficShapeGroup OBJECT-GROUP
+    OBJECTS {
+        usdTrafficShapeRowStatus,
+        usdTrafficShapeId,
+
+        usdTrafficShapeProfileNextIndex,
+
+        usdTrafficShapeProfileRowStatus,
+        usdTrafficShapeProfileName,
+        usdTrafficShapeReferenceCount,
+        usdTrafficShapeRate,
+        usdTrafficShapeBurst }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects for managing traffic shape policy rules
+        and profile lists in a Unisphere product.  This group became obsolete
+        when the policy shaper capability was moved into the quality of service
+        component."
+    ::= { usdPolicyGroups 22 }
+
+usdColorRulesGroup OBJECT-GROUP
+    OBJECTS {
+        usdColorRowStatus,
+        usdColor,
+        usdColorClaclId }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing color policy rules in a Unisphere
+        product."
+    ::= { usdPolicyGroups 23 }
+
+usdTrafficClassRulesGroup OBJECT-GROUP
+    OBJECTS {
+        usdTrafficClassRowStatus,
+        usdTrafficClassId,
+        usdTrafficClassClaclId }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing traffic class policy rules in a
+        Unisphere product."
+    ::= { usdPolicyGroups 24 }
+
+usdRateLimitGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdRateLimitRowStatus,
+        usdRateLimitId,
+        usdRateLimitClaclId,
+
+        usdRateLimitProfileNextIndex,
+
+        usdRateLimitProfileRowStatus,
+        usdRateLimitProfileName,
+        usdRateLimitProfileType,
+        usdRateLimitReferenceCount,
+        usdRateLimitCommittedBps,
+        usdRateLimitCommittedBurst,
+        usdRateLimitExceedBps,
+        usdRateLimitExceedBurst,
+        usdRateLimitExcessBurst,
+        usdRateLimitCommittedAction,
+        usdRateLimitConformedAction,
+        usdRateLimitExceededAction,
+        usdRateLimitCommittedMarkVal,
+        usdRateLimitConformedMarkVal,
+        usdRateLimitExceededMarkVal,
+        usdRateLimitMask }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for managing rate limit policy rules and
+        profile lists in a Unisphere product."
+    ::= { usdPolicyGroups 25 }
+
+END

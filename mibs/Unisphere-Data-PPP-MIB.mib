@@ -1,0 +1,2449 @@
+
+-- *****************************************************************************
+-- Unisphere-Data-PPP-MIB
+--
+-- Unisphere Networks Inc. Enterprise MIB
+-- PPP MIB
+--
+-- Copyright (c) 1998, 1999 Redstone Communications, Incorporated.
+-- Copyright (c) 1999, 2002 Unisphere Networks, Incorporated.
+-- All Rights Reserved.
+-- *****************************************************************************
+
+Unisphere-Data-PPP-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, Counter32, IpAddress, TimeTicks
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, TruthValue, RowStatus
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    ifIndex, InterfaceIndex, InterfaceIndexOrZero
+        FROM IF-MIB
+    usDataMibs
+        FROM Unisphere-Data-MIBs
+    UsdEnable, UsdNextIfIndex, UsdName
+        FROM Unisphere-Data-TC;
+
+usdPppMIB  MODULE-IDENTITY
+    LAST-UPDATED "200205092031Z"  -- 09-May-02 04:31 PM EDT
+    ORGANIZATION "Unisphere Networks, Inc."
+    CONTACT-INFO
+        "       Unisphere Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The Point-to-Point Protocol (PPP) MIB for the Unisphere enterprise."
+    -- Revision History
+    REVISION    "200205092031Z"  -- 09-May-02 04:31 PM EDT  - RX 4.0
+    DESCRIPTION
+        "Added new objects to usdPppIpGroup, usdPppLcpGroup and usdPppMlpppGroup."
+    REVISION    "200205082000Z"  -- 08-May-02 04:00 PM EDT  - RX 3.3
+    DESCRIPTION
+        "Revised the conformance statements."
+    REVISION    "200010091610Z"  --  9-Oct-00 12:10 PM EDT  - RX 2.4
+    DESCRIPTION
+        "Added usdPppLinkConfigStandardIfIndex object for cross referencing with
+        standard PPP mibs."
+    REVISION    "200002151200Z"  -- 15-Feb-00               - RX 2.0
+    DESCRIPTION
+        "Added usdPppLinkStatusTunnelIfIndex, Multi-Link PPP support, and PPP
+        Interface Summary counts.
+        Modified Terminate reasons to include tunnel-related events."
+    REVISION    "9907010000Z"    --  1-Jul-99               - RX 1.1
+    DESCRIPTION
+        "Additional objects added to support remote access capabilities,
+        including termination reason, authentication protocol, option
+        negotiation status."
+    REVISION    "9811130000Z"    -- 13-Nov-98               - RX 1.0
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 11 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+UsdPppAuthentication ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Specifies the type(s) of PPP authentication used, if any:
+          none      No authentication is negotiated.
+          pap       PAP negotiation only.
+          chap      CHAP negotiation only.
+          papChap   PAP negotiation is attempted first; if fails, attempt CHAP.
+          chapPap   CHAP negotiation is attempted first; if fails, attempt PAP."
+    SYNTAX      INTEGER {
+                    none(0),
+                    pap(1),
+                    chap(2),
+                    papChap(3),
+                    chapPap(4) }
+
+UsdPppMlPppBundleName ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "MLPPP Bundle name.  The bundle name is a characteristic of a MLPPP
+        network interface."
+    SYNTAX OCTET STRING (SIZE(0..32))
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPppObjects     OBJECT IDENTIFIER ::= { usdPppMIB 1 }
+
+--
+-- This MIB contains managed objects for PPP interfaces.
+-- Management objects are provided to query for an available
+-- interface index, and to create/delete interfaces of this type.
+-- Creating/deleting this interface type using this MIB has
+-- the side effect of creating/deleting corresponding entries
+-- in the Interface MIB ifTable/ifXTable, and in the Unisphere
+-- Enterprise Interface MIB usdIfTable.
+--
+-- This MIB acts as a supplement to IETF MIBs RFC1471 PPP-LCP-MIB
+-- and RFC1473 PPP-IP-NCP-MIB.
+--
+
+--
+-- MIB object definitions are organized into the following
+-- functional sections:
+--
+usdPppLcp        OBJECT IDENTIFIER   ::= { usdPppObjects 1 }
+usdPppSec        OBJECT IDENTIFIER   ::= { usdPppObjects 2 }     -- reserved
+usdPppIp         OBJECT IDENTIFIER   ::= { usdPppObjects 3 }
+usdPppOsi        OBJECT IDENTIFIER   ::= { usdPppObjects 4 }
+usdPppSession    OBJECT IDENTIFIER   ::= { usdPppObjects 5 }
+usdPppMlPpp      OBJECT IDENTIFIER   ::= { usdPppObjects 6 }
+usdPppSummary    OBJECT IDENTIFIER   ::= { usdPppObjects 7 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- PPP LCP
+--
+-- This section defines objects used to manage the PPP Link / LCP
+-- layer of PPP.
+--
+-- The usdPppLinkStatusTable complements RFC1471 pppLinkStatusTable,
+-- providing status indications regarding the operation
+-- of network protocols over each link. The addition/removal of a
+-- network protocol service is accomplished outside this MIB.
+--
+-- The usdPppLinkConfigTable complements RFC1471 pppLinkConfigTable,
+-- providing the ability to create/delete instances of PPP links
+-- and providing for configuration of option parameter values (if any)
+-- not found in the standard MIB, to be used during LCP negotiation.
+--
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- The PPP Link Status Table
+--
+usdPppLinkStatusTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppLinkStatusEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for PPP interfaces present in the system."
+    ::= { usdPppLcp 1 }
+
+usdPppLinkStatusEntry OBJECT-TYPE
+    SYNTAX      UsdPppLinkStatusEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of a PPP interface."
+    INDEX     { ifIndex }
+    ::= { usdPppLinkStatusTable 1 }
+
+UsdPppLinkStatusEntry ::= SEQUENCE {
+    usdPppLinkStatusTerminateReason         INTEGER,
+    usdPppLinkStatusTerminateNegFailOption  INTEGER,
+    usdPppLinkStatusInKeepaliveRequests     Counter32,
+    usdPppLinkStatusOutKeepaliveRequests    Counter32,
+    usdPppLinkStatusInKeepaliveReplies      Counter32,
+    usdPppLinkStatusOutKeepaliveReplies     Counter32,
+    usdPppLinkStatusKeepaliveFailures       Counter32,
+    usdPppLinkStatusLocalMagicNumber        Integer32,
+    usdPppLinkStatusRemoteMagicNumber       Integer32,
+    usdPppLinkStatusLocalAuthentication     UsdPppAuthentication,
+    usdPppLinkStatusTunnelIfIndex           InterfaceIndexOrZero }
+
+usdPppLinkStatusTerminateReason OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    other(1),
+                    adminDisable(2),
+                    lowerLayerDown(3),
+                    noUpperInterface(4),
+                    authenticationFailure(5),
+                    peerTerminated(6),
+                    peerRenegotiated(7),
+                    maxRetriesExceeded(8),
+                    negotiationFailure(9),
+                    keepaliveFailure(10),
+                    sessionTimeout(11),
+                    inactivityTimeout(12),
+                    addressLeaseExpired(13),
+                    adminLogout(14),
+                    tunnelFailed(15),
+                    tunnelDisconnected(16),
+                    loopback(17) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Reason the PPP link was terminated:
+            none                    None.
+            other                   Not specified.
+            adminDisable            Interface administratively disabled.
+            lowerLayerDown          Underlying interface is down.
+            noUpperInterface        No interface above PPP.
+            authenticationFailure   Authentication failed.
+            peerTerminated          Peer initiated termination.
+            peerRenegotiated        Peer initiated renegotiation.
+            maxRetriesExceeded      Maximum number of config retries exceeded.
+            negotiationFailure      Failed to negotiate LCP option.  See
+                                    usdPppLinkStatusTerminateNegFailOption.
+            keepaliveFailure        Keepalive failed.
+            sessionTimeout          Maximum session period expired.
+            inactivityTimeout       Maximum inactivity period expired.
+            addressLeaseExpired     Lease for network address expired.
+            adminLogout             Session administratively terminated.
+            tunnelFailed            Associated tunnel failed.
+            tunnelDisconnected      Associated tunnel disconnected.
+            loopback                Loopback detected."
+    ::= { usdPppLinkStatusEntry 1 }
+
+usdPppLinkStatusTerminateNegFailOption OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    other(1),
+                    localMru(2),
+                    remoteMru(3),
+                    localMagicNumber(4),
+                    remoteMagicNumber(5),
+                    localAuthentication(6),
+                    localToRemoteProtocolCompression(7),
+                    localToRemoteACCompression(8) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Reports the PPP LCP option for which negotiation failed, when
+        usdPppLinkStatusTerminateReason has the value 'negotiationFailure'."
+    ::= { usdPppLinkStatusEntry 2 }
+
+usdPppLinkStatusInKeepaliveRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of keepalive requests received."
+    ::= { usdPppLinkStatusEntry 3 }
+
+usdPppLinkStatusOutKeepaliveRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of keepalive requests transmitted."
+    ::= { usdPppLinkStatusEntry 4 }
+
+usdPppLinkStatusInKeepaliveReplies OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of keepalive replies received."
+    ::= { usdPppLinkStatusEntry 5 }
+
+usdPppLinkStatusOutKeepaliveReplies OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of keepalive replies transmitted."
+    ::= { usdPppLinkStatusEntry 6 }
+
+usdPppLinkStatusKeepaliveFailures OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of keepalive failures detected."
+    ::= { usdPppLinkStatusEntry 7 }
+
+usdPppLinkStatusLocalMagicNumber OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Magic number negotiated for the local side."
+    ::= { usdPppLinkStatusEntry 8 }
+
+usdPppLinkStatusRemoteMagicNumber OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Magic number negotiated for the remote side."
+    ::= { usdPppLinkStatusEntry 9 }
+
+usdPppLinkStatusLocalAuthentication OBJECT-TYPE
+    SYNTAX      UsdPppAuthentication
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Authentication protocol negotiated for the local side."
+    ::= { usdPppLinkStatusEntry 10 }
+
+usdPppLinkStatusTunnelIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an associated interface pertaining to a tunneling
+        protocol, or zero if no such interface exists.
+
+        The type of tunneling interface can be identified from information in
+        the entries in ifTable and usdIfTable for this tunnel interface."
+    ::= { usdPppLinkStatusEntry 11 }
+
+
+--
+-- The PPP Link Configuration Table
+--
+usdPppLinkConfigTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppLinkConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for PPP interfaces present in the system."
+    ::= { usdPppLcp 2 }
+
+usdPppLinkConfigEntry OBJECT-TYPE
+    SYNTAX      UsdPppLinkConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of a PPP interface.
+        Creating/deleting entries in this table causes corresponding entries for
+        be created/deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdPppLinkConfigIfIndex }
+    ::= { usdPppLinkConfigTable 1 }
+
+UsdPppLinkConfigEntry ::= SEQUENCE {
+    usdPppLinkConfigIfIndex                    InterfaceIndex,
+    usdPppLinkConfigRowStatus                  RowStatus,
+    usdPppLinkConfigLowerIfIndex               InterfaceIndexOrZero,
+    usdPppLinkConfigKeepalive                  Integer32,
+    usdPppLinkConfigAuthentication             UsdPppAuthentication,
+    usdPppLinkConfigMaxAuthenRetries           Integer32,
+    usdPppLinkConfigStandardIfIndex            InterfaceIndex,
+    usdPppLinkConfigChapMinChallengeLength     INTEGER,
+    usdPppLinkConfigChapMaxChallengeLength     INTEGER,
+    usdPppLinkConfigPassiveMode                UsdEnable,
+    usdPppLinkConfigAuthenticatorVirtualRouter UsdName }
+
+usdPppLinkConfigIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the PPP interface.  When creating entries in this table,
+        suitable values for this object are determined by reading
+        usdPppNextIfIndex."
+    ::= { usdPppLinkConfigEntry 1 }
+
+usdPppLinkConfigRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdPppLinkConfigRowStatus
+            usdPppLinkConfigLowerIfIndex
+
+        In addition, when creating an entry the following conditions must hold:
+
+            A value for usdPppLinkConfigIndex must have been determined
+            previously, by reading usdPppNextIfIndex.
+
+            The interface identified by usdPppLinkConfigLowerIfIndex must exist.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created/destroyed
+        as a result of creating/destroying an entry in this table."
+    ::= { usdPppLinkConfigEntry 2 }
+
+usdPppLinkConfigLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an interface over which this PPP interface is to be
+        layered.  A value of zero indicates no layering.  An implementation may
+        choose to require that a non-zero value be configured at entry
+        creation."
+    ::= { usdPppLinkConfigEntry 3 }
+
+usdPppLinkConfigKeepalive OBJECT-TYPE
+    SYNTAX      Integer32 (0|30..300)
+    UNITS       "seconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Keepalive interval in seconds.  A value of zero disables keepalive.
+        Keepalive is performed using LCP Echo."
+    DEFVAL    { 30 }
+    ::= { usdPppLinkConfigEntry 4 }
+
+usdPppLinkConfigAuthentication OBJECT-TYPE
+    SYNTAX      UsdPppAuthentication
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the type(s) of authentication, if any, to be negotiated with
+        the peer:
+          none      No authentication is negotiated.
+          pap       PAP negotiation only.
+          chap      CHAP negotiation only.
+          papChap   PAP negotiation is attempted first; if fails, attempt CHAP.
+          chapPap   CHAP negotiation is attempted first; if fails, attempt PAP.
+
+        If authentication negotiation is not supported for this PPP interface,
+        then any attempt to explicitely set this object will result in a
+        notWritable error and it will be implicitily set to the DEFVAL on row
+        creation.
+
+        Setting this object to none will set  
+        usdPppLinkConfigAuthenticatorVirtualRouter object to an empty string."
+    DEFVAL    { none }
+    ::= { usdPppLinkConfigEntry 5 }
+
+usdPppLinkConfigMaxAuthenRetries OBJECT-TYPE
+    SYNTAX      Integer32 (0..7)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The number of authentication retries permitted, in addition to a failed
+        initial attempt.  If all retries fail, the link is reset.
+
+        If authentication negotiation is not supported for this PPP interface,
+        then any attempt to explicitely set this object will result in a
+        notWritable error and it will be implicitily set to the DEFVAL on row
+        creation."
+    DEFVAL    { 0 }
+    ::= { usdPppLinkConfigEntry 6 }
+
+usdPppLinkConfigStandardIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex value for this interface in the standard PPP MIBs.  The
+        ifIndex value for PPP interfaces is not the same for both proprietary
+        and standard MIB tables pertaining to PPP interface.  Therefore this
+        value is provide to simply cross referencing standard PPP and
+        proprietary PPP MIB information."
+    ::= { usdPppLinkConfigEntry 7 }
+
+usdPppLinkConfigChapMinChallengeLength OBJECT-TYPE
+    SYNTAX      INTEGER (8..63)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Minimum value of the CHAP authenticator challenge length value.  This
+        value is never allowed to be set to a value greater than
+        usdPppLinkConfigChapMaxChallengeLength."
+    DEFVAL    { 16 }
+    ::= { usdPppLinkConfigEntry 8 }
+
+usdPppLinkConfigChapMaxChallengeLength OBJECT-TYPE
+    SYNTAX      INTEGER (8..63)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Maximum value of the CHAP authenticator challenge length value. This
+        value is never allowed to be set to a value less than
+        usdPppLinkConfigChapMinChallengeLength."
+    DEFVAL    { 32 }
+    ::= { usdPppLinkConfigEntry 9 }
+
+usdPppLinkConfigPassiveMode OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "When enabled, LCP state machine is forced into passive mode on lower
+        layer UP message.  It adds compatibility with slow and buggy clients."
+    DEFVAL    { disable }
+    ::= { usdPppLinkConfigEntry 10 }
+
+usdPppLinkConfigAuthenticatorVirtualRouter OBJECT-TYPE
+    SYNTAX      UsdName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The name of the virtual router (Unisphere-Data-ROUTER-MIB.usdRouterName)
+        to be used for authentication on the PPP interface.  Setting this object
+        statically binds the authenticating virtual router with the PPP interface.  
+        If this object is not explicitly set or it is set to null string, then 
+        this object is ignored and the virtual router used for authentication is 
+        determined by other means.  On a Set operation, if the value of this object
+        is not null and does not correspond to an existing virtual router, then 
+        an inconsistentValue error is returned.
+
+        Setting this object to non null string returns inconsistentValue error if 
+        usdPppLinkConfigAuthentication object is none or not configured."
+    ::= { usdPppLinkConfigEntry 11 }
+
+--
+-- IfIndex selection for creating new PPP interfaces in usdPppLinkConfigTable.
+--
+-- NOTE: This object is placed after usdPppLinkConfigTable so
+-- that usdPppLinkStatusTable and usdPppLinkConfigTable have the
+-- same relative MIB node positions below the usdPppLcp node
+-- (usdPppLcp.1 and usdPppLcp.2, respectively) as their counterpart
+-- Status and Config tables in RFC1471.
+--
+usdPppNextIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in the
+        usdPppLinkConfigTable.
+
+        A GET of this object returns the next available ifIndex value to be used
+        to create an entry in the associated interface table; or zero, if no
+        valid ifIndex value is available.  This object also returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdPppLcp 3 }
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- PPP Security
+--
+-- This section defines objects used to manage the PPP Security
+-- functionality of PPP.
+--
+-- //////////////////////////////////////////////////////////////////////
+
+-- No objects are currently defined.
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- PPP IP NCP
+--
+-- This section defines objects used to manage the PPP Network
+-- Control Protocol for IP protocol operation (IPCP).
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- The PPP IP Table
+--
+usdPppIpTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppIpEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table containing the IP parameters for the local PPP entity."
+    ::= { usdPppIp 1 }
+
+usdPppIpEntry OBJECT-TYPE
+    SYNTAX      UsdPppIpEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "IPCP status information for a particular PPP link."
+    INDEX     { ifIndex }
+    ::= { usdPppIpTable 1 }
+
+UsdPppIpEntry ::= SEQUENCE {
+    usdPppIpServiceStatus               UsdEnable,
+    usdPppIpTerminateReason             INTEGER,
+    usdPppIpTerminateNegFailOption      INTEGER,
+    usdPppIpLocalIpAddress              IpAddress,
+    usdPppIpRemoteIpAddress             IpAddress,
+    usdPppIpRemotePrimaryDnsAddress     IpAddress,
+    usdPppIpRemoteSecondaryDnsAddress   IpAddress,
+    usdPppIpRemotePrimaryWinsAddress    IpAddress,
+    usdPppIpRemoteSecondaryWinsAddress  IpAddress }
+
+usdPppIpServiceStatus OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether IP protocol service is operating over this PPP link.
+        Service is established on this link through means outside this MIB."
+    ::= { usdPppIpEntry 1 }
+
+usdPppIpTerminateReason OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    other(1),
+                    noService(2),
+                    admin(3),
+                    linkDown(4),
+                    peerTerminated(5),
+                    peerRenegotiated(6),
+                    maxRetriesExceeded(7),
+                    negotiationFailure(8) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Reason the IPCP link was terminated:
+            none                    None.
+            other                   Not specified.
+            noService               No IP service configured on this PPP link.
+            admin                   Administratively disabled.
+            linkDown                Underlying link is down.
+            peerTerminated          Peer initiated termination.
+            peerRenegotiated        Peer initiated renegotiation.
+            maxRetriesExceeded      Maximum number of config retries exceeded.
+            negotiationFailure      Failed to negotiate IPCP option.  See
+                                    usdPppIpTerminateNegFailOption."
+    ::= { usdPppIpEntry 2 }
+
+usdPppIpTerminateNegFailOption OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    other(1),
+                    localIpAddress(2),
+                    remoteIpAddress(3),
+                    remotePrimaryDnsAddress(4),
+                    remoteSecondaryDnsAddress(5),
+                    remotePrimaryWinsAddress(6),
+                    remoteSecondaryWinsAddress(7) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Reports the PPP IPCP option for which negotiation failed, when
+        usdPppIpTerminateReason has the value 'negotiationFailure'."
+    ::= { usdPppIpEntry 3 }
+
+usdPppIpLocalIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "IP Address used by the local side."
+    ::= { usdPppIpEntry 4 }
+
+usdPppIpRemoteIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "IP Address used by the remote side."
+    ::= { usdPppIpEntry 5 }
+
+usdPppIpRemotePrimaryDnsAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Primary DNS server used by the remote side."
+    ::= { usdPppIpEntry 6 }
+
+usdPppIpRemoteSecondaryDnsAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Secondary DNS server used by the remote side."
+    ::= { usdPppIpEntry 7 }
+
+usdPppIpRemotePrimaryWinsAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Primary WINS server used by the remote side."
+    ::= { usdPppIpEntry 8 }
+
+usdPppIpRemoteSecondaryWinsAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Secondary WINS server used by the remote side."
+    ::= { usdPppIpEntry 9 }
+
+
+--
+-- The PPP IP Config Table
+--
+usdPppIpConfigTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppIpConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table containing the IP parameters for the local PPP entity."
+    ::= { usdPppIp 2 }
+
+usdPppIpConfigEntry OBJECT-TYPE
+    SYNTAX      UsdPppIpConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "IPCP configuration information for a particular PPP link."
+    INDEX     { ifIndex }
+    ::= { usdPppIpConfigTable 1 }
+
+UsdPppIpConfigEntry ::= SEQUENCE {
+    usdPppIpConfigPeerDnsPriority   UsdEnable,
+    usdPppIpConfigPeerWinsPriority  UsdEnable,
+    usdPppIpConfigIpcpNetmask       UsdEnable }
+
+usdPppIpConfigPeerDnsPriority OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "When enabled, allows peer's DNS address to prevail in the event of a
+        negotiation conflict; when disabled, the local PPP interface's DNS
+        address prevails."
+    ::= { usdPppIpConfigEntry 1 }
+
+usdPppIpConfigPeerWinsPriority OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "When enabled, allows peer's WINS address to prevail in the event of a
+        negotiation conflict; when disabled, the local PPP interface's WINS
+        address prevails."
+    ::= { usdPppIpConfigEntry 2 }
+
+usdPppIpConfigIpcpNetmask OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Enables the negotiation of the IPCP option netmask (0x90) during IPCP
+        negotiation."
+    DEFVAL { disable }
+    ::= { usdPppIpConfigEntry 3 }
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- PPP OSI NCP
+--
+-- This section defines objects used to manage the PPP Network
+-- Control Protocol for OSI protocol operation (OSICP).
+--
+-- The IETF does not define a standard MIB for managing an OSI NCP.
+-- For consistency, this MIB follows the model of RFC1473 for IP NCP:
+-- A status table reports the condition of the NCP state machine, and
+-- the outcome of option parameter negotiation (if any) when the
+-- OperStatus object has the value 'opened(1)'; a configuration table
+-- provides administrative control over the NCP state machine, and
+-- permits configuration of proposed option parameter values (if any)
+-- to be used during NCP negotiation.
+--
+-- /////////////////////////////////////////////////////////////////////////////
+
+--
+-- PPP OSI Status Table
+--
+usdPppOsiTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppOsiEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table containing the OSI parameters for the local PPP entity."
+    ::= { usdPppOsi 1 }
+
+usdPppOsiEntry OBJECT-TYPE
+    SYNTAX      UsdPppOsiEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "OSICP status information for a particular PPP link."
+    INDEX     { ifIndex }
+    ::= { usdPppOsiTable 1 }
+
+UsdPppOsiEntry ::= SEQUENCE {
+    usdPppOsiServiceStatus          UsdEnable,
+    usdPppOsiOperStatus             INTEGER,
+    usdPppOsiTerminateReason        INTEGER,
+    usdPppOsiTerminateNegFailOption INTEGER,
+    usdPppOsiLocalAlignNpdu         INTEGER,
+    usdPppOsiRemoteAlignNpdu        INTEGER }
+
+usdPppOsiServiceStatus OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether OSI protocol service is operating over this PPP link.
+        Service is established on this link through means outside this MIB."
+    ::= { usdPppOsiEntry 1 }
+
+usdPppOsiOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    opened(1),
+                    notOpened(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The operational status of the OSI network protocol.  If the value of
+        this object is up then the finite state machine for the OSI network
+        protocol has reached the Opened state."
+    ::= { usdPppOsiEntry 2 }
+
+usdPppOsiTerminateReason OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    other(1),
+                    noService(2),
+                    admin(3),
+                    linkDown(4),
+                    peerTerminated(5),
+                    peerRenegotiated(6),
+                    maxRetriesExceeded(7),
+                    negotiationFailure(8) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Reason the OSICP link was terminated:
+            none                    None.
+            other                   Not specified.
+            noService               No OSI service configured on this PPP link.
+            admin                   Administratively disabled.
+            linkDown                Underlying link is down.
+            peerTerminated          Peer initiated termination.
+            peerRenegotiated        Peer initiated renegotiation.
+            maxRetriesExceeded      Maximum number of config retries exceeded.
+            negotiationFailure      Failed to negotiate IPCP option.  See
+                                    usdPppOsiTerminateNegFailOption."
+    ::= { usdPppOsiEntry 3 }
+
+usdPppOsiTerminateNegFailOption OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    other(1),
+                    localAlignNpdu(2),
+                    remoteAlignNpdu(3) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Reports the PPP OSICP option for which negotiation failed, when
+        usdPppOsiTerminateReason has the value 'negotiationFailure'."
+    ::= { usdPppOsiEntry 4 }
+
+usdPppOsiLocalAlignNpdu OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    oneModulo4(1),
+                    twoModulo4(2),
+                    threeModulo4(3),
+                    fourModulo4(4),
+                    even(254),
+                    odd(255) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Local alignment of network PDU:
+            none            No alignment specified.
+            oneModulo4      Alignment on first octet (out of four).
+            twoModulo4      Alignment on second octet (out of four).
+            threeModulo4    Alignment on third octet (out of four).
+            fourModulo4     Alignment on fourth octet (out of four).
+            even            Alignment on even-octet boundary.
+            odd             Alignment on odd-octet boundary."
+    ::= { usdPppOsiEntry 5 }
+
+usdPppOsiRemoteAlignNpdu OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    oneModulo4(1),
+                    twoModulo4(2),
+                    threeModulo4(3),
+                    fourModulo4(4),
+                    even(254),
+                    odd(255) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Remote alignment of network PDU.
+            none            No alignment specified.
+            oneModulo4      Alignment on first octet (out of four).
+            twoModulo4      Alignment on second octet (out of four).
+            threeModulo4    Alignment on third octet (out of four).
+            fourModulo4     Alignment on fourth octet (out of four).
+            even            Alignment on even-octet boundary.
+            odd             Alignment on odd-octet boundary."
+    ::= { usdPppOsiEntry 6 }
+
+
+--
+-- The PPP OSI Configuration Table
+--
+usdPppOsiConfigTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppOsiConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table containing configuration variables for the OSICP for the local
+        PPP entity."
+    ::= { usdPppOsi 2 }
+
+usdPppOsiConfigEntry   OBJECT-TYPE
+    SYNTAX      UsdPppOsiConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "OSICP information for a particular PPP link."
+    INDEX     { ifIndex }
+    ::= { usdPppOsiConfigTable 1 }
+
+UsdPppOsiConfigEntry ::= SEQUENCE {
+    usdPppOsiConfigAdminStatus  INTEGER }
+
+usdPppOsiConfigAdminStatus   OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    open(1),
+                    close(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The immediate desired status of the OSI network protocol.  Setting this
+        object to open will inject an administrative open event into the OSI
+        network protocol's finite state machine.  Setting this object to close
+        will inject an administrative close event into the OSI network
+        protocol's finite state machine."
+    ::= { usdPppOsiConfigEntry 1 }
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- PPP Session
+--
+-- This section defines objects used to manage the PPP sessions.
+--
+-- The usdPppSessionTable provides status of each PPP session.
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- The PPP Session Table
+--
+usdPppSessionTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppSessionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for PPP interfaces present in the system."
+    ::= { usdPppSession 1 }
+
+usdPppSessionEntry OBJECT-TYPE
+    SYNTAX      UsdPppSessionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of a PPP interface."
+    INDEX     { ifIndex }
+    ::= { usdPppSessionTable 1 }
+
+UsdPppSessionEntry ::= SEQUENCE {
+    usdPppSessionGrant                      TruthValue,
+    usdPppSessionTerminateReason            INTEGER,
+    usdPppSessionStartTime                  TimeTicks,
+    usdPppSessionInOctets                   Counter32,
+    usdPppSessionOutOctets                  Counter32,
+    usdPppSessionInPackets                  Counter32,
+    usdPppSessionOutPackets                 Counter32,
+    usdPppSessionSessionTimeout             Integer32,
+    usdPppSessionInactivityTimeout          Integer32,
+    usdPppSessionAccountingInterval         Integer32,
+    usdPppSessionRemoteIpAddress            IpAddress,
+    usdPppSessionRemotePrimaryDnsAddress    IpAddress,
+    usdPppSessionRemoteSecondaryDnsAddress  IpAddress,
+    usdPppSessionRemotePrimaryWinsAddress   IpAddress,
+    usdPppSessionRemoteSecondaryWinsAddress IpAddress }
+
+usdPppSessionGrant OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether a session has been granted via the authentication
+        mechanism."
+    ::= { usdPppSessionEntry 1 }
+
+usdPppSessionTerminateReason OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    unknown(1),
+                    userRequest(2),
+                    keepaliveFailure(3),
+                    sessionTimeout(4),
+                    inactivityTimeout(5),
+                    adminDisable(6),
+                    lowerLayerDown(7),
+                    noUpperInterface(8),
+                    deny(9),
+                    noHardware(10),
+                    noResources(11),
+                    noInterface(12),
+                    challengeTimeout(13),
+                    requestTimeout(14),
+                    authenticatorTimeout(15),
+                    addressLeaseExpired(16),
+                    adminLogout(17),
+                    tunnelFailed(18) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The reason the session was terminated."
+    ::= { usdPppSessionEntry 2 }
+
+usdPppSessionStartTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of sysUpTime when this session last became active."
+    ::= { usdPppSessionEntry 3 }
+
+usdPppSessionInOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "octets"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of octets received since this session last became active, as
+        denoted by usdPppSessionStartTime."
+    ::= { usdPppSessionEntry 4 }
+
+usdPppSessionOutOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "octets"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of octets sent since this session last became active, as denoted
+        by usdPppSessionStartTime."
+    ::= { usdPppSessionEntry 5 }
+
+usdPppSessionInPackets OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "packets"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received since this session last became active, as
+        denoted by usdPppSessionStartTime."
+    ::= { usdPppSessionEntry 6 }
+
+usdPppSessionOutPackets OBJECT-TYPE
+    SYNTAX      Counter32
+    UNITS       "packets"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets sent since this session last became active, as
+        denoted by usdPppSessionStartTime."
+    ::= { usdPppSessionEntry 7 }
+
+usdPppSessionSessionTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Maximum duration for the session, after which the session terminates
+        automatically."
+    ::= { usdPppSessionEntry 8 }
+
+usdPppSessionInactivityTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Maximum inactivity duration for the session, after which the session
+        terminates automatically."
+    ::= { usdPppSessionEntry 9 }
+
+usdPppSessionAccountingInterval OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Interval that must elapse between generation of accounting records for
+        this session."
+    ::= { usdPppSessionEntry 10 }
+
+usdPppSessionRemoteIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Remote IP address, obtained from the authentication service, to be used
+        during IPCP negotiation with the remote side."
+    ::= { usdPppSessionEntry 11 }
+
+usdPppSessionRemotePrimaryDnsAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Remote primary DNS IP address, obtained from the authentication
+        service, to be used during IPCP negotiation with the remote side."
+    ::= { usdPppSessionEntry 12 }
+
+usdPppSessionRemoteSecondaryDnsAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Remote secondary DNS IP address, obtained from the authentication
+        service, to be used during IPCP negotiation with the remote side."
+    ::= { usdPppSessionEntry 13 }
+
+usdPppSessionRemotePrimaryWinsAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Remote primary WINS IP address, obtained from the authentication
+        service, to be used during IPCP negotiation with the remote side."
+    ::= { usdPppSessionEntry 14 }
+
+usdPppSessionRemoteSecondaryWinsAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Remote secondary WINS IP address, obtained from the authentication
+        service, to be used during IPCP negotiation with the remote side."
+    ::= { usdPppSessionEntry 15 }
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- Multi-Link PPP  (MLPPP)
+--
+-- This section defines objects used to manage the MLPPP.
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- The MLPPP BundleTable
+--
+usdPppMlPppBundleTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppMlPppBundleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for MLPPP bundles present in the system."
+    ::= { usdPppMlPpp 1 }
+
+usdPppMlPppBundleEntry OBJECT-TYPE
+    SYNTAX      UsdPppMlPppBundleEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of a MLPPP bundle."
+    INDEX     { usdPppMlPppBundleName }
+    ::= { usdPppMlPppBundleTable 1 }
+
+UsdPppMlPppBundleEntry ::= SEQUENCE {
+    usdPppMlPppBundleName           UsdPppMlPppBundleName,
+    usdPppMlPppBundleRowStatus      RowStatus,
+    usdPppMlPppBundleNetworkIfIndex InterfaceIndex }
+
+usdPppMlPppBundleName OBJECT-TYPE
+    SYNTAX      UsdPppMlPppBundleName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The administrative name of the MLPPP bundle associated with this MLPPP
+        network interface."
+    ::= { usdPppMlPppBundleEntry 1 }
+
+usdPppMlPppBundleRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The rowStatus for this entry.  The following sets are supported:
+             createAndGo(4),
+             destroy(6)
+
+         The following values can be read from this object:
+             active(1) "
+    ::= { usdPppMlPppBundleEntry 2 }
+
+usdPppMlPppBundleNetworkIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of this MLPPP network interface. It is a valid ifIndex 
+        even if there is no corresponding network interface instance in the 
+        usdPppMlPppLinkConfigTable."
+    ::= { usdPppMlPppBundleEntry 3 }
+
+--
+-- IfIndex selection for creating new MLPPP Link interfaces
+-- in usdPppLinkConfigTable.
+--
+-- NOTE: This object is placed after usdPppLinkConfigTable so
+-- that usdPppLinkStatusTable and usdPppLinkConfigTable have the
+-- same relative MIB node positions below the usdPppLcp node
+-- (usdPppLcp.1 and usdPppLcp.2, respectively) as their counterpart
+-- Status and Config tables in RFC1471.
+--
+usdPppMlPppNextLinkIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in
+        usdPppMlPppLinkConfigTable.
+
+        A GET of this object returns the next available ifIndex value to be used
+        to create an entry in the associated interface table; or zero, if no
+        valid ifIndex value is available.  This object also returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdPppMlPpp 2 }
+
+--
+-- The MLPPP Link Configuration Table
+--
+usdPppMlPppLinkConfigTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppMlPppLinkConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for MLPPP interfaces present in the
+        system."
+    ::= { usdPppMlPpp 3 }
+
+usdPppMlPppLinkConfigEntry OBJECT-TYPE
+    SYNTAX      UsdPppMlPppLinkConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of MLPPP interface.
+        Creating/deleting entries in this table causes corresponding entries for
+        be created/deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdPppMlPppLinkConfigIfIndex }
+    ::= { usdPppMlPppLinkConfigTable 1 }
+
+UsdPppMlPppLinkConfigEntry ::= SEQUENCE {
+    usdPppMlPppLinkConfigIfIndex                    InterfaceIndex,
+    usdPppMlPppLinkConfigLowerIfIndex               InterfaceIndexOrZero,
+    usdPppMlPppLinkConfigKeepalive                  Integer32,
+    usdPppMlPppLinkConfigAuthentication             UsdPppAuthentication,
+    usdPppMlPppLinkConfigMaxAuthenRetries           Integer32,
+    usdPppMlPppLinkConfigRowStatus                  RowStatus }
+
+usdPppMlPppLinkConfigIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the MLPPP interface.  When creating entries in this
+        table, suitable values for this object are determined by reading
+        usdPppMlPppNextLinkIfIndex."
+    ::= { usdPppMlPppLinkConfigEntry 1 }
+
+usdPppMlPppLinkConfigLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an interface over which this PPP interface is to be
+        layered.  A value of zero indicates no layering.  An implementation may
+        choose to require that a non-zero value be configured at entry
+        creation."
+    ::= { usdPppMlPppLinkConfigEntry 2 }
+
+usdPppMlPppLinkConfigKeepalive OBJECT-TYPE
+    SYNTAX      Integer32 (0|30..300)
+    UNITS       "seconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Keepalive interval in seconds.  A value of zero disables keepalive.
+        Keepalive is performed using LCP Echo."
+    DEFVAL    { 30 }
+    ::= { usdPppMlPppLinkConfigEntry 4 }
+
+usdPppMlPppLinkConfigAuthentication OBJECT-TYPE
+    SYNTAX      UsdPppAuthentication
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the type(s) of authentication, if any, to be negotiated with
+        the peer:
+          none      No authentication is negotiated.
+          pap       PAP negotiation only.
+          chap      CHAP negotiation only.
+          papChap   PAP negotiation is attempted first; if fails, attempt CHAP.
+          chapPap   CHAP negotiation is attempted first; if fails, attempt PAP."
+    DEFVAL    { none }
+    ::= { usdPppMlPppLinkConfigEntry 5 }
+
+usdPppMlPppLinkConfigMaxAuthenRetries OBJECT-TYPE
+    SYNTAX      Integer32 (0..7)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The number of authentication retries permitted, in addition to a failed
+        initial attempt.  If all retries fail, the link is reset."
+    DEFVAL    { 0 }
+    ::= { usdPppMlPppLinkConfigEntry 6 }
+
+usdPppMlPppLinkConfigRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdPppMlPppLinkConfigRowStatus
+            usdPppMlPppLinkConfigLowerIfIndex
+
+        In addition, when creating an entry the following conditions must hold:
+
+            A value for usdPppMlPppLinkConfigIndex must have been determined
+            previously, by reading usdPppMlPppNextIfIndex.
+
+            The interface identified by usdPppMlPppLinkConfigLowerIfIndex
+            must exist.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created/destroyed
+        as a result of creating/destroying an entry in this table."
+    ::= { usdPppMlPppLinkConfigEntry 7 }
+
+usdPppMlPppNextNetworkIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in
+        usdPppMlPppNetworkConfigTable.
+
+        A GET of this object returns the next available ifIndex value to be used
+        to create an entry in the associated interface table; or zero, if no
+        valid ifIndex value is available.  This object also returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdPppMlPpp 4 }
+
+
+--
+-- The MLPPP Network Configuration Table
+--
+usdPppMlPppNetworkConfigTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppMlPppNetworkConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for MLPPP network interfaces present in the
+        system."
+    ::= { usdPppMlPpp 5 }
+
+usdPppMlPppNetworkConfigEntry OBJECT-TYPE
+    SYNTAX      UsdPppMlPppNetworkConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of MLPPP interface.
+        Creating/deleting entries in this table causes corresponding entries for
+        be created/deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdPppMlPppNetworkConfigIfIndex }
+    ::= { usdPppMlPppNetworkConfigTable 1 }
+
+UsdPppMlPppNetworkConfigEntry ::= SEQUENCE {
+    usdPppMlPppNetworkConfigIfIndex         InterfaceIndex,
+    usdPppMlPppNetworkConfigLowerIfIndex    InterfaceIndex,
+    usdPppMlPppNetworkBundleName            UsdPppMlPppBundleName,
+    usdPppMlPppNetworkRowStatus             RowStatus }
+
+usdPppMlPppNetworkConfigIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the MLPPP network interface.  When creating entries in
+        this table, suitable values for this object are determined by reading
+        usdPppMlPppNextNetworkIfIndex."
+    ::= { usdPppMlPppNetworkConfigEntry 1 }
+
+usdPppMlPppNetworkConfigLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of a PPP link interface over which this PPP network
+        interface is to be layered.  On sets, the value of this object must
+        equal on of the previously created PPP link interfaces created in the
+        usdPppMlPppLinkConfigTable.  On gets, the value of this object is the
+        lexicographically least PPP link interface in a potential bundle of PPP
+        link interfaces."
+    ::= { usdPppMlPppNetworkConfigEntry 2 }
+
+usdPppMlPppNetworkBundleName OBJECT-TYPE
+    SYNTAX     UsdPppMlPppBundleName
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+        "The MLPPP bundle name administratively assigned."
+    ::= { usdPppMlPppNetworkConfigEntry 3 }
+
+usdPppMlPppNetworkRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdPppMlPppNetworkConfigLowerIfIndex
+            usdPppMlPppNetworkBundleName
+            usdPppMlPppNetworkConfigRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+            A value for usdPppMlPppNetworkConfigIndex must have been determined
+            previously, by reading usdPppMlPppNextNetworkIfIndex.
+
+            The interface identified by usdPppMlPppNetworkConfigLowerIfIndex
+            must exist by a creation request to the usdPppMlPppLinkConfigTable.
+
+            The bundleName specified in usdPppMlPppNetworkBundleName must have
+            been created first in the usdPppMlPppBundleTable.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created/destroyed
+        as a result of creating/destroying an entry in this table.  "
+    ::= { usdPppMlPppNetworkConfigEntry 4 }
+
+
+--
+-- The MLPPP Link Bind Table
+--
+usdPppMlPppLinkBindTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPppMlPppLinkBindEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for MLPPP Link interface to MLPPP network
+        interfaces bindings."
+    ::= { usdPppMlPpp 6 }
+
+usdPppMlPppLinkBindEntry OBJECT-TYPE
+    SYNTAX      UsdPppMlPppLinkBindEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the MLPPP link interface to MLPPP network
+        interface bindings."
+    INDEX     { usdPppMlPppBindNetworkIfIndex,
+                usdPppMlPppBindLinkIfIndex }
+    ::= { usdPppMlPppLinkBindTable 1 }
+
+UsdPppMlPppLinkBindEntry ::= SEQUENCE {
+    usdPppMlPppBindNetworkIfIndex   InterfaceIndex,
+    usdPppMlPppBindLinkIfIndex      InterfaceIndex,
+    usdPppMlPppBindRowStatus        RowStatus }
+
+usdPppMlPppBindNetworkIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the MLPPP network interface."
+    ::= { usdPppMlPppLinkBindEntry 1 }
+
+usdPppMlPppBindLinkIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of a MLPPP link interface bound by the MLPPP network
+        interface defined by usdPppMlPppBindNetworkIfIndex."
+    ::= { usdPppMlPppLinkBindEntry 2 }
+
+usdPppMlPppBindRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdPppMlPppBindRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+            The interfaces identified by usdPppMlPppBindNetworkIfIndex and
+            usdPppMlPppBindLinkIfIndex must be created in the
+            usdPppMlPppNetworkConfigTable and usdPppMlPppLinkConfigTable
+            respectively.
+
+            A MLPPP bundle must be associated with the usdPppMlPppNetworkIfIndex
+            and exist in the usdPppMibPppBundleTable.
+
+        A corresponding entry in ifStackTable is created/destroyed as a result
+        of creating/destroying an entry in this table."
+    ::= { usdPppMlPppLinkBindEntry 3 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- PPP Interface Summary Counts
+--
+-- /////////////////////////////////////////////////////////////////////////////
+
+usdPppSummaryPppInterfaceCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP interfaces configured in the system."
+    ::= { usdPppSummary 1 }
+
+usdPppSummaryPppIpNCPs OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number IP NCP's configured in the system."
+    ::= { usdPppSummary 2 }
+
+usdPppSummaryPppOsiNCPs OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of OSI NCP's configured in the system."
+    ::= { usdPppSummary 3 }
+
+usdPppSummaryPppIfAdminUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP interfaces in the system that are
+        administratively configured to up(1)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPppSummary 4 }
+
+usdPppSummaryPppIfAdminDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP interfaces in the system that are
+        administrateively configued to down(2)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPppSummary 5 }
+
+usdPppSummaryPppIfOperUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP interfaces in the system with an operational
+        state of up(1)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 7 }
+
+usdPppSummaryPppIfOperDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP interfaces in the system with an operational
+        state of down(2)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 8 }
+
+usdPppSummaryPppIfOperDormant OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP interfaces in the system with an operational
+        state of dormant(5)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 9 }
+
+usdPppSummaryPppIfNotPresent OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP interfaces in the system with an operational
+        state of notPresent(6)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 10 }
+
+usdPppSummaryPppIfLowerLayerDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP interfaces in the system with an operational
+        state of lowerLayerDown(7)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 11 }
+
+usdPppSummaryPppIpNcpOpened OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP IP NCPs in the system with an operational state
+        of opened(1)."
+    REFERENCE
+        "pppIpOperStatus from PPP-IP-NCP-MIB"
+    ::= { usdPppSummary 12 }
+
+usdPppSummaryPppIpNcpClosed OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP IP NCP's in the system with an operational
+        state of not-opened(2)."
+    REFERENCE
+        "pppIpOperStatus from PPP-IP-NCP-MIB"
+    ::= { usdPppSummary 13 }
+
+usdPppSummaryPppOsiNcpOpened OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP OSI NCP's in the system with an operational
+        state of opened."
+    ::= { usdPppSummary 14 }
+
+usdPppSummaryPppOsiNcpClosed OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP OSI NCP's in the system with an operational
+        state of closed."
+    ::= { usdPppSummary 15 }
+
+usdPppSummaryPppIfLastChangeTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of the sysUpTime at the time of the last PPP interface
+        creation or deletion in the system.  If the number of PPP interfaces has
+        been unchanged since the last re-initialization of the system, then this
+        object contains a zero value. "
+    ::= { usdPppSummary 16}
+
+usdPppSummaryPppLinkInterfaceCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP Link interfaces configured in the system."
+    ::= { usdPppSummary 17 }
+
+usdPppSummaryPppLinkIfAdminUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP Link interfaces in the system that are
+        administratively configured to up(1)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPppSummary 18 }
+
+usdPppSummaryPppLinkIfAdminDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP Link interfaces in the system that are
+        administrateively configued to down(2)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPppSummary 19 }
+
+usdPppSummaryPppLinkIfOperUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP Link interfaces in the system with an
+        operational state of up(1)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 20 }
+
+usdPppSummaryPppLinkIfOperDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP Link interfaces in the system with an
+        operational state of down(2)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 21 }
+
+usdPppSummaryPppLinkIfOperDormant OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP Link interfaces in the system with an
+        operational state of dormant(5)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 22 }
+
+usdPppSummaryPppLinkIfNotPresent OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP link interfaces in the system with an
+        operational state of notPresent(6)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 23 }
+
+usdPppSummaryPppLinkIfLowerLayerDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP Link interfaces in the system with an
+        operational state of lowerLayerDown(7)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 24 }
+
+usdPppSummaryPppLinkIfLastChangeTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of the sysUpTime at the time of the last PPP Link interface
+        creation or deletion in the system.  If the number of PPP interfaces has
+        been unchanged since the last re-initialization of the system, then this
+        object contains a zero value. "
+    ::= { usdPppSummary 25}
+
+usdPppSummaryPppNetworkInterfaceCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP network interfaces configured in the system."
+    ::= { usdPppSummary 26 }
+
+usdPppSummaryPppNetworkIpNCPs OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number IP NCP's in the system configured on PPP network
+        interfaces."
+    ::= { usdPppSummary 27 }
+
+usdPppSummaryPppNetworkOsiNCPs OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of OSI NCP's in the system configured on PPP network
+        interfaces."
+    ::= { usdPppSummary 28 }
+
+usdPppSummaryPppNetworkIfAdminUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP network interfaces in the system that are
+        administratively configured to up(1)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPppSummary 29 }
+
+usdPppSummaryPppNetworkIfAdminDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP network interfaces in the system that are
+        administrateively configued to down(2)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPppSummary 30 }
+
+usdPppSummaryPppNetworkIfOperUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP network interfaces in the system with an
+        operational state of up(1)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 31 }
+
+usdPppSummaryPppNetworkIfOperDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP network interfaces in the system with an
+        operational state of down(2)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 32 }
+
+usdPppSummaryPppNetworkIfOperDormant OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP network interfaces in the system with an
+        operational state of dormant(5)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 33 }
+
+usdPppSummaryPppNetworkIfNotPresent OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP network interfaces in the system with an
+        operational state of notPresent(6)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 34 }
+
+usdPppSummaryPppNetworkIfLowerLayerDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP network interfaces in the system with an
+        operational state of lowerLayerDown(7)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPppSummary 35 }
+
+usdPppSummaryPppNetworkIpNcpOpened OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP IP NCP's in the system with an operational
+        state of opened."
+    ::= { usdPppSummary 36 }
+
+usdPppSummaryPppNetworkIpNcpClosed OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP IP NCP's in the system with an operational
+        state of closed."
+    ::= { usdPppSummary 37 }
+
+usdPppSummaryPppNetworkOsiNcpOpened OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP OSI NCP's in the system with an operational
+        state of opened."
+    ::= { usdPppSummary 38 }
+
+usdPppSummaryPppNetworkOsiNcpClosed OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPP OSI NCP's in the system with an operational
+        state of closed."
+    ::= { usdPppSummary 39 }
+
+usdPppSummaryPppNetworkIfLastChangeTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of the sysUpTime at the time of the last PPP network
+        interface creation or deletion in the system.  If the number of PPP
+        network interfaces has been unchanged since the last re-initialization
+        of the system, then this object contains a zero value. "
+    ::= { usdPppSummary 40}
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB. Placeholder follows.
+-- usdPppTrapControl      OBJECT IDENTIFIER ::= { usdPppMIB 2 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB. Placeholder follows.
+-- The following two OBJECT IDENTIFIERS are used to define SNMPv2
+-- Notifications that are easily translated into SNMPv1 Traps.
+-- usdPppTraps            OBJECT IDENTIFIER ::= { usdPppMIB 3 }
+-- usdPppTrapPrefix       OBJECT IDENTIFIER ::= { usdPppTraps 0 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPppConformance OBJECT IDENTIFIER ::= { usdPppMIB 4 }
+usdPppCompliances OBJECT IDENTIFIER ::= { usdPppConformance 1 }
+usdPppGroups      OBJECT IDENTIFIER ::= { usdPppConformance 2 }
+
+--
+-- compliance statements
+--
+usdPppCompliance MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPP MIB.  This statement became obsolete when additional
+        objects were added to the MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPppLcpGroup,
+            usdPppIpGroup,
+            usdPppOsiGroup }
+    ::= { usdPppCompliances 1 }                                        -- RX 1.0
+
+usdPppCompliance2 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPP MIB.  This statement became obsolete when the
+        usdPppMlPppGroup and usdPppSummaryGroup objects were added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPppLcpGroup2,
+            usdPppIpGroup2,
+            usdPppOsiGroup2,
+            usdPppSessionGroup }
+    ::= { usdPppCompliances 2 }                                        -- RX 1.1
+
+usdPppCompliance3 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPP MIB.  This statement became obsolete when the
+        usdPppLinkConfigStandardIfIndex object was added to the MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPppLcpGroup2,
+            usdPppIpGroup2,
+            usdPppOsiGroup2,
+            usdPppSessionGroup,
+            usdPppMlPppGroup,
+            usdPppSummaryGroup }
+    ::= { usdPppCompliances 3 }                                        -- RX 2.0
+
+usdPppCompliance4 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPP MIB.  This statement became obsolete when the
+        usdPppMlPppGroup, usdPppSummaryLinkGroup and usdPppSummaryNetworkGroup were
+        moved from the list of mandatory groups."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPppLcpGroup3,
+            usdPppIpGroup2,
+            usdPppOsiGroup2,
+            usdPppSessionGroup,
+            usdPppMlPppGroup,
+            usdPppSummaryGroup }
+    ::= { usdPppCompliances 4 }                                        -- RX 2.4
+
+usdPppCompliance5 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPP MIB.  This statement became obsolete when new
+        usdPppIpGroup, usdPppLcpGroup and usdPppMlPppGroup objects were added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPppLcpGroup3,
+            usdPppIpGroup2,
+            usdPppOsiGroup2,
+            usdPppSessionGroup,
+            usdPppSummaryBasicGroup }
+        GROUP       usdPppMlPppGroup
+            DESCRIPTION
+                "The multi-link PPP group is mandatory only for PPP entities
+                that support multi-link functionality."
+        GROUP       usdPppSummaryLinkGroup
+            DESCRIPTION
+                "The link summary group is mandatory only for PPP entities that
+                support multi-link functionality."
+        GROUP       usdPppSummaryNetworkGroup
+            DESCRIPTION
+                "The network summary group is mandatory only for PPP entities
+                that support multi-link functionality."
+    ::= { usdPppCompliances 5 }                                        -- RX 3.3
+
+usdPppCompliance6 MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for entities which implement the Unisphere PPP
+        MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPppLcpGroup4,
+            usdPppIpGroup3,
+            usdPppOsiGroup2, 
+            usdPppSessionGroup, 
+            usdPppSummaryBasicGroup }
+        GROUP       usdPppMlPppGroup2
+            DESCRIPTION
+                "The multi-link PPP group is mandatory only for PPP entities
+                that support multi-link functionality."
+        GROUP       usdPppSummaryLinkGroup
+            DESCRIPTION
+                "The link summary group is mandatory only for PPP entities that
+                support multi-link functionality."
+        GROUP       usdPppSummaryNetworkGroup
+            DESCRIPTION
+                "The network summary group is mandatory only for PPP entities
+                that support multi-link functionality."
+    ::= { usdPppCompliances 6 }                                        -- RX 4.0
+
+--
+-- units of conformance
+--
+usdPppLcpGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppLinkConfigRowStatus,
+        usdPppLinkConfigLowerIfIndex,
+        usdPppNextIfIndex }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of link-layer
+        functionality (LCP) of PPP interfaces in a Unisphere product.  This
+        group became obsolete when additional objects were added."
+    ::= { usdPppGroups 1 }
+
+usdPppIpGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppIpServiceStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of IP network
+        control protocol functionality (IPCP) of PPP interfaces in a Unisphere
+        product.  This group became obsolete when additional objects were
+        added."
+    ::= { usdPppGroups 2 }
+
+usdPppOsiGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppOsiServiceStatus,
+        usdPppOsiOperStatus,
+
+        usdPppOsiConfigAdminStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of OSI network
+        control protocol functionality (OSICP) of PPP interfaces in a Unisphere
+        product.  This group became obsolete when additional objects were
+        added."
+    ::= { usdPppGroups 3 }
+
+usdPppLcpGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdPppLinkStatusTerminateReason,
+        usdPppLinkStatusTerminateNegFailOption,
+        usdPppLinkStatusInKeepaliveRequests,
+        usdPppLinkStatusOutKeepaliveRequests,
+        usdPppLinkStatusInKeepaliveReplies,
+        usdPppLinkStatusOutKeepaliveReplies,
+        usdPppLinkStatusKeepaliveFailures,
+        usdPppLinkStatusLocalMagicNumber,
+        usdPppLinkStatusRemoteMagicNumber,
+        usdPppLinkStatusLocalAuthentication,
+        usdPppLinkStatusTunnelIfIndex,
+        usdPppLinkConfigRowStatus,
+        usdPppLinkConfigLowerIfIndex,
+        usdPppLinkConfigKeepalive,
+        usdPppLinkConfigAuthentication,
+        usdPppLinkConfigMaxAuthenRetries,
+        usdPppNextIfIndex }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of link-layer
+        functionality (LCP) of PPP interfaces in a Unisphere product.  This
+        group became obsolete when the usdPppLinkConfigStandardIfIndex object
+        was added."
+    ::= { usdPppGroups 4 }
+
+usdPppIpGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdPppIpServiceStatus,
+        usdPppIpTerminateReason,
+        usdPppIpTerminateNegFailOption,
+        usdPppIpLocalIpAddress,
+        usdPppIpRemoteIpAddress,
+        usdPppIpRemotePrimaryDnsAddress,
+        usdPppIpRemoteSecondaryDnsAddress,
+        usdPppIpRemotePrimaryWinsAddress,
+        usdPppIpRemoteSecondaryWinsAddress,
+        usdPppIpConfigPeerDnsPriority,
+        usdPppIpConfigPeerWinsPriority }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of IP network
+        control protocol functionality (IPCP) of PPP interfaces in a Unisphere
+        product.  This group became obsolete when additional objects were
+        added."
+    ::= { usdPppGroups 5 }
+
+usdPppOsiGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdPppOsiServiceStatus,
+        usdPppOsiOperStatus,
+        usdPppOsiTerminateReason,
+        usdPppOsiTerminateNegFailOption,
+        usdPppOsiLocalAlignNpdu,
+        usdPppOsiRemoteAlignNpdu,
+
+        usdPppOsiConfigAdminStatus }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of OSI network control
+        protocol functionality (OSICP) of PPP interfaces in a Unisphere
+        product."
+    ::= { usdPppGroups 6 }
+
+usdPppSessionGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppSessionGrant,
+        usdPppSessionTerminateReason,
+        usdPppSessionStartTime,
+        usdPppSessionInOctets,
+        usdPppSessionOutOctets,
+        usdPppSessionInPackets,
+        usdPppSessionOutPackets,
+        usdPppSessionSessionTimeout,
+        usdPppSessionInactivityTimeout,
+        usdPppSessionAccountingInterval,
+        usdPppSessionRemoteIpAddress,
+        usdPppSessionRemotePrimaryDnsAddress,
+        usdPppSessionRemoteSecondaryDnsAddress,
+        usdPppSessionRemotePrimaryWinsAddress,
+        usdPppSessionRemoteSecondaryWinsAddress }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of PPP session
+        functionality of PPP interfaces in a Unisphere product."
+    ::= { usdPppGroups 7 }
+
+usdPppMlPppGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppMlPppBundleRowStatus,
+        usdPppMlPppNextLinkIfIndex,
+        usdPppMlPppLinkConfigLowerIfIndex,
+        usdPppMlPppLinkConfigKeepalive,
+        usdPppMlPppLinkConfigAuthentication,
+        usdPppMlPppLinkConfigMaxAuthenRetries,
+        usdPppMlPppLinkConfigRowStatus,
+        usdPppMlPppNextNetworkIfIndex,
+        usdPppMlPppNetworkConfigLowerIfIndex,
+        usdPppMlPppNetworkBundleName,
+        usdPppMlPppNetworkRowStatus,
+        usdPppMlPppBindRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of multi link
+        PPP management support in a Unisphere product.  This group became 
+        obsolete when additional objects were added."
+    ::= { usdPppGroups 8 }
+
+usdPppSummaryGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppSummaryPppInterfaceCount,
+        usdPppSummaryPppIpNCPs,
+        usdPppSummaryPppOsiNCPs,
+        usdPppSummaryPppIfAdminUp,
+        usdPppSummaryPppIfAdminDown,
+        usdPppSummaryPppIfOperUp,
+        usdPppSummaryPppIfOperDown,
+        usdPppSummaryPppIfOperDormant,
+        usdPppSummaryPppIfNotPresent,
+        usdPppSummaryPppIfLowerLayerDown,
+        usdPppSummaryPppIfLastChangeTime,
+        usdPppSummaryPppLinkInterfaceCount,
+        usdPppSummaryPppLinkIfAdminUp,
+        usdPppSummaryPppLinkIfAdminDown,
+        usdPppSummaryPppLinkIfOperUp,
+        usdPppSummaryPppLinkIfOperDown,
+        usdPppSummaryPppLinkIfOperDormant,
+        usdPppSummaryPppLinkIfNotPresent,
+        usdPppSummaryPppLinkIfLowerLayerDown,
+        usdPppSummaryPppLinkIfLastChangeTime,
+        usdPppSummaryPppNetworkInterfaceCount,
+        usdPppSummaryPppNetworkIpNCPs,
+        usdPppSummaryPppNetworkOsiNCPs,
+        usdPppSummaryPppNetworkIfAdminUp,
+        usdPppSummaryPppNetworkIfAdminDown,
+        usdPppSummaryPppNetworkIfOperUp,
+        usdPppSummaryPppNetworkIfOperDown,
+        usdPppSummaryPppNetworkIfOperDormant,
+        usdPppSummaryPppNetworkIfNotPresent,
+        usdPppSummaryPppNetworkIfLowerLayerDown,
+        usdPppSummaryPppNetworkIfLastChangeTime,
+        usdPppSummaryPppIpNcpOpened,
+        usdPppSummaryPppIpNcpClosed,
+        usdPppSummaryPppOsiNcpOpened,
+        usdPppSummaryPppOsiNcpClosed,
+        usdPppSummaryPppNetworkIpNcpOpened,
+        usdPppSummaryPppNetworkIpNcpClosed,
+        usdPppSummaryPppNetworkOsiNcpOpened,
+        usdPppSummaryPppNetworkOsiNcpClosed }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing PPP interface summary
+        information in a Unisphere product.  This group became obsolete when it
+        was divided into three groups so that the link and network object would
+        not be manditory."
+    ::= { usdPppGroups 9 }
+
+usdPppLcpGroup3 OBJECT-GROUP
+    OBJECTS {
+        usdPppLinkStatusTerminateReason,
+        usdPppLinkStatusTerminateNegFailOption,
+        usdPppLinkStatusInKeepaliveRequests,
+        usdPppLinkStatusOutKeepaliveRequests,
+        usdPppLinkStatusInKeepaliveReplies,
+        usdPppLinkStatusOutKeepaliveReplies,
+        usdPppLinkStatusKeepaliveFailures,
+        usdPppLinkStatusLocalMagicNumber,
+        usdPppLinkStatusRemoteMagicNumber,
+        usdPppLinkStatusLocalAuthentication,
+        usdPppLinkStatusTunnelIfIndex,
+        usdPppLinkConfigRowStatus,
+        usdPppLinkConfigLowerIfIndex,
+        usdPppLinkConfigKeepalive,
+        usdPppLinkConfigAuthentication,
+        usdPppLinkConfigMaxAuthenRetries,
+        usdPppLinkConfigStandardIfIndex,
+        usdPppNextIfIndex }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of link-layer
+        functionality (LCP) of PPP interfaces in a Unisphere product.  This
+        group became obsolete when additional objects were added."
+    ::= { usdPppGroups 10 }
+
+usdPppSummaryBasicGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppSummaryPppInterfaceCount,
+        usdPppSummaryPppIpNCPs,
+        usdPppSummaryPppOsiNCPs,
+        usdPppSummaryPppIfAdminUp,
+        usdPppSummaryPppIfAdminDown,
+        usdPppSummaryPppIfOperUp,
+        usdPppSummaryPppIfOperDown,
+        usdPppSummaryPppIfOperDormant,
+        usdPppSummaryPppIfNotPresent,
+        usdPppSummaryPppIfLowerLayerDown,
+        usdPppSummaryPppIfLastChangeTime,
+        usdPppSummaryPppIpNcpOpened,
+        usdPppSummaryPppIpNcpClosed,
+        usdPppSummaryPppOsiNcpOpened,
+        usdPppSummaryPppOsiNcpClosed }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing PPP interface basic summary
+        information in a Unisphere product."
+    ::= { usdPppGroups 11 }
+
+usdPppSummaryLinkGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppSummaryPppLinkInterfaceCount,
+        usdPppSummaryPppLinkIfAdminUp,
+        usdPppSummaryPppLinkIfAdminDown,
+        usdPppSummaryPppLinkIfOperUp,
+        usdPppSummaryPppLinkIfOperDown,
+        usdPppSummaryPppLinkIfOperDormant,
+        usdPppSummaryPppLinkIfNotPresent,
+        usdPppSummaryPppLinkIfLowerLayerDown,
+        usdPppSummaryPppLinkIfLastChangeTime }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing PPP interface link summary
+        information in a Unisphere product."
+    ::= { usdPppGroups 12 }
+
+usdPppSummaryNetworkGroup OBJECT-GROUP
+    OBJECTS {
+        usdPppSummaryPppNetworkInterfaceCount,
+        usdPppSummaryPppNetworkIpNCPs,
+        usdPppSummaryPppNetworkOsiNCPs,
+        usdPppSummaryPppNetworkIfAdminUp,
+        usdPppSummaryPppNetworkIfAdminDown,
+        usdPppSummaryPppNetworkIfOperUp,
+        usdPppSummaryPppNetworkIfOperDown,
+        usdPppSummaryPppNetworkIfOperDormant,
+        usdPppSummaryPppNetworkIfNotPresent,
+        usdPppSummaryPppNetworkIfLowerLayerDown,
+        usdPppSummaryPppNetworkIfLastChangeTime,
+        usdPppSummaryPppNetworkIpNcpOpened,
+        usdPppSummaryPppNetworkIpNcpClosed,
+        usdPppSummaryPppNetworkOsiNcpOpened,
+        usdPppSummaryPppNetworkOsiNcpClosed }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing PPP interface network summary
+        information in a Unisphere product."
+    ::= { usdPppGroups 13 }
+
+usdPppLcpGroup4 OBJECT-GROUP
+    OBJECTS {
+        usdPppLinkStatusTerminateReason,
+        usdPppLinkStatusTerminateNegFailOption,
+        usdPppLinkStatusInKeepaliveRequests,
+        usdPppLinkStatusOutKeepaliveRequests,
+        usdPppLinkStatusInKeepaliveReplies,
+        usdPppLinkStatusOutKeepaliveReplies,
+        usdPppLinkStatusKeepaliveFailures,
+        usdPppLinkStatusLocalMagicNumber,
+        usdPppLinkStatusRemoteMagicNumber,
+        usdPppLinkStatusLocalAuthentication,
+        usdPppLinkStatusTunnelIfIndex,
+        usdPppLinkConfigRowStatus,
+        usdPppLinkConfigLowerIfIndex,
+        usdPppLinkConfigKeepalive,
+        usdPppLinkConfigAuthentication,
+        usdPppLinkConfigMaxAuthenRetries,
+        usdPppLinkConfigStandardIfIndex,
+        usdPppLinkConfigChapMinChallengeLength,
+        usdPppLinkConfigChapMaxChallengeLength,
+        usdPppLinkConfigPassiveMode,
+        usdPppLinkConfigAuthenticatorVirtualRouter,
+        usdPppNextIfIndex }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of link-layer
+        functionality (LCP) of PPP interfaces in a Unisphere product."
+    ::= { usdPppGroups 14 }
+
+usdPppIpGroup3 OBJECT-GROUP
+    OBJECTS {
+        usdPppIpServiceStatus,
+        usdPppIpTerminateReason,
+        usdPppIpTerminateNegFailOption,
+        usdPppIpLocalIpAddress,
+        usdPppIpRemoteIpAddress,
+        usdPppIpRemotePrimaryDnsAddress,
+        usdPppIpRemoteSecondaryDnsAddress,
+        usdPppIpRemotePrimaryWinsAddress,
+        usdPppIpRemoteSecondaryWinsAddress,
+        usdPppIpConfigPeerDnsPriority,
+        usdPppIpConfigPeerWinsPriority,
+        usdPppIpConfigIpcpNetmask }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of IP network control
+        protocol functionality (IPCP) of PPP interfaces in a Unisphere product."
+    ::= { usdPppGroups 15 }
+
+usdPppMlPppGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdPppMlPppBundleRowStatus,
+        usdPppMlPppBundleNetworkIfIndex,
+        usdPppMlPppNextLinkIfIndex, 
+        usdPppMlPppLinkConfigLowerIfIndex,
+        usdPppMlPppLinkConfigKeepalive,
+        usdPppMlPppLinkConfigAuthentication,
+        usdPppMlPppLinkConfigMaxAuthenRetries,
+        usdPppMlPppLinkConfigRowStatus,
+        usdPppMlPppNetworkConfigLowerIfIndex,
+        usdPppMlPppNetworkBundleName,
+        usdPppMlPppNetworkRowStatus,
+        usdPppMlPppBindRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of multi link PPP
+        management support in a Unisphere product."
+    ::= { usdPppGroups 16 }
+
+END

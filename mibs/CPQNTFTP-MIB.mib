@@ -1,0 +1,393 @@
+CPQNTFTP-MIB
+DEFINITIONS ::= BEGIN
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--
+--  COMPAQ NPD FILE TRANSFER MIB
+--
+--  Compaq Part Number 166441-000
+--
+--  February 2, 1998
+--
+--  Version 1.0
+--
+--  This is the Compaq Netelligent File Transfer MIB.  Support of this
+--  MIB is not required by an agent unless the agent supports file
+--  transfers such as downloading an image.  This MIB provides the following
+--  capabilities:
+--     * TFTP file transfers using SNMP as the control mechanism.
+--
+--  Many of the settable objects in this MIB are "DURABLE".  This means
+--  that when set, the value is stored in the agent's non-volatile memory.
+--  Durable data is retained during power cycles (outages) and across
+--  device resets.
+--
+--  The term "management software" refers to any SNMP-based network
+--  management application.
+--
+--  ASN1 Prefix: 1.3.6.1.4.1.232.121.9
+--
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+IMPORTS
+    enterprises, IpAddress      FROM RFC1155-SMI
+    DisplayString               FROM RFC1213-MIB
+    OBJECT-TYPE                 FROM RFC-1212
+    TRAP-TYPE                   FROM RFC-1215
+    CpqnRowStatus               FROM CPQNUNIF-MIB;
+
+    compaq          OBJECT IDENTIFIER ::= { enterprises 232 }
+    cpqnCommon      OBJECT IDENTIFIER ::= { compaq 121 }
+    cpqnTftpConfig  OBJECT IDENTIFIER ::= { cpqnCommon 9 }
+
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--
+--  The following objects define agent-level commands and statuses for
+--  SNMP-initiated TFTP support.
+--
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+cpqnTftpInitiate        OBJECT-TYPE
+    SYNTAX              INTEGER
+    {
+        no-transfer-ipr(1),         -- no transfer in progress
+        transfer-in-progress(2),    -- indicates a transfer is in progress
+        initiate-transfer(3),       -- command to initiate transfer(s)
+        initiate-transfer-reset(4)  -- command to initiate transfer(s) then
+                                    --  reset/restart the agent after the
+                                    --  transfer(s) is(are) complete
+    }
+    ACCESS              read-write
+    STATUS              mandatory
+    DESCRIPTION
+        "This object is used to initiate the TFTP transfers configured in
+        cpqnTftpTable.  When setting this object, the only valid values
+        are initiate-transfer(3) and initiate_transfer-reset(4).  Attempts
+        to set this object to other values are rejected with a Bad Value
+        error.
+
+        When this object is set to initiate-transfer(3), the agent does
+        not reset (reboot) after the TFTP transfer(s) is(are) complete.
+        Normal agent operation is resumed after the transfer(s).  During
+        the transfer(s), SNMP communication may or may not be available;
+        consult the product-specific documentation.
+
+        When this object is set to initiate-transfer-reset(4), the agent
+        performs a reset (reboot) after the TFTP transfer(s) is(are)
+        complete.  SNMP communication may be lost at some point during
+        the transfer/reset activity.  SNMP communication resumes once
+        the agent reset is complete.
+
+        If the agent does not support the requested transfer mode, it
+        rejects the set request with a Bad Value error.
+
+        The agent returns transfer-in-progress(2) when this object is
+        queried while a TFTP transfer is in progress.  In order to avoid
+        unexpected results, it is invalid to modify set any objects in
+        cpqnTftpTable while this object is set to transfer-in-progress(2).
+
+        The agent sets this object to no-transfer-ipr(1) after all TFTP
+        transfers are completed."
+    ::= { cpqnTftpConfig 1 }
+
+cpqnTftpCanDldAfterBoot OBJECT-TYPE
+    SYNTAX              INTEGER
+    {
+        can-dld-after-boot(1),
+        cannot-dld-after-boot(2)
+    }
+    ACCESS              read-only
+    STATUS              mandatory
+    DESCRIPTION
+        "The agent returns can-dld-after-boot(1) if it allows
+        cpqnTftpTransferState to be set to download-afterboot(3).
+        The purpose of this object is to inform the management station
+        of the file transfer capabilities of the agent."
+    ::= { cpqnTftpConfig 2 }
+
+cpqnTftpCanSendTrap     OBJECT-TYPE
+    SYNTAX              INTEGER
+    {
+        can-send-tftp-trap(1),
+        cannot-send-tftp-trap(2)
+    }
+    ACCESS              read-only
+    STATUS              mandatory
+    DESCRIPTION
+        "The agent returns can-send-tftp-trap(1) if it allows
+        cpqnTftpTrapEnableStatus to be set.  If the agent returns
+        cannot-send-tftp-trap(2), then sets on cpqnTftpTrapEnableStatus
+        are rejected with a Bad Value error, and gets always return
+        disabled(2).  The purpose of this object is to inform the
+        management station of the trap capabilities of the agent."
+    ::= { cpqnTftpConfig 3 }
+
+cpqnTftpTrapEnableStatus OBJECT-TYPE
+    SYNTAX               INTEGER
+    {
+        enabled(1),           -- send a trap if any file is received or
+                              -- sent by the agent
+        disabled(2),          -- never send traps for TFTP file transfers
+        os-file-traps(3),     -- send a trap if an OS or image file is
+                              -- received by the agent
+        cfg-file-traps(4)     -- send a trap if a configuration file is
+                              -- received by the agent
+    }
+    ACCESS              read-write
+    STATUS              mandatory
+    DESCRIPTION
+        "DURABLE:  This object is used to enable TFTP file transfer traps.
+        If the agent does not support these traps, then it return a Bad
+        Value error when this object is set.  The cpqnTftpCanSendTrap
+        object indicates whether or not the agent supports traps."
+    ::= { cpqnTftpConfig 4 }
+
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--
+--  File Transfer Control Table
+--
+--  This table contains MIB objects which control the downloading or
+--  uploading of files to and from the agent via TFTP.
+--
+--  The user must specify the IP address of the TFTP server and the path
+--  to the filename to be uploaded/downloaded.  Once this information has
+--  been set, the user may start the download by setting cpqnTftpInitiate
+--  to the appropriate value.  The agent rejects attempts to configure
+--  unsupported file types or transfer modes with a Bad Value error.
+--
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+cpqnTftpTable           OBJECT-TYPE
+    SYNTAX              SEQUENCE OF CpqnTftpEntry
+    ACCESS              not-accessible
+    STATUS              mandatory
+    DESCRIPTION
+        "A table containing the possible file types and names that can be
+        downloaded/uploaded to a device."
+    ::= { cpqnTftpConfig 5 }
+
+cpqnTftpEntry           OBJECT-TYPE
+    SYNTAX              CpqnTftpEntry
+    ACCESS              not-accessible
+    STATUS              mandatory
+    DESCRIPTION
+        "A list of the TFTP file types, names, and statuses."
+    INDEX   { cpqnTftpFileType }
+    ::= { cpqnTftpTable 1 }
+
+CpqnTftpEntry ::= SEQUENCE {
+    cpqnTftpFileType
+        INTEGER,                -- read only
+    cpqnTftpRowStatus
+        CpqnRowStatus,          -- read/write
+    cpqnTftpPathname
+        DisplayString,          -- read/write
+    cpqnTftpServerIp
+        IpAddress,              -- read/write
+    cpqnNewFileVersion
+        DisplayString,          -- read/write
+    cpqnTftpTransferState
+        INTEGER,                -- read/write
+    cpqnTftpTransferLastErr
+        INTEGER,                -- read only
+    cpqnTftpErrorText
+        DisplayString           -- read only
+}
+
+cpqnTftpFileType        OBJECT-TYPE
+    SYNTAX              INTEGER
+    {
+        entire-file(1),     -- a complete image, e.g. booter+OS+agent
+        boot(2),            -- a booter image
+        run-time(3),        -- the runtime/OS file
+        sblock-ext(4),      -- an S-block extension
+        config(5),          -- a configuration file
+        agent(6),           -- agent software code
+        fddi-ulfw(7),       -- FDDI uplink firmware
+        atm-ulfw(8)         -- ATM uplink firmware
+    }
+    ACCESS              read-only
+    STATUS              mandatory
+    DESCRIPTION
+        "The type of download/upload file that this table entry
+        configures.  This object is used as an index into cpqnTftpTable.
+        There is only one entry for each type of file.  The agent for a
+        specific product may not support all file types;  consult the
+        product-specific documentation for information on using this object."
+    ::= { cpqnTftpEntry  1 }
+
+cpqnTftpRowStatus       OBJECT-TYPE
+    SYNTAX              CpqnRowStatus
+    ACCESS              read-write
+    STATUS              mandatory
+    DESCRIPTION
+        "DURABLE:  The status of this row entry.  Entries are added to this
+        table using 'row sets'.  When an entry is added, this object must be
+        set to row-valid(1).  To delete an entry from this table, set this
+        object for the entry to row-invalid(2).  Row sets for new entries
+        with a row status set to row-invalid(2) return a Bad Value error.
+        Attempts to read invalid entries are rejected with a No Such error.
+
+        This table is indexed by cpqnTftpFileType.  If an attempt is made
+        to set this object for an invalid cpqnTftpFileType value, then a
+        Bad Value error is returned."
+   ::= { cpqnTftpEntry 2 }
+
+cpqnTftpPathname        OBJECT-TYPE
+    SYNTAX              DisplayString (SIZE (1..64))
+    ACCESS              read-write
+    STATUS              mandatory
+    DESCRIPTION
+        "DURABLE:  The fully-qualified path and filename (as recognized
+        by the TFTP server) of the file to download or upload."
+    ::= { cpqnTftpEntry 3 }
+
+cpqnTftpServerIp        OBJECT-TYPE
+    SYNTAX              IpAddress
+    ACCESS              read-write
+    STATUS              mandatory
+    DESCRIPTION
+        "DURABLE:  The IP address of the TFTP server."
+    ::= { cpqnTftpEntry 4 }
+
+cpqnNewFileVersion      OBJECT-TYPE
+    SYNTAX              DisplayString (SIZE (4..12))
+    ACCESS              read-write
+    STATUS              mandatory
+    DESCRIPTION
+        "DURABLE:  This object specifies the version of the file to be
+        downloaded.  The agent uses this value to validate the downloaded
+        file.  An agent may allow this object to be left blank, in which
+        case validation of the file versions will not be done (used for
+        testing images, forcing a file when a version is not known, etc.
+        Refer to the product-specific documentation for details on using
+        this object."
+    ::= { cpqnTftpEntry 5 }
+
+cpqnTftpTransferState    OBJECT-TYPE
+    SYNTAX               INTEGER
+    {
+        no-download-ipr(1),     -- default value
+        download(2),            -- perform TFTP download immediately after
+                                --  cpqnTftpInitiate is set appropriately
+        download-afterboot(3),  -- perform TFTP download after cpqnTftpInitiate
+                                --  is set appropriately and the agent restarts
+        upload-to-nms(4)        -- perform TFTP upload (put) immediately after
+                                --  cpqnTftpInitiate is set appropriately
+    }
+    ACCESS              read-write
+    STATUS              mandatory
+    DESCRIPTION
+        "DURABLE:  This object configures this entry's type of TFTP transfer
+        (download/upload) and when it occurs after cpqnTftpInitiate is set
+        appropriately (immediately or after the next restart).  Note that
+        multiple cpqnTftpTable entries may enable TFTP transfers;  the order
+        in which the entries are processed is left to the agent.
+
+        After the TFTP transfer has been completed (successfully or not),
+        the agent sets this object back to no-download-ipr(1).  If the
+        agent is restarted before the transfer occurs, then this object's
+        value is retained.
+
+        Support for download-afterboot(3) and upload-to-nms(4) is optional.
+        Attempts to set this object to an unsupported value are rejected
+        with a Bad Value error.  The cpqnTftpCanDldAfterBoot object
+        indicates whether or not the agent supports download-afterboot(3).
+        Refer to product-specific documentation for information on
+        upload-to-nms(4)."
+    ::= { cpqnTftpEntry 6 }
+
+cpqnTftpTransferLastErr OBJECT-TYPE
+    SYNTAX              INTEGER
+    {
+        no-error(1),               -- normal return value
+        transfer-in-progress(2),   -- this entry's TFTP transfer is in progress
+        download-failed(3),        -- download failed due to generic error
+        upload-failed(4),          -- upload failed dur to generic error
+        tftp-timeout(5),           -- the TFTP transfer timed out
+        route-not-found(6),        -- there is no default route or the default
+                                   --  route(s) is(are) invalid
+        file-not-found(7),         -- the requested file was not located
+                                   --  (TFTP error 1)
+        invalid-access(8),         -- access violation (TFTP error 2)
+        disk-full(9),              -- disk full or allocation exceeded
+                                   --  (TFTP error 3)
+        illegal-tftp-op(10),       -- illegal TFTP operation (TFTP error 4)
+        unk-xfer-id(11),           -- unknown transfer ID (TFTP error 5)
+        file-exists(12),           -- file already exists (TFTP error 6)
+        no-such-user(13),          -- no such user (TFTP error 7)
+        invalid-version(14),       -- file version does not match the
+                                   --  cpqnNewFileVersion
+        hardware-error(15)         -- hardware error occurred, e.g.,
+                                   --  flash erase or flash program error
+    }
+    ACCESS              read-only
+    STATUS              mandatory
+    DESCRIPTION
+        "DURABLE:  This is the error status (if any) of the last upload
+        or download that occurred for this entry."
+    ::= { cpqnTftpEntry 7 }
+
+cpqnTftpErrorText       OBJECT-TYPE
+    SYNTAX              DisplayString
+    ACCESS              read-only
+    STATUS              mandatory
+    DESCRIPTION
+        "DURABLE:  This is a text message from the last TFTP transfer.
+        When possible, the message is obtained directly from the most
+        recent TFTP error packet.  If there was not a TFTP error packet,
+        then a suitable message is returned."
+    ::= { cpqnTftpEntry 8 }
+
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+--
+--  File Transfer Traps
+--
+--  Support for these traps is optional.  The cpqnTftpCanSendTrap object
+--  indicates whether or not the agent supports these traps.
+--
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+cpqnTftpTransferInitiated   TRAP-TYPE
+    ENTERPRISE              cpqnCommon
+    VARIABLES
+    {
+        cpqnTftpFileType,
+        cpqnTftpPathname,
+        cpqnTftpTransferState
+    }
+    DESCRIPTION
+        "This trap is sent whenever a SNMP-requested TFTP transaction is
+        initiated, depending on the value of cpqnTftpTrapEnableStatus.  For
+        those cases where multiple files are downloaded, multiple traps
+        are sent."
+    ::= 1
+
+cpqnTftpTransferCompleted   TRAP-TYPE
+    ENTERPRISE              cpqnCommon
+    VARIABLES
+    {
+        cpqnTftpFileType,
+        cpqnTftpPathname,
+        cpqnTftpTransferState,
+        cpqnTftpTransferLastErr
+    }
+    DESCRIPTION
+        "This trap is sent whenever a SNMP-requested TFTP transaction is
+        completed, depending on the value of cpqnTftpTrapEnableStatus.  For
+        those cases where multiple files are downloaded, multiple traps
+        are sent.
+
+        NOTE:  It may not be possible for an agent to send this trap.
+        Support of this trap is optional."
+    ::= 2
+
+
+END
+
+

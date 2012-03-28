@@ -1,0 +1,736 @@
+-- *****************************************************************
+-- Unisphere-Data-LOG-MIB
+--
+-- Unisphere Networks Inc. Enterprise MIB
+-- Extensions for Logging Management
+--
+-- Copyright (c) 1999 Redstone Communications, Inc.
+-- Copyright (c) 1999, 2002 Unisphere Networks, Inc.
+-- All Rights Reserved.
+-- *****************************************************************
+
+--
+-- Brief Description of Logging Facility Model
+--
+-- A system application may support one or more 
+-- logging categories. Each category can be separately
+-- configured for severity and verbosity levels of the
+-- logging messages it generates in reponse to category-
+-- specific events. The severity level filters the generation
+-- of messages; the verbosity level controls the content of
+-- each generated message. Each category is resource-limited
+-- in the rate of messages it can generate, thus high
+-- event volume in one category will not exhaust common
+-- resources to the extent that other log categories
+-- are starved.
+-- 
+-- Generated log messages are recorded into a central
+-- circular repository, called the log message table.
+-- Each such recorded message is examined and can be 
+-- sent to as many as three logging destinations: 
+-- network-based SYSLOG server; local console; and local
+-- nonvolatile log file. Each of these destinations is
+-- separately configurable for severity level of messages
+-- it wishes to receive.
+--
+
+Unisphere-Data-LOG-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY,
+    NOTIFICATION-TYPE,
+    OBJECT-TYPE,
+    Integer32,
+    Counter32,
+    Unsigned32,
+    IpAddress
+        FROM SNMPv2-SMI
+
+    TEXTUAL-CONVENTION,
+    DisplayString,
+    RowStatus,
+    TruthValue,
+    TimeStamp,
+    DateAndTime
+        FROM SNMPv2-TC
+
+    MODULE-COMPLIANCE,
+    OBJECT-GROUP,
+    NOTIFICATION-GROUP
+        FROM SNMPv2-CONF
+
+    usDataMibs
+        FROM Unisphere-Data-MIBs
+
+    UsdLogSeverity
+        FROM Unisphere-Data-TC;
+     
+
+usdLogMIB MODULE-IDENTITY
+    LAST-UPDATED "200103161902Z"  -- 16-Mar-01 02:02 PM EST
+    ORGANIZATION "Unisphere Networks, Inc."
+    CONTACT-INFO
+        "       Unisphere Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The Log MIB for the Unisphere Networks Inc. enterprise."
+    -- Revision History
+    REVISION    "200103161902Z"  -- 16-Mar-01 02:02 PM EST  - RX 3.0
+    DESCRIPTION
+        "Make it SMIv2 conformant."
+    REVISION    "200003270500Z"  -- 27-Mar-00               - RX 2.0
+    DESCRIPTION
+        "Replace single syslog destination with table of syslog destinations,
+        and add syslog facility as an attribute for syslogs."
+    REVISION    "9911080000Z"    --  8-Nov-99               - RX 1.3
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 28 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+UsdLogCatName ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "32a"
+    STATUS      current
+    DESCRIPTION
+        "The name of a log category.  Represents textual information taken from
+        the NVT ASCII character set."
+    REFERENCE
+        "RFC 854: NVT ASCII character set.  See SNMPv2-TC.DisplayString
+        DESCRIPTION for a summary."
+    SYNTAX      OCTET STRING (SIZE (1..32))
+
+UsdLogVerbosity ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The log verbosity level. Not all event types
+        offer medium- or high-verbosity levels of detail."
+    SYNTAX      INTEGER {   
+                    low(0),
+                    medium(1),
+                    high(2)
+                }
+
+UsdLogSyslogFacility ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The syslog daemon facility id."
+    SYNTAX      INTEGER {
+                    local0(0),
+                    local1(1),
+                    local2(2),
+                    local3(3),
+                    local4(4),
+                    local5(5),
+                    local6(6),
+                    local7(7)
+                }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdLogObjects        OBJECT IDENTIFIER ::= { usdLogMIB 1 }
+
+
+usdLogDestinations   OBJECT IDENTIFIER ::= { usdLogObjects 1 }
+usdLogCategories     OBJECT IDENTIFIER ::= { usdLogObjects 2 }
+usdLogMessages       OBJECT IDENTIFIER ::= { usdLogObjects 3 }
+
+-- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+-- Log Destinations
+-- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+usdLogDestSyslog         OBJECT IDENTIFIER ::= { usdLogDestinations 1 }
+usdLogDestConsole        OBJECT IDENTIFIER ::= { usdLogDestinations 2 }
+usdLogDestNvFile         OBJECT IDENTIFIER ::= { usdLogDestinations 3 }
+
+--
+-- SYSLOG server log destination
+--
+-- Scalar objects supporting a single syslog destination
+-- are obsoleted in favor of a table of syslog destinations.
+--
+
+usdLogDestSyslogSeverity OBJECT-TYPE
+    SYNTAX      UsdLogSeverity   
+    MAX-ACCESS  read-write
+    STATUS      obsolete
+    DESCRIPTION
+        "The minimum severity level of messages sent to the 
+        SYSLOG server. A value of 'off' indicates no log 
+        messages are sent to this destination."
+    ::= { usdLogDestSyslog 1 }
+
+usdLogDestSyslogAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      obsolete
+    DESCRIPTION
+        "The IP address of the SYSLOG server to which
+        log messages are to be sent. A value of 0.0.0.0
+        indicates no server address is configured."
+    ::= { usdLogDestSyslog 2 }
+
+usdLogSyslogTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdLogSyslogEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table describing the characteristics of each
+        syslog destination."
+    ::= { usdLogDestSyslog 3 }
+
+usdLogSyslogEntry OBJECT-TYPE
+    SYNTAX      UsdLogSyslogEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An entry describingthe characteristics of a 
+        syslog destination."
+    INDEX   { usdLogSyslogIpAddress }
+    ::= { usdLogSyslogTable 1 }
+
+UsdLogSyslogEntry ::= SEQUENCE {
+    usdLogSyslogIpAddress
+        IpAddress,
+    usdLogSyslogRowStatus
+        RowStatus,
+    usdLogSyslogSeverity
+        UsdLogSeverity,
+    usdLogSyslogFacility
+        UsdLogSyslogFacility
+}
+
+usdLogSyslogIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The IP address of this syslog destination.
+        This value must be a unicast IP address."
+    ::= { usdLogSyslogEntry 1 }
+
+usdLogSyslogRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table.
+        Only 'createAndGo' and 'destroy' are supported."
+    ::= { usdLogSyslogEntry 2 }
+
+usdLogSyslogSeverity OBJECT-TYPE
+    SYNTAX      UsdLogSeverity
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The severity level for this syslog destination.
+        Setting this value to 'off' suppresses log messages
+        from being sent to this syslog destination."
+    DEFVAL { off }
+    ::= { usdLogSyslogEntry 3 }
+
+usdLogSyslogFacility OBJECT-TYPE
+    SYNTAX      UsdLogSyslogFacility
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The facility id attached to messages sent to this
+        syslog destination."
+    DEFVAL { local7 }
+    ::= { usdLogSyslogEntry 4 }
+
+--
+-- Local console log destination
+--
+usdLogDestConsoleSeverity OBJECT-TYPE
+    SYNTAX      UsdLogSeverity   
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The minimum severity level of messages sent to the 
+        console. A value of 'off' indicates no log messages
+        are sent to this destination."
+    ::= { usdLogDestConsole 1 }
+
+--
+-- Local nonvolatile file log destination
+--
+usdLogDestNvFileSeverity OBJECT-TYPE
+    SYNTAX      UsdLogSeverity   
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The minimum severity level of messages sent to the
+        nonvolatile log file. A value of 'off' indicates
+        no log messages are to be sent to this destination."
+    ::= { usdLogDestNvFile 1 }
+
+-- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+-- Log Categories
+-- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+usdLogCatScalars        OBJECT IDENTIFIER ::= { usdLogCategories 1 }
+-- reserved for attributes pertaining to all logs
+
+-- 
+-- Log Category Table
+-- 
+usdLogCatTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdLogCatEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table describing the characteristics of each log category."
+    ::= { usdLogCategories 2 }
+
+usdLogCatEntry OBJECT-TYPE
+    SYNTAX      UsdLogCatEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An entry describing the characteristics of a log category." 
+    INDEX   { usdLogCatIndex }
+    ::= { usdLogCatTable 1 }
+
+UsdLogCatEntry ::= SEQUENCE {
+    usdLogCatIndex
+        Integer32,
+    usdLogCatName
+        UsdLogCatName,
+    usdLogCatDescr
+        DisplayString,
+    usdLogCatEngineering
+        TruthValue,
+    usdLogCatDiscards
+        Counter32,
+    usdLogCatSeverity
+        UsdLogSeverity,
+    usdLogCatVerbosity
+        UsdLogVerbosity
+    }
+
+usdLogCatIndex OBJECT-TYPE
+    SYNTAX      Integer32(1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An integer index uniquely associated with a log.
+
+        Index values do not necessarily persist across system
+        reboots. Following reboot, mappings of (reboot-invariant)
+        log category names to log index values is available in
+        the usdLogCatNameTable."
+    ::= { usdLogCatEntry 1 }
+
+usdLogCatName OBJECT-TYPE
+    SYNTAX      UsdLogCatName
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The name of this log category."
+    ::= { usdLogCatEntry 2 }
+
+usdLogCatDescr OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A description of the functionality for which events
+        are recorded by this log category."
+    ::= { usdLogCatEntry 3 }
+
+usdLogCatEngineering OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An indication of whether this log is intended mainly
+        for engineering development and debug purposes."
+    ::= { usdLogCatEntry 4 }
+
+usdLogCatDiscards OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of messages generated by this log category
+        that were discarded because of resource limitations."
+    ::= { usdLogCatEntry 5 }
+
+usdLogCatSeverity OBJECT-TYPE
+    SYNTAX      UsdLogSeverity
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The severity level for this log category. 
+
+        The value 'off' disables recording of this log category's
+        messages. For other severity level values, only messages
+        at or above this severity level will be logged in usdLogMsgTable."
+    ::= { usdLogCatEntry 6 }
+
+usdLogCatVerbosity OBJECT-TYPE
+    SYNTAX      UsdLogVerbosity
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The verbosity level for this log category.
+
+        Supplementary information may be available for certain
+        event types. This object controls whether that additional
+        information, if available for a given event, is recorded."
+    ::= { usdLogCatEntry 7}
+
+--
+-- Log Category Name Table
+--
+usdLogCatNameTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdLogCatNameEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table mapping each log category's name to its index."
+    ::= { usdLogCategories 3 }
+
+usdLogCatNameEntry OBJECT-TYPE
+    SYNTAX      UsdLogCatNameEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An entry mapping a log category's name to its index."
+    INDEX   { IMPLIED usdLogCatNameName }
+    ::= { usdLogCatNameTable 1 }
+
+UsdLogCatNameEntry ::= SEQUENCE {
+    usdLogCatNameName
+        UsdLogCatName,
+    usdLogCatNameIndex
+        Integer32
+    }
+
+usdLogCatNameName OBJECT-TYPE
+    SYNTAX      UsdLogCatName
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The name of the log category."
+    ::= { usdLogCatNameEntry 1 }
+
+usdLogCatNameIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The log index associated with this log category."
+    ::= { usdLogCatNameEntry 2 }
+
+
+-- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+-- Log Messages
+-- :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+--
+-- Log Message Scalars
+--
+usdLogMsgScalars     OBJECT IDENTIFIER   ::= { usdLogMessages 1 }
+
+usdLogMsgCapacity OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "messages"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum capacity, in number of log messages, of
+        the usdLogMsgTable."
+    ::= { usdLogMsgScalars 1 }
+
+usdLogMsgLastSeqNumber OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The sequence number of the most recent usdLogMsgTable entry.
+
+        By monitoring this object's rate of change in relation to
+        the usdLogMsgTable capacity, a management client can determine
+        whether it is polling usdLogMsgTable frequently enough to avoid
+        missing log messages."
+    ::= { usdLogMsgScalars 2 }
+
+
+--
+-- Log Message Table
+--
+usdLogMsgTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdLogMsgEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of log messages generated by this device."
+    ::= { usdLogMessages 2 }
+
+usdLogMsgEntry OBJECT-TYPE
+    SYNTAX      UsdLogMsgEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A log message generated by this device."
+    INDEX   { usdLogMsgSysUpTimeStamp, usdLogMsgSequenceNumber }
+    ::= { usdLogMsgTable 1 }
+
+UsdLogMsgEntry ::= SEQUENCE {
+    usdLogMsgSysUpTimeStamp
+        TimeStamp,
+    usdLogMsgSequenceNumber
+        Unsigned32,
+    usdLogMsgCatName
+        UsdLogCatName,
+    usdLogMsgCatIndex
+        Integer32,
+    usdLogMsgSeverity
+        UsdLogSeverity,
+    usdLogMsgText
+        DisplayString,
+    usdLogMsgDateAndTimeStamp
+        DateAndTime
+    }
+
+usdLogMsgSysUpTimeStamp OBJECT-TYPE
+    SYNTAX      TimeStamp
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The value of sysUpTime when this log message was recorded."
+    ::= { usdLogMsgEntry 1 }
+
+usdLogMsgSequenceNumber OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A sequence number that uniquely identifies this entry. Sequence
+        numbers are assigned consecutively beginning with 1. More recent
+        entries have higher sequence numbers."
+    ::= { usdLogMsgEntry 2 }
+
+usdLogMsgCatName OBJECT-TYPE
+    SYNTAX      UsdLogCatName
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Name of the log category that contributed this message."
+    ::= { usdLogMsgEntry 3 }
+
+usdLogMsgCatIndex OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Index of the log category that contributed this message."
+    ::= { usdLogMsgEntry 4 }
+
+usdLogMsgSeverity OBJECT-TYPE
+    SYNTAX      UsdLogSeverity
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The severity of the message."
+    ::= { usdLogMsgEntry 5 }
+
+usdLogMsgText  OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The text of the log message.
+        
+        Truncation of log message text is indicated by
+        n asterisk character ('*') in the last octet of 
+        a maximum-size string."
+    ::= { usdLogMsgEntry 6 }
+
+usdLogMsgDateAndTimeStamp  OBJECT-TYPE
+    SYNTAX      DateAndTime
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The date and time this message was generated."
+    ::= { usdLogMsgEntry 7 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control objects
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdLogTrapControl      OBJECT IDENTIFIER ::= { usdLogMIB 2 }
+
+usdLogMsgThreshold OBJECT-TYPE
+    SYNTAX      Integer32(0..100)
+    UNITS       "percent"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Number of log messages which, when added to usdLogMsgTable,
+        cause a usdLogMsgThresholdTrap to be generated.
+        
+        This value is expressed as a percentage of the capacity of
+        usdLogMsgTable. A value of zero disables trap generation."
+    ::= { usdLogTrapControl 1 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- The following OBJECT IDENTIFIERS is used to define SNMPv2 
+-- Notifications that are easily translated into SNMPv1 Traps.
+
+usdLogTrapPrefix         OBJECT IDENTIFIER ::= { usdLogMIB 0 }
+
+usdLogMsgThresholdTrap NOTIFICATION-TYPE
+    OBJECTS {
+        usdLogMsgCapacity,
+        usdLogMsgLastSeqNumber,
+        usdLogMsgThreshold
+        }
+    STATUS      current
+    DESCRIPTION
+        "This trap is generated to report that an incremental number
+        of log messages (described by the value of usdLogMsgThreshold)
+        have  been added to usdLogMsgTable."
+    ::= { usdLogTrapPrefix 1 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdLogMIBConformance
+             OBJECT IDENTIFIER ::= { usdLogMIB 4 }
+usdLogMIBCompliances
+             OBJECT IDENTIFIER ::= { usdLogMIBConformance 1 }
+usdLogMIBGroups
+             OBJECT IDENTIFIER ::= { usdLogMIBConformance 2 }
+
+
+-- compliance statements
+
+usdLogCompliance MODULE-COMPLIANCE
+    STATUS  obsolete
+    DESCRIPTION
+        "The compliance statement for entities which implement
+        the Unisphere Networks, Inc. Log MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS { usdLogGroup }
+    ::= { usdLogMIBCompliances 1 }                                     -- RX 1.3
+
+usdLogCompliance2 MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+        "The compliance statement for entities which implement
+        the Unisphere Networks. Log MIB., including support
+        for multiple SYSLOG destinations."
+    MODULE  -- this module
+    MANDATORY-GROUPS { usdLogGroup2, usdLogTrapGroup }
+    ::= { usdLogMIBCompliances 2 }                                     -- RX 2.0
+
+-- units of conformance
+
+usdLogGroup OBJECT-GROUP
+    OBJECTS {
+        -- log destinations
+        usdLogDestSyslogSeverity,
+        usdLogDestSyslogAddress,
+        usdLogDestConsoleSeverity,
+        usdLogDestNvFileSeverity,
+
+        -- log categories
+        usdLogCatName,
+        usdLogCatDescr,
+        usdLogCatEngineering,
+        usdLogCatDiscards,
+        usdLogCatSeverity,
+        usdLogCatVerbosity,
+
+        -- log category names
+        usdLogCatNameName,
+        usdLogCatNameIndex,
+
+        -- log message scalars
+        usdLogMsgCapacity,
+        usdLogMsgLastSeqNumber,
+
+        -- log messages
+        usdLogMsgCatName,
+        usdLogMsgCatIndex,
+        usdLogMsgSeverity,
+        usdLogMsgText,
+        usdLogMsgDateAndTimeStamp,
+
+        -- trap control
+        usdLogMsgThreshold
+    }
+    STATUS  obsolete
+    DESCRIPTION
+        "A collection of objects providing management of
+        Unisphere Networks, Inc. logging capabilities."
+    ::= { usdLogMIBGroups 1 }
+    
+usdLogGroup2 OBJECT-GROUP
+    OBJECTS {
+        -- log destinations
+        usdLogSyslogRowStatus,
+        usdLogSyslogSeverity,
+        usdLogSyslogFacility,
+        usdLogDestConsoleSeverity,
+        usdLogDestNvFileSeverity,
+
+        -- log categories
+        usdLogCatName,
+        usdLogCatDescr,
+        usdLogCatEngineering,
+        usdLogCatDiscards,
+        usdLogCatSeverity,
+        usdLogCatVerbosity,
+
+        -- log category names
+        usdLogCatNameName,
+        usdLogCatNameIndex,
+
+        -- log message scalars
+        usdLogMsgCapacity,
+        usdLogMsgLastSeqNumber,
+
+        -- log messages
+        usdLogMsgCatName,
+        usdLogMsgCatIndex,
+        usdLogMsgSeverity,
+        usdLogMsgText,
+        usdLogMsgDateAndTimeStamp,
+
+        -- trap control
+        usdLogMsgThreshold
+    }
+    STATUS  current
+    DESCRIPTION
+        "A collection of objects providing management of
+        Unisphere Networks, Inc logging capabilities, 
+        including support for multiple SYSLOG destinations."
+    ::= { usdLogMIBGroups 2 }
+    
+usdLogTrapGroup NOTIFICATION-GROUP
+    NOTIFICATIONS { usdLogMsgThresholdTrap }
+    STATUS  current
+    DESCRIPTION
+        "A management notification pertaining to logging operations."
+    ::= { usdLogMIBGroups 3 }
+
+END
+

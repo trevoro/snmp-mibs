@@ -1,0 +1,745 @@
+
+-- *****************************************************************************
+-- Unisphere-Data-ROUTER-MIB
+--
+-- Unisphere Networks Enterprise MIB
+--   The Router MIB.
+--
+-- Copyright (c) 2000, 2002 Unisphere Networks, Inc.  All Rights Reserved.
+-- *****************************************************************************
+
+Unisphere-Data-ROUTER-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Unsigned32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, DisplayString, RowStatus, TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    UsdName
+        FROM Unisphere-Data-TC
+    UsdIpPolicyName, UsdIpPolicyExtendedCommunity
+        FROM Unisphere-Data-IP-POLICY-MIB
+    usDataMibs
+        FROM Unisphere-Data-MIBs;
+
+usdRouterMIB  MODULE-IDENTITY
+    LAST-UPDATED "200205101816Z"  -- 10-May-02 02:16 PM EDT
+    ORGANIZATION "Unisphere Networks, Inc."
+    CONTACT-INFO
+        "       Unisphere Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The Router MIB is used to manage the creation and deletion as well as
+        the administrative states of the protocols and functions that run within
+        a designated router."
+    -- Revision History
+    REVISION    "200205101816Z"  -- 10-May-02 02:16 PM EDT  - RX 4.0
+    DESCRIPTION
+        "Added support for router context name string."
+    REVISION    "200101241825Z"  -- 24-Jan-01 01:25 PM EST  - RX 3.0
+    DESCRIPTION
+        "Added support for VRF - virtual router forwarder.  Support is defined
+         by these objects/table:
+             usdRouterVrf
+             usdRouterVrfTable
+             usdRouterVrfRouteTargetTable"
+    REVISION    "200001210000Z"  -- 21-Jan-00               - RX 1.3
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 32 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+UsdNextRouterIndex ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Coordinates routerIndex value allocation for entries in an associated
+        router table.  Clients must first read the routerIndex value from this
+        object, then create an entry having the routerIndex value in the
+        associated router table.
+
+        The DESCRIPTION clause for an object of this type must identify the
+        associated router table.
+
+        A GET of this object returns the next available routerIndex value to be
+        used to create an entry in the associated router table; or zero, if no
+        valid routerIndex value is available.  This object also returns a value
+        of zero when it is the lexicographic successor of a varbind presented in
+        an SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that routerIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously.
+
+        Unless specified otherwise by its MAX-ACCESS and DESCRIPTION clauses, an
+        object of this type is read-only, and a SET of such an object returns a
+        notWritable error."
+    SYNTAX      Unsigned32
+
+UsdRouterProtocolIndex ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Identifies the router protocol."
+    SYNTAX      INTEGER {
+                    ip(1),
+                    osi(2),
+                    icmp(3),
+                    igmp(4),
+                    tcp(5),
+                    udp(6),
+                    bgp(7),
+                    ospf(8),
+                    isis(9),
+                    rip(10),
+                    snmp(11),
+                    ntp(12),
+                    generator(13),
+                    localAddressServer(14),
+                    dhcpProxy(15),
+                    dhcpRelay(16),
+                    nameResolver(17),
+                    policyManager(18),
+                    sscClient(19),
+                    cops(20),
+                    mgtm(21),
+                    dvmrp(22),
+                    pim(23),
+                    msdp(24),
+                    mpls(25),
+                    radius(26),
+                    mplsMgr(27),
+                    dhcpLocalServer(28) }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdRouterObjects   OBJECT IDENTIFIER ::= { usdRouterMIB 1 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- Routers
+--
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- Router ID selection for creating "virtual" routers.
+--
+usdRouterNextRouterIndex  OBJECT-TYPE
+    SYNTAX      UsdNextRouterIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinates routerIndex and usdRouterVrfIndex value allocation for
+        entries in the usdRouterTable and usdRouterVrfTable, respectively.
+
+        A GET of this object returns the next available routerIndex value to be
+        used to create an entry in the associated router table; or zero, if no
+        valid routerIndex value is available.  This object also returns a value
+        of zero when it is the lexicographic successor of a varbind presented in
+        an SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that routerIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdRouterObjects 1 }
+
+--
+-- The Router Table
+--
+usdRouterTable  OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdRouterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for routers present in the system."
+    ::= { usdRouterObjects 2 }
+
+usdRouterEntry  OBJECT-TYPE
+    SYNTAX      UsdRouterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry in this table represents a single router.  Creating and/or
+        deleting entries in this table causes corresponding entries to be
+        created or deleted in the usdRouterProtocolTable.  Note that VRFs also
+        appear as entries in this table and can be differentiated by the
+        usdRouterVrf object.  The usdRouterVrfTable shows the parent / child
+        relationship between routers and VRFs present in the system."
+    INDEX     { usdRouterIndex }
+    ::= { usdRouterTable 1 }
+
+UsdRouterEntry ::= SEQUENCE {
+    usdRouterIndex          Unsigned32,
+    usdRouterName           UsdName,
+    usdRouterRowStatus      RowStatus,
+    usdRouterVrf            TruthValue,
+    usdRouterContextName    OCTET STRING }
+
+usdRouterIndex  OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The routerIndex of this router.  When creating entries in this table,
+        suitable values for this object are determined by reading
+        usdRouterNextRouterIndex."
+    ::= { usdRouterEntry 1 }
+
+usdRouterName  OBJECT-TYPE
+    SYNTAX      UsdName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The administratively assigned name given to this router.  The name must
+        be unique within the context of this table and cannot be changed after
+        the router instance is created."
+    ::= { usdRouterEntry 2 }
+
+usdRouterRowStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdRouterRowStatus
+            usdRouterName
+
+        In addition, when creating an entry the following conditions must hold:
+
+            A value for usdRouterIndex must have been determined previously by
+            reading usdRouterNextRouterIndex.
+
+        A corresponding entries in usdRouterProtocolTable are created/destroyed
+        as a result of creating/destroying an entry in this table."
+    ::= { usdRouterEntry 3 }
+
+usdRouterVrf  OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Identifies whether this router is a VRF or not.  A value of true(1)
+        indicates that this is a VRF; a value of false(2) indicates that it is
+        not."
+    ::= { usdRouterEntry 4 }
+
+usdRouterContextName  OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(7..14))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An internally derived/assigned name given to this router with a
+        specific format:
+                routerN
+
+        where N is a decimal number (with no leading zeroes) in the range
+        1..16777215 corresponding to the value of the least significant 24 bits
+        of the usdRouterIndex (the router UID).  The name is unique within the
+        context of this table."
+    ::= { usdRouterEntry 5 }
+
+--
+-- The Router Protocol Table
+--
+usdRouterProtocolTable  OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdRouterProtocolEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for each protocol supported by the router
+        entry created in the usdRouterTable."
+    ::= { usdRouterObjects 3 }
+
+usdRouterProtocolEntry  OBJECT-TYPE
+    SYNTAX      UsdRouterProtocolEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry provides administrative control on a router protocol for the
+        router designated by the first indice to this table.  The second indice
+        identifies the router protocol.
+
+        Entries in this table are created as a side-effect of row creation in
+        the usdRouterTable or usdRouterVrfTable."
+    INDEX     { usdRouterProtocolRouterIndex,
+                usdRouterProtocolProtocolIndex }
+    ::= { usdRouterProtocolTable 1 }
+
+UsdRouterProtocolEntry ::= SEQUENCE {
+    usdRouterProtocolRouterIndex    Unsigned32,
+    usdRouterProtocolProtocolIndex  UsdRouterProtocolIndex,
+    usdRouterProtocolRowStatus      RowStatus }
+
+usdRouterProtocolRouterIndex  OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The routerIndex of this router.  This object is the same as the
+        usdRouterIndex object defined in the usdRouterTable."
+    ::= { usdRouterProtocolEntry 1 }
+
+usdRouterProtocolProtocolIndex  OBJECT-TYPE
+    SYNTAX      UsdRouterProtocolIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Identities the router protocol."
+    ::= { usdRouterProtocolEntry 2 }
+
+usdRouterProtocolRowStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Administrative control and status of a protocol on a router.
+
+        The following values can be read from this object:
+          active(1)   - Indicates that the protocol on the designated router
+                        is created, configured, and running.
+          notReady(3) - Indicates that the protocol requires additional
+                        configuration in a protocol specific MIB module.
+                        Examples include the BGP and OSPF protocols, which
+                        require additional configuration of protocol specific
+                        parameters such as: Autonomous System (AS) for BGP,
+                        and Process Id for OSPF.
+          destroy(6)  - The destroy(3) operation can fail if there are
+                        executing applications dependent on the protocol.
+                        If an attempt is made to destroy(6) an active(1)
+                        protocol that other applications are dependent on,
+                        the rowStatus will read destroy(6).  Normally, when
+                        a row is destroyed, the agent will cleaup and remove
+                        the entry.
+
+        The following values can be written to this object:
+          active(1)      - Activate protocol on the designated router.
+          createAndGo(4) - Create protocol on designated router.  The router
+                           indicated by usdRouterProtocolRouterIndex must
+                           already exist in the usdRouterTable.  The value of
+                           the usdRouterProtocolProtocolIndex must be from the
+                           set of protocol values defined by the
+                           UsdRouterProtocolIndex type.
+          destroy(6)     - Destroy protocol on designated router.  If the
+                           operation is successful, the agent will remove the
+                           entry.  If the operation failed, the row will remain
+                           in the table with a rowStatus value of destroy(6).
+
+            Conditions on destroy(6):
+             1) The default router can not be deleted.
+             2) The local router can not be deleted.  A local router is defined
+                as the router that sourced the SNMP request.
+
+        Upon creation of a router in the usdRouterTable, some protocol entries
+        will appear in this table by default, which indicates that these
+        protocols are created by the action of creating a router.  It is
+        important to note, that this behavior may change over time by protocol
+        type."
+    ::= { usdRouterProtocolEntry 3 }
+
+--
+-- The Router VRF Table
+--
+usdRouterVrfTable  OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdRouterVrfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for each VRF on each router entry created
+        in the usdRouterTable."
+    ::= { usdRouterObjects 4 }
+
+usdRouterVrfEntry  OBJECT-TYPE
+    SYNTAX      UsdRouterVrfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry provides administrative control on a router VRF for the
+        router designated by the first indice of this table.  The second indice
+        identifies the router VRF.
+
+        The parent router must exist in the usdRouterTable before performing VRF
+        row creation in this table"
+    INDEX     { usdRouterVrfRouterIndex,
+                usdRouterVrfRouterVrfIndex }
+    ::= { usdRouterVrfTable 1 }
+
+UsdRouterVrfEntry ::= SEQUENCE {
+    usdRouterVrfRouterIndex         Unsigned32,
+    usdRouterVrfRouterVrfIndex      Unsigned32,
+    usdRouterVrfImportRouteMap      UsdIpPolicyName,
+    usdRouterVrfExportRouteMap      UsdIpPolicyName,
+    usdRouterVrfRouteDistinguisher  UsdIpPolicyExtendedCommunity,
+    usdRouterVrfRowStatus           RowStatus,
+    usdRouterVrfRouterName          UsdName,
+    usdRouterVrfRouterDescription   DisplayString }
+
+usdRouterVrfRouterIndex  OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The router index of this router, also referred to as the parent of the
+        VRF.  This object is the same as the usdRouterIndex object defined in the
+        usdRouterTable."
+    ::= { usdRouterVrfEntry 1 }
+
+usdRouterVrfRouterVrfIndex  OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VRF router index for this entry, also referred as the child of the
+        parent router, which is identified by the first indice to this table."
+    ::= { usdRouterVrfEntry 2 }
+
+usdRouterVrfImportRouteMap  OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The VRF router import route map."
+    DEFVAL    { "" }
+    ::= { usdRouterVrfEntry 3 }
+
+usdRouterVrfExportRouteMap  OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The VRF router export route map."
+    DEFVAL    { "" }
+    ::= { usdRouterVrfEntry 4 }
+
+usdRouterVrfRouteDistinguisher  OBJECT-TYPE
+    SYNTAX      UsdIpPolicyExtendedCommunity
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The VRF router route distinguisher."
+    DEFVAL    { "" }
+    ::= { usdRouterVrfEntry 5 }
+
+usdRouterVrfRowStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        *** LIMITED CONFIGURATION LEVEL ***
+        RowStatus createAndGo/destroy operations have the following
+        special-purpose semantics:
+            createAndGo     Create an entry having the specified configuration
+                            and append it to the target list, i.e. create an
+                            usdRouterVrfEntry table entry with the associated
+                            characteristics.
+            destroy         Destroy the specified element.
+
+        Entries in this table can be modified once the row has been created.
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            A value for usdRouterVrfRouterIndex must have been determined
+            previously by reading usdRouterNextRouterIndex.
+
+            A parent router must exist in the usdRouterTable."
+    ::= { usdRouterVrfEntry 7 }
+
+usdRouterVrfRouterName  OBJECT-TYPE
+    SYNTAX      UsdName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The administratively assigned name given to this VRF router.  The name
+        must be unique within the context of this table and cannot be changed
+        after the router instance is created."
+    ::= { usdRouterVrfEntry 8 }
+
+usdRouterVrfRouterDescription  OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..80))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The administratively assigned description given to this VRF router."
+    ::= { usdRouterVrfEntry 9 }
+
+
+--
+-- The Router VRF Route Target Table
+--
+usdRouterVrfRouteTargetTable  OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdRouterVrfRouteTargetEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for each route target for the router/VRF
+        entry created in the usdRouterTable and usdRouterVrfTable."
+    ::= { usdRouterObjects 5 }
+
+usdRouterVrfRouteTargetEntry  OBJECT-TYPE
+    SYNTAX      UsdRouterVrfRouteTargetEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry provides administrative control on VRF route targets for the
+        router/VRF pair designated by the first and second indice of this table.
+        The third indice identifies the route target.
+
+        The parent router must exist in the usdRouterTable and the VRF router
+        must exist in the usdRouterVrfTable before performing creation of the
+        route target in this table."
+    INDEX     { usdRouterVrfRouteTargetRouterIndex,
+                usdRouterVrfRouteTargetRouterVrfIndex,
+                usdRouterVrfRouteTargetAddrFormat,
+                usdRouterVrfRouteTargetRouteTarget }
+    ::= { usdRouterVrfRouteTargetTable 1 }
+
+UsdRouterVrfRouteTargetEntry ::= SEQUENCE {
+    usdRouterVrfRouteTargetRouterIndex      Unsigned32,
+    usdRouterVrfRouteTargetRouterVrfIndex   Unsigned32,
+    usdRouterVrfRouteTargetAddrFormat       INTEGER,
+    usdRouterVrfRouteTargetRouteTarget      UsdIpPolicyExtendedCommunity,
+    usdRouterVrfRouteTargetType             INTEGER,
+    usdRouterVrfRouteTargetRowStatus        RowStatus }
+
+usdRouterVrfRouteTargetRouterIndex  OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The routerIndex of this router, also referred to as the parent of the
+        VRF.  This object is the same as the usdRouterIndex object defined in the
+        usdRouterTable."
+    ::= { usdRouterVrfRouteTargetEntry 1 }
+
+usdRouterVrfRouteTargetRouterVrfIndex  OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VRF router index for this entry, also referred as the child of the
+        parent router, which is identified by the first indice to this table."
+    ::= { usdRouterVrfRouteTargetEntry 2 }
+
+usdRouterVrfRouteTargetAddrFormat  OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    routeTargetFormatAsn(0),
+                    routeTargetFormateIp(1) }
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The address format of the route target."
+    ::= { usdRouterVrfRouteTargetEntry 3 }
+
+usdRouterVrfRouteTargetRouteTarget  OBJECT-TYPE
+    SYNTAX      UsdIpPolicyExtendedCommunity
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The VRF router route target."
+    ::= { usdRouterVrfRouteTargetEntry 4 }
+
+usdRouterVrfRouteTargetType  OBJECT-TYPE
+    SYNTAX      INTEGER {
+                     routeTargetInvalid(0),
+                     routeTargetImport(1),
+                     routeTargetExport(2),
+                     routeTargetBoth(3) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The VRF router route target type."
+    ::= { usdRouterVrfRouteTargetEntry 5 }
+
+usdRouterVrfRouteTargetRowStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        *** LIMITED CONFIGURATION LEVEL ***
+        RowStatus createAndGo/destroy operations have the following
+        special-purpose semantics:
+            createAndGo     Create an entry having the specified configuration
+                            and append it to the target list, i.e., create an
+                            usdRouterVrfRouteTargetEntry table entry with the
+                            associated characteristics.
+            destroy         Destroy the specified element.
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            A parent router must exist in the usdRouterTable.
+
+            A VRF router must exist in the usdRouterVrfTable."
+    ::= { usdRouterVrfRouteTargetEntry 6 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB.  Placeholder follows.
+-- usdRouterTrapControl      OBJECT IDENTIFIER ::= { usdRouterMIB 2 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB.  Placeholders follow.
+-- The following two OBJECT IDENTIFIERS are used to define SNMPv2
+-- Notifications that are easily translated into SNMPv1 Traps.
+-- usdRouterTraps            OBJECT IDENTIFIER ::= { usdRouterMIB 3 }
+-- usdRouterTrapPrefix       OBJECT IDENTIFIER ::= { usdRouterTraps 0 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdRouterConformance OBJECT IDENTIFIER ::= { usdRouterMIB 4 }
+usdRouterCompliances OBJECT IDENTIFIER ::= { usdRouterConformance 1 }
+usdRouterGroups      OBJECT IDENTIFIER ::= { usdRouterConformance 2 }
+
+--
+-- compliance statements
+--
+usdRouterCompliance  MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "An obsolete compliance statement for entities which implement the
+        Unisphere Router MIB.  This statement became obsolete when support was
+        added for VRFs within routers."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdRouterGroup }
+    ::= { usdRouterCompliances 1 }                                     -- RX 1.3
+
+usdRouterCompliance2  MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "An obsolete compliance statement for entities which implement the
+        Unisphere Router MIB.  This statement became obsolete when support was
+        added for the router context name."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdRouterGroup2 }
+        GROUP       usdRouterVrfGroup
+            DESCRIPTION
+                "The VRF group is only required for entities which implement VRF
+                routers."
+    ::= { usdRouterCompliances 2 }                                     -- RX 3.0
+
+usdRouterCompliance3  MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for entities which implement the Unisphere
+        Router MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdRouterGroup3 }
+        GROUP       usdRouterVrfGroup2
+            DESCRIPTION
+                "The VRF group is only required for entities which implement VRF
+                routers."
+    ::= { usdRouterCompliances 3 }                                     -- RX 4.0
+
+--
+-- units of conformance
+--
+usdRouterGroup  OBJECT-GROUP
+    OBJECTS {
+        usdRouterNextRouterIndex,
+        usdRouterName,
+        usdRouterRowStatus,
+        usdRouterProtocolRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "An obsolete collection of objects providing management of routers and
+        routing protocols in a Unisphere product.  This group became obsolete
+        when support was added for VRFs within routers."
+    ::= { usdRouterGroups 1 }
+
+usdRouterGroup2  OBJECT-GROUP
+    OBJECTS {
+        usdRouterNextRouterIndex,
+        usdRouterName,
+        usdRouterRowStatus,
+        usdRouterVrf,
+        usdRouterProtocolRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "An obsolete collection of objects providing management of routers and
+        routing protocols in a Unisphere product.  This group became obsolete
+        when support was added for the router context name."
+    ::= { usdRouterGroups 2 }
+
+usdRouterVrfGroup  OBJECT-GROUP
+    OBJECTS {
+        usdRouterVrfImportRouteMap,
+        usdRouterVrfExportRouteMap,
+        usdRouterVrfRouteDistinguisher,
+        usdRouterVrfRowStatus,
+        usdRouterVrfRouterName,
+        usdRouterVrfRouteTargetType,
+        usdRouterVrfRouteTargetRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "A collection of objects providing management of VRFs within routers in
+        a Unisphere product."
+    ::= { usdRouterGroups 3 }
+
+usdRouterGroup3  OBJECT-GROUP
+    OBJECTS {
+        usdRouterNextRouterIndex,
+        usdRouterName,
+        usdRouterRowStatus,
+        usdRouterVrf,
+        usdRouterProtocolRowStatus,
+        usdRouterContextName }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of routers and routing
+        protocols in a Unisphere product."
+    ::= { usdRouterGroups 4 }
+
+usdRouterVrfGroup2  OBJECT-GROUP
+    OBJECTS {
+        usdRouterVrfImportRouteMap,
+        usdRouterVrfExportRouteMap,
+        usdRouterVrfRouteDistinguisher,
+        usdRouterVrfRowStatus,
+        usdRouterVrfRouterName,
+        usdRouterVrfRouterDescription,
+        usdRouterVrfRouteTargetType,
+        usdRouterVrfRouteTargetRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of VRFs within routers in
+        a Unisphere product."
+    ::= { usdRouterGroups 5 }
+
+END

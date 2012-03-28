@@ -1,0 +1,1138 @@
+-- *****************************************************************************
+-- Unisphere-Data-PPPOE-MIB
+--
+-- Unisphere Networks Enterprise MIB
+--   Point-to-Point Protocol over Ethernet (PPPoE) MIB
+--
+-- Copyright (c) 1999 Redstone Communications, Inc.
+-- Copyright (c) 1999, 2002 Unisphere Networks, Inc.
+--   All Rights Reserved.
+-- *****************************************************************************
+
+Unisphere-Data-PPPOE-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, Counter32, Unsigned32
+        FROM SNMPv2-SMI
+    DisplayString, RowStatus
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    InterfaceIndex, InterfaceIndexOrZero
+        FROM IF-MIB
+    usDataMibs
+        FROM Unisphere-Data-MIBs
+    UsdNextIfIndex, UsdEnable
+        FROM Unisphere-Data-TC;
+
+usdPPPoEMIB  MODULE-IDENTITY
+    LAST-UPDATED "200208162146Z"  -- 16-Aug-02 05:46 PM EDT
+    ORGANIZATION "Juniper Networks, Inc."
+    CONTACT-INFO
+        "       Juniper Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The Point-to-Point Protocol over Ethernet (PPPoE) MIB for the Juniper
+        edge router enterprise."
+    -- Revision History
+    REVISION    "200208162146Z"  -- 16-Aug-02 05:46 PM EDT  - RX 4.0
+    DESCRIPTION
+        "Added PADI flag support."
+    REVISION    "200106191427Z"  -- 14-May-02 06:38 PM EST  - RX 3.2
+    DESCRIPTION
+        "Added AC-NAME and duplicate MAC address indicator objects."
+    REVISION    "200103211500Z"  -- 21-Mar-01 10:00 AM EST  - RX 3.0
+    DESCRIPTION
+        "Deprecated profile support, which is now in a separate module.  Made
+        corrections to MOTM and URL ranges (should allow zero length) and to
+        read-write objects that should be read-create because they are in tables
+        that permit row creation.  Fixed upper bound of usdPPPoEIfMaxNumSessions.
+        Fixed conformance definitions."
+    REVISION    "200102120000Z"  -- 12-Feb-01               - RX 2.6
+    DESCRIPTION
+        "Added interface summary statistics under usdPPPoESummary node."
+    REVISION    "200010250000Z"  -- 25-Oct-00               - RX 2.0
+    DESCRIPTION
+        "Added profile support and new sub-interface objects."
+    REVISION      "9905130000Z"  -- 13-May-99               - RX 1.1
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 18 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPPPoEObjects     OBJECT IDENTIFIER ::= { usdPPPoEMIB 1 }
+
+--
+-- This MIB contains managed objects for each of two interface
+-- layers:  PPPoE interfaces, and PPPoE subinterfaces.
+-- For each of these layers, management objects are provided to
+-- query for an available interface index, and to create/delete
+-- interfaces of that type.  Creating/deleting these interface
+-- types using this MIB has the side effect of creating/deleting
+-- corresponding entries in the Interface MIB ifTable/ifXTable,
+-- and in the Unisphere Enterprise Interface MIB usdIfTable.
+--
+usdPPPoEIfLayer        OBJECT IDENTIFIER ::= { usdPPPoEObjects 1 }
+usdPPPoESubIfLayer     OBJECT IDENTIFIER ::= { usdPPPoEObjects 2 }
+usdPPPoEGlobal         OBJECT IDENTIFIER ::= { usdPPPoEObjects 3 }
+usdPPPoEProfile        OBJECT IDENTIFIER ::= { usdPPPoEObjects 4 }
+usdPPPoESummary        OBJECT IDENTIFIER ::= { usdPPPoEObjects 5 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- PPPoE Interface Layer
+--
+-- This layer is managed with the following elements:
+--
+--  o NextIfIndex (generator for PPPoE IfIndex selection)
+--  o Interface Table (creation/configuration/deletion of PPPoE interfaces)
+--  o Statistics Table (PPPoE interface statistics)
+--
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- IfIndex selection for creating new PPPoE interfaces
+--
+usdPPPoENextIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in usdPPPoEIfTable.
+
+        A GET of this object returns the next available ifIndex value to be used
+        to create an entry in the associated interface table; or zero, if no
+        valid ifIndex value is available.  This object also returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdPPPoEIfLayer 1 }
+
+--
+-- The PPPoE Interface Table
+--
+usdPPPoEIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPPPoEIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The parameters for the PPPoE service on this interface."
+    REFERENCE
+        "RFC 2156 A method for transmitting PPP over Ethernet"
+    ::= { usdPPPoEIfLayer 2 }
+
+usdPPPoEIfEntry OBJECT-TYPE
+    SYNTAX      UsdPPPoEIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The Parameters for a particular PPPoE interface.
+
+        Creating/deleting entries in this table causes corresponding entries for
+        be created/deleted in ifTable/ifXTable/usdIfTable, and
+        usdPPPoEIfStatsTable."
+    INDEX     { usdPPPoEIfIfIndex }
+    ::= { usdPPPoEIfTable 1 }
+
+UsdPPPoEIfEntry ::= SEQUENCE {
+    usdPPPoEIfIfIndex           InterfaceIndex,
+    usdPPPoEIfMaxNumSessions    INTEGER,
+    usdPPPoEIfRowStatus         RowStatus,
+    usdPPPoEIfLowerIfIndex      InterfaceIndexOrZero,
+    usdPPPoEIfAcName            DisplayString,
+    usdPPPoEIfDupProtect        UsdEnable,
+    usdPPPoEIfPADIFlag          UsdEnable,
+    usdPPPoEIfAutoconfig        UsdEnable }
+
+usdPPPoEIfIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex value of the corresponding ifEntry."
+    ::= { usdPPPoEIfEntry 1 }
+
+usdPPPoEIfMaxNumSessions OBJECT-TYPE
+    SYNTAX      INTEGER (0..65335)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The number of sessions allowed on the PPPoE interface, zero indicates
+        unlimited."
+    DEFVAL    { 0 }
+    ::= { usdPPPoEIfEntry 2 }
+
+usdPPPoEIfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdPPPoEIfRowStatus
+            usdPPPoEIfLowerIfIndex
+
+        In addition, when creating an entry the following conditions must hold:
+            A value for usdPPPoEIfIndex must have been determined previously, by
+            reading usdPPPoENextIfIndex.
+
+            The interface identified by usdPPPoEIfLowerIfIndex must exist, and
+            must be an interface type that permits layering of PPPoE above it.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created or
+        destroyed as a result of creating or destroying an entry in this table."
+    ::= { usdPPPoEIfEntry 3 }
+
+usdPPPoEIfLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an interface over which this PPPoE interface is to be
+        layered.  A value of zero indicates no layering.  An implementation may
+        choose to require that a nonzero value be configured at entry creation."
+    ::= { usdPPPoEIfEntry 4 }
+
+usdPPPoEIfAcName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..64))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The name to use for the AC-NAME tag that is sent in any PADO that is
+        sent on this interface."
+    ::= { usdPPPoEIfEntry 5 }
+
+usdPPPoEIfDupProtect OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Flag to allow duplicate MAC addresses."
+    DEFVAL    { disable }
+    ::= { usdPPPoEIfEntry 6 }
+
+usdPPPoEIfPADIFlag OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This flag controls whether always repsond to a PADI with a PADO
+        regardless of the ability to create the session and allows the session
+        establish phase to resolve it."
+    DEFVAL    { disable }
+    ::= { usdPPPoEIfEntry 7 }
+
+usdPPPoEIfAutoconfig OBJECT-TYPE
+    SYNTAX      UsdEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This flags determines whether the upper PPPoE interface is created
+        dynamically or statically.  When enable(1) the interface is created
+        dynamically."
+    DEFVAL    { disable }
+    ::= { usdPPPoEIfEntry 8 }
+
+
+--
+-- The PPPoE Interface Statistics Table
+--
+usdPPPoEIfStatsTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPPPoEIfStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The statistics for the PPP over Ethernet Interface for the PPPoE
+        service on this interface."
+    ::= { usdPPPoEIfLayer 3 }
+
+usdPPPoEIfStatsEntry OBJECT-TYPE
+    SYNTAX      UsdPPPoEIfStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The statistics for a particular PPPoE Interface."
+    INDEX     { usdPPPoEIfIfIndex }
+    ::= { usdPPPoEIfStatsTable 1 }
+
+UsdPPPoEIfStatsEntry ::= SEQUENCE {
+    usdPPPoEIfStatsRxPADI                   Counter32,
+    usdPPPoEIfStatsTxPADO                   Counter32,
+    usdPPPoEIfStatsRxPADR                   Counter32,
+    usdPPPoEIfStatsTxPADS                   Counter32,
+    usdPPPoEIfStatsRxPADT                   Counter32,
+    usdPPPoEIfStatsTxPADT                   Counter32,
+    usdPPPoEIfStatsRxInvVersion             Counter32,
+    usdPPPoEIfStatsRxInvCode                Counter32,
+    usdPPPoEIfStatsRxInvTags                Counter32,
+    usdPPPoEIfStatsRxInvSession             Counter32,
+    usdPPPoEIfStatsRxInvTypes               Counter32,
+    usdPPPoEIfStatsRxInvPackets             Counter32,
+    usdPPPoEIfStatsRxInsufficientResources  Counter32,
+    usdPPPoEIfStatsTxPADM                   Counter32 }
+
+usdPPPoEIfStatsRxPADI OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADI packets received."
+    ::= { usdPPPoEIfStatsEntry 1 }
+
+usdPPPoEIfStatsTxPADO OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADO packets transmitted."
+    ::= { usdPPPoEIfStatsEntry 2 }
+
+usdPPPoEIfStatsRxPADR OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADR packets received."
+    ::= { usdPPPoEIfStatsEntry 3 }
+
+usdPPPoEIfStatsTxPADS OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADS packets transmitted."
+    ::= { usdPPPoEIfStatsEntry 4 }
+
+usdPPPoEIfStatsRxPADT OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADT packets received."
+    ::= { usdPPPoEIfStatsEntry 5 }
+
+usdPPPoEIfStatsTxPADT OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADT packets transmitted."
+    ::= { usdPPPoEIfStatsEntry 6 }
+
+usdPPPoEIfStatsRxInvVersion OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid version."
+    ::= { usdPPPoEIfStatsEntry 7 }
+
+usdPPPoEIfStatsRxInvCode OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid code."
+    ::= { usdPPPoEIfStatsEntry 8 }
+
+usdPPPoEIfStatsRxInvTags OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid tags."
+    ::= { usdPPPoEIfStatsEntry 9 }
+
+usdPPPoEIfStatsRxInvSession OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid session identifiers."
+    ::= { usdPPPoEIfStatsEntry 10 }
+
+usdPPPoEIfStatsRxInvTypes OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid types."
+    ::= { usdPPPoEIfStatsEntry 11 }
+
+usdPPPoEIfStatsRxInvPackets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of invalid packets received."
+    ::= { usdPPPoEIfStatsEntry 12 }
+
+usdPPPoEIfStatsRxInsufficientResources OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of session requests that could not be honored due to invalid
+        resources."
+    ::= { usdPPPoEIfStatsEntry 13 }
+
+usdPPPoEIfStatsTxPADM OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADM packets transmitted."
+    ::= { usdPPPoEIfStatsEntry 14 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- PPPoE Subinterface Layer
+--
+-- This layer is managed with the following elements:
+--
+--  o NextIfIndex (generator for PPPoE subinterface IfIndex selection)
+--  o SubIf Table (creation/configuration/deletion of PPPoE subinterfaces)
+--
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- IfIndex selection for creating new PPPoE Subinterfaces
+--
+usdPPPoESubIfNextIfIndex OBJECT-TYPE
+    SYNTAX      UsdNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries in usdPPPoESubIfTable.
+
+        A GET of this object returns the next available ifIndex value to be used
+        to create an entry in the associated interface table; or zero, if no
+        valid ifIndex value is available.  This object also returns a value of
+        zero when it is the lexicographic successor of a varbind presented in an
+        SNMP GETNEXT or GETBULK request, for which circumstance it is assumed
+        that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different values, thus avoiding
+        collisions among cooperating management clients seeking to create table
+        entries simultaneously."
+    ::= { usdPPPoESubIfLayer 1 }
+
+
+--
+-- The PPPoE Subinterface Table
+--
+usdPPPoESubIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPPPoESubIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for PPPoE Subinterfaces present in the
+        system."
+    ::= { usdPPPoESubIfLayer 2 }
+
+usdPPPoESubIfEntry OBJECT-TYPE
+    SYNTAX      UsdPPPoESubIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of a PPPoE Subinterface.
+        Creating/deleting entries in this table causes corresponding entries for
+        be created /deleted in ifTable/ifXTable/usdIfTable."
+    INDEX     { usdPPPoESubIfIndex }
+    ::= { usdPPPoESubIfTable 1 }
+
+UsdPPPoESubIfEntry ::= SEQUENCE {
+    usdPPPoESubIfIndex          InterfaceIndex,
+    usdPPPoESubIfRowStatus      RowStatus,
+    usdPPPoESubIfLowerIfIndex   InterfaceIndexOrZero,
+    usdPPPoESubIfId             Integer32,
+    usdPPPoESubIfSessionId      Integer32,
+    usdPPPoESubIfMotm           DisplayString,
+    usdPPPoESubIfUrl            DisplayString }
+
+usdPPPoESubIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the PPPoE Subinterface.  When creating entries in this
+        table, suitable values for this object are determined by reading
+        usdPPPoESubNextIfIndex."
+    ::= { usdPPPoESubIfEntry 1 }
+
+usdPPPoESubIfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+            usdPPPoESubIfRowStatus
+            usdPPPoESubIfLowerIfIndex
+
+        In addition, when creating an entry the following conditions must hold:
+            A value for usdPPPoESubIfIndex must have been determined previously,
+            by reading usdPPPoESubIfNextIfIndex.
+
+            The interface identified by usdPPPoESubIfLowerIfIndex must exist,
+            and must be a PPPoE interface.
+
+            A positive value configured for usdPPPoESubIfId must not already be
+            assigned to another subinterface layered onto the same underlying
+            PPPoE interface.
+
+        A corresponding entry in ifTable/ifXTable/usdIfTable is created or
+        destroyed as a result of creating or destroying an entry in this table."
+    ::= { usdPPPoESubIfEntry 2 }
+
+usdPPPoESubIfLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of a PPPoE interface over which this PPPoE Subinterface is
+        to be layered.  A value of zero indicates no layering.  An
+        implementation may choose to require that a nonzero value be configured
+        at entry creation."
+    ::= { usdPPPoESubIfEntry 3 }
+
+usdPPPoESubIfId OBJECT-TYPE
+    SYNTAX      Integer32 (-1..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An integer identifier for the PPPoE subinterface, used in conjunction
+        with the command-line interface.  It is provided here for
+        cross-reference purposes only.
+
+        The value must be unique among subinterfaces configured on the same
+        underlying PPPoE interface.
+
+        If this object is not configured, or is configured with a value of -1, a
+        nonzero value will be allocated internally and can be retrieved from
+        this object after table entry creation has succeeded.
+
+        A value of zero for this object is reserved for future use."
+    DEFVAL    { -1 }
+    ::= { usdPPPoESubIfEntry 4 }
+
+usdPPPoESubIfSessionId OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current sessionId associated with this sub-interface."
+    ::= { usdPPPoESubIfEntry 5 }
+
+usdPPPoESubIfMotm OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..127))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A message to send via a PADM on the sub-interface when the
+        sub-interface transitions to the ifOperStatusUp state.  The client may
+        choose to display this message to the user."
+    ::= { usdPPPoESubIfEntry 6 }
+
+usdPPPoESubIfUrl OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..127))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A URL to be sent via a PADM on the sub-interface when the sub-interface
+        transitions to the ifOperStatusUp state.  The client may use this URL as
+        the initial web-page for the user."
+    ::= { usdPPPoESubIfEntry 7 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- PPPoE Globals
+--
+--  The globals are non interface based objects
+--
+-- /////////////////////////////////////////////////////////////////////////////
+usdPPPoEGlobalMotm OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..127))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "A message to send via a PADM to all sub-interface that are currently in
+        ifOperStatusUp state.  A client may choose to display this information
+        to the user.  Retrieving this object always returns a null string."
+    ::= { usdPPPoEGlobal 1 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- PPPoE Profile Support
+--
+--  This table is to support setting of the PPPoE attributes in a
+--  profile entry
+--
+--  Profiles are created in the usdProfileNameTable.  Creation in
+--  that table provides an Id (unsigned32) used here for the index
+--  into the PPPoE portion of that table.
+--
+-- /////////////////////////////////////////////////////////////////////////////
+usdPPPoEProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdPPPoEProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      deprecated
+    DESCRIPTION
+        "This table contains entries for the PPPoE portion of a profile entry."
+    ::= { usdPPPoEProfile 1 }
+
+usdPPPoEProfileEntry OBJECT-TYPE
+    SYNTAX      UsdPPPoEProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      deprecated
+    DESCRIPTION
+        "Each entry describes the characteristics of the PPPoE components of a
+        profile entry.  Each entry is applied to an interface when the IP
+        interface above the PPPoE sub-interface becomes active."
+    INDEX     { usdPPPoEProfileIndex }
+    ::= { usdPPPoEProfileTable 1 }
+
+UsdPPPoEProfileEntry ::= SEQUENCE {
+    usdPPPoEProfileIndex        Unsigned32,
+    usdPPPoEProfileRowStatus    RowStatus,
+    usdPPPoEProfileMotm         DisplayString,
+    usdPPPoEProfileUrl          DisplayString }
+
+usdPPPoEProfileIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      deprecated
+    DESCRIPTION
+        "This is the index of the profile that the attributes are being set in.
+        The index must exist before creating a row in this table.  The index is
+        equivalent to usdProfileIdId in the usdProfileIdTable."
+    ::= { usdPPPoEProfileEntry 1 }
+
+usdPPPoEProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      deprecated
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+            createAndGo
+            destroy
+
+        The index must exist in the profile manager before this entry can be
+        created.  CreateAndGo simply adds a table entry to the PPPoE component.
+        Destroy deletes the entry in the PPPoE component (but not the entry in
+        other components), and removes all PPPoE information relating to this
+        profile."
+    ::= { usdPPPoEProfileEntry 2 }
+
+usdPPPoEProfileMotm OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..127))
+    MAX-ACCESS  read-create
+    STATUS      deprecated
+    DESCRIPTION
+        "A message to send via a PADM on the sub-interface when this profile is
+        applied to the IP interface above this PPPoE sub-interface.  A client
+        may choose to display this message to the user."
+    ::= { usdPPPoEProfileEntry 3 }
+
+usdPPPoEProfileUrl OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..127))
+    MAX-ACCESS  read-create
+    STATUS      deprecated
+    DESCRIPTION
+        "A URL to be sent via a PADM on the sub-interface when this profile is
+        applied to the IP interface above this PPPoE sub-interface.  The string
+        entered here can have several substitutions applied:
+                %D   is replaced with the profile name
+                %d   is replaced with the domain name
+                %u   is replaced with the user name
+                %U   is replaced with the user/domain name together
+                %%   is replaced with the % character
+        The resulting string must not be greater than 127 octets long.  The
+        client may use this URL as the initial web-page for the user."
+    ::= { usdPPPoEProfileEntry 4 }
+
+
+-- /////////////////////////////////////////////////////////////////////////////
+--
+-- PPP Interface Summary Counts
+--
+-- /////////////////////////////////////////////////////////////////////////////
+usdPPPoEMajorInterfaceCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE major interfaces configured and created in
+        the system."
+    ::= { usdPPPoESummary 1 }
+
+usdPPPoESummaryMajorIfAdminUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE major interfaces in the system that are
+        administratively configured to up(1)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPPPoESummary 2 }
+
+usdPPPoESummaryMajorIfAdminDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE major interfaces in the system that are
+        administrateively configued to down(2)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPPPoESummary 3 }
+
+usdPPPoESummaryMajorIfOperUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE major interfaces in the system with an
+        operational state of up(1)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPPPoESummary 4 }
+
+usdPPPoESummaryMajorIfOperDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE major interfaces in the system with an
+        operational state of down(2)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPPPoESummary 5 }
+
+usdPPPoESummaryMajorIfLowerLayerDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE major interfaces in the system with an
+        operational state of lowerLayerDown(7)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPPPoESummary 6 }
+
+usdPPPoESummaryMajorIfNotPresent OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE major interfaces in the system with an
+        operational state of notPresent(6)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPPPoESummary 7 }
+
+usdPPPoESummarySubInterfaceCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE subinterfaces configured in the system."
+    ::= { usdPPPoESummary 8 }
+
+usdPPPoESummarySubIfAdminUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE subinterfaces in the system that are
+        administratively configured to up(1)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPPPoESummary 9 }
+
+usdPPPoESummarySubIfAdminDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE subinterfaces in the system that are
+        administrateively configued to down(2)."
+    REFERENCE
+        "ifAdminStatus from IF-MIB"
+    ::= { usdPPPoESummary 10 }
+
+usdPPPoESummarySubIfOperUp OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE subinterfaces in the system with an
+        operational state of up(1)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPPPoESummary 11 }
+
+usdPPPoESummarySubIfOperDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE subinterfaces in the system with an
+        operational state of down(2)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPPPoESummary 12 }
+
+usdPPPoESummarySubIfLowerLayerDown OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE subinterfaces in the system with an
+        operational state of lowerLayerDown(7)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPPPoESummary 13 }
+
+usdPPPoESummarySubIfNotPresent OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of PPPoE subinterfaces in the system with an
+        operational state of notPresent(6)."
+    REFERENCE
+        "ifOperStatus from IF-MIB"
+    ::= { usdPPPoESummary 14 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB.  Placeholder follows.
+-- usdPPPoETrapControl      OBJECT IDENTIFIER ::= { usdPPPoEMIB 2 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB.  Placeholders follow.
+-- The following two OBJECT IDENTIFIERS are used to define SNMPv2
+-- Notifications that are easily translated into SNMPv1 Traps.
+-- usdPPPoETraps            OBJECT IDENTIFIER ::= { usdPPPoEMIB 3 }
+-- usdPPPoETrapPrefix       OBJECT IDENTIFIER ::= { usdPPPoETraps 0 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdPPPoEConformance OBJECT IDENTIFIER ::= { usdPPPoEMIB 4 }
+usdPPPoECompliances OBJECT IDENTIFIER ::= { usdPPPoEConformance 5 }
+usdPPPoEGroups      OBJECT IDENTIFIER ::= { usdPPPoEConformance 4 }
+
+--
+-- compliance statements
+--
+usdPPPoECompliance MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPPoE MIB.  This statement became obsolete when profile
+        support and new sub-interface objects were added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPPPoEGroup,
+            usdPPPoESubIfGroup }
+    ::= { usdPPPoECompliances 1 }                                      -- RX 1.1
+
+usdPPPoECompliance2 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPPoE MIB.  This statement became obsolete when interface
+        summary statistics objects were added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPPPoEGroup2,
+            usdPPPoESubIfGroup2,
+            usdPPPoEProfileGroup }
+    ::= { usdPPPoECompliances 2 }                                      -- RX 2.0
+
+usdPPPoECompliance3 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPPoE MIB.  This statement became obsolete when the profile
+        objects were deprecated."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPPPoEGroup2,
+            usdPPPoESubIfGroup2,
+            usdPPPoEProfileGroup,
+            usdPPPoESummaryGroup }
+    ::= { usdPPPoECompliances 3 }                                      -- RX 2.6
+
+usdPPPoECompliance4 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPPoE MIB.  This statement became obsolete when new objects
+        were added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPPPoEGroup2,
+            usdPPPoESubIfGroup2,
+            usdPPPoESummaryGroup }
+    ::= { usdPPPoECompliances 4 }                                      -- RX 3.0
+
+usdPPPoECompliance5 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for entities which implement the
+        Unisphere PPPoE MIB.  This statement became obsolete when PADI flag
+        support was added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPPPoEGroup3,
+            usdPPPoESubIfGroup2,
+            usdPPPoESummaryGroup }
+    ::= { usdPPPoECompliances 5 }                                      -- RX 3.2
+
+usdPPPoECompliance6 MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for entities which implement the Unisphere
+        PPPoE MIB."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdPPPoEGroup4,
+            usdPPPoESubIfGroup2,
+            usdPPPoESummaryGroup }
+    ::= { usdPPPoECompliances 6 }                                      -- RX 4.0
+
+--
+-- units of conformance
+--
+usdPPPoEGroup OBJECT-GROUP
+    OBJECTS {
+        usdPPPoENextIfIndex,
+
+        usdPPPoEIfIfIndex,
+        usdPPPoEIfMaxNumSessions,
+        usdPPPoEIfRowStatus,
+        usdPPPoEIfLowerIfIndex,
+
+        usdPPPoEIfStatsRxPADI,
+        usdPPPoEIfStatsTxPADO,
+        usdPPPoEIfStatsRxPADR,
+        usdPPPoEIfStatsTxPADS,
+        usdPPPoEIfStatsRxPADT,
+        usdPPPoEIfStatsTxPADT,
+        usdPPPoEIfStatsRxInvVersion,
+        usdPPPoEIfStatsRxInvCode,
+        usdPPPoEIfStatsRxInvTags,
+        usdPPPoEIfStatsRxInvSession,
+        usdPPPoEIfStatsRxInvTypes,
+        usdPPPoEIfStatsRxInvPackets,
+        usdPPPoEIfStatsRxInsufficientResources }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of PPPoE interfaces
+        in a Unisphere product.  This statement became obsolete when new objects
+        were added."
+    ::= { usdPPPoEGroups 1 }
+
+usdPPPoESubIfGroup OBJECT-GROUP
+    OBJECTS {
+        usdPPPoESubIfNextIfIndex,
+
+        usdPPPoESubIfRowStatus,
+        usdPPPoESubIfLowerIfIndex,
+        usdPPPoESubIfId,
+        usdPPPoESubIfSessionId }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of PPPoE
+        subinterfaces in a Unisphere product.  This statement became obsolete
+        when new sub-interface objects were added."
+    ::= { usdPPPoEGroups 2 }
+
+usdPPPoEProfileGroup OBJECT-GROUP
+    OBJECTS {
+        usdPPPoEProfileRowStatus,
+        usdPPPoEProfileUrl,
+        usdPPPoEProfileMotm }
+    STATUS      deprecated
+    DESCRIPTION
+        "A collection of objects providing management of PPPoE profile entries
+        in a Unisphere product.  This group has been deprecated because the
+        information is now supported in the UNISPHERE-PPPOE-PROFILE-MIB."
+    ::= { usdPPPoEGroups 3 }
+
+usdPPPoEGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdPPPoENextIfIndex,
+
+        usdPPPoEIfIfIndex,
+        usdPPPoEIfMaxNumSessions,
+        usdPPPoEIfRowStatus,
+        usdPPPoEIfLowerIfIndex,
+
+        usdPPPoEIfStatsRxPADI,
+        usdPPPoEIfStatsTxPADO,
+        usdPPPoEIfStatsRxPADR,
+        usdPPPoEIfStatsTxPADS,
+        usdPPPoEIfStatsRxPADT,
+        usdPPPoEIfStatsTxPADT,
+        usdPPPoEIfStatsRxInvVersion,
+        usdPPPoEIfStatsRxInvCode,
+        usdPPPoEIfStatsRxInvTags,
+        usdPPPoEIfStatsRxInvSession,
+        usdPPPoEIfStatsRxInvTypes,
+        usdPPPoEIfStatsRxInvPackets,
+        usdPPPoEIfStatsRxInsufficientResources,
+        usdPPPoEIfStatsTxPADM,
+
+        usdPPPoEGlobalMotm }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of PPPoE interfaces
+        in a Unisphere product.  This statement became obsolete when new objects
+        were added."
+    ::= { usdPPPoEGroups 4 }
+
+usdPPPoESubIfGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdPPPoESubIfNextIfIndex,
+
+        usdPPPoESubIfRowStatus,
+        usdPPPoESubIfLowerIfIndex,
+        usdPPPoESubIfId,
+        usdPPPoESubIfSessionId,
+        usdPPPoESubIfUrl,
+        usdPPPoESubIfMotm }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of PPPoE subinterfaces in
+        a Unisphere product."
+    ::= { usdPPPoEGroups 5 }
+
+usdPPPoESummaryGroup OBJECT-GROUP
+    OBJECTS {
+        usdPPPoEMajorInterfaceCount,
+        usdPPPoESummaryMajorIfAdminUp,
+        usdPPPoESummaryMajorIfAdminDown,
+        usdPPPoESummaryMajorIfOperUp,
+        usdPPPoESummaryMajorIfOperDown,
+        usdPPPoESummaryMajorIfNotPresent,
+        usdPPPoESummaryMajorIfLowerLayerDown,
+        usdPPPoESummarySubInterfaceCount,
+        usdPPPoESummarySubIfAdminUp,
+        usdPPPoESummarySubIfAdminDown,
+        usdPPPoESummarySubIfOperUp,
+        usdPPPoESummarySubIfOperDown,
+        usdPPPoESummarySubIfNotPresent,
+        usdPPPoESummarySubIfLowerLayerDown }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing collection of summary statistics on
+        PPPoE interfaces."
+    ::= { usdPPPoEGroups 6 }
+
+usdPPPoEGroup3 OBJECT-GROUP
+    OBJECTS {
+        usdPPPoENextIfIndex,
+
+        usdPPPoEIfIfIndex,
+        usdPPPoEIfMaxNumSessions,
+        usdPPPoEIfRowStatus,
+        usdPPPoEIfLowerIfIndex,
+        usdPPPoEIfAcName,
+        usdPPPoEIfDupProtect,
+
+        usdPPPoEIfStatsRxPADI,
+        usdPPPoEIfStatsTxPADO,
+        usdPPPoEIfStatsRxPADR,
+        usdPPPoEIfStatsTxPADS,
+        usdPPPoEIfStatsRxPADT,
+        usdPPPoEIfStatsTxPADT,
+        usdPPPoEIfStatsRxInvVersion,
+        usdPPPoEIfStatsRxInvCode,
+        usdPPPoEIfStatsRxInvTags,
+        usdPPPoEIfStatsRxInvSession,
+        usdPPPoEIfStatsRxInvTypes,
+        usdPPPoEIfStatsRxInvPackets,
+        usdPPPoEIfStatsRxInsufficientResources,
+        usdPPPoEIfStatsTxPADM,
+
+        usdPPPoEGlobalMotm }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of PPPoE interfaces
+        in a Unisphere product.  This group became obsolete when PADI flag
+        support was added."
+    ::= { usdPPPoEGroups 7 }
+
+usdPPPoEGroup4 OBJECT-GROUP
+    OBJECTS {
+        usdPPPoENextIfIndex,
+
+        usdPPPoEIfIfIndex,
+        usdPPPoEIfMaxNumSessions,
+        usdPPPoEIfRowStatus,
+        usdPPPoEIfLowerIfIndex,
+        usdPPPoEIfAcName,
+        usdPPPoEIfDupProtect,
+        usdPPPoEIfPADIFlag,
+        usdPPPoEIfAutoconfig,
+
+        usdPPPoEIfStatsRxPADI,
+        usdPPPoEIfStatsTxPADO,
+        usdPPPoEIfStatsRxPADR,
+        usdPPPoEIfStatsTxPADS,
+        usdPPPoEIfStatsRxPADT,
+        usdPPPoEIfStatsTxPADT,
+        usdPPPoEIfStatsRxInvVersion,
+        usdPPPoEIfStatsRxInvCode,
+        usdPPPoEIfStatsRxInvTags,
+        usdPPPoEIfStatsRxInvSession,
+        usdPPPoEIfStatsRxInvTypes,
+        usdPPPoEIfStatsRxInvPackets,
+        usdPPPoEIfStatsRxInsufficientResources,
+        usdPPPoEIfStatsTxPADM,
+
+        usdPPPoEGlobalMotm }
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects providing management of PPPoE interfaces in a
+        Unisphere product."
+    ::= { usdPPPoEGroups 8 }
+
+END

@@ -1,0 +1,2248 @@
+
+-- *****************************************************************************
+-- Unisphere-Data-AAA-MIB
+--
+-- Unisphere Networks Enterprise MIB
+-- Authentication/Authorization/Accounting MIB
+--
+-- Copyright (c) 1999 Redstone Communications, Incorporated.
+-- Copyright (c) 1999, 2002 Unisphere Networks, Incorporated.
+-- All Rights Reserved.
+-- *****************************************************************************
+
+Unisphere-Data-AAA-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, IpAddress, Counter32, Unsigned32,
+    Gauge32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, DisplayString, RowStatus, TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    usDataMibs
+        FROM Unisphere-Data-MIBs
+    UsdName
+        FROM Unisphere-Data-TC;
+
+usdAaaMIB MODULE-IDENTITY
+    LAST-UPDATED "200208021250Z"  -- 02-Aug-02 08:50 AM EDT
+    ORGANIZATION "Unisphere Networks, Inc."
+    CONTACT-INFO
+        "       Unisphere Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The Authentication, Authorization and Accounting (AAA) MIB for the
+        Unisphere Networks enterprise."
+    -- Revision History
+    REVISION    "200208021250Z"  -- 02-Aug-02 08:50 AM EDT  - RX 4.0
+    DESCRIPTION
+        "Added support for additional AAA objects:
+            usdAaaAssignSubscriberLimit,
+            usdAaaAcctSendStopOnAaaDeny,
+            usdAaaAcctSendStopOnAaaReject,
+            usdAaaTunnelIgnoreNasPort,
+            usdAaaTunnelIgnoreNasPortType,
+            usdAaaTunnelAssignmentIdFormat,
+            usdAaaSubscriberPseudoCount,
+            usdAaaSubscriberPseudoPeakCount."
+    REVISION    "200208011950Z"  -- 01-Aug-02 03:50 PM EDT  - RX 3.4
+    DESCRIPTION
+        "Added interface location-relative subscriber management attributes
+        under usdAaaSubscribers.  Increase ranges for usdAaaSessionTimeout and
+        usdAaaAcctInterval."
+    REVISION    "200110051325Z"  -- 05-Oct-01 09:25 AM EDT  - RX 3.3
+    DESCRIPTION
+        "Added subscriber management attributes under usdAaaSubscribers,
+        capabilities management attributes under usdAaaCapabilities."
+    REVISION    "200110031905Z"  -- 03-Oct-01 03:05 PM EDT  - RX 3.2
+    DESCRIPTION
+        "Added assignment delimiter attributes:
+            usdAaaAssignDomainDelimiters
+            usdAaaAssignRealmDelimiters
+            usdAaaAssignDomainParseOrder
+            usdAaaTunnelClientName
+            usdAaaTunnelPassword
+            usdAaaTunnelNasPortMethod;
+         also, resized:
+            usdAaaAssignDomainTunnelHostName
+            usdAaaAssignDomainTunnelServerName "
+    REVISION    "200103011703Z"  -- 01-Mar-01 12:03 PM EST  - RX 3.1
+    DESCRIPTION
+        "Added usdAaaAssignDomainStripDomain"
+    REVISION    "200102121954Z"  -- 12-Feb-01 02:54 PM EST  - RX 3.0
+    DESCRIPTION
+        "Added parameters to the usdAaaAssignDomainTunnelTable:
+            usdAaaAssignDomainTunnelServerName
+            usdAaaAssignDomainTunnelClientAddress
+         Added usdAaaDupAddrCheck, usdAaaIdleTimeout and usdAaaSessionTimeout
+         parameters."
+    REVISION    "200005180000Z"  -- 18-May-00               - RX 2.0
+    DESCRIPTION
+        "Added ATM traffic shaping parameters to usdAaaAssignDomainTable.
+         Added usdAaaAssignDomainTunnelTable.
+         Added 'dhcp' as an option for usdAaaAddrAddrPoolDefault;
+           use of the value 'none' has been discontinued.
+         Added statistics to track the performance of AAA."
+    REVISION    "9906010000Z"    --  1-Jun-99               - RX 1.1
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 20 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+UsdAaaDomainName  ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "63a"
+    STATUS      current
+    DESCRIPTION
+        "The name of an internet domain.  Represents textual information taken
+        from the NVT ASCII character set."
+    REFERENCE
+        "RFC 854: NVT ASCII character set.  See SNMPv2-TC.DisplayString
+        DESCRIPTION for a summary."
+    SYNTAX      OCTET STRING (SIZE(1..63))
+
+UsdAaaAuthenticationMethods  ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The set of configurable authentication choices.  The maximum enumerated
+        type will never be greater than 255."
+    SYNTAX      INTEGER {
+                    protocolRadius(1),
+                    protocolNone(4),
+                    protocolLine(5) }
+
+UsdAaaAccountingMethods  ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The set of configurable accounting choices."
+    SYNTAX      INTEGER {
+                    protocolRadius(1),
+                    protocolNone(4) }
+
+UsdAddressAssignType  ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The set of possible AAA address assignment sources."
+    SYNTAX      INTEGER {
+                    none(0),
+                    radius(1),
+                    localPool(2),
+                    dhcp(3),
+                    user(4) }
+
+UsdSubscriberState  ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The set of possible AAA subscriber states, expressed as a bit map:
+            init            Initial state (transient)
+            pending         Auth/Acct or Addr Request is pending
+            established     Subscriber is authenticated
+            deleting        Deletion of subscriber is pending
+            tunneling       Subscriber is being tunneled
+            tunnelAcct      Tunnel accounting is enabled
+            terminated      Subscriber has been terminated
+
+        More than one state bit can be active simultaneously.  If no bits are
+        set, the subscriber is in a transient initial state."
+    SYNTAX      BITS {
+                    pending(0),
+                    established(1),
+                    deleting(2),
+                    tunneling(3),
+                    tunnelAcct(4),
+                    terminated(5) }
+
+UsdSubscriberClientType  ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The set of possible AAA subscriber client types:
+            ppp         PPP client
+            login       Command line interface or SSH
+            ip          IP-based application
+            config      Locally configured client identity
+            tunnel      Tunnel e.g. L2TP
+            other       Unspecified client type "
+    SYNTAX      INTEGER {
+                    ppp(0),
+                    login(1),
+                    ip(2),
+                    config(3),
+                    tunnel(4),
+                    other(5) }
+
+UsdSubscriberLocationType  ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Describes the platform-dependent interpretation of a
+        UsdSubscriberLocationValue object:
+            unknown     Unspecified/unknown
+            slotPort    Two octets in length; first octet is 'slot', second
+                        octet is 'port' "
+    SYNTAX      INTEGER {
+                    unknown(0),
+                    slotPort(1) }
+
+UsdSubscriberLocationValue  ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The value of a platform-dependent interface location, represented as an
+        OCTET STRING.  A corresponding UsdSubscriberLocationType object will
+        identify the mapping of octets to location elements, e.g. 'slot.port'.
+
+        Note, when the value of an object having this syntax is encoded as a MIB
+        table INDEX, the rules for encoding a variable-length OCTET STRING are
+        observed."
+    SYNTAX      OCTET STRING (SIZE(1..16))
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed object groups
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaObjects                OBJECT IDENTIFIER ::= {usdAaaMIB 1}
+
+-- Functional groups
+
+usdAaaAssignment             OBJECT IDENTIFIER ::= {usdAaaObjects 1}
+usdAaaAuthentication         OBJECT IDENTIFIER ::= {usdAaaObjects 2}
+usdAaaAccounting             OBJECT IDENTIFIER ::= {usdAaaObjects 3}
+usdAaaAddress                OBJECT IDENTIFIER ::= {usdAaaObjects 4}
+usdAaaStatistics             OBJECT IDENTIFIER ::= {usdAaaObjects 5}
+usdAaaTimeout                OBJECT IDENTIFIER ::= {usdAaaObjects 6}
+usdAaaTunnel                 OBJECT IDENTIFIER ::= {usdAaaObjects 7}
+usdAaaSubscribers            OBJECT IDENTIFIER ::= {usdAaaObjects 8}
+usdAaaCapabilities           OBJECT IDENTIFIER ::= {usdAaaObjects 9}
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for Assignment functions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaAssignGeneral          OBJECT IDENTIFIER ::= {usdAaaAssignment 1}
+
+usdAaaAssignBrasLicense OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..16))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The license string that determines the system-wide maximum number of
+        remote user connections allowed.  A zero-length string (no license)
+        prohibits remote user connections."
+    ::= { usdAaaAssignGeneral 1 }
+
+usdAaaAssignBrasLicensedUsers OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The system-wide maximum number of remote user connections allowed by
+        the currently configured license string."
+    ::= { usdAaaAssignGeneral 2 }
+
+usdAaaAssignDomainDelimiters OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..8))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The list of delimiters used to separate the user's name from the user's
+         domain in the username field.  The default is '@'."
+    ::= { usdAaaAssignGeneral 3 }
+
+usdAaaAssignRealmDelimiters OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..8))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The list of delimiters used to separate the user's name from the user's
+        realm in the username field.  The realm is treated like the domain in
+        the ERX.  The default is none."
+    ::= { usdAaaAssignGeneral 4 }
+
+usdAaaAssignDomainParseOrder OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    domainFirst(1),
+                    realmFirst(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The order in which the user's name is parsed: either search for domain
+        first or realm first in the form (realm/user@domain.com).  The default
+        is domain first."
+    DEFVAL    { realmFirst }
+    ::= { usdAaaAssignGeneral 5 }
+
+usdAaaAssignSubscriberLimit OBJECT-TYPE
+    SYNTAX      Integer32 (0..32000)
+    UNITS       "users"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of subscribers permitted in this VR context.  The
+        value '0' means no limit."
+    ::= { usdAaaAssignGeneral 6 }
+
+usdAaaAssignDomain           OBJECT IDENTIFIER ::= {usdAaaAssignment 2}
+
+usdAaaAssignDomainTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAaaAssignDomainEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The entries in this table specify the assignment of a remote access
+        user to a virtual router, based on the user's domain."
+    ::= { usdAaaAssignDomain 1 }
+
+usdAaaAssignDomainEntry OBJECT-TYPE
+    SYNTAX      UsdAaaAssignDomainEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A specification of the virtual router to which users on a specified
+        domain should be assigned."
+    INDEX     { IMPLIED usdAaaAssignDomainName }
+    ::= { usdAaaAssignDomainTable 1 }
+
+UsdAaaAssignDomainEntry ::= SEQUENCE {
+    usdAaaAssignDomainName              UsdAaaDomainName,
+    usdAaaAssignDomainRowStatus         RowStatus,
+    usdAaaAssignDomainRouterName        UsdName,
+    usdAaaAssignDomainLoopback          Integer32,
+    usdAaaAssignDomainIpHint            TruthValue,
+    usdAaaAssignDomainAtmServiceLevel   INTEGER,
+    usdAaaAssignDomainAtmPcr            Integer32,
+    usdAaaAssignDomainAtmScr            Integer32,
+    usdAaaAssignDomainAtmMbs            Integer32,
+    usdAaaAssignDomainOverrideUserName  DisplayString,
+    usdAaaAssignDomainOverridePassword  OCTET STRING,
+    usdAaaAssignDomainStripDomain       TruthValue }
+
+usdAaaAssignDomainName OBJECT-TYPE
+    SYNTAX      UsdAaaDomainName
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The domain name uniquely identifying this entry."
+    ::= { usdAaaAssignDomainEntry 1 }
+
+usdAaaAssignDomainRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table.  Only the values
+        'createAndGo' and 'destroy' may be SET."
+    ::= { usdAaaAssignDomainEntry 2 }
+
+usdAaaAssignDomainRouterName OBJECT-TYPE
+    SYNTAX      UsdName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The name of the virtual router to which remote access users within this
+        domain are assigned."
+    ::= { usdAaaAssignDomainEntry 3 }
+
+usdAaaAssignDomainLoopback OBJECT-TYPE
+    SYNTAX      Integer32 (-1..32000)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The number of the loopback interface, associated with the specified
+        virtual router, whose IP address is used as the source address when
+        transmitting IP packets on unnumbered remote access user links.
+
+        For example, if the associated loopback interface for this domain/router
+        was configured via the console as 'loopback 2', this object would
+        contain the integer value 2.
+
+        A value of -1 indicates the loopback interface is unspecified."
+    DEFVAL    { -1 }
+    ::= { usdAaaAssignDomainEntry 4 }
+
+usdAaaAssignDomainIpHint OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enables/disables the IP hint feature, which causes the system to
+        allocate an IP address before going to RADIUS for authentication."
+    DEFVAL    { false }
+    ::= { usdAaaAssignDomainEntry 5 }
+
+usdAaaAssignDomainAtmServiceLevel OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    ubr(1),
+                    ubrPcr(2),
+                    nrtVbr(3),
+                    cbr(4) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The Service category for this circuit:
+            ubr         Unspecified bit rate (best effort).
+            ubrPcr      Unspecified Bit Rate with Peak Cell Rate limit.
+            nrtVbr      Non-realtime Variable Bit Rate.
+            cbr         Constant bit rate.
+
+        Set the service level in combination of the traffic attributes
+        PCR/SCR/MBS in the following matrix for successfull configurations.
+
+             ServiceLevel     PCR       SCR        MBS
+             ------------------------------------------
+             ubr              omit      omit       omit
+             ubrPcr           must      omit       omit
+             nrtVbr           must      must       must
+             cbr              must      omit       omit "
+    DEFVAL    { none }
+    ::= { usdAaaAssignDomainEntry 6 }
+
+usdAaaAssignDomainAtmPcr OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Peak Cell Rate, in kilobits per second (kbps), of this circuit.
+
+        This parameter is only required when usdAaaAssignDomainAtmServiceLevel is
+        configured to have one of the following values:
+            ubrPcr
+            nrtVbr
+            cbr "
+    DEFVAL    { 0 }
+    ::= { usdAaaAssignDomainEntry 7 }
+
+usdAaaAssignDomainAtmScr OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "kbps"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Sustained Cell Rate, in kilobits per second (kbps), of this circuit.
+
+        This parameter is only required when usdAaaAssignDomainAtmServiceLevel is
+        configured to have one of the following values:
+            nrtVbr "
+    DEFVAL    { 0 }
+    ::= { usdAaaAssignDomainEntry 8 }
+
+usdAaaAssignDomainAtmMbs OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "cells"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Maximum Burst Size, in cells, of this circuit.
+
+        This parameter is only required when usdAaaAssugbDomainAtmServiceLevel is
+        configured to have one of the following values:
+            nrtVbr
+        "
+    DEFVAL    { 0 }
+    ::= { usdAaaAssignDomainEntry 9 }
+
+usdAaaAssignDomainOverrideUserName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The override user name associated with this entry.  This object is used
+        to override the username of the remote client."
+    DEFVAL    { "" }
+    ::= { usdAaaAssignDomainEntry 10 }
+
+usdAaaAssignDomainOverridePassword OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The override password for the user name defined by
+        usdAaaAssignDomainOverrideUserName.  This object is used to override the
+        password part of the username/password pair of the remote client.  This
+        value returns a string length of 0 on reads for security reasons."
+    DEFVAL    { "" }
+    ::= { usdAaaAssignDomainEntry 11 }
+
+usdAaaAssignDomainStripDomain OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enables/disables the domain name stripping feature, which causes the
+        system to strip the domain name before sending the access-request to
+        RADIUS for authentication."
+    DEFVAL    { false }
+    ::= { usdAaaAssignDomainEntry 12 }
+
+usdAaaAssignDomainTunnelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAaaAssignDomainTunnelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The entries in this table specify the tunnels associated with a
+        domain."
+    ::= { usdAaaAssignDomain 2 }
+
+usdAaaAssignDomainTunnelEntry OBJECT-TYPE
+    SYNTAX      UsdAaaAssignDomainTunnelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A specification of the tunnels associated with a domain."
+    INDEX     { usdAaaAssignDomainTunnelName,
+                usdAaaAssignDomainTunnelTag }
+    ::= { usdAaaAssignDomainTunnelTable 1 }
+
+UsdAaaAssignDomainTunnelEntry ::= SEQUENCE {
+    usdAaaAssignDomainTunnelName            UsdAaaDomainName,
+    usdAaaAssignDomainTunnelTag             INTEGER,
+    usdAaaAssignDomainTunnelPreference      INTEGER,
+    usdAaaAssignDomainTunnelType            INTEGER,
+    usdAaaAssignDomainTunnelMedium          INTEGER,
+    usdAaaAssignDomainTunnelAddress         DisplayString,
+    usdAaaAssignDomainTunnelPassword        DisplayString,
+    usdAaaAssignDomainTunnelId              DisplayString,
+    usdAaaAssignDomainTunnelHostName        DisplayString,
+    usdAaaAssignDomainTunnelRowStatus       RowStatus,
+    usdAaaAssignDomainTunnelServerName      DisplayString,
+    usdAaaAssignDomainTunnelClientAddress   DisplayString }
+
+usdAaaAssignDomainTunnelName OBJECT-TYPE
+    SYNTAX      UsdAaaDomainName
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The domain name associated with this entry."
+    ::= { usdAaaAssignDomainTunnelEntry 1 }
+
+usdAaaAssignDomainTunnelTag OBJECT-TYPE
+    SYNTAX      INTEGER (1..31)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The tunnel tag value associated with this entry."
+    ::= { usdAaaAssignDomainTunnelEntry 2 }
+
+usdAaaAssignDomainTunnelPreference OBJECT-TYPE
+    SYNTAX      INTEGER (0..2000)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel's preference value associated with this entry.  The value 0
+        is the highest preference."
+    DEFVAL    { 1000 }
+    ::= { usdAaaAssignDomainTunnelEntry 3 }
+
+usdAaaAssignDomainTunnelType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                      tunnelL2tp(1),
+                      tunnelUnknown(2),
+                      tunnelL2f(3) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel type associated with this entry.  Attempts to set this
+        object to tunnelUnknown(2) will fail (wrongValue)."
+    DEFVAL    { tunnelL2tp }
+    ::= { usdAaaAssignDomainTunnelEntry 4 }
+
+usdAaaAssignDomainTunnelMedium OBJECT-TYPE
+    SYNTAX      INTEGER {
+                      tunnelMediumIPv4(1),
+                      tunnelMediumUnknown(2) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel medium associated with this entry.  The medium dictates the
+        format of the tunnel address.  Attempts to set this object to
+        tunnelMediumUnknown(2) will fail (wrongValue)."
+    DEFVAL    { tunnelMediumIPv4 }
+    ::= { usdAaaAssignDomainTunnelEntry 5 }
+
+usdAaaAssignDomainTunnelAddress OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel server address associated with this entry.  The
+        usdAaaAssignDomainTunnelMedium object defines the format of the address.
+
+            MEDIUM               EXAMPLE FORMAT
+            tunnelMedium_IPv4    xyz.xyz.xyz.xyz "
+    ::= { usdAaaAssignDomainTunnelEntry 6 }
+
+usdAaaAssignDomainTunnelPassword OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel password associated with this entry.  The object returns a
+        null length string on reads due to security concerns."
+    DEFVAL    { "" }
+    ::= { usdAaaAssignDomainTunnelEntry 7 }
+
+usdAaaAssignDomainTunnelId OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel identifier associated with this entry.  The tunnel
+        identifier is used to distinguish between multiple tunnels to the same
+        usdAaaAssignDomainTunnelAddress."
+    DEFVAL    { "" }
+    ::= { usdAaaAssignDomainTunnelEntry 8 }
+
+usdAaaAssignDomainTunnelHostName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..64))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel client hostname associated with this entry.  This object is
+        analogous to the RADIUS attribute Tunnel-Client-Auth-ID.  When a tunnel
+        is established with a peer, this object can be used to distinguish
+        groups of tunnels."
+    DEFVAL    { "" }
+    ::= { usdAaaAssignDomainTunnelEntry 9 }
+
+usdAaaAssignDomainTunnelRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table.  Only the values
+        'createAndGo' and 'destroy' may be SET."
+    ::= { usdAaaAssignDomainTunnelEntry 10 }
+
+usdAaaAssignDomainTunnelServerName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..64))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel server hostname associated with this entry.  This object is
+        analogous to the RADIUS attribute Tunnel-Server-Auth-ID.  When a tunnel
+        is established with a peer, this object can be used to distinguish
+        groups of tunnels."
+    DEFVAL    { "" }
+    ::= { usdAaaAssignDomainTunnelEntry 11 }
+
+usdAaaAssignDomainTunnelClientAddress OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel client address associated with this entry.  The
+        usdAaaAssignDomainTunnelMedium object defines the format of the address.
+
+            MEDIUM               EXAMPLE FORMAT
+            tunnelMedium_IPv4    xyz.xyz.xyz.xyz "
+    ::= { usdAaaAssignDomainTunnelEntry 12 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for Authentication functions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaAuthGeneral            OBJECT IDENTIFIER ::= {usdAaaAuthentication 1}
+
+usdAaaAuthMethods OBJECT-TYPE
+    SYNTAX       OCTET STRING (SIZE(0..5))
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "The set of authentication protocols configured on this system.  Each
+        octet in this object contains one of the values defined in the
+        UsdAaaAuthenticationMethods TEXTUAL-CONVENTION.
+
+        The system will sequence through each octet of this object starting at
+        octet 1 and attempt to use the corresponding authentication protocol
+        defined by UsdAaaAuthenticationMethods.  Note that if the octet is set
+        to:
+             protocolNone(4)
+
+        Then authentication does not take place.
+
+        If an authentication protocol is configured and attempts to reach the
+        authentication server fail, the system will move to the next octet in
+        this object and retry the authentication in the form dictated by the
+        corresponding authentication protocoltype.  The process of sequencing
+        thru each octet will stop if the authentication server is successfully
+        contacted, or there are no more configured octets in this object."
+     ::= { usdAaaAuthGeneral 1 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for Accounting functions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaAcctGeneral            OBJECT IDENTIFIER ::= {usdAaaAccounting 1}
+
+usdAaaAcctInterval OBJECT-TYPE
+    SYNTAX      Integer32 (0|600..86400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The interval that must elapse between generation of accounting reports,
+        ranging from 10 minutes to 18 hours, or disabled if set to zero."
+    DEFVAL    { 0 }
+    ::= { usdAaaAcctGeneral 1 }
+
+usdAaaAcctDupServerRouterName OBJECT-TYPE
+    SYNTAX      UsdName
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The name of another router on this system to which accounting reports
+        should be sent, in addition to or instead of sending accounting reports
+        to the accounting service (if any) configured on the current router
+        (i.e., the router context within which this object instance exists).
+
+        A zero-length name disables this mechanism."
+    DEFVAL    { "" }
+    ::= { usdAaaAcctGeneral 2 }
+
+usdAaaAcctMethods OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..5))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The set of accounting protocols configured on this system.  Each octet
+        in this object contains one of the values defined in the
+        UsdAaaAccountingMethods TEXTUAL CONVENTION.
+
+        The system will sequence through each octet of this object starting at
+        octet 1 and attempt to use the corresponding accounting protocol defined
+        by UsdAaaAccountingMethods.  Note that if the octet is set to:
+             protocolNone(4)
+
+        Then accounting is disabled.
+
+        If an accounting protocol is configured and reports are not successfully
+        generated, the system will move to the next octet in this object and
+        repeat the attempt to generate an accounting report in the form dictated
+        by the corresponding accounting protocol type.  The process of
+        sequencing thru each octet will stop if accounting reports are either
+        successfully generated, or there are no more configured octets in this
+        object."
+     ::= { usdAaaAcctGeneral 3 }
+
+usdAaaAcctSendStopOnAaaDeny OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Enables/disables the accounting stop message sent to the accounting
+        server when authentication server grants access, but AAA denies access."
+    DEFVAL    { true }
+    ::= { usdAaaAcctGeneral 4 }
+
+usdAaaAcctSendStopOnAaaReject OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Enables/disables the accounting stop message sent to the accounting
+        server when authentication server denies access."
+    DEFVAL    { false }
+    ::= { usdAaaAcctGeneral 5 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for Address functions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaAddrGeneral            OBJECT IDENTIFIER ::= {usdAaaAddress 1}
+
+usdAaaAddrPoolDefault OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    local(1),
+                    dhcp(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Identifies the default source of IP address allocation for remote
+        access links:
+            none        No address source is specified.
+                        Using this setting allows the remote
+                        PPP subscriber (client) to set it's
+                        own address.
+
+            local       Use the local address pool named 'default'.
+            dhcp        Use DHCP service."
+    ::= { usdAaaAddrGeneral 1 }
+
+usdAaaDupAddrCheck OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Enables/disables the duplicate IP address checking which causes the
+        system to check the route table for the PPP user's dynamic IP address
+        is provided to PPP (from AAA)."
+    ::= { usdAaaAddrGeneral 2 }
+
+usdAaaAddrNameServer         OBJECT IDENTIFIER ::= {usdAaaAddress 2}
+
+usdAaaAddrDns                OBJECT IDENTIFIER ::= {usdAaaAddrNameServer 1}
+usdAaaAddrWins               OBJECT IDENTIFIER ::= {usdAaaAddrNameServer 2}
+
+usdAaaAddrDnsPrimary OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the primary DNS server to be used by remote access
+        clients.  A value of 0.0.0.0 indicates no server is configured."
+    ::= { usdAaaAddrDns 1 }
+
+usdAaaAddrDnsSecondary OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the secondary DNS server to be used by remote access
+        clients.  A value of 0.0.0.0 indicates no server is configured."
+    ::= { usdAaaAddrDns 2 }
+
+usdAaaAddrWinsPrimary OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the primary WINS server to be used by remote access
+        clients.  A value of 0.0.0.0 indicates no server is configured."
+    ::= { usdAaaAddrWins 1 }
+
+usdAaaAddrWinsSecondary OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the secondary WINS server to be used by remote access
+        clients.  A value of 0.0.0.0 indicates no server is configured."
+    ::= { usdAaaAddrWins 2 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for Timeout functions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaTimeoutGeneral         OBJECT IDENTIFIER ::= {usdAaaTimeout 1}
+
+usdAaaIdleTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (0|300..7200)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of seconds that a user session can be idle before
+        system disconnects the user, ranging from 300 to 7200 seconds, 0
+        disables idle timeout."
+    ::= { usdAaaTimeoutGeneral 1 }
+
+usdAaaSessionTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (0|60..1814400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of seconds that a user session can be established
+        before system disconnects the user, ranging from 60 to 604800 seconds,
+        0 disables session timeout."
+    ::= { usdAaaTimeoutGeneral 2 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for Tunnel functions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaTunnelGeneral         OBJECT IDENTIFIER ::= {usdAaaTunnel 1}
+
+usdAaaTunnelClientName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..64))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The default tunnel client hostname associated with this virtual router.
+        This object is used when no tunnel client name (client auth ID) is
+        supplied in the authentication response."
+    DEFVAL    { "" }
+    ::= { usdAaaTunnelGeneral 1 }
+
+usdAaaTunnelPassword OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..32))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The default tunnel password associated with this virtual router.
+        This object is used when no tunnel password is supplied in the
+        authentication response.  The object returns a null length string
+        on reads due to security concerns."
+    DEFVAL    { "" }
+    ::= { usdAaaTunnelGeneral 2 }
+
+usdAaaTunnelNasPortMethod OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    ciscoAvp(1) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The default tunnel NAS-port method associated with this virtual router.
+        This object is used to specify the LAC's NAS-port method.  This provides
+        limit compatiability to Cisco LNS for the NAS-port method AVP."
+    DEFVAL    { none }
+    ::= { usdAaaTunnelGeneral 3 }
+
+usdAaaTunnelIgnoreNasPort OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Enables/disables the use of the NAS-port value that is passed in from
+        the tunnel application."
+    ::= { usdAaaTunnelGeneral 4 }
+
+usdAaaTunnelIgnoreNasPortType OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Enables/disables the use of the NAS-port-type value that is passed in
+        from the tunnel application."
+    ::= { usdAaaTunnelGeneral 5 }
+
+usdAaaTunnelAssignmentIdFormat OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    assignmentId(0),
+                    clientServerId(1) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The tunnel assignment ID format for distinguishing tunnel definitions.
+        This object is used to specify the tunnel assigment ID format passed to
+        the LAC.  The value assignmentId(0) indicates that the original tunnel
+        assignment ID value is to be used; clientServerId(1) indicates that the
+        concatenated value from client-auth-name, server-auth-name, and
+        assignment-id is to be used."
+    DEFVAL    { assignmentId }
+    ::= { usdAaaTunnelGeneral 6 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for Statistics monitoring
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaIncomingInitiateRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA incoming initiate requests"
+    ::= { usdAaaStatistics 1 }
+
+usdAaaIncomingTerminateRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA incomining termination requests"
+    ::= { usdAaaStatistics 2 }
+
+usdAaaOutgoingTunnelGrantResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing tunnel grant responses"
+    ::= { usdAaaStatistics 3 }
+
+usdAaaOutgoingGrantResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing grant responses"
+    ::= { usdAaaStatistics 4 }
+
+usdAaaOutgoingDenyResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing deny responses"
+    ::= { usdAaaStatistics 5 }
+
+usdAaaOutgoingErrorResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing error responses"
+    ::= { usdAaaStatistics 6 }
+
+usdAaaOutgoingAuthRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing authentication requests"
+    ::= { usdAaaStatistics 7 }
+
+usdAaaIncomingAuthResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA incoming authentication responses"
+    ::= { usdAaaStatistics 8 }
+
+usdAaaOutgoingReAuthRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing re-authentication requests"
+    ::= { usdAaaStatistics 9 }
+
+usdAaaIncomingReAuthResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA incoming re-authentication responses"
+    ::=  { usdAaaStatistics 10 }
+
+usdAaaOutgoingAcctRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing accounting requests"
+    ::= { usdAaaStatistics 11 }
+
+usdAaaIncomingAcctResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA incoming accounting responses"
+    ::= { usdAaaStatistics 12 }
+
+usdAaaOutgoingDupAcctRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing duplicate accounting requests"
+    ::= { usdAaaStatistics 13 }
+
+usdAaaIncomingDupAcctResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA incoing duplication accounting responses"
+    ::= { usdAaaStatistics 14 }
+
+usdAaaOutgoingAddrRequests OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA outgoing address requests"
+    ::= { usdAaaStatistics 15 }
+
+usdAaaIncomingAddrResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of AAA incoming address responses"
+    ::= { usdAaaStatistics 16 }
+
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for Subscriber functions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaSubscriberMaxCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The configuration setting for the maximum number of subscribers.  There
+        is a grace number of subscribers above this limit, which when reached
+        will cause authentication requests to be denied."
+    ::= { usdAaaSubscribers 1 }
+
+usdAaaSubscriberPeakCount OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The peak number of subscribers.  The peak count includes successfully
+        authenticated subscribers as well as those subscribers in the process of
+        being authenticated."
+    ::= { usdAaaSubscribers 2 }
+
+usdAaaSubscriberCount OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of subscribers.  The subscriber count includes
+        successfully authenticated subscribers as well as those subscribers in
+        the process of being authenticated."
+    ::= { usdAaaSubscribers 3 }
+
+usdAaaSubscriberTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAaaSubscriberEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The entries in this table represent subscribers by subscriber handle
+        value."
+    ::= { usdAaaSubscribers 4 }
+
+usdAaaSubscriberEntry OBJECT-TYPE
+    SYNTAX      UsdAaaSubscriberEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A specification of subscribers by subscriber handle."
+    INDEX { usdAaaSubscriberHandle }
+    ::= { usdAaaSubscriberTable 1 }
+
+UsdAaaSubscriberEntry ::= SEQUENCE {
+    usdAaaSubscriberHandle              Unsigned32,
+    usdAaaSubscriberUserName            DisplayString,
+    usdAaaSubscriberRouterName          UsdName,
+    usdAaaSubscriberRouterIndex         Unsigned32,
+    usdAaaSubscriberLoginTime           DisplayString,
+    usdAaaSubscriberIpAddress           IpAddress,
+    usdAaaSubscriberIpAddressMask       IpAddress,
+    usdAaaSubscriberAddrAssignType      UsdAddressAssignType,
+    usdAaaSubscriberInterfaceId         DisplayString,
+    usdAaaSubscriberState               UsdSubscriberState,
+    usdAaaSubscriberClientType          UsdSubscriberClientType,
+    usdAaaSubscriberIngressPolicyName   DisplayString,
+    usdAaaSubscriberEgressPolicyName    DisplayString,
+    usdAaaSubscriberQosProfileName      DisplayString,
+    usdAaaSubscriberRowStatus           RowStatus }
+
+usdAaaSubscriberHandle OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The subscriber handle associated with this subscriber.  A subscriber
+        handle is a monotomically increasing integer."
+    ::= { usdAaaSubscriberEntry 1 }
+
+usdAaaSubscriberUserName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The RADIUS userName associated with this subscriber."
+    ::= { usdAaaSubscriberEntry 2 }
+
+usdAaaSubscriberRouterName OBJECT-TYPE
+    SYNTAX      UsdName
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The virtual router assigned to this subscriber."
+    ::= { usdAaaSubscriberEntry 3 }
+
+usdAaaSubscriberRouterIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The router index that identifies the virtual router associated with
+        this subscriber.  The value of this object can be used to index the
+        router in the usdRouterTable."
+    ::= { usdAaaSubscriberEntry 4 }
+
+usdAaaSubscriberLoginTime OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The time this subscriber logged in to RADIUS server."
+    ::= { usdAaaSubscriberEntry 5 }
+
+usdAaaSubscriberIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The client IP Address assigned to this subscriber."
+    ::= { usdAaaSubscriberEntry 6 }
+
+usdAaaSubscriberIpAddressMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The client IP Address Mask assigned to this subscriber."
+    ::= { usdAaaSubscriberEntry 7 }
+
+usdAaaSubscriberAddrAssignType OBJECT-TYPE
+    SYNTAX      UsdAddressAssignType
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The address assignment type for this subscriber."
+    ::= { usdAaaSubscriberEntry 8 }
+
+usdAaaSubscriberInterfaceId OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A text string describing the local interface associated with this
+        subscriber.  Types/formats/examples for this string include:
+
+        ATM Virtual Circuit
+        atm <slot>/<port>:<vpi>.<vci>
+        'atm 3/0:0.100'
+
+        Ethernet
+        { fastEthernet | gigabitEthernet } <slot>/<port>
+        'fastEthernet 3/0'
+        'gigabitEthernet 3/0'
+
+        Ethernet VLAN
+        { fastEthernet | gigabitEthernet } <slot>/<port>:<vlanID>
+        'fastEthernet 3/0:1000'
+        'gigabitEthernet 3/0:1000'
+
+        Channelized Serial
+        serial <slot>/<port>:<channelSpecifier>[/<channelSpecifier>]*
+        'serial 3/0:4'            (T1/E1)
+        'serial 3/0:2/4'          (T3/E3)
+        'serial 3/0:2/1/1/4'      (OC3/OC12 - channelized DS3)
+        'serial 3/0:2/1/1/1/4'    (OC3/OC12 - virtual tributaries)
+
+        L2TP/L2F over IP
+        ip:<localIpAddr>:<peerIpAddr>:<localTunnelID>:<peerTunnelID>:
+            <localSessionID>:<peerSessionID>:<callSerialNumber>
+        'ip:10.10.0.1:20.20.0.2:1234:5678:9abc:def0:6789abcd'
+            (Note: tunnelIDs, sessionIDs, and callSerialNumber are in
+                   hexadecimal.)
+
+        Other formats may be supported over time."
+    ::= { usdAaaSubscriberEntry 9 }
+
+usdAaaSubscriberState OBJECT-TYPE
+    SYNTAX      UsdSubscriberState
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The state of this subscriber."
+    ::= { usdAaaSubscriberEntry 10 }
+
+usdAaaSubscriberClientType OBJECT-TYPE
+    SYNTAX      UsdSubscriberClientType
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The client type for this subscriber.  Certain client types (e.g.,
+        'other') might be suppressed from representation in this table."
+    ::= { usdAaaSubscriberEntry 11 }
+
+usdAaaSubscriberIngressPolicyName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The Ingress Policy Name associated with this subscriber."
+    ::= { usdAaaSubscriberEntry 12 }
+
+usdAaaSubscriberEgressPolicyName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The Egress Policy Name associated with this subscriber."
+    ::= { usdAaaSubscriberEntry 13 }
+
+usdAaaSubscriberQosProfileName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The QoS Profile Name associated with this subscriber."
+    ::= { usdAaaSubscriberEntry 14 }
+
+usdAaaSubscriberRowStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Controls the deletion of the subscriber from this table.  Deletion of
+        the subscriber is analogous to logging the subscriber out of the
+        network.
+
+        Note: only 'destroy' is supported for SNMP SET operations."
+    ::= { usdAaaSubscriberEntry 15 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Subscriber information by virtual router
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaSubscriberRouterSummaryTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAaaSubscriberRouterSummaryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The entries in this table report number of subscribers per router."
+    ::= { usdAaaSubscribers 5 }
+
+usdAaaSubscriberRouterSummaryEntry OBJECT-TYPE
+    SYNTAX      UsdAaaSubscriberRouterSummaryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A specification of subscribers for a router."
+    INDEX     { usdAaaSubscriberRouterSummaryRouterIndex }
+    ::= { usdAaaSubscriberRouterSummaryTable 1 }
+
+UsdAaaSubscriberRouterSummaryEntry ::= SEQUENCE {
+    usdAaaSubscriberRouterSummaryRouterIndex    Unsigned32,
+    usdAaaSubscriberRouterSummaryCount          Gauge32 }
+
+usdAaaSubscriberRouterSummaryRouterIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The router index of the virtual router.  The value of this object can
+        be used to retrieve additional information in the router mib."
+    REFERENCE
+        "Unisphere-Data-ROUTER-MIB"
+    ::= { usdAaaSubscriberRouterSummaryEntry 1 }
+
+usdAaaSubscriberRouterSummaryCount OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of subscribers on this router."
+    ::= { usdAaaSubscriberRouterSummaryEntry 2 }
+
+
+usdAaaSubscriberRouterTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAaaSubscriberRouterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The entries in this table sort subscribers by router ID."
+    ::= { usdAaaSubscribers 6 }
+
+usdAaaSubscriberRouterEntry OBJECT-TYPE
+    SYNTAX      UsdAaaSubscriberRouterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A specification of subscribers by router ID."
+    INDEX     { usdAaaSubscriberRouterRouterIndex,
+                usdAaaSubscriberRouterHandle }
+    ::= { usdAaaSubscriberRouterTable 1 }
+
+UsdAaaSubscriberRouterEntry ::= SEQUENCE {
+    usdAaaSubscriberRouterRouterIndex   Unsigned32,
+    usdAaaSubscriberRouterHandle        Unsigned32,
+    usdAaaSubscriberRouterRowStatus     RowStatus }
+
+usdAaaSubscriberRouterRouterIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The router index of the virtual router.  The value of this object can
+        be used to retrieve additional information in the router MIB."
+    REFERENCE
+        "Unisphere-Data-ROUTER-MIB"
+    ::= { usdAaaSubscriberRouterEntry 1 }
+
+usdAaaSubscriberRouterHandle OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The subscriber handle associated with this subscriber.  A subscriber
+        handle is a monotonically increasing integer."
+    ::= { usdAaaSubscriberRouterEntry 2 }
+
+usdAaaSubscriberRouterRowStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Always has value 'active'."
+    ::= { usdAaaSubscriberRouterEntry 3 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Subscriber information by interface location
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaSubscriberLocationType OBJECT-TYPE
+    SYNTAX      UsdSubscriberLocationType
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Describes the interpretation of UsdSubscriberLocationValue object values
+        into platform-dependent interface location components, e.g.,
+        'slot.port'."
+    ::= { usdAaaSubscribers 7 }
+
+usdAaaSubscriberLocationSummaryTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAaaSubscriberLocationSummaryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The entries in this table report number of subscribers per interface
+        location."
+    ::= { usdAaaSubscribers 8 }
+
+usdAaaSubscriberLocationSummaryEntry OBJECT-TYPE
+    SYNTAX      UsdAaaSubscriberLocationSummaryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A specification of subscribers on an interface location."
+    INDEX     { usdAaaSubscriberLocationSummaryLocationIndex }
+    ::= { usdAaaSubscriberLocationSummaryTable 1 }
+
+UsdAaaSubscriberLocationSummaryEntry ::= SEQUENCE {
+    usdAaaSubscriberLocationSummaryLocationIndex    UsdSubscriberLocationValue,
+    usdAaaSubscriberLocationSummaryCount            Gauge32 }
+
+usdAaaSubscriberLocationSummaryLocationIndex OBJECT-TYPE
+    SYNTAX      UsdSubscriberLocationValue
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The value of a platform interface location."
+    ::= { usdAaaSubscriberLocationSummaryEntry 1 }
+
+usdAaaSubscriberLocationSummaryCount OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of subscribers associated with this interface location."
+    ::= { usdAaaSubscriberLocationSummaryEntry 2 }
+
+
+usdAaaSubscriberLocationTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdAaaSubscriberLocationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The entries in this table sort subscribers by interface location."
+    ::= { usdAaaSubscribers 9 }
+
+usdAaaSubscriberLocationEntry OBJECT-TYPE
+    SYNTAX      UsdAaaSubscriberLocationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An association of a subscriber to an interface location."
+    INDEX     { usdAaaSubscriberLocationLocationIndex,
+                usdAaaSubscriberLocationHandle }
+    ::= { usdAaaSubscriberLocationTable 1 }
+
+UsdAaaSubscriberLocationEntry ::= SEQUENCE {
+    usdAaaSubscriberLocationLocationIndex   UsdSubscriberLocationValue,
+    usdAaaSubscriberLocationHandle          Unsigned32,
+    usdAaaSubscriberLocationRowStatus       RowStatus }
+
+usdAaaSubscriberLocationLocationIndex OBJECT-TYPE
+    SYNTAX      UsdSubscriberLocationValue
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The value of a platform interface location."
+    ::= { usdAaaSubscriberLocationEntry 1 }
+
+usdAaaSubscriberLocationHandle OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The subscriber handle associated with this subscriber.  A subscriber
+        handle is a monotonically increasing integer."
+    ::= { usdAaaSubscriberLocationEntry 2 }
+
+usdAaaSubscriberLocationRowStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Always has value 'active'."
+    ::= { usdAaaSubscriberLocationEntry 3 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Pseudo-subscriber information
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaSubscriberPseudoPeakCount OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The peak number of pseudo-subscribers.  The peak count includes
+        successfully authenticated pseudo-subscribers as well as those
+        pseudo-subscribers in the process of being authenticated.
+
+        Pseudo-subscribers are those whose identities are locally configured on
+        a dynamic link (e.g. an ATM subinterface) via the (imprecisely named)
+        Unisphere-Data-SUBSCRIBER-MIB.  Some links (e.g. IPoA) provide no link
+        protocol with which to query the identity of a remote user.  In such a
+        case, a locally configured pseudo-subscriber can be used to conduct AAA
+        authentication-based configuration of the dynamic link when it becomes
+        active.
+
+        Pseudo-subscribers are understood to be intended more for dynamic
+        configuration than for actually identifying the remote user.
+        Consequently, the pseudo-subscribers are not reflected in any of the
+        subscriber tables defined in this MIB."
+    ::= { usdAaaSubscribers 10 }
+
+usdAaaSubscriberPseudoCount OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of pseudo-subscribers.  The pseudo-subscriber count
+        includes successfully authenticated subscribers as well as those
+        subscribers in the process of being authenticated.
+
+        Pseudo-subscribers are those whose identities are locally configured on
+        a dynamic link (e.g. an ATM subinterface) via the (imprecisely named)
+        Unisphere-Data-SUBSCRIBER-MIB.  Some links (e.g. IPoA) provide no link
+        protocol with which to query the identity of a remote user.  In such a
+        case, a locally configured pseudo-subscriber can be used to conduct AAA
+        authentication-based configuration of the dynamic link when it becomes
+        active.
+
+        Pseudo-subscribers are understood to be intended more for dynamic
+        configuration than for actually identifying the remote user.
+        Consequently, the pseudo-subscribers are not reflected in any of the
+        subscriber tables defined in this MIB."
+    ::= { usdAaaSubscribers 11 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects for AAA Capabilities
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaAccountingCapability OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether this system supports AAA Accounting.  The value
+        true(1) indicate that it does, false(2) indicates that it does not."
+    ::= { usdAaaCapabilities 1 }
+
+usdAaaAddressAssignmentCapability OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether this system supports AAA address assignment.  The
+        value true(1) indicates that it does, false(2) indicates that it does
+        not."
+    ::= { usdAaaCapabilities 2 }
+
+usdAaaBrasCapability OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether this system supports AAA BRAS functionality.  The
+        value true(1) indicates that it does, false(2) indicates that it does
+        not."
+    ::= { usdAaaCapabilities 3 }
+
+usdAaaTunnelingCapability OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether this system supports AAA tunneling.  The value
+        true(1) indicates that it does, false(2) indicates that it does not."
+    ::= { usdAaaCapabilities 4 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB.  Placeholder follows.
+-- usdAaaTrapControl      OBJECT IDENTIFIER ::= { usdAaaMIB 2 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- No notifications are defined in this MIB.  Placeholders follow.
+-- The following two OBJECT IDENTIFIERS are used to define SNMPv2
+-- Notifications that are easily translated into SNMPv1 Traps.
+-- usdAaaTraps            OBJECT IDENTIFIER ::= { usdAaaMIB 3 }
+-- usdAaaTrapPrefix       OBJECT IDENTIFIER ::= { usdAaaTraps 0 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdAaaMIBConformance    OBJECT IDENTIFIER ::= { usdAaaMIB 4 }
+usdAaaMIBCompliances    OBJECT IDENTIFIER ::= { usdAaaMIBConformance 1 }
+usdAaaMIBGroups         OBJECT IDENTIFIER ::= { usdAaaMIBConformance 2 }
+
+-- compliance statements
+
+usdAaaCompliance MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting AAA.  This
+        statement became obsolete when new objects were added."
+    MODULE   -- this module
+    MANDATORY-GROUPS {
+        usdAaaGroup }
+    ::= { usdAaaMIBCompliances 1 }                                     -- RX 1.1
+
+usdAaaCompliance2 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting AAA.  This
+        statement became obsolete when new objects were added and new groupings
+        were defined."
+    MODULE   -- this module
+    MANDATORY-GROUPS {
+        usdAaaGroup2 }
+    ::= { usdAaaMIBCompliances 2 }                                     -- RX 2.0
+
+usdAaaCompliance3 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting AAA.  This
+        statement became obsolete when the usdAaaAssignDomainStripDomain object
+        was added to the B-RAS group."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAaaBasicGroup }
+        GROUP       usdAaaBrasGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaTunnelGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA tunneling functionality."
+        GROUP       usdAaaAuthenticationGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA authentication functionality."
+        GROUP       usdAaaAccountingGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA accounting functionality."
+        GROUP       usdAaaAddressGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA address assignment functionality."
+    ::= { usdAaaMIBCompliances 3 }                                     -- RX 3.0
+
+usdAaaCompliance4 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting AAA.  This
+        statement became obsolete when new assignment delimiter objects were
+        added to the B-RAS group."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAaaBasicGroup }
+        GROUP       usdAaaBrasGroup2
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaTunnelGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA tunneling functionality."
+        GROUP       usdAaaAuthenticationGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA authentication functionality."
+        GROUP       usdAaaAccountingGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA accounting functionality."
+        GROUP       usdAaaAddressGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA address assignment functionality."
+    ::= { usdAaaMIBCompliances 4 }                                     -- RX 3.1
+
+usdAaaCompliance5 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting AAA.  This
+        statement became obsolete when the subscriber and capabilities groups
+        were added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAaaBasicGroup }
+        GROUP       usdAaaBrasGroup3
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaTunnelGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA tunneling functionality."
+        GROUP       usdAaaAuthenticationGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA authentication functionality."
+        GROUP       usdAaaAccountingGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA accounting functionality."
+        GROUP       usdAaaAddressGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA address assignment functionality."
+    ::= { usdAaaMIBCompliances 5 }                                     -- RX 3.2
+
+usdAaaCompliance6 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting AAA.  This
+        statement became obsolete when support was added for subscriber
+        information by interface location."
+    MODULE   -- this module
+        MANDATORY-GROUPS { usdAaaBasicGroup, usdAaaCapabilitiesGroup }
+        GROUP       usdAaaBrasGroup3
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaSubscriberGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaTunnelGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA tunneling functionality."
+        GROUP       usdAaaAuthenticationGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA authentication functionality."
+        GROUP       usdAaaAccountingGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA accounting functionality."
+        GROUP       usdAaaAddressGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA address assignment functionality."
+    ::= { usdAaaMIBCompliances 6 }                                     -- RX 3.3
+
+usdAaaCompliance7 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting AAA.  This
+        statement became obsolete when several new objects were added."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAaaBasicGroup,
+            usdAaaCapabilitiesGroup }
+        GROUP       usdAaaBrasGroup3
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaSubscriberGroup2
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaTunnelGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA tunneling functionality."
+        GROUP       usdAaaAuthenticationGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA authentication functionality."
+        GROUP       usdAaaAccountingGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA accounting functionality."
+        GROUP       usdAaaAddressGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA address assignment functionality."
+    ::= { usdAaaMIBCompliances 7 }                                     -- RX 3.4
+
+usdAaaCompliance8 MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for systems supporting AAA."
+    MODULE   -- this module
+        MANDATORY-GROUPS {
+            usdAaaBasicGroup,
+            usdAaaCapabilitiesGroup }
+        GROUP       usdAaaBrasGroup4
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaSubscriberGroup3
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA B-RAS functionality."
+        GROUP       usdAaaTunnelGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA tunneling functionality."
+        GROUP       usdAaaAuthenticationGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA authentication functionality."
+        GROUP       usdAaaAccountingGroup2
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA accounting functionality."
+        GROUP       usdAaaAddressGroup
+        DESCRIPTION
+            "This group is mandatory only for those entities that implement the
+            AAA address assignment functionality."
+    ::= { usdAaaMIBCompliances 8 }                                     -- RX 4.0
+
+
+--
+-- units of conformance
+--
+usdAaaGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaAssignBrasLicense,
+        usdAaaAssignBrasLicensedUsers,
+
+        usdAaaAssignDomainName,
+        usdAaaAssignDomainRowStatus,
+        usdAaaAssignDomainRouterName,
+        usdAaaAssignDomainLoopback,
+
+        usdAaaAcctInterval,
+        usdAaaAcctDupServerRouterName,
+
+        usdAaaAddrPoolDefault,
+        usdAaaAddrDnsPrimary,
+        usdAaaAddrDnsSecondary,
+        usdAaaAddrWinsPrimary,
+        usdAaaAddrWinsSecondary }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of AAA
+        functionality in a Unisphere product.  This group became obsolete when
+        new objects were added."
+    ::= { usdAaaMIBGroups 1 }
+
+usdAaaGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdAaaAssignBrasLicense,
+        usdAaaAssignBrasLicensedUsers,
+        usdAaaAssignDomainName,
+        usdAaaAssignDomainRowStatus,
+        usdAaaAssignDomainRouterName,
+        usdAaaAssignDomainLoopback,
+        usdAaaAssignDomainIpHint,
+        usdAaaAssignDomainAtmServiceLevel,
+        usdAaaAssignDomainAtmPcr,
+        usdAaaAssignDomainAtmScr,
+        usdAaaAssignDomainAtmMbs,
+        usdAaaAssignDomainOverrideUserName,
+        usdAaaAssignDomainOverridePassword,
+
+        usdAaaAcctInterval,
+        usdAaaAcctDupServerRouterName,
+
+        usdAaaAddrPoolDefault,
+        usdAaaAddrDnsPrimary,
+        usdAaaAddrDnsSecondary,
+        usdAaaAddrWinsPrimary,
+        usdAaaAddrWinsSecondary,
+        usdAaaIncomingInitiateRequests,
+        usdAaaIncomingTerminateRequests,
+        usdAaaOutgoingTunnelGrantResponses,
+        usdAaaOutgoingGrantResponses,
+        usdAaaOutgoingDenyResponses,
+        usdAaaOutgoingErrorResponses,
+        usdAaaOutgoingAuthRequests,
+        usdAaaIncomingAuthResponses,
+        usdAaaOutgoingReAuthRequests,
+        usdAaaIncomingReAuthResponses,
+        usdAaaOutgoingAcctRequests,
+        usdAaaIncomingAcctResponses,
+        usdAaaOutgoingDupAcctRequests,
+        usdAaaIncomingDupAcctResponses,
+        usdAaaOutgoingAddrRequests,
+        usdAaaIncomingAddrResponses,
+
+        usdAaaAssignDomainTunnelName,
+        usdAaaAssignDomainTunnelTag,
+        usdAaaAssignDomainTunnelPreference,
+        usdAaaAssignDomainTunnelType,
+        usdAaaAssignDomainTunnelMedium,
+        usdAaaAssignDomainTunnelAddress,
+        usdAaaAssignDomainTunnelPassword,
+        usdAaaAssignDomainTunnelId,
+        usdAaaAssignDomainTunnelHostName,
+        usdAaaAssignDomainTunnelRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of AAA
+        functionality in a Unisphere product.  This group became obsolete when
+        new objects were added and new groupings were defined."
+    ::= { usdAaaMIBGroups 2 }
+
+usdAaaBasicGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaIncomingInitiateRequests,
+        usdAaaIncomingTerminateRequests,
+        usdAaaOutgoingGrantResponses,
+        usdAaaOutgoingDenyResponses,
+        usdAaaOutgoingErrorResponses }
+    STATUS      current
+    DESCRIPTION
+        "The basic collection of objects providing management of AAA
+        functionality in a Unisphere product."
+    ::= { usdAaaMIBGroups 3 }
+
+usdAaaBrasGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaAssignBrasLicense,
+        usdAaaAssignBrasLicensedUsers,
+        usdAaaIdleTimeout,
+        usdAaaSessionTimeout,
+
+        usdAaaAssignDomainName,
+        usdAaaAssignDomainRowStatus,
+        usdAaaAssignDomainRouterName,
+        usdAaaAssignDomainLoopback,
+        usdAaaAssignDomainIpHint,
+        usdAaaAssignDomainAtmServiceLevel,
+        usdAaaAssignDomainAtmPcr,
+        usdAaaAssignDomainAtmScr,
+        usdAaaAssignDomainAtmMbs,
+        usdAaaAssignDomainOverrideUserName,
+        usdAaaAssignDomainOverridePassword }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of AAA B-RAS
+        functionality in a Unisphere product.  This group became obsolete when
+        the usdAaaAssignDomainStripDomain object was added."
+    ::= { usdAaaMIBGroups 4 }
+
+usdAaaTunnelGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaAssignDomainTunnelName,
+        usdAaaAssignDomainTunnelTag,
+        usdAaaAssignDomainTunnelPreference,
+        usdAaaAssignDomainTunnelType,
+        usdAaaAssignDomainTunnelMedium,
+        usdAaaAssignDomainTunnelAddress,
+        usdAaaAssignDomainTunnelPassword,
+        usdAaaAssignDomainTunnelId,
+        usdAaaAssignDomainTunnelHostName,
+        usdAaaAssignDomainTunnelServerName,
+        usdAaaAssignDomainTunnelClientAddress,
+        usdAaaAssignDomainTunnelRowStatus,
+
+        usdAaaOutgoingTunnelGrantResponses }
+    STATUS      current
+    DESCRIPTION
+        "The collection of objects providing management of AAA tunneling
+        functionality in a Unisphere product."
+    ::= { usdAaaMIBGroups 5 }
+
+usdAaaAuthenticationGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaAuthMethods,
+
+        usdAaaOutgoingAuthRequests,
+        usdAaaIncomingAuthResponses,
+        usdAaaOutgoingReAuthRequests,
+        usdAaaIncomingReAuthResponses }
+    STATUS      current
+    DESCRIPTION
+        "The collection of objects providing management of AAA authentication
+        functionality in a Unisphere product."
+    ::= { usdAaaMIBGroups 6 }
+
+usdAaaAccountingGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaAcctInterval,
+        usdAaaAcctDupServerRouterName,
+        usdAaaAcctMethods,
+
+        usdAaaOutgoingAcctRequests,
+        usdAaaIncomingAcctResponses,
+        usdAaaOutgoingDupAcctRequests,
+        usdAaaIncomingDupAcctResponses }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of AAA accounting
+        functionality in a Unisphere product.  This group became obsolete when
+        the usdAaaAcctSendStopOnAaaDeny object was added."
+    ::= { usdAaaMIBGroups 7 }
+
+usdAaaAddressGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaAddrPoolDefault,
+        usdAaaDupAddrCheck,
+        usdAaaAddrDnsPrimary,
+        usdAaaAddrDnsSecondary,
+        usdAaaAddrWinsPrimary,
+        usdAaaAddrWinsSecondary,
+
+        usdAaaOutgoingAddrRequests,
+        usdAaaIncomingAddrResponses }
+    STATUS      current
+    DESCRIPTION
+        "The collection of objects providing management of AAA address
+        assignment functionality in a Unisphere product."
+    ::= { usdAaaMIBGroups 8 }
+
+usdAaaBrasGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdAaaAssignBrasLicense,
+        usdAaaAssignBrasLicensedUsers,
+        usdAaaIdleTimeout,
+        usdAaaSessionTimeout,
+
+        usdAaaAssignDomainName,
+        usdAaaAssignDomainRowStatus,
+        usdAaaAssignDomainRouterName,
+        usdAaaAssignDomainLoopback,
+        usdAaaAssignDomainIpHint,
+        usdAaaAssignDomainAtmServiceLevel,
+        usdAaaAssignDomainAtmPcr,
+        usdAaaAssignDomainAtmScr,
+        usdAaaAssignDomainAtmMbs,
+        usdAaaAssignDomainOverrideUserName,
+        usdAaaAssignDomainOverridePassword,
+        usdAaaAssignDomainStripDomain }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of AAA B-RAS
+        functionality in a Unisphere product.  This group became obsolete when
+        new assignment delimiter objects were added."
+    ::= { usdAaaMIBGroups 9 }
+
+usdAaaBrasGroup3 OBJECT-GROUP
+    OBJECTS {
+        usdAaaAssignBrasLicense,
+        usdAaaAssignBrasLicensedUsers,
+        usdAaaAssignDomainDelimiters,
+        usdAaaAssignRealmDelimiters,
+        usdAaaAssignDomainParseOrder,
+
+        usdAaaIdleTimeout,
+        usdAaaSessionTimeout,
+
+        usdAaaTunnelClientName,
+        usdAaaTunnelPassword,
+        usdAaaTunnelNasPortMethod,
+
+        usdAaaAssignDomainName,
+        usdAaaAssignDomainRowStatus,
+        usdAaaAssignDomainRouterName,
+        usdAaaAssignDomainLoopback,
+        usdAaaAssignDomainIpHint,
+        usdAaaAssignDomainAtmServiceLevel,
+        usdAaaAssignDomainAtmPcr,
+        usdAaaAssignDomainAtmScr,
+        usdAaaAssignDomainAtmMbs,
+        usdAaaAssignDomainOverrideUserName,
+        usdAaaAssignDomainOverridePassword,
+        usdAaaAssignDomainStripDomain }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of AAA B-RAS
+        functionality in a Unisphere product.  This group became obsolete when
+        new objects were added."
+    ::= { usdAaaMIBGroups 10 }
+
+usdAaaSubscriberGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaSubscriberMaxCount,
+        usdAaaSubscriberPeakCount,
+        usdAaaSubscriberCount,
+
+        usdAaaSubscriberUserName,
+        usdAaaSubscriberRouterName,
+        usdAaaSubscriberRouterIndex,
+        usdAaaSubscriberLoginTime,
+        usdAaaSubscriberIpAddress,
+        usdAaaSubscriberIpAddressMask,
+        usdAaaSubscriberAddrAssignType,
+        usdAaaSubscriberInterfaceId,
+        usdAaaSubscriberState,
+        usdAaaSubscriberClientType,
+        usdAaaSubscriberIngressPolicyName,
+        usdAaaSubscriberEgressPolicyName,
+        usdAaaSubscriberQosProfileName,
+        usdAaaSubscriberRowStatus,
+
+        usdAaaSubscriberRouterSummaryCount,
+        usdAaaSubscriberRouterRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of AAA B-RAS
+        Subscriber functionality in a Unisphere product.  This group became
+        obsolete when support was added for monitoring subscriber information by
+        interface location."
+    ::= { usdAaaMIBGroups 11 }
+
+usdAaaCapabilitiesGroup OBJECT-GROUP
+    OBJECTS {
+        usdAaaAccountingCapability,
+        usdAaaAddressAssignmentCapability,
+        usdAaaBrasCapability,
+        usdAaaTunnelingCapability }
+    STATUS      current
+    DESCRIPTION
+        "The collection of objects providing management of AAA Capabilities
+        functionality in a Unisphere product."
+    ::= { usdAaaMIBGroups 12 }
+
+usdAaaSubscriberGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdAaaSubscriberMaxCount,
+        usdAaaSubscriberPeakCount,
+        usdAaaSubscriberCount,
+
+        usdAaaSubscriberUserName,
+        usdAaaSubscriberRouterName,
+        usdAaaSubscriberRouterIndex,
+        usdAaaSubscriberLoginTime,
+        usdAaaSubscriberIpAddress,
+        usdAaaSubscriberIpAddressMask,
+        usdAaaSubscriberAddrAssignType,
+        usdAaaSubscriberInterfaceId,
+        usdAaaSubscriberState,
+        usdAaaSubscriberClientType,
+        usdAaaSubscriberIngressPolicyName,
+        usdAaaSubscriberEgressPolicyName,
+        usdAaaSubscriberQosProfileName,
+        usdAaaSubscriberRowStatus,
+
+        usdAaaSubscriberRouterSummaryCount,
+        usdAaaSubscriberRouterRowStatus,
+
+        usdAaaSubscriberLocationType,
+        usdAaaSubscriberLocationSummaryCount,
+        usdAaaSubscriberLocationRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete collection of objects providing management of AAA B-RAS
+        Subscriber functionality in a Unisphere product.  This group became
+        obsolete when the pseudo-subscriber meters were added."
+    ::= { usdAaaMIBGroups 13 }
+
+usdAaaAccountingGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdAaaAcctInterval,
+        usdAaaAcctDupServerRouterName,
+        usdAaaAcctMethods,
+        usdAaaAcctSendStopOnAaaDeny,
+        usdAaaAcctSendStopOnAaaReject,
+        usdAaaOutgoingAcctRequests,
+        usdAaaIncomingAcctResponses,
+        usdAaaOutgoingDupAcctRequests,
+        usdAaaIncomingDupAcctResponses }
+    STATUS      current
+    DESCRIPTION
+        "The collection of objects providing management of AAA accounting
+        functionality in a Unisphere product."
+    ::= { usdAaaMIBGroups 14 }
+
+usdAaaBrasGroup4 OBJECT-GROUP
+    OBJECTS {
+        usdAaaAssignBrasLicense,
+        usdAaaAssignBrasLicensedUsers,
+        usdAaaAssignDomainDelimiters,
+        usdAaaAssignRealmDelimiters,
+        usdAaaAssignDomainParseOrder,
+        usdAaaAssignSubscriberLimit,
+
+        usdAaaIdleTimeout,
+        usdAaaSessionTimeout,
+
+        usdAaaTunnelClientName,
+        usdAaaTunnelPassword,
+        usdAaaTunnelNasPortMethod,
+        usdAaaTunnelIgnoreNasPort,
+        usdAaaTunnelIgnoreNasPortType,
+        usdAaaTunnelAssignmentIdFormat,
+
+        usdAaaAssignDomainName,
+        usdAaaAssignDomainRowStatus,
+        usdAaaAssignDomainRouterName,
+        usdAaaAssignDomainLoopback,
+        usdAaaAssignDomainIpHint,
+        usdAaaAssignDomainAtmServiceLevel,
+        usdAaaAssignDomainAtmPcr,
+        usdAaaAssignDomainAtmScr,
+        usdAaaAssignDomainAtmMbs,
+        usdAaaAssignDomainOverrideUserName,
+        usdAaaAssignDomainOverridePassword,
+        usdAaaAssignDomainStripDomain }
+    STATUS      current
+    DESCRIPTION
+        "The collection of objects providing management of AAA B-RAS
+        functionality in a Unisphere product."
+    ::= { usdAaaMIBGroups 15 }
+
+usdAaaSubscriberGroup3 OBJECT-GROUP
+    OBJECTS {
+        usdAaaSubscriberMaxCount,
+        usdAaaSubscriberPeakCount,
+        usdAaaSubscriberCount,
+
+        usdAaaSubscriberUserName,
+        usdAaaSubscriberRouterName,
+        usdAaaSubscriberRouterIndex,
+        usdAaaSubscriberLoginTime,
+        usdAaaSubscriberIpAddress,
+        usdAaaSubscriberIpAddressMask,
+        usdAaaSubscriberAddrAssignType,
+        usdAaaSubscriberInterfaceId,
+        usdAaaSubscriberState,
+        usdAaaSubscriberClientType,
+        usdAaaSubscriberIngressPolicyName,
+        usdAaaSubscriberEgressPolicyName,
+        usdAaaSubscriberQosProfileName,
+        usdAaaSubscriberRowStatus,
+
+        usdAaaSubscriberRouterSummaryCount,
+        usdAaaSubscriberRouterRowStatus,
+
+        usdAaaSubscriberLocationType,
+        usdAaaSubscriberLocationSummaryCount,
+        usdAaaSubscriberLocationRowStatus,
+
+        usdAaaSubscriberPseudoPeakCount,
+        usdAaaSubscriberPseudoCount }
+    STATUS      current
+    DESCRIPTION
+        "The collection of objects providing management of AAA B-RAS Subscriber
+        functionality in a Unisphere product."
+    ::= { usdAaaMIBGroups 16 }
+
+END

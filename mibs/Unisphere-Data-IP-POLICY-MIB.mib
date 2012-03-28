@@ -1,0 +1,1564 @@
+
+-- *****************************************************************
+-- Unisphere-Data-IP-POLICY-MIB
+--
+-- Unisphere Networks Inc. Enterprise MIB
+-- Extensions for IP Policy management
+--
+-- Copyright (c) 1998 Redstone Communications, Incorporated.
+-- Copyright (c) 1999, 2002 Unisphere Networks, Incorporated.
+-- All Rights Reserved.
+-- *****************************************************************
+
+Unisphere-Data-IP-POLICY-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, IpAddress, Counter32, Integer32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, RowStatus, DisplayString, TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    usDataMibs
+        FROM Unisphere-Data-MIBs;
+
+usdIpPolicyMIB  MODULE-IDENTITY
+    LAST-UPDATED "200201031506Z"  -- 03-Jan-02 11:06 AM EDT
+    ORGANIZATION "Unisphere Networks, Inc."
+    CONTACT-INFO
+        "       Unisphere Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The IP Policy MIB for the Unisphere Networks Inc. enterprise."
+    -- Revision History
+    REVISION    "200201031506Z"  -- 03-Jan-02 11:06 AM EDT  - RX 3.0
+    DESCRIPTION
+        "Expanded MIB to include following tables:
+                     UsdIpAspAccessListTable
+                     UsdIpPrefixListTable
+                     UsdIpPrefixTreeTable
+                     UsdIpCommunityListTable
+                     UsdIpExtCommunityListTable
+                     UsdIpRedistributeTable
+                     UsdIpRouteMapTable
+         Expanded MIB to include a new textual convention:
+                     UsdIpPolicyExtendedCommunity"
+    REVISION    "200007200000Z"  -- 20-Jul-00               - RX 2.0
+    DESCRIPTION
+        "Added Named Access List support."
+    REVISION    "9811190000Z"    -- 19-Nov-98               - RX 1.0
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { usDataMibs 13 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+UsdIpPolicyName ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "32a"
+    STATUS      current
+    DESCRIPTION
+        "IP access list name.  Represents textual information taken from the NVT
+        ASCII character set."
+    REFERENCE
+        "RFC 854: NVT ASCII character set.  See SNMPv2-TC.DisplayString
+        DESCRIPTION for a summary."
+    SYNTAX      OCTET STRING (SIZE(0..32))
+
+UsdIpPolicyPolicy ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The set of IP policy actions."
+    SYNTAX      INTEGER {
+                    permit(0),
+                    deny(1) }
+
+UsdIpRedistributeProtocol ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The set of protocols choices used to configure to/from settings in an
+        IP Redistribution element."
+    SYNTAX      INTEGER {
+                    ipRedistrProtocolStatic(1),
+                    ipRedistrProtocolBgp(2),
+                    ipRedistrProtocolMBgp(3),
+                    ipRedistrProtocolOspf(4),
+                    ipRedistrProtocolIsis(5),
+                    ipRedistrProtocolRip(6),
+                    ipRedistrProtocolConnected(7),
+                    ipRedistrProtocolDefaultRoute(8),
+                    ipRedistrProtocolAccess(9),
+                    ipRedistrProtocolAccessInternal(10),
+                    ipRedistrProtocolDvmrp(11) }
+
+UsdIpPolicyAdminStatus ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The administratively assigned management state for an IP route policy."
+    SYNTAX      INTEGER {
+                    ipPolicyAdminStateDisable(0),
+                    ipPolicyAdminStateEnable(1) }
+
+UsdIpPolicyExtendedCommunity ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "22a"
+    STATUS      current
+    DESCRIPTION
+        "The extended community specification.  Represents textual information
+        taken from the NVT ASCII character set.  The format of the text string
+        is defined by either one of these choices:
+
+         In:
+             ASN::nn          where ASN is a 16 bit decimal number and
+                              nn is a 32 bit decimal number
+
+         Or:
+             IP-address::nn   where IP-address is in dotted decimal format
+                              and nn is a 16 bit decimal number
+         "
+    REFERENCE
+        "RFC 854: NVT ASCII character set."
+    SYNTAX      OCTET STRING (SIZE(0..22))
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdIpPolicyObjects    OBJECT IDENTIFIER ::= { usdIpPolicyMIB 1 }
+
+usdIpAccessList       OBJECT IDENTIFIER ::= { usdIpPolicyObjects 1 }
+usdIpNamedAccessList  OBJECT IDENTIFIER ::= { usdIpPolicyObjects 2 }
+usdIpAspAccessList    OBJECT IDENTIFIER ::= { usdIpPolicyObjects 3 }
+usdIpPrefixList       OBJECT IDENTIFIER ::= { usdIpPolicyObjects 4 }
+usdIpPrefixTree       OBJECT IDENTIFIER ::= { usdIpPolicyObjects 5 }
+usdIpCommunityList    OBJECT IDENTIFIER ::= { usdIpPolicyObjects 6 }
+usdIpRedistributeList OBJECT IDENTIFIER ::= { usdIpPolicyObjects 7 }
+usdIpRouteMapTree     OBJECT IDENTIFIER ::= { usdIpPolicyObjects 8 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Access Lists
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The IP Access List Table
+--
+
+usdIpAccessListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpAccessListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP access lists.  Entries
+        belonging to the same access list are ordered, and comparisons to those
+        entries are performed in that order until a match is detected.  If no
+        match is found, the default action is to 'deny'."
+    ::= { usdIpAccessList 1 }
+
+usdIpAccessListEntry OBJECT-TYPE
+    SYNTAX      UsdIpAccessListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP access list element."
+    INDEX     { usdIpAccessListId,
+                usdIpAccessListElemId }
+    ::= { usdIpAccessListTable 1 }
+
+UsdIpAccessListEntry ::= SEQUENCE {
+    usdIpAccessListId        Integer32,
+    usdIpAccessListElemId    Integer32,
+    usdIpAccessListRowStatus RowStatus,
+    usdIpAccessListAction    UsdIpPolicyPolicy,
+    usdIpAccessListSrc       IpAddress,
+    usdIpAccessListSrcMask   IpAddress,
+    usdIpAccessListDst       IpAddress,
+    usdIpAccessListDstMask   IpAddress,
+    usdIpAccessListProtocol  Integer32
+}
+
+usdIpAccessListId OBJECT-TYPE
+    SYNTAX      Integer32 (1..10000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The number of the access list to which this entry belongs."
+    ::= { usdIpAccessListEntry 1 }
+
+usdIpAccessListElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..10000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The relative position of this entry within its access list.  Access
+        list entries are searched in this sequence (low to high values) until a
+        match is found.
+
+        NOTE:  The value zero is reserved for use with SET operations to perform
+        special-purpose table entry creations/deletions; see the DESCRIPTION of
+        usdIpAccessListRowStatus for details.
+
+        Get/GetNext/GetBulk retrievals never return an entry for which this
+        object is zero-valued."
+    ::= { usdIpAccessListEntry 2 }
+
+usdIpAccessListRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        Two configuration levels are defined, limited and full.  EARLY
+        IMPLEMENTATIONS MIGHT PROVIDE ONLY THE LIMITED LEVEL OF CONFIGURATION
+        CAPABILITY.
+
+        *** LIMITED ACCESS LIST CONFIGURATION LEVEL ***
+
+         1) RowStatus createAndGo/destroy operations directed to a target table
+            entry for which usdIpAccessListElemId is ZERO, have the following
+            special-purpose semantics:
+
+                createAndGo     Create an entry having the specified
+                                configuration and append it to the target list,
+                                i.e. assign it a value of usdIpAccessListElemId
+                                that is one greater than the current last
+                                element in the list.
+
+                destroy         Destroy the specified list and all of its
+                                constituent elements.
+
+         2) RowStatus createAndGo/destroy operations directed to a target table
+            entry for which usdIpAccessListElemId is NONZERO are disallowed.
+
+        *** FULL ACCESS LIST CONFIGURATION LEVEL ***
+
+        Permit conventional RowStatus-based management of table entries having a
+        nonzero value for usdIpAccessListElemId, IN ADDITION TO the special
+        RowStatus semantics applied to entries having a zero value for
+        usdIpAccessListElemId.
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+                usdIpAccessListRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+                The value of usdIpAccessListElemId is nonzero.
+
+        Once created, element attributes cannot be modified except by a
+        RowStatus destroy operation to delete the list element."
+    ::= { usdIpAccessListEntry 3 }
+
+usdIpAccessListAction OBJECT-TYPE
+    SYNTAX      UsdIpPolicyPolicy
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the disposition of an item that matches the comparison
+        criteria described by this entry."
+    DEFVAL    { permit }
+    ::= { usdIpAccessListEntry 4 }
+
+usdIpAccessListSrc OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A source IP address.  A subject IP address is first masked with the
+        value of usdIpAccessListSrcMask, then the result is compared to this
+        value.  Setting both this object and its corresponding mask to 0.0.0.0
+        acts as a wildcard, matching any source IP address."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdIpAccessListEntry 5 }
+
+usdIpAccessListSrcMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address mask to be applied to a subject source IP address before
+        comparing it to usdIpAccessListSrc.  Ones in the mask identify which bits
+        in the subject IP address are significant for the comparison.
+
+        To be considered valid, a nonzero value for this object must contain a
+        single contiguous string of ones, beginning with the most significant
+        bit of the mask."
+    DEFVAL  { '00000000'H }    -- 0.0.0.0
+    ::= { usdIpAccessListEntry 6 }
+
+usdIpAccessListDst OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A destination IP address.  A subject IP address is first masked with
+        the value of usdIpAccessListDstMask, then the result is compared to this
+        value.  Setting both this object and its corresponding mask to 0.0.0.0
+        acts as a wildcard, matching any destination IP address."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdIpAccessListEntry 7 }
+
+usdIpAccessListDstMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address mask to be applied to a subject destination IP address
+        before comparing it to usdIpAccessListDst.  Ones in the mask identify
+        which bits in the IP address are significant for the comparison.
+
+        To be considered valid, a nonzero value for this object must contain a
+        single contiguous string of ones, beginning with the most significant
+        bit of the mask."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdIpAccessListEntry 8 }
+
+usdIpAccessListProtocol OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An IP Protocol value.  Nonzero values match a specific IP Protocol
+        value (e.g. 6 for TCP) carried in an IP packet; a value of zero acts as
+        a wildcard, matching any IP Protocol."
+    DEFVAL    { 0 }
+    ::= { usdIpAccessListEntry 9 }
+
+
+--
+-- The IP Named Access List Table
+--
+
+usdIpNamedAccessListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpNamedAccessListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP access lists.  Entries
+        belonging to the same access list are ordered, and comparisons to those
+        entries are performed in that order until a match is detected.  If no
+        match is found, the default action is to 'deny'."
+    ::= { usdIpNamedAccessList 1 }
+
+usdIpNamedAccessListEntry OBJECT-TYPE
+    SYNTAX      UsdIpNamedAccessListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP access list element."
+    INDEX     { usdIpNamedAccessListName,
+                usdIpNamedAccessListElemId }
+    ::= { usdIpNamedAccessListTable 1 }
+
+UsdIpNamedAccessListEntry ::= SEQUENCE {
+    usdIpNamedAccessListName         UsdIpPolicyName,
+    usdIpNamedAccessListElemId       Integer32,
+    usdIpNamedAccessListRowStatus    RowStatus,
+    usdIpNamedAccessListAction       UsdIpPolicyPolicy,
+    usdIpNamedAccessListSrc          IpAddress,
+    usdIpNamedAccessListSrcMask      IpAddress,
+    usdIpNamedAccessListDst          IpAddress,
+    usdIpNamedAccessListDstMask      IpAddress,
+    usdIpNamedAccessListProtocol     Integer32
+}
+
+usdIpNamedAccessListName OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the access list to which this entry belongs."
+    ::= { usdIpNamedAccessListEntry 1 }
+
+usdIpNamedAccessListElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..10000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The relative position of this entry within its access list.  Access
+        list entries are searched in this sequence (low to high values) until a
+        match is found.
+
+        NOTE:  The value zero is reserved for use with SET operations to perform
+        special-purpose table entry creations/deletions; see the DESCRIPTION of
+        usdIpNamedAccessListRowStatus for details.
+
+        Get/GetNext/GetBulk retrievals never return an entry for which this
+        object is zero-valued."
+    ::= { usdIpNamedAccessListEntry 2 }
+
+usdIpNamedAccessListRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        Two configuration levels are defined, limited and full.  EARLY
+        IMPLEMENTATIONS MIGHT PROVIDE ONLY THE LIMITED LEVEL OF CONFIGURATION
+        CAPABILITY.
+
+        *** LIMITED ACCESS LIST CONFIGURATION LEVEL ***
+
+         1) RowStatus createAndGo/destroy operations directed to a target table
+            entry for which usdIpNamedAccessListElemId is ZERO, have the
+            following special-purpose semantics:
+
+                createAndGo     Create an entry having the specified
+                                configuration and append it to the target list,
+                                i.e. assign it a value of
+                                usdIpNamedAccessListElemId that is one greater
+                                than the current last element in the list.
+
+                destroy         Destroy the specified list and all of its
+                                constituent elements.
+
+         2) RowStatus createAndGo/destroy operations directed to a target table
+            entry for which usdIpNamedAccessListElemId is NONZERO are
+            disallowed.
+
+        *** FULL ACCESS LIST CONFIGURATION LEVEL ***
+
+        Permit conventional RowStatus-based management of table entries having a
+        nonzero value for usdIpNamedAccessListElemId, IN ADDITION TO the special
+        RowStatus semantics applied to entries having a zero value for
+        usdIpNamedAccessListElemId.
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+                usdIpNamedAccessListRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+                The value of usdIpNamedAccessListElemId is nonzero.
+
+        Once created, element attributes cannot be modified except by a
+        RowStatus destroy operation to delete the list element."
+    ::= { usdIpNamedAccessListEntry 3 }
+
+usdIpNamedAccessListAction OBJECT-TYPE
+    SYNTAX      UsdIpPolicyPolicy
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the disposition of an item that matches the comparison
+        criteria described by this entry."
+    DEFVAL    { permit }
+    ::= { usdIpNamedAccessListEntry 4 }
+
+usdIpNamedAccessListSrc OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A source IP address.  A subject IP address is first masked with the
+        value of usdIpNamedAccessListSrcMask, then the result is compared to this
+        value.  Setting both this object and its corresponding mask to 0.0.0.0
+        acts as a wildcard, matching any source IP address."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdIpNamedAccessListEntry 5 }
+
+usdIpNamedAccessListSrcMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address mask to be applied to a subject source IP address before
+        comparing it to usdIpNamedAccessListSrc.  Ones in the mask identify which
+        bits in the subject IP address are significant for the comparison.
+
+        To be considered valid, a nonzero value for this object must contain a
+        single contiguous string of ones, beginning with the most significant
+        bit of the mask."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdIpNamedAccessListEntry 6 }
+
+usdIpNamedAccessListDst OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A destination IP address.  A subject IP address is first masked with
+        the value of usdIpNamedAccessListDstMask, then the result is compared to
+        this value.  Setting both this object and its corresponding mask to
+        0.0.0.0 acts as a wildcard, matching any destination IP address."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdIpNamedAccessListEntry 7 }
+
+usdIpNamedAccessListDstMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address mask to be applied to a subject destination IP address
+        before comparing it to usdIpNamedAccessListDst.  Ones in the mask
+        identify which bits in the IP address are significant for the
+        comparison.
+
+        To be considered valid, a nonzero value for this object must contain a
+        single contiguous string of ones, beginning with the most significant
+        bit of the mask."
+    DEFVAL    { '00000000'H }    -- 0.0.0.0
+    ::= { usdIpNamedAccessListEntry 8 }
+
+usdIpNamedAccessListProtocol OBJECT-TYPE
+    SYNTAX      Integer32 (0..255)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An IP Protocol value.  Nonzero values match a specific IP Protocol
+        value (e.g. 6 for TCP) carried in an IP packet; a value of zero acts as
+        a wildcard, matching any IP Protocol."
+    DEFVAL    { 0 }
+    ::= { usdIpNamedAccessListEntry 9 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP AS-Path Access List
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The IP AS-Path Access Table
+--
+usdIpAspAccessTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpAspAccessEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP AS-Path access entries."
+    ::= { usdIpAspAccessList 1 }
+
+usdIpAspAccessEntry OBJECT-TYPE
+    SYNTAX      UsdIpAspAccessEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP AS-Path access
+        element."
+    INDEX     { usdIpAspAccessName,
+                usdIpAspAccessElemId }
+    ::= { usdIpAspAccessTable 1 }
+
+UsdIpAspAccessEntry ::= SEQUENCE {
+    usdIpAspAccessName               UsdIpPolicyName,
+    usdIpAspAccessElemId             Integer32,
+    usdIpAspAccessCreatedInternally  TruthValue,
+    usdIpAspAccessPolicy             UsdIpPolicyPolicy,
+    usdIpAspAccessExpression         OCTET STRING,
+    usdIpAspAccessRowStatus          RowStatus
+}
+
+usdIpAspAccessName OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the AS-Path Access List to which this entry belongs."
+    ::= { usdIpAspAccessEntry 1 }
+
+usdIpAspAccessElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..10000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The element ID portion of the IP AS-Path for this entry."
+    ::= { usdIpAspAccessEntry 2 }
+
+usdIpAspAccessCreatedInternally OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicated whether this entry was created internally by the system, or
+        dynamically via a management interface.  A true value for this object
+        indicates that this entry was created internally; false indicates
+        externally."
+    ::= { usdIpAspAccessEntry 3 }
+
+usdIpAspAccessPolicy OBJECT-TYPE
+    SYNTAX      UsdIpPolicyPolicy
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Indicates the action to take for this AS-Path access list."
+    ::= { usdIpAspAccessEntry 4 }
+
+usdIpAspAccessExpression OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(8..64))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The AS-Path access list expression for this entry."
+    ::= { usdIpAspAccessEntry 5 }
+
+usdIpAspAccessRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+            usdIpCommunityRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+            Once created, only certain attributes can be modified.
+
+            What are they? FIXME JCS"
+    ::= { usdIpAspAccessEntry 6 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Prefix Lists
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+--
+-- The IP Prefix List Table
+--
+
+usdIpPrefixListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpPrefixListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP prefix lists.  Entries
+        belonging to the same prefix list are ordered, and comparisons to those
+        entries are performed in that order until a match is detected.  If no
+        match is found, the default action is to 'deny'."
+    ::= { usdIpPrefixList 1 }
+
+usdIpPrefixListEntry OBJECT-TYPE
+    SYNTAX      UsdIpPrefixListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP prefix list element."
+    INDEX     { usdIpPrefixListName,
+                usdIpPrefixListElemId,
+                usdIpPrefixListIpAddress,
+                usdIpPrefixListLength }
+    ::= { usdIpPrefixListTable 1 }
+
+UsdIpPrefixListEntry ::= SEQUENCE {
+    usdIpPrefixListName          UsdIpPolicyName,
+    usdIpPrefixListElemId        Integer32,
+    usdIpPrefixListIpAddress     IpAddress,
+    usdIpPrefixListLength        Integer32,
+    usdIpPrefixListPolicy        UsdIpPolicyPolicy,
+    usdIpPrefixListGeValue       Integer32,
+    usdIpPrefixListLeValue       Integer32,
+    usdIpPrefixListDescription   DisplayString,
+    usdIpPrefixListHitCount      Counter32,
+    usdIpPrefixListRowStatus     RowStatus
+}
+
+usdIpPrefixListName OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the prefix list to which this entry belongs."
+    ::= { usdIpPrefixListEntry 1 }
+
+usdIpPrefixListElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..10000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The relative position of this entry within its prefix list.  Access
+        list entries are searched in this sequence (low to high values) until a
+        match is found."
+    ::= { usdIpPrefixListEntry 2 }
+
+usdIpPrefixListIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The IP Address portion of the IP List value for this entry."
+    ::= { usdIpPrefixListEntry 3 }
+
+usdIpPrefixListLength OBJECT-TYPE
+    SYNTAX      Integer32 (0..32)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The length portion of the IP List value for this entry."
+    ::= { usdIpPrefixListEntry 4 }
+
+usdIpPrefixListPolicy OBJECT-TYPE
+    SYNTAX      UsdIpPolicyPolicy
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP Prefix list action to perform for this entry."
+    ::= { usdIpPrefixListEntry 5 }
+
+usdIpPrefixListGeValue OBJECT-TYPE
+    SYNTAX      Integer32 (0..32)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The minimum prefix length to apply to address."
+    ::= { usdIpPrefixListEntry 6 }
+
+usdIpPrefixListLeValue OBJECT-TYPE
+    SYNTAX      Integer32 (0..32)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The maximum prefix length to apply to address."
+    ::= { usdIpPrefixListEntry 7 }
+
+usdIpPrefixListDescription OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The administratively assigned description for this entry."
+    ::= { usdIpPrefixListEntry 8 }
+
+usdIpPrefixListHitCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of hits for this entry."
+    ::= { usdIpPrefixListEntry 9 }
+
+usdIpPrefixListRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+            usdIpPrefixListRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+            The value of usdIpPrefixListElemId is nonzero.
+
+        Once created, only certain attributes can be modified."
+    ::= { usdIpPrefixListEntry 10 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Prefix Tree
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The IP Prefix Tree Table
+--
+usdIpPrefixTreeTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpPrefixTreeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP prefix trees.  Entries
+        belonging to the same prefix tree are ordered, and comparisons to those
+        entries are performed in that order until a match is detected.  If no
+        match is found, the default action is to 'deny'."
+    ::= { usdIpPrefixTree 1 }
+
+usdIpPrefixTreeEntry OBJECT-TYPE
+    SYNTAX      UsdIpPrefixTreeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP prefix tree element."
+    INDEX     {
+        usdIpPrefixTreeName,
+        usdIpPrefixTreeIpAddress,
+        usdIpPrefixTreeLength }
+    ::= { usdIpPrefixTreeTable 1 }
+
+UsdIpPrefixTreeEntry ::= SEQUENCE {
+    usdIpPrefixTreeName          UsdIpPolicyName,
+    usdIpPrefixTreeIpAddress     IpAddress,
+    usdIpPrefixTreeLength        Integer32,
+    usdIpPrefixTreePolicy        UsdIpPolicyPolicy,
+    usdIpPrefixTreeDescription   DisplayString,
+    usdIpPrefixTreeHitCount      Counter32,
+    usdIpPrefixTreeRowStatus     RowStatus
+}
+
+usdIpPrefixTreeName OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the prefix tree to which this entry belongs."
+    ::= { usdIpPrefixTreeEntry 1 }
+
+usdIpPrefixTreeIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The IP Address portion of the IP Prefix value for this entry."
+    ::= { usdIpPrefixTreeEntry 2 }
+
+usdIpPrefixTreeLength OBJECT-TYPE
+    SYNTAX      Integer32 (0..32)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The length portion of the IP Prefix value for this entry."
+    ::= { usdIpPrefixTreeEntry 3 }
+
+usdIpPrefixTreePolicy OBJECT-TYPE
+    SYNTAX      UsdIpPolicyPolicy
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP Prefix tree policy perform for this entry."
+    ::= { usdIpPrefixTreeEntry 4 }
+
+usdIpPrefixTreeDescription OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The administratively assigned description for this entry."
+    ::= { usdIpPrefixTreeEntry 5 }
+
+usdIpPrefixTreeHitCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of hits for this entry."
+    ::= { usdIpPrefixTreeEntry 6 }
+
+usdIpPrefixTreeRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+            usdIpPrefixTreeRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+            The value of usdIpPrefixTreeIpAddress and usdIpPrefixTreeLength are
+            nonzero.
+
+        Once created, only certain attributes can be modified."
+    ::= { usdIpPrefixTreeEntry 7 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Community List Tables
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The IP Community List Table
+--
+usdIpCommunityListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpCommunityListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP Community Lists.
+        Entries belonging to the same Community List are ordered.  The table
+        supports standard and extended community lists."
+    ::= { usdIpCommunityList 1 }
+
+usdIpCommunityListEntry OBJECT-TYPE
+    SYNTAX      UsdIpCommunityListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP Community List
+        element."
+    INDEX     { usdIpCommunityListName,
+                usdIpCommunityListElemId }
+    ::= { usdIpCommunityListTable 1 }
+
+UsdIpCommunityListEntry ::= SEQUENCE {
+    usdIpCommunityListName               UsdIpPolicyName,
+    usdIpCommunityListElemId             Integer32,
+    usdIpCommunityListCreatedInternally  TruthValue,
+    usdIpCommunityListExtended           TruthValue,
+    usdIpCommunityListPolicy             UsdIpPolicyPolicy,
+    usdIpCommunityListExpression         OCTET STRING,
+    usdIpCommunityListRowStatus          RowStatus
+}
+
+usdIpCommunityListName OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the Community List to which this entry belongs."
+    ::= { usdIpCommunityListEntry 1 }
+
+usdIpCommunityListElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..10000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The IP Address portion of the IP Prefix value for this entry."
+    ::= { usdIpCommunityListEntry 2 }
+
+usdIpCommunityListCreatedInternally OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicated whether this entry was created internally by the system, or
+        dynamically via a management interface.  A true value for this object
+        indicates that this entry was created internally; false indicates
+        externally."
+    ::= { usdIpCommunityListEntry 3 }
+
+usdIpCommunityListExtended OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether this entry is a standard or extended Community List.
+        True indicates extended, false indicates standard"
+    ::= { usdIpCommunityListEntry 4 }
+
+usdIpCommunityListPolicy OBJECT-TYPE
+    SYNTAX      UsdIpPolicyPolicy
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Indicates the policy action to perform for this list."
+    ::= { usdIpCommunityListEntry 5 }
+
+usdIpCommunityListExpression OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(8..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The community list expression for this entry."
+    ::= { usdIpCommunityListEntry 6 }
+
+usdIpCommunityListRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+            usdIpCommunityRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+            Once created, only certain attributes can be modified.
+
+            What are they? FIXME JCS"
+    ::= { usdIpCommunityListEntry 7 }
+
+--
+-- The IP Extended Community List Table
+--
+usdIpExtCommunityListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpExtCommunityListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for Extended IP Community Lists.  Entries
+        belonging to the same Extended Community List are ordered."
+    ::= { usdIpCommunityList 2 }
+
+usdIpExtCommunityListEntry OBJECT-TYPE
+    SYNTAX      UsdIpExtCommunityListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an Extended IP Community
+        List element."
+    INDEX     { usdIpExtCommunityListName,
+                usdIpExtCommunityListElemId }
+    ::= { usdIpExtCommunityListTable 1 }
+
+UsdIpExtCommunityListEntry ::= SEQUENCE {
+    usdIpExtCommunityListName                UsdIpPolicyName,
+    usdIpExtCommunityListElemId              Integer32,
+    usdIpExtCommunityListCreatedInternally   TruthValue,
+    usdIpExtCommunityListPolicy              UsdIpPolicyPolicy,
+    usdIpExtCommunityListExpression          OCTET STRING,
+    usdIpExtCommunityListRowStatus           RowStatus
+}
+
+usdIpExtCommunityListName OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the Extended Community List to which this entry belongs."
+    ::= { usdIpExtCommunityListEntry 1 }
+
+usdIpExtCommunityListElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..10000)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The element ID value for this entry."
+    ::= { usdIpExtCommunityListEntry 2 }
+
+usdIpExtCommunityListCreatedInternally OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicated whether this entry was created internally by the system, or
+        dynamically via a management interface.  A true value for this object
+        indicates that this entry was created internally; false indicates
+        externally."
+    ::= { usdIpExtCommunityListEntry 3 }
+
+usdIpExtCommunityListPolicy OBJECT-TYPE
+    SYNTAX      UsdIpPolicyPolicy
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Indicates"
+    ::= { usdIpExtCommunityListEntry 4 }
+
+usdIpExtCommunityListExpression OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(8..256))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The extended community list expression for this entry."
+    ::= { usdIpExtCommunityListEntry 5 }
+
+usdIpExtCommunityListRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+            usdIpExtCommunityRowStatus
+
+        In addition, when creating an entry the following conditions must hold:
+
+            The value of usdIpExtCommunityListElemId is included in this table
+            as a key for future use.  It must be the value zero.
+
+        Once created, only certain attributes can be modified."
+    ::= { usdIpExtCommunityListEntry 6 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Redistribute Tables
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The IP Dynamic Route Redistribution Table
+--
+usdIpDynRedistributeTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpDynRedistributeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP Dynamic Route
+        Redistribution elements."
+    ::= { usdIpRedistributeList 1 }
+
+usdIpDynRedistributeEntry OBJECT-TYPE
+    SYNTAX      UsdIpDynRedistributeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of a dynamic IP Route
+        Redistribute element."
+    INDEX     { usdIpDynRedistributeToProtocol }
+    ::= { usdIpDynRedistributeTable 1 }
+
+UsdIpDynRedistributeEntry ::= SEQUENCE {
+    usdIpDynRedistributeToProtocol   UsdIpRedistributeProtocol,
+    usdIpDynRedistributeState        UsdIpPolicyAdminStatus,
+    usdIpDynRedistributeRowStatus    RowStatus
+}
+
+usdIpDynRedistributeToProtocol OBJECT-TYPE
+    SYNTAX      UsdIpRedistributeProtocol
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Identifies the protocol associated with this Dynamic Route
+        Redistribution element that routes are redistributed to."
+    ::= { usdIpDynRedistributeEntry 1 }
+
+usdIpDynRedistributeState OBJECT-TYPE
+    SYNTAX      UsdIpPolicyAdminStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Indicates the enable/disable state of this redistribution element."
+    DEFVAL    { ipPolicyAdminStateEnable }
+    ::= { usdIpDynRedistributeEntry 2 }
+
+usdIpDynRedistributeRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+            usdIpDynRedistributeRowStatus
+
+        Once created, only the usdIpDynRedistributeState object can be modified."
+    ::= { usdIpDynRedistributeEntry 3 }
+
+--
+-- The IP Route Redistribution Table
+--
+usdIpRedistributeTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpRedistributeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP Route Redistribution
+        elements."
+    ::= { usdIpRedistributeList 2 }
+
+usdIpRedistributeEntry OBJECT-TYPE
+    SYNTAX      UsdIpRedistributeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP Route Redistribution
+        element."
+    INDEX     { usdIpRedistributeToProtocol,
+                usdIpRedistributeFromProtocol }
+    ::= { usdIpRedistributeTable 1 }
+
+UsdIpRedistributeEntry ::= SEQUENCE {
+    usdIpRedistributeToProtocol      UsdIpRedistributeProtocol,
+    usdIpRedistributeFromProtocol    UsdIpRedistributeProtocol,
+    usdIpRedistributeState           UsdIpPolicyAdminStatus,
+    usdIpRedistributeRouteMapName    UsdIpPolicyName,
+    usdIpRedistributeRowStatus       RowStatus
+}
+
+usdIpRedistributeToProtocol OBJECT-TYPE
+    SYNTAX      UsdIpRedistributeProtocol
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Identifies the protocol for this element that routes are redistributed
+        to."
+    ::= { usdIpRedistributeEntry 1 }
+
+usdIpRedistributeFromProtocol OBJECT-TYPE
+    SYNTAX      UsdIpRedistributeProtocol
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Identifies the protocol for this element that routes are redistributed
+        from."
+    ::= { usdIpRedistributeEntry 2 }
+
+usdIpRedistributeState OBJECT-TYPE
+    SYNTAX      UsdIpPolicyAdminStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Indicates the enable/disable state of this redistribution element."
+    DEFVAL    { ipPolicyAdminStateEnable }
+    ::= { usdIpRedistributeEntry 3 }
+
+usdIpRedistributeRouteMapName OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Identifies the IP route-map associated with this IP Route
+        Redistribution element."
+    ::= { usdIpRedistributeEntry 4 }
+
+usdIpRedistributeRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table according to the
+        RowStatus textual convention, constrained to support the following
+        values only:
+
+            createAndGo
+            destroy
+
+        To create an entry in this table, the following entry objects MUST be
+        explicitly configured:
+
+            usdIpRedistributeRowStatus
+            usdIpRedistributeRouteMapName
+
+        Once created, only the usdIpRedistributeState object can be modified."
+    ::= { usdIpRedistributeEntry 5 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Route-Map Table
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- The IP Route-Map Table
+--
+usdIpRouteMapTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIpRouteMapEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for elements of IP Route Maps."
+    ::= { usdIpRouteMapTree 1 }
+
+usdIpRouteMapEntry OBJECT-TYPE
+    SYNTAX      UsdIpRouteMapEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP Route Map element."
+    INDEX     { usdIpRouteMapName,
+                usdIpRouteMapSequenceNum,
+                usdIpRouteMapElemId,
+                usdIpRouteMapSubElemId }
+    ::= { usdIpRouteMapTable 1 }
+
+UsdIpRouteMapEntry ::= SEQUENCE {
+    usdIpRouteMapName                UsdIpPolicyName,
+    usdIpRouteMapSequenceNum         Integer32,
+    usdIpRouteMapElemId              Integer32,
+    usdIpRouteMapSubElemId           Integer32,
+    usdIpRouteMapCreatedInternally   TruthValue,
+    usdIpRouteMapPolicy              UsdIpPolicyPolicy,
+    usdIpRouteMapDisplay             OCTET STRING
+}
+
+usdIpRouteMapName OBJECT-TYPE
+    SYNTAX      UsdIpPolicyName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the route map to which this entry belongs."
+    ::= { usdIpRouteMapEntry 1 }
+
+usdIpRouteMapSequenceNum OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The element ID value for this entry."
+    ::= { usdIpRouteMapEntry 2 }
+
+usdIpRouteMapElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The element ID to which this entry belongs."
+    ::= { usdIpRouteMapEntry 3 }
+
+usdIpRouteMapSubElemId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The sub-element ID to which this entry belongs."
+    ::= { usdIpRouteMapEntry 4 }
+
+usdIpRouteMapCreatedInternally OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicated whether this entry was created internally by the system, or
+        dynamically via a management interface.  A true value for this object
+        indicates that this entry was created internally; false indicates
+        externally."
+    ::= { usdIpRouteMapEntry 5 }
+
+usdIpRouteMapPolicy OBJECT-TYPE
+    SYNTAX      UsdIpPolicyPolicy
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates the policy action performed by this element."
+    ::= { usdIpRouteMapEntry 6 }
+
+usdIpRouteMapDisplay OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..2048))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Textual information taken from the NVT ASCII character set
+        (i.e. RFC1903 DisplayString), but with increased length.  The
+        information in this object is the series of set, match, and/or match &
+        set clauses for this route map.
+
+        It is assumed that the information conveyed in this object is used for
+        display purposes and in general, is not parsed.  The information in this
+        string is a concatentation of routemap clauses configured via the
+        systems non SNMP interface."
+    ::= { usdIpRouteMapEntry 7 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- No notifications are defined in this MIB. Placeholders follow.
+
+-- usdIpPolicyTrapEnables OBJECT IDENTIFIER ::= { usdIpPolicyMIB 2 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- No notifications are defined in this MIB. Placeholders follow.
+
+-- The following two OBJECT IDENTIFIERS are used to define SNMPv2
+-- Notifications that are easily translated into SNMPv1 Traps.
+
+-- usdIpPolicyTraps       OBJECT IDENTIFIER ::= { usdIpPolicyMIB 3 }
+-- usdIpPolicyTrapPrefix  OBJECT IDENTIFIER ::= { usdIpPolicyTraps 0 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+usdIpPolicyConformance     OBJECT IDENTIFIER ::= { usdIpPolicyMIB 4 }
+usdIpPolicyCompliances     OBJECT IDENTIFIER ::= { usdIpPolicyConformance 1 }
+usdIpPolicyGroups          OBJECT IDENTIFIER ::= { usdIpPolicyConformance 2 }
+
+-- compliance statements
+
+usdIpPolicyCompliance MODULE-COMPLIANCE
+    STATUS  obsolete
+    DESCRIPTION
+        "An obsolete compliance statement for entities that implement the
+        Unisphere IP Policy MIB.  This statement became obsolete when support
+        was added for the IP Named Access List."
+    MODULE  -- this module
+        MANDATORY-GROUPS {
+            usdIpAccessListGroup }
+    ::= { usdIpPolicyCompliances 1 }                                   -- RX 1.0
+
+usdIpPolicyCompliance2 MODULE-COMPLIANCE
+    STATUS  obsolete
+    DESCRIPTION
+        "An obsolete compliance statement for entities that implement the
+        Unisphere IP Policy MIB.  This statement became obsolete when support
+        was added for the IP ASP Access List, the IP Prefix List, the IP Prefix
+        Tree, the IP Community List, the IP Extended Community List, IP Dynamic
+        Route Redistribution, and the IP Route Map."
+    MODULE  -- this module
+        MANDATORY-GROUPS {
+            usdIpAccessListGroup,
+            usdIpNamedAccessListGroup }
+    ::= { usdIpPolicyCompliances 2 }                                   -- RX 2.0
+
+usdIpPolicyCompliance3 MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+        "The compliance statement for entities that implement the Unisphere IP
+        Policy MIB."
+    MODULE  -- this module
+        MANDATORY-GROUPS {
+            usdIpAccessListGroup,
+            usdIpNamedAccessListGroup,
+            usdIpAspAccessListGroup,
+            usdIpPrefixListGroup,
+            usdIpPrefixTreeGroup,
+            usdIpCommunityListGroup,
+            usdIpExtCommunityListGroup,
+            usdIpRedistributeGroup,
+            usdIpRouteMapGroup }
+    ::= { usdIpPolicyCompliances 3 }                                   -- RX 3.0
+
+-- units of conformance
+
+usdIpAccessListGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpAccessListRowStatus,
+        usdIpAccessListAction,
+        usdIpAccessListSrc,
+        usdIpAccessListSrcMask,
+        usdIpAccessListDst,
+        usdIpAccessListDstMask,
+        usdIpAccessListProtocol }
+    STATUS  current
+    DESCRIPTION
+        "A collection of objects for managing IP access list capabilities in a
+        Unisphere product."
+    ::= { usdIpPolicyGroups 1 }
+
+usdIpNamedAccessListGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpNamedAccessListRowStatus,
+        usdIpNamedAccessListAction,
+        usdIpNamedAccessListSrc,
+        usdIpNamedAccessListSrcMask,
+        usdIpNamedAccessListDst,
+        usdIpNamedAccessListDstMask,
+        usdIpNamedAccessListProtocol }
+    STATUS  current
+    DESCRIPTION
+        "A named collection of objects for managing IP access list capabilities
+        in a Unisphere product."
+    ::= { usdIpPolicyGroups 2 }
+
+usdIpAspAccessListGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpAspAccessCreatedInternally,
+        usdIpAspAccessPolicy,
+        usdIpAspAccessExpression,
+        usdIpAspAccessRowStatus }
+    STATUS  current
+    DESCRIPTION
+        "A named collection of objects for managing AS-Path access list
+        capabilities in a Unisphere product."
+    ::= { usdIpPolicyGroups 3 }
+
+usdIpPrefixListGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpPrefixListPolicy,
+        usdIpPrefixListGeValue,
+        usdIpPrefixListLeValue,
+        usdIpPrefixListDescription,
+        usdIpPrefixListHitCount,
+        usdIpPrefixListRowStatus }
+    STATUS  current
+    DESCRIPTION
+        "A named collection of objects for managing Prefix list capabilities in
+        a Unisphere product."
+    ::= { usdIpPolicyGroups 4 }
+
+usdIpPrefixTreeGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpPrefixTreePolicy,
+        usdIpPrefixTreeDescription,
+        usdIpPrefixTreeHitCount,
+        usdIpPrefixTreeRowStatus }
+    STATUS current
+    DESCRIPTION
+        "A named collection of objects for managing Prefix Tree capabilities in
+        a Unisphere product."
+    ::= { usdIpPolicyGroups 5 }
+
+usdIpCommunityListGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpCommunityListCreatedInternally,
+        usdIpCommunityListExtended,
+        usdIpCommunityListPolicy,
+        usdIpCommunityListExpression,
+        usdIpCommunityListRowStatus }
+    STATUS current
+    DESCRIPTION
+        "A named collection of objects for managing Community List capabilities
+        in a Unisphere product."
+    ::= { usdIpPolicyGroups 6 }
+
+usdIpExtCommunityListGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpExtCommunityListCreatedInternally,
+        usdIpExtCommunityListPolicy,
+        usdIpExtCommunityListExpression,
+        usdIpExtCommunityListRowStatus }
+    STATUS current
+    DESCRIPTION
+        "A named collection of objects for managing Extended Community List
+        capabilities in a Unisphere product."
+    ::= { usdIpPolicyGroups 7 }
+
+usdIpRedistributeGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpDynRedistributeState,
+        usdIpDynRedistributeRowStatus,
+        usdIpRedistributeState,
+        usdIpRedistributeRouteMapName,
+        usdIpRedistributeRowStatus }
+    STATUS current
+    DESCRIPTION
+        "A collection of objects for managing IP route redistribution list
+        capabilities in a Unisphere product."
+    ::= { usdIpPolicyGroups 8 }
+
+usdIpRouteMapGroup OBJECT-GROUP
+    OBJECTS {
+        usdIpRouteMapCreatedInternally,
+        usdIpRouteMapPolicy,
+        usdIpRouteMapDisplay }
+    STATUS current
+    DESCRIPTION
+        "A collection of objects for managing IP route map list capabilities in
+        a Unisphere product."
+    ::= { usdIpPolicyGroups 9 }
+
+END

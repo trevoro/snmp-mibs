@@ -1,0 +1,2613 @@
+
+-- *****************************************************************************
+-- Unisphere-Data-ISIS-MIB
+--
+-- Unisphere Networks Inc. Enterprise MIB
+-- Integrated IS-IS MIB
+--
+-- Copyright (c) 1997 The Internet Society.
+-- Copyright (c) 1997 The Internet Society.
+-- Copyright (c) 2000, 2001 Unisphere Networks, Incorporated.
+--   All Rights Reserved.
+-- *****************************************************************************
+
+Unisphere-Data-ISIS-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, Counter32, IpAddress
+        FROM SNMPv2-SMI
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    InterfaceIndexOrZero
+        FROM IF-MIB
+    TEXTUAL-CONVENTION, DisplayString, RowStatus, TruthValue
+        FROM SNMPv2-TC
+    usDataMibs
+        FROM Unisphere-Data-MIBs;
+
+usdIsisMIB  MODULE-IDENTITY
+    LAST-UPDATED "200112102129Z"  -- 10-Dec-01 04:29 PM EST
+    ORGANIZATION "Unisphere Networks, Inc."
+    CONTACT-INFO
+        "       Unisphere Networks, Inc.
+        Postal: 10 Technology Park Drive
+                Westford, MA  01886
+                USA
+        Tel:    +1 978 589 5800
+        Email:  mib@UnisphereNetworks.com"
+    DESCRIPTION
+        "The intermediate system to intermediate system (IS-IS) routing protocol
+        MIB for Unisphere Networks routing switch products.  This MIB provides
+        objects for management of the IS-IS Routing protocol, as described in
+        ISO 10589, when it is used to construct routing tables for IP networks,
+        as described in RFC 1195."
+    -- Revision History
+    REVISION    "200112102129Z"  -- 10-Dec-01 04:29 PM EST  - RX 4.0
+    DESCRIPTION
+        "Added MPLS support."
+    REVISION    "200112071522Z"  -- 07-Dec-01 10:22 AM EST  - RX 3.3
+    DESCRIPTION
+        "Added support for simple password protection."
+    REVISION    "200104172126Z"  -- 17-Apr-01 05:26 PM EDT  - RX 3.0
+    DESCRIPTION
+        "Add circuit state object."
+    REVISION    "200002220000Z"  -- 22-Feb-00               - RX 2.0
+    DESCRIPTION
+        "Initial version of this MIB module, based on draft-ietf-isis-wg-mib."
+    ::= { usDataMibs 38 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Type definitions
+
+OSINSAddress ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "OSI Network Service Address, e.g. NSAP, Network Entity Title"
+    SYNTAX      OCTET STRING (SIZE(0..20))
+
+SystemID ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A system ID."
+    SYNTAX      OCTET STRING (SIZE(0..8))
+
+OperState ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Type used in enabling and disabling a row."
+    SYNTAX      INTEGER {
+                    off(1),
+                    on(2) }
+
+AuthTime ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Then number of seconds since Jan. 1 1970."
+    SYNTAX      Integer32
+
+LSPBuffSize ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Integer sub range for LSP size."
+    SYNTAX      Integer32 (512..9180)
+
+LevelState ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "States of the ISIS protocol."
+    SYNTAX      INTEGER {
+                    off(1),
+                    on(2),
+                    waiting(3) }
+
+SupportedProtocol ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Types of network protocol supported by Integrated ISIS.  The values for
+        ISO8473 and IP are those registered for these protocols in ISO TR9577."
+    SYNTAX      INTEGER {
+                    iso8473(129),
+                    ip(204),
+                    ipV6(205) }
+
+UsdDefaultMetric ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Integer sub-range for default metric for single hop.  The value is
+        truncated to 63 when the usdIsisSysL1MetricStyle or
+        usdIsisSysL2MetricStyle is set to usdIsisMetricStyleNarrow "
+    SYNTAX      Integer32 (1..16777214)
+
+OtherMetric ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Integer sub-range for metrics other than the default metric for single
+        hop."
+    SYNTAX      Integer32 (0..63)
+
+CircuitID ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "ID for a circuit."
+    SYNTAX      OCTET STRING (SIZE(2..9))
+
+ISPriority ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Integer sub-range for ISIS priority."
+    SYNTAX      Integer32 (1..127)
+
+
+-- Behaviour Definitions
+
+-- ResettingTimer behaviour definition
+-- "This object specifies the interval between certain events in
+-- the operation of the protocol state machine.  If the value of
+-- this object is set to a new value while the protocol state
+-- machine is in operation, the implementation shall take the
+-- necessary steps to ensure that for any time interval which
+-- was in progress when the value of the corresponding object
+-- was changed, the next expiration of that interval takes place
+-- the specified time after the original start of that interval,
+-- or immediately, whichever is later.  The precision with which
+-- this time shall be implemented shall be the same as that
+-- associated with the basic operation of the timer object."
+
+-- OperationalState behaviour definition
+-- "This object controls the enabling and disabling of the
+-- corresponding table row.  Setting this object to the value
+-- off has the effect of disabling the corresponding row.
+-- Setting this object to the value on has the effect of
+-- enabling the corresponding row.  Setting the value of this
+-- object to the same value as its current value has no effect.
+-- If the table entry also contains an object controlling the
+-- RowStatus then the object following the operationalState
+-- behaviour shall not be set to on when the object following
+-- the RowStatus behaviour has value off.  An attempt to do
+-- so is rejected."
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdIsisObjects      OBJECT IDENTIFIER ::= { usdIsisMIB 1 }
+usdIsisTrapGroup    OBJECT IDENTIFIER ::= { usdIsisMIB 2 }
+usdIsisConformance  OBJECT IDENTIFIER ::= { usdIsisMIB 3 }
+
+usdIsisSystemGroup  OBJECT IDENTIFIER ::= { usdIsisObjects 1}
+usdIsisCircuitGroup OBJECT IDENTIFIER ::= { usdIsisObjects 2 }
+
+usdIsisSysTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisSysEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The set of instances of the Integrated IS-IS protocol existing on the
+        system."
+    ::= { usdIsisSystemGroup 1 }
+
+usdIsisSysEntry OBJECT-TYPE
+    SYNTAX      UsdIsisSysEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each row defines information specific to a single instance of the
+        protocol existing on the system."
+    REFERENCE
+        "ISIS.poi cLNSISISBasic-P (1)"
+    INDEX     { usdIsisSysInstance }
+    ::= { usdIsisSysTable 1 }
+
+UsdIsisSysEntry ::= SEQUENCE {
+    usdIsisSysInstance                      Integer32,
+    usdIsisSysVersion                       DisplayString,
+    usdIsisSysType                          INTEGER,
+    usdIsisSysID                            SystemID,
+    usdIsisSysMaxPathSplits                 Integer32,
+    usdIsisSysMaxLSPGenInt                  Integer32,
+    usdIsisSysOrigL1LSPBuffSize             LSPBuffSize,
+    usdIsisSysMaxAreaAddresses              Integer32,
+    usdIsisSysMinL1LSPGenInt                Integer32,
+    usdIsisSysMinL2LSPGenInt                Integer32,
+    usdIsisSysPollESHelloRate               Integer32,
+    usdIsisSysWaitTime                      Integer32,
+    usdIsisSysOperState                     OperState,
+    usdIsisSysL1State                       LevelState,
+    usdIsisSysCorrLSPs                      Counter32,
+    usdIsisSysLSPL1DbaseOloads              Counter32,
+    usdIsisSysManAddrDropFromAreas          Counter32,
+    usdIsisSysAttmptToExMaxSeqNums          Counter32,
+    usdIsisSysSeqNumSkips                   Counter32,
+    usdIsisSysOwnLSPPurges                  Counter32,
+    usdIsisSysIDFieldLenMismatches          Counter32,
+    usdIsisSysMaxAreaAddrMismatches         Counter32,
+    usdIsisSysOrigL2LSPBuffSize             LSPBuffSize,
+    usdIsisSysL2State                       LevelState,
+    usdIsisSysLSPL2DbaseOloads              Counter32,
+    usdIsisSysAuthFails                     Counter32,
+    usdIsisSysLSPIgnoreErrors               TruthValue,
+    usdIsisSysMaxAreaCheck                  TruthValue,
+    usdIsisSysSetOverloadBit                TruthValue,
+    usdIsisSysSetOverloadBitStartupDuration Integer32,
+    usdIsisSysMaxLspLifetime                Integer32,
+    usdIsisSysL1SpfInterval                 Integer32,
+    usdIsisSysL2SpfInterval                 Integer32,
+    usdIsisSysIshHoldTime                   Integer32,
+    usdIsisSysIshConfigTimer                Integer32,
+    usdIsisSysDistributeDomainWide          TruthValue,
+    usdIsisSysDistance                      Integer32,
+    usdIsisSysL1MetricStyle                 INTEGER,
+    usdIsisSysL2MetricStyle                 INTEGER,
+    usdIsisSysIsoRouteTag                   OCTET STRING,
+    usdIsisSysMplsTeLevel                   INTEGER,
+    usdIsisSysMplsTeRtrIdIfIndex            InterfaceIndexOrZero }
+
+usdIsisSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisSysEntry 1 }
+
+usdIsisSysVersion OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..24))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The version number of the IS-IS protocol to which this instance
+        conforms.  This value must be set by the implementation when the row is
+        valid."
+    REFERENCE
+        "ISIS.aoi version (1)"
+    ::= { usdIsisSysEntry 2 }
+
+usdIsisSysType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    level1IS(1),
+                    level1l2IS(2),
+                    level2Only(3) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The type of this instance of the Integrated IS-IS protocol.  This
+        object follows the replaceOnlyWhileDisabled behaviour."
+    REFERENCE
+        "ISIS.aoi iSType (2)"
+    ::= { usdIsisSysEntry 3 }
+
+usdIsisSysID OBJECT-TYPE
+    SYNTAX      SystemID
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The ID for this instance of the Integrated IS-IS protocol.  This value
+        is appended to each of the instance's area addresses to form the Network
+        Entity Titles valid for this instance.  The derivation of a value for
+        this object is implementation-specific.  Some implementations may assign
+        values and not permit write MAX-ACCESS, others may require the value to
+        be set manually."
+    REFERENCE
+        "ISIS.aoi systemId (119)"
+    ::= { usdIsisSysEntry 4 }
+
+usdIsisSysMaxPathSplits OBJECT-TYPE
+    SYNTAX      Integer32 (1..32)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Maximum number of paths with equal routing metric value which it is
+        permitted to split between.  This object follows the
+        replaceOnlyWhileDisabled behaviour."
+    REFERENCE
+        "ISIS.aoi maximumPathSplits (3)"
+    DEFVAL    { 4 }
+    ::= { usdIsisSysEntry 5 }
+
+usdIsisSysMaxLSPGenInt OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Maximum interval, in seconds, between generated LSPs by this instance.
+        This object follows the resettingTimer behaviour."
+    REFERENCE
+        "ISIS.aoi maximumLSPGenerationInterval (6)"
+    DEFVAL    { 900 }
+    ::= { usdIsisSysEntry 6 }
+
+usdIsisSysOrigL1LSPBuffSize OBJECT-TYPE
+    SYNTAX      LSPBuffSize
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum size of Level 1 LSPs and SNPs originated by this instance.
+        This object follows the replaceOnlyWhileDisabled behaviour."
+    REFERENCE
+        "ISIS.aoi originatingL1LSPBufferSize (9)"
+    DEFVAL    { 1497 }
+    ::= { usdIsisSysEntry 7 }
+
+usdIsisSysMaxAreaAddresses OBJECT-TYPE
+    SYNTAX      Integer32 (0..254)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of area addresses to be permitted for the area in
+        which this instance exists.  Note that all Intermediate Systems in the
+        same area must have the same value configured for this attribute if
+        correct operation is to be assumed.  This object follows the
+        replaceOnlyWhileDisabled behaviour."
+    REFERENCE
+        "ISIS.aoi maximumAreaAddresses (4)"
+    DEFVAL    { 3 }
+    ::= { usdIsisSysEntry 8 }
+
+usdIsisSysMinL1LSPGenInt OBJECT-TYPE
+    SYNTAX      Integer32 (0..120)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Minimum interval, in seconds, between successive generation of L1 LSPs
+        with the same LSPID by this instance.  This object follows the
+        resettingTimer behaviour."
+    REFERENCE
+        "ISIS.aoi minimumLSPGenerationInterval (11)"
+    DEFVAL    { 5 }
+    ::= { usdIsisSysEntry 9 }
+
+usdIsisSysMinL2LSPGenInt OBJECT-TYPE
+    SYNTAX      Integer32 (0..120)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Minimum interval, in seconds, between successive generation of L2 LSPs
+        with the same LSPID by this instance.  This object follows the
+        resettingTimer behaviour."
+    REFERENCE
+        "ISIS.aoi minimumLSPGenerationInterval (11)"
+    DEFVAL    { 5 }
+    ::= { usdIsisSysEntry 10 }
+
+usdIsisSysPollESHelloRate OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value, in seconds, to be used for the suggested ES configuration
+        timer in ISH PDUs when soliciting the ES configuration."
+    REFERENCE
+        "ISIS.aoi pollESHelloRate (13)"
+    DEFVAL    { 10 }
+    ::= { usdIsisSysEntry 11 }
+
+usdIsisSysWaitTime OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of seconds to delay in waiting state before entering on state.
+        This object follows the resettingTimer behaviour."
+    REFERENCE
+        "ISIS.aoi waitingTime (15)"
+    DEFVAL    { 60 }
+    ::= { usdIsisSysEntry 12 }
+
+usdIsisSysOperState OBJECT-TYPE
+    SYNTAX      OperState
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The operational state of this instance of the Integrated IS-IS
+        protocol.  Setting this object to the value on when its current value is
+        off enables operation of this instance of the Integrated IS-IS
+        protocol."
+    DEFVAL    { off }
+    ::= { usdIsisSysEntry 13 }
+
+usdIsisSysL1State OBJECT-TYPE
+    SYNTAX      LevelState
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The state of the Level 1 database."
+    REFERENCE
+        "ISIS.aoi l1State (17)"
+    ::= { usdIsisSysEntry 14 }
+
+usdIsisSysCorrLSPs OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of corrupted LSPs detected."
+    REFERENCE
+        "ISIS.aoi corruptedLSPsDetected (19)"
+    ::= { usdIsisSysEntry 15 }
+
+usdIsisSysLSPL1DbaseOloads OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times the LSP L1 database has become overloaded."
+    REFERENCE
+        "ISIS.aoi lSPL1DatabaseOverloads (20)"
+    ::= { usdIsisSysEntry 16 }
+
+usdIsisSysManAddrDropFromAreas OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times a manual address has been dropped from the area."
+    REFERENCE
+        "ISIS.aoi manualAddressesDroppedFromArea (21)"
+    ::= { usdIsisSysEntry 17 }
+
+usdIsisSysAttmptToExMaxSeqNums OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times the IS has attempted to exceed the maximum sequence
+        number."
+    REFERENCE
+        "ISIS.aoi attemptsToExceedmaximumSequenceNumber (22)"
+    ::= { usdIsisSysEntry 18 }
+
+usdIsisSysSeqNumSkips OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times a sequence number skip has occurred."
+    REFERENCE
+        "ISIS.aoi sequenceNumberSkips (23)"
+    ::= { usdIsisSysEntry 19 }
+
+usdIsisSysOwnLSPPurges OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times a zero-aged copy of the system's own LSP is received
+        from some other node."
+    REFERENCE
+        "ISIS.aoi ownLSPPurges (24)"
+    ::= { usdIsisSysEntry 20 }
+
+usdIsisSysIDFieldLenMismatches OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times a PDU is received with a different value for ID field
+        length to that of the receiving system."
+    REFERENCE
+        "ISIS.aoi iDFieldLengthMismatches (25)"
+    ::= { usdIsisSysEntry 21 }
+
+usdIsisSysMaxAreaAddrMismatches OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times a PDU is received with a different value for
+        MaximumAreaAddresses from that of the receiving system."
+    REFERENCE
+        "ISIS.aoi MaximumAreaAddressesMismatches (118)"
+    ::= { usdIsisSysEntry 22 }
+
+-- The following objects map those from the cLNSISISLevel2-P
+-- Package
+
+usdIsisSysOrigL2LSPBuffSize OBJECT-TYPE
+    SYNTAX      LSPBuffSize
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum size of Level 2 LSPs and SNPs originated by this system.
+        This object follows the replaceOnlyWhileDisabled behaviour."
+    REFERENCE
+        "ISIS.aoi originatingL2LSPBufferSize (26)"
+    DEFVAL    { 1497 }
+    ::= { usdIsisSysEntry 23 }
+
+usdIsisSysL2State OBJECT-TYPE
+    SYNTAX      LevelState
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The state of the Level 2 database."
+    REFERENCE
+        "ISIS.aoi l2State (28)"
+    ::= { usdIsisSysEntry 24 }
+
+usdIsisSysLSPL2DbaseOloads OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of times the Level 2 LSP database has become overloaded."
+    REFERENCE
+        "ISIS.aoi lSPL2DatabaseOverloads (32)"
+    ::= { usdIsisSysEntry 25 }
+
+usdIsisSysAuthFails OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of authentication failures recognized by this instance of
+        the protocol."
+    ::= { usdIsisSysEntry 26 }
+
+usdIsisSysLSPIgnoreErrors OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "If true, allow the router to ignore IS-IS link state packets (LSPs)
+        that are received with internal checksum errors rather than purging the
+        LSPs."
+    DEFVAL    { false }
+    ::= { usdIsisSysEntry 27 }
+
+usdIsisSysMaxAreaCheck OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "When on, enables checking of maximum area addresses per IS version of
+        ISO10589."
+    DEFVAL    { true }
+    ::= { usdIsisSysEntry 28 }
+
+usdIsisSysSetOverloadBit OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Isis overload bit"
+    DEFVAL    { false }
+    ::= { usdIsisSysEntry 29 }
+
+usdIsisSysSetOverloadBitStartupDuration OBJECT-TYPE
+    SYNTAX      Integer32 (0..86400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies the length in time of seconds to set the overload bit from
+        startup.  This object must be set together with usdIsisSysSetOverloadBit,
+        otherwise the agent will return an error."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysEntry 30 }
+
+usdIsisSysMaxLspLifetime  OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies the maximum time (in seconds) a LSP will remain in the box
+        without being refreshed before being considered invalid."
+    DEFVAL    { 1200  }
+    ::= { usdIsisSysEntry 31 }
+
+usdIsisSysL1SpfInterval OBJECT-TYPE
+    SYNTAX      Integer32 (0..120)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Minimum interval, in seconds, between level 1 SPF calculations."
+    DEFVAL    { 5 }
+    ::= { usdIsisSysEntry 32 }
+
+usdIsisSysL2SpfInterval OBJECT-TYPE
+    SYNTAX      Integer32 (0..120)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Minimum interval, in seconds, between level 2 SPF calculations."
+    DEFVAL    { 5 }
+    ::= { usdIsisSysEntry 33 }
+
+usdIsisSysIshHoldTime OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specify a holdtime advertised in ESH/ISH PDUs."
+    DEFVAL    { 30 }
+    ::= { usdIsisSysEntry 34 }
+
+usdIsisSysIshConfigTimer OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specify the rate of transmission for ESH and ISH packets."
+    DEFVAL    { 10 }
+    ::= { usdIsisSysEntry 35 }
+
+usdIsisSysDistributeDomainWide OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "When on, enables distribution of prefixes throughout a multi-level
+        domain."
+    DEFVAL    { false }
+    ::= { usdIsisSysEntry 36 }
+
+usdIsisSysDistance OBJECT-TYPE
+    SYNTAX      Integer32 (1..255)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The weight applied to IS-IS routes."
+    DEFVAL    { 115 }
+    ::= { usdIsisSysEntry 37 }
+
+usdIsisSysL1MetricStyle OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    usdIsisMetricStyleNarrow(2),
+                    usdIsisMetricStyleNarrowTransition(3),
+                    usdIsisMetricStyleTransition(4),
+                    usdIsisMetricStyleWide(5),
+                    usdIsisMetricStyleWideTransition(6) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies the type of IP reachability TLV to advertise in level 1
+        LSPs."
+    DEFVAL    { usdIsisMetricStyleNarrow }
+    ::= { usdIsisSysEntry 38 }
+
+usdIsisSysL2MetricStyle OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    usdIsisMetricStyleNarrow(2),
+                    usdIsisMetricStyleNarrowTransition(3),
+                    usdIsisMetricStyleTransition(4),
+                    usdIsisMetricStyleWide(5),
+                    usdIsisMetricStyleWideTransition(6) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies the type of IP reachability TLV to advertise in level 2
+        LSPs."
+    DEFVAL    { usdIsisMetricStyleNarrow }
+    ::= { usdIsisSysEntry 39 }
+
+usdIsisSysIsoRouteTag OBJECT-TYPE
+    SYNTAX      OCTET STRING  (SIZE(1..32))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+         "The ISO routing area tag."
+    ::= { usdIsisSysEntry 40 }
+
+usdIsisSysMplsTeLevel OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    levelNone(0),
+                    level1(1),
+                    level2(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Select flooding of MPLS traffic engineering link information into the
+        specified ISIS level."
+    ::= { usdIsisSysEntry 41 }
+
+usdIsisSysMplsTeRtrIdIfIndex OBJECT-TYPE
+    SYNTAX       InterfaceIndexOrZero
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+        "Configure the stable router interface ID to designate it as TE capable.  
+        A value of zero is used to remove any configured router interface ID."
+    ::= { usdIsisSysEntry 42 }
+
+
+
+-- The Level 1 Manual Area Address Table contains the set of area addresses
+-- manually configured for each instance of the Integrated IS-IS protocol.
+-- At least one row in which the value of usdIsisManAreaAddRowStatus is on must
+-- be present for each instance of the protocol when usdIsisSysOperState is also
+-- on for that instance.  The maximum number of rows in this table for each
+-- instance of the protocol for which the object usdIsisManAreaAddrRowStatus has
+-- the value on is the value of maximumAreaAddresses (as defined in ISO 10589)
+-- for that instance.  An Attempt to create a new row such that the number of
+-- rows with usdIsisManAreaAddrRowStatus set to on for that protocol instance
+-- exceeds maximumAreaAddresses is rejected.
+
+usdIsisManAreaAddrTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisManAreaAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The set of manual area addresses configured on this Intermediate
+        System."
+    REFERENCE
+        "ISIS.aoi manualAreaAddresses (10)"
+    ::= { usdIsisSystemGroup 2 }
+
+usdIsisManAreaAddrEntry OBJECT-TYPE
+    SYNTAX      UsdIsisManAreaAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains one area address manually configured on this
+        system."
+    INDEX     { usdIsisManAreaAddrSysInstance,
+                usdIsisManAreaAddr }
+    ::= { usdIsisManAreaAddrTable 1 }
+
+UsdIsisManAreaAddrEntry ::= SEQUENCE {
+    usdIsisManAreaAddrSysInstance   Integer32,
+    usdIsisManAreaAddr              OSINSAddress,
+    usdIsisManAreaAddrRowStatus     RowStatus
+}
+
+usdIsisManAreaAddrSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisManAreaAddrEntry 1 }
+
+usdIsisManAreaAddr OBJECT-TYPE
+    SYNTAX      OSINSAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A manually configured area address for this system.  This object
+        follows the index behaviour.
+
+        Note:  an index for the entry {1, {49.0001} active} in this table would
+        be the ordered pair (1, (0x03 0x49 0x00 0x01)), as the length of an
+        octet string is part of the OID."
+    ::= { usdIsisManAreaAddrEntry 2 }
+
+usdIsisManAreaAddrRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The state of the usdIsisManAreaAddrEntry.  This object follows the
+        RowStatus behaviour.  If an attempt is made to set this object to the
+        value off when the corresponding usdIsisManAreaAddrEntry is the only
+        valid entry for this instance and when the corresponding IS-IS instance
+        has usdIsisSysOperState set to on then the attempt is rejected."
+    DEFVAL    { active }
+    ::= { usdIsisManAreaAddrEntry 3 }
+
+
+-- The System Integrated Group
+
+-- The System Integrated Group is present if the system supports Integrated ISIS
+-- at Level 1.
+
+-- The System Protocol Supported Table
+
+-- The System Protocol Supported Table contains the manually configured set of
+-- protocols supported by each instance of the Integrated ISIS protocol.
+--
+usdIsisSysProtSuppTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisSysProtSuppEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains the manually configured set of protocols supported
+        by each instance of the Integrated ISIS protocol."
+    ::= { usdIsisSystemGroup 3 }
+
+usdIsisSysProtSuppEntry OBJECT-TYPE
+    SYNTAX      UsdIsisSysProtSuppEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains one protocol supported by an instance of the
+        Integrated ISIS protocol."
+    INDEX     { usdIsisSysProtSuppSysInstance,
+                usdIsisSysProtSuppProtocol }
+
+    ::= { usdIsisSysProtSuppTable 1 }
+
+UsdIsisSysProtSuppEntry ::= SEQUENCE {
+    usdIsisSysProtSuppSysInstance   Integer32,
+    usdIsisSysProtSuppProtocol      SupportedProtocol,
+    usdIsisSysProtSuppRowStatus     RowStatus }
+
+usdIsisSysProtSuppSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisSysProtSuppEntry 1 }
+
+usdIsisSysProtSuppProtocol OBJECT-TYPE
+    SYNTAX      SupportedProtocol
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "One supported protocol.  This object follows the index behaviour."
+    ::= { usdIsisSysProtSuppEntry 2 }
+
+usdIsisSysProtSuppRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The state of the usdIsisSysProtSuppEntry.  This object follows the
+        RowStatus behavior."
+    DEFVAL    { active }
+    ::= { usdIsisSysProtSuppEntry 3 }
+
+-- The Summary Address Table
+
+-- The Summary Address Table contains the set of summary addresses manually
+-- configured for each instance of IP Integrated ISIS on the system.
+
+usdIsisSummAddrTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisSummAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The set of IP summary addresses to use in forming the contents of Level
+        2 LSPs originated by this level 2 Intermediate System."
+    ::= { usdIsisSystemGroup 4 }
+
+usdIsisSummAddrEntry OBJECT-TYPE
+    SYNTAX      UsdIsisSummAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains one IP summary address."
+    INDEX     { usdIsisSummAddrSysInstance,
+                usdIsisSummAddress,
+                usdIsisSummAddrMask }
+    ::= { usdIsisSummAddrTable 1 }
+
+UsdIsisSummAddrEntry ::= SEQUENCE {
+    usdIsisSummAddrSysInstance      Integer32,
+    usdIsisSummAddress              IpAddress,
+    usdIsisSummAddrMask             IpAddress,
+    usdIsisSummAddrRowStatus        RowStatus,
+    usdIsisSummAddrOperState        OperState,
+    usdIsisSummAddrDefaultMetric    Integer32,
+    usdIsisSummAddrDelayMetric      OtherMetric,
+    usdIsisSummAddrExpenseMetric    OtherMetric,
+    usdIsisSummAddrErrorMetric      OtherMetric,
+    usdIsisSummLevel                INTEGER }
+
+usdIsisSummAddrSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviours."
+    ::= { usdIsisSummAddrEntry 1 }
+
+usdIsisSummAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The IP Address value for this summary address.  This object follows the
+        index behaviour."
+    ::= { usdIsisSummAddrEntry 2 }
+
+usdIsisSummAddrMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The mask value for this summary address.  This object follows the index
+        behaviour."
+    ::= { usdIsisSummAddrEntry 3 }
+
+usdIsisSummAddrRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The existence state of this summary address.  This object follows the
+        RowStatus behaviour."
+    ::= { usdIsisSummAddrEntry 4 }
+
+usdIsisSummAddrOperState OBJECT-TYPE
+    SYNTAX      OperState
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The operational state of this entry.  This object follows the
+        operationalState behaviour.  When the operational state changes if this
+        would cause the contents of LSPs originated by the system to change then
+        those new LSPs must be generated and sent as soon as is permitted by the
+        ISIS protocol."
+    ::= { usdIsisSummAddrEntry 5 }
+
+usdIsisSummAddrDefaultMetric OBJECT-TYPE
+    SYNTAX      Integer32 (0..16777214)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The default metric value to announce this summary address with in Level
+        1 or 2 LSPs generated by this system.  A Metric value of 0 indicates to
+        use the lowest metric value amongst the routes being summarized.  When
+        advertising a metric value into a narrow domain (usdIsisSysL1MetricStyle
+        or usdIsisSysL2MetricStyle is set to usdIsisMetricStyleNarrow) the value
+        will be truncated to 63."
+    ::= { usdIsisSummAddrEntry 6 }
+
+usdIsisSummAddrDelayMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The delay metric value to announce this summary address with in Level 2
+        LSPs generated by this system.  The value of zero is reserved to
+        indicate that this metric is not supported."
+    ::= { usdIsisSummAddrEntry 7 }
+
+usdIsisSummAddrExpenseMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The expense metric value to announce this summary address with in Level
+        2 LSPs generated by this system.  The value of zero is reserved to
+        indicate that this metric is not supported."
+    ::= { usdIsisSummAddrEntry 8 }
+
+usdIsisSummAddrErrorMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The error metric value to announce this summary address with in Level n
+        LSPs generated by this system.  The value of zero is reserved to
+        indicate that this metric is not supported."
+    ::= { usdIsisSummAddrEntry 9 }
+
+usdIsisSummLevel OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    level1IS(1),
+                    level2IS(2),
+                    level1l2IS(3) }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The level of database at which to annouce this summary."
+    ::= { usdIsisSummAddrEntry 10 }
+
+-- The Circuit Group
+
+-- The Circuit Group is current
+
+-- The Circuit Table
+-- Each broadcast or point-to-point interface on the system corresponds to one
+-- entry in the Circuit table.
+
+usdIsisCircTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisCircEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The table of circuits used by each instance of Integrated IS-IS on this
+        system."
+    ::= { usdIsisCircuitGroup 1 }
+
+usdIsisCircEntry OBJECT-TYPE
+    SYNTAX      UsdIsisCircEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An usdIsisCircEntry exists for each circuit used by Integrated IS-IS on
+        this system."
+    INDEX     { usdIsisCircSysInstance,
+                usdIsisCircIfIndex }
+    ::= { usdIsisCircTable 1 }
+
+UsdIsisCircEntry ::= SEQUENCE {
+    usdIsisCircSysInstance          Integer32,
+    usdIsisCircIfIndex              Integer32,
+    usdIsisCircLocalID              Integer32,
+    usdIsisCircOperState            OperState,
+    usdIsisCircRowStatus            RowStatus,
+    usdIsisCircType                 INTEGER,
+    usdIsisCircL1DefaultMetric      UsdDefaultMetric,
+    usdIsisCircL1DelayMetric        OtherMetric,
+    usdIsisCircL1ExpenseMetric      OtherMetric,
+    usdIsisCircL1ErrorMetric        OtherMetric,
+    usdIsisCircExtDomain            TruthValue,
+    usdIsisCircAdjChanges           Counter32,
+    usdIsisCircInitFails            Counter32,
+    usdIsisCircRejAdjs              Counter32,
+    usdIsisCircOutCtrlPDUs          Counter32,
+    usdIsisCircInCtrlPDUs           Counter32,
+    usdIsisCircIDFieldLenMismatches Counter32,
+    usdIsisCircL2DefaultMetric      UsdDefaultMetric,
+    usdIsisCircL2DelayMetric        OtherMetric,
+    usdIsisCircL2ExpenseMetric      OtherMetric,
+    usdIsisCircL2ErrorMetric        OtherMetric,
+    usdIsisCircManL2Only            TruthValue,
+    usdIsisCircL1ISPriority         ISPriority,
+    usdIsisCircL1CircID             CircuitID,
+    usdIsisCircL1DesIS              SystemID,
+    usdIsisCircLANL1DesISChanges    Counter32,
+    usdIsisCircL2ISPriority         ISPriority,
+    usdIsisCircL2CircID             CircuitID,
+    usdIsisCircL2DesIS              SystemID,
+    usdIsisCircLANL2DesISChanges    Counter32,
+    usdIsisCircMCAddr               INTEGER,
+    usdIsisCircPtToPtCircID         CircuitID,
+    usdIsisCircL1HelloTimer         Integer32,
+    usdIsisCircL2HelloTimer         Integer32,
+    usdIsisCircL1HelloMultiplier    Integer32,
+    usdIsisCircL2HelloMultiplier    Integer32,
+    usdIsisCircMinLSPTransInt       Integer32,
+    usdIsisCircMinLSPReTransInt     Integer32,
+    usdIsisCircL1CSNPInterval       Integer32,
+    usdIsisCircL2CSNPInterval       Integer32,
+    usdIsisCircLSPThrottle          Integer32,
+    usdIsisCircMeshGroupEnabled     INTEGER,
+    usdIsisCircMeshGroup            Integer32,
+    usdIsisCircLevel                INTEGER,
+    usdIsisCircState                INTEGER }
+
+usdIsisCircSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisCircEntry 1 }
+
+usdIsisCircIfIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The value of ifIndex for the interface to which this circuit
+        corresponds."
+    ::= { usdIsisCircEntry 2 }
+
+usdIsisCircLocalID OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An identification that can be used in protocol packets to identify a
+        circuit.  Implementations may devise ways to assure that this value is
+        suitable for the circuit it is used on.  LAN packets only have space for
+        8 bits.
+
+        Values of usdIsisCircLocalID do not need to be unique.  They are only
+        required to differ on LANs where the Intermediate System is the
+        Designated Intermediate System."
+    ::= { usdIsisCircEntry 3 }
+
+usdIsisCircOperState OBJECT-TYPE
+    SYNTAX      OperState
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The operational state of the circuit.  This object follows the
+        operationalState behaviour."
+    DEFVAL    { off }
+    ::= { usdIsisCircEntry 4 }
+
+usdIsisCircRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The existence state of this circuit.  This object follows the RowStatus
+        behaviour."
+    DEFVAL    { active }
+    ::= { usdIsisCircEntry 5 }
+
+usdIsisCircType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    broadcast(1),
+                    ptToPt(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The type of the circuit.  This object follows the
+        replaceOnlyWhileDisabled behaviour.  The type specified must be
+        compatible with the type of the interface defined by the value of
+        usdIsisCircIfIndex."
+    REFERENCE
+        "ISIS.aoi type (33)"
+    ::= { usdIsisCircEntry 6}
+
+usdIsisCircL1DefaultMetric OBJECT-TYPE
+    SYNTAX      UsdDefaultMetric
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The default metric value of this circuit for Level 1 traffic."
+    REFERENCE
+        "ISIS.aoi l1DefaultMetric (35)"
+    DEFVAL    { 10 }
+    ::= { usdIsisCircEntry 7 }
+
+usdIsisCircL1DelayMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The delay metric value of this circuit for Level 1 traffic.  The value
+        of zero is reserved to indicate that this metric is not supported."
+    REFERENCE
+        "ISIS.aoi l1DelayMetric (36)"
+    DEFVAL    { 0 }
+    ::= { usdIsisCircEntry 8 }
+
+usdIsisCircL1ExpenseMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The expense metric value of this circuit for Level 1 traffic.  The
+        value of zero is reserved to indicate that this metric is not
+        supported."
+    REFERENCE
+        "ISIS.aoi l1ExpenseMetric (37)"
+    DEFVAL    { 0 }
+    ::= { usdIsisCircEntry 9 }
+
+usdIsisCircL1ErrorMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The error metric value of this circuit for Level 1 traffic.  The value
+        of zero is reserved to indicate that this metric is not supported."
+    REFERENCE
+        "ISIS.aoi l1ErrorMetric (38)"
+    DEFVAL    { 0 }
+    ::= { usdIsisCircEntry 10 }
+
+usdIsisCircExtDomain OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "If true, suppress normal transmission of and interpretation of
+        Intra-domain ISIS PDUs on this circuit."
+    REFERENCE
+        "ISIS.aoi externalDomain (46)"
+    DEFVAL    { false }
+    ::= { usdIsisCircEntry 11 }
+
+usdIsisCircAdjChanges OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times an adjacency state change has occurred on this
+        circuit."
+    REFERENCE
+        "ISIS.aoi changesInAdjacencyState (40)"
+    ::= { usdIsisCircEntry 12 }
+
+usdIsisCircInitFails OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times initialization of this circuit has failed."
+    REFERENCE
+        "ISIS.aoi initializationFailures (41)"
+    ::= { usdIsisCircEntry 13 }
+
+usdIsisCircRejAdjs OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times an adjacency has been rejected on this circuit."
+    REFERENCE
+        "ISIS.aoi rejectedAdjacencies (42)"
+    ::= { usdIsisCircEntry 14 }
+
+usdIsisCircOutCtrlPDUs OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of IS-IS control PDUs sent on this circuit."
+    REFERENCE
+        "ISIS.aoi iSISControlPDUsSent (43)"
+    ::= { usdIsisCircEntry 15 }
+
+usdIsisCircInCtrlPDUs OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of IS-IS control PDUs received on this circuit."
+    REFERENCE
+        "ISIS.aoi controlPDUsReceived (44)"
+    ::= { usdIsisCircEntry 16 }
+
+usdIsisCircIDFieldLenMismatches OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times an IS-IS control PDU with an ID field length
+        different to that for this system has been received."
+    REFERENCE
+        "ISIS.aoi iDFieldLengthMismatches (25)"
+    ::= { usdIsisCircEntry 17 }
+
+-- The following objects map those from the linkageISISLevel2-P
+-- package
+
+usdIsisCircL2DefaultMetric OBJECT-TYPE
+    SYNTAX      UsdDefaultMetric
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The default metric value of this circuit for level 2 traffic."
+    REFERENCE
+        "ISIS.aoi l2DefaultMetric (68)"
+    DEFVAL    { 10 }
+    ::= { usdIsisCircEntry 18 }
+
+usdIsisCircL2DelayMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The delay metric value of this circuit for level 2 traffic.  The value
+        of zero is reserved to indicate that this metric is not supported."
+    REFERENCE
+        "ISIS.aoi l2DelayMetric (69)"
+    DEFVAL    { 0 }
+    ::= { usdIsisCircEntry 19 }
+
+usdIsisCircL2ExpenseMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The expense metric value of this circuit for level 2 traffic.  The
+        value of zero is reserved to indicate that this metric is not
+        supported."
+    REFERENCE
+        "ISIS.aoi l2ExpenseMetric (70)"
+    DEFVAL    { 0 }
+    ::= { usdIsisCircEntry 20 }
+
+usdIsisCircL2ErrorMetric OBJECT-TYPE
+    SYNTAX      OtherMetric
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The error metric value of this circuit for level 2 traffic.  The value
+        of zero is reserved to indicate that this metric is not supported."
+    REFERENCE
+        "ISIS.aoi l2ErrorMetric (71)"
+    DEFVAL    { 0 }
+    ::= { usdIsisCircEntry 21 }
+
+usdIsisCircManL2Only OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "When true, indicates that this circuit is to be used only for level 2.
+        This object follows the replaceOnlyWhileDisabled behaviour."
+    REFERENCE
+        "ISIS.aoi manualL2OnlyMode (72)"
+    DEFVAL    { false }
+    ::= { usdIsisCircEntry 22 }
+
+-- The following objects map those from the
+-- linkageISISBroadcast-P package
+
+usdIsisCircL1ISPriority OBJECT-TYPE
+    SYNTAX      ISPriority
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The priority for becoming LAN Level 1 Deignated Intermediate System on
+        a broadcast circuit."
+    REFERENCE
+        "ISIS.aoi l1IntermediateSystemPriority (47)"
+    DEFVAL    { 64 }
+    ::= { usdIsisCircEntry 23 }
+
+usdIsisCircL1CircID OBJECT-TYPE
+    SYNTAX      CircuitID
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The LAN ID allocated by the LAN Level 1 Designated Intermediate System.
+        Where this system is not aware of the value (because it is not
+        participating in the Level 1 Designated Intermediate System election),
+        this object has the value which would be proposed for this circuit (i.e.
+        the concatenation of the local system ID and the one octet local Circuit
+        ID for this circuit."
+    REFERENCE
+        "ISIS.aoi l1CircuitID (48)"
+    ::= { usdIsisCircEntry 24 }
+
+usdIsisCircL1DesIS OBJECT-TYPE
+    SYNTAX      SystemID
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ID of the LAN Level 1 Designated Intermediate System on this
+        circuit.  If, for any reason this system is not partaking in the
+        relevant Designated Intermediate System election process, then the value
+        returned is the zero length OCTET STRING."
+    REFERENCE
+        "ISIS.aoi l1DesignatedIntermediateSystem (49)"
+    ::= { usdIsisCircEntry 25 }
+
+usdIsisCircLANL1DesISChanges OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times the LAN Level 1 Designated Intermediate System has
+        changed."
+    REFERENCE
+        "ISIS.aoi lanL1DesignatedIntermediateSystemChanges (50)"
+    ::= { usdIsisCircEntry 26 }
+
+-- The following objects map those from the linkageISISLevel2Broadcast-P package
+
+usdIsisCircL2ISPriority OBJECT-TYPE
+    SYNTAX      ISPriority
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The priority for becoming LAN level 2 Designated Intermediate System."
+    REFERENCE
+        "ISIS.aoi l2IntermediateSystemPriority (73)"
+    DEFVAL    { 64 }
+    ::= { usdIsisCircEntry 27 }
+
+usdIsisCircL2CircID OBJECT-TYPE
+    SYNTAX      CircuitID
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The LAN ID allocated by the LAN Level 2 Designated Intermediate System.
+        Where this system is not aware of this value (because it is not
+        participating in the Level 2 Designated Intermediate System election),
+        this object has the value which would be proposed for this circuit
+        (i.e. the concatenation of the local system ID and the one octet local
+        Circuit ID for this circuit."
+    REFERENCE
+        "ISIS.aoi l2CircuitID (74)"
+    ::= { usdIsisCircEntry 28 }
+
+usdIsisCircL2DesIS OBJECT-TYPE
+    SYNTAX      SystemID
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ID of the LAN Level 2 Designated Intermediate System on this
+        circuit.  If, for any reason, this system is not partaking in the
+        relevant Designated Intermediate System election process, then the value
+        returned is the zero length OCTET STRING."
+    REFERENCE
+        "ISIS.aoi l2DesignatedIntermediateSystem (75)"
+    ::= { usdIsisCircEntry 29 }
+
+usdIsisCircLANL2DesISChanges OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times the LAN Level 2 Designated Intermediate System has
+        changed."
+    REFERENCE
+        "ISIS.aoi lanL2DesignatedIntermediateSystemChanges (76)"
+    ::= { usdIsisCircEntry 30 }
+
+usdIsisCircMCAddr OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    group(1),
+                    functional(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Specifies which type of multicast address will be used for sending
+        HELLO PDUs on this circuit."
+    DEFVAL    { group }
+    ::= { usdIsisCircEntry 31 }
+
+usdIsisCircPtToPtCircID OBJECT-TYPE
+    SYNTAX      CircuitID
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ID of the circuit allocated during initialization.  If no value has
+        been negotiated (either because the adjacency is to an End System, or
+        because initialization has not yet successfully completed), this object
+        has the value which would be proposed for this circuit (i.e. the
+        concatenation of the local system ID and the one octet local Circuit ID
+        for this circuit."
+    REFERENCE
+        "ISIS.aoi ptPtCircuitID (51)"
+    ::= { usdIsisCircEntry 32 }
+
+usdIsisCircL1HelloTimer OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Maximum period, in seconds, between Level 1 IIH PDUs on multiaccess
+        networks.  It is also used as the period between Hellos on point to
+        point circuits.  This object follows the resettingTimer behaviour."
+    REFERENCE
+        "ISIS.aoi iSISHelloTimer (45)"
+    DEFVAL    { 10 }
+    ::= { usdIsisCircEntry 33 }
+
+usdIsisCircL2HelloTimer OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Maximum period, in seconds, between Level 1 IIH PDUs on multiaccess
+        networks.  This object follows the resettingTimer behaviour."
+    REFERENCE
+        "ISIS.aoi iSISHelloTimer (45)"
+    DEFVAL    { 10 }
+    ::= { usdIsisCircEntry 34 }
+
+usdIsisCircL1HelloMultiplier OBJECT-TYPE
+    SYNTAX      Integer32 (3..1000)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This value is multiplied by the corresponding HelloTimer and the result
+        in seconds (rounded up) is used as the holding time in transmitted
+        hellos, to be used by receivers of hello packets from this IS."
+    REFERENCE
+        "ISIS.aoi iSISHelloTimer (45)"
+    DEFVAL    { 3 }
+    ::= { usdIsisCircEntry 35 }
+
+usdIsisCircL2HelloMultiplier OBJECT-TYPE
+    SYNTAX      Integer32 (3..1000)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This value is multiplied by the corresponding HelloTimer and the result
+        in seconds (rounded up) is used as the holding time in transmitted
+        hellos, to be used by receivers of hello packets from this IS"
+    REFERENCE
+        "ISIS.aoi iSISHelloTimer (45)"
+    DEFVAL    { 3 }
+    ::= { usdIsisCircEntry 36 }
+
+usdIsisCircMinLSPTransInt OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Minimum interval, in milliseconds, between transmission of LSPs on a
+        circuit.  This object follows the resettingTimer behaviour.  This timer
+        shall be capable of a resolution not coarser than 10 milliseconds."
+    REFERENCE
+        "ISIS.aoi minimumBroadcastLSPTransmissionInterval (7)"
+    DEFVAL    { 33 }
+    ::= { usdIsisCircEntry 37 }
+
+usdIsisCircMinLSPReTransInt OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Minimum interval, in seconds, between re-transmission of an Level 1 or
+        2 LSP.  This object follows the resettingTimer behaviour."
+    REFERENCE
+        "ISIS.aoi minimumLSPTransmissionInterval (5)"
+    DEFVAL    { 5 }
+    ::= { usdIsisCircEntry 38 }
+
+usdIsisCircL1CSNPInterval OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Interval of time, in seconds, between transmission of Level 1 CSNPs on
+        multiaccess networks if this router is the designated router.  On
+        point-to-point networks the default is to not transmit CSNPs."
+    DEFVAL    { 10 }
+    ::= { usdIsisCircEntry 39 }
+
+usdIsisCircL2CSNPInterval OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Interval of time, in seconds, between transmission of Level 2 CSNPs on
+        multiaccess networks if this router is the designated router.  On
+        point-to-point networks the default is to not transmit CSNPs."
+    DEFVAL    { 10 }
+    ::= { usdIsisCircEntry 40 }
+
+usdIsisCircLSPThrottle OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Minimal interval of time, in milliseconds, between retransmissions of
+        LSPs on a point to point interface."
+    DEFVAL    { 33 }
+    ::= { usdIsisCircEntry 41 }
+
+usdIsisCircMeshGroupEnabled OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    inactive(1),
+                    blocked(2),
+                    set(3) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Is this port a member of a mesh group, or blocked?  Circuits in the
+        same mesh group act as a virtual multiaccess network.  LSPs seen on one
+        circuit in a mesh group will not be flooded to another circuit in the
+        same mesh group."
+    DEFVAL    { inactive }
+    ::= { usdIsisCircEntry 42 }
+
+usdIsisCircMeshGroup OBJECT-TYPE
+    SYNTAX      Integer32 (1..2000000000)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Circuits in the same mesh group act as a virtual multiaccess network.
+        LSPs seen on one circuit in a mesh group will not be flooded to another
+        circuit in the same mesh group.  If usdIsisCircMeshGroupEnabled is false,
+        this value is ignored."
+    DEFVAL    { 1 }
+    ::= { usdIsisCircEntry 43 }
+
+usdIsisCircLevel OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    level1IS(0),
+                    level1l2IS(1),
+                    level2Only(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The type of this circuit.  This object follows the
+        replaceOnlyWhileDisabled behavior."
+    REFERENCE
+        "ISIS.aoi iSType(2)"
+    ::= { usdIsisCircEntry 44 }
+
+usdIsisCircState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                   isisCircuitDown(1),
+                   isisCircuitUp(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The operational state of the circuit."
+    ::= { usdIsisCircEntry 45 }
+
+
+-- The System Host Name Table
+
+-- The System Host Name Table contains a manually configured set of host to
+-- system ID aliases supported by each instance of the Integrated ISIS protocol.
+usdIsisSysHostNameTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisSysHostNameEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains the manually configured set of host name to system
+        ID aliases supported by each instance of the Integrated ISIS protocol."
+    ::= { usdIsisSystemGroup 5 }
+
+usdIsisSysHostNameEntry OBJECT-TYPE
+    SYNTAX      UsdIsisSysHostNameEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains one name to system ID alias supported by an
+        instance of the Integrated ISIS protocol."
+    INDEX     { usdIsisSysHostNameSysInstance,
+                usdIsisSysHostNameSysId }
+    ::= { usdIsisSysHostNameTable 1 }
+
+UsdIsisSysHostNameEntry ::= SEQUENCE {
+    usdIsisSysHostNameSysInstance   Integer32,
+    usdIsisSysHostNameSysId         SystemID,
+    usdIsisSysHostNameAreaAddr      OSINSAddress,
+    usdIsisSysHostNameName          OCTET STRING,
+    usdIsisSysHostNameType          INTEGER,
+    usdIsisSysHostNameRowStatus     RowStatus }
+
+usdIsisSysHostNameSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisSysHostNameEntry 1 }
+
+usdIsisSysHostNameSysId OBJECT-TYPE
+    SYNTAX      SystemID
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ID for the system which this name will be assigned."
+    ::= { usdIsisSysHostNameEntry 2 }
+
+usdIsisSysHostNameAreaAddr OBJECT-TYPE
+    SYNTAX      OSINSAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "A configured area address for the system which this name will be
+        assigned.  This object follows the index behaviour.
+
+        Note: an index for the entry {1, {49.0001} active} in this table would
+        be the ordered pair (1, (0x03 0x49 0x00 0x01)), as the length of an
+        Octet string is part of the OID."
+    ::= { usdIsisSysHostNameEntry 3 }
+
+usdIsisSysHostNameName OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..32))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "A string to use when displaying system data with this system ID."
+    ::= { usdIsisSysHostNameEntry 4 }
+
+usdIsisSysHostNameType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    hostNameTypeStatic(1),
+                    hostNameTypeDynamic(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The type of host name entry."
+    ::= { usdIsisSysHostNameEntry 5 }
+
+usdIsisSysHostNameRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The status of this host name entry.  This object follows the RowStatus
+        behaviour."
+    ::= { usdIsisSysHostNameEntry 6 }
+
+
+-- The Area Authentication Table
+
+-- The Area Authentication Table contains the manually configured set of
+-- authentication keys used to authenticate Level 1 LSPs and SNPs in each
+-- instance of the Integrated ISIS protocol.
+--
+usdIsisSysAreaAuthenticationTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisSysAreaAuthenticationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains the manually configured set of area authentication
+        keys supported by each instance of the Integrated ISIS protocol."
+    ::= { usdIsisSystemGroup 6 }
+
+usdIsisSysAreaAuthenticationEntry OBJECT-TYPE
+    SYNTAX      UsdIsisSysAreaAuthenticationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains one area authentication key supported by an
+        instance of the Integrated ISIS protocol."
+    INDEX     { usdIsisSysAreaAuthenticationSysInstance,
+                usdIsisSysAreaAuthenticationKeyId }
+    ::= { usdIsisSysAreaAuthenticationTable 1 }
+
+UsdIsisSysAreaAuthenticationEntry ::= SEQUENCE {
+    usdIsisSysAreaAuthenticationSysInstance         Integer32,
+    usdIsisSysAreaAuthenticationKeyId               Integer32,
+    usdIsisSysAreaAuthenticationPwd                 OCTET STRING,
+    usdIsisSysAreaAuthenticationKeyType             INTEGER,
+    usdIsisSysAreaAuthenticationStartAcceptTime     AuthTime,
+    usdIsisSysAreaAuthenticationStartGenerateTime   AuthTime,
+    usdIsisSysAreaAuthenticationStopAcceptTime      AuthTime,
+    usdIsisSysAreaAuthenticationStopGenerateTime    AuthTime,
+    usdIsisSysAreaAuthenticationRowStatus           RowStatus }
+
+usdIsisSysAreaAuthenticationSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisSysAreaAuthenticationEntry 1 }
+
+usdIsisSysAreaAuthenticationKeyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the instance to which this row corresponds.
+        This object follows the index behaviour."
+    ::= { usdIsisSysAreaAuthenticationEntry 2 }
+
+usdIsisSysAreaAuthenticationPwd OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (0..20))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The value to be used as the Authentication Key in Level 1 Link State
+        Packets whenever the value of usdIsisSysAreaAuthenticationKeyType has a
+        value of plaintext or hmacMd5.  A modification of
+        usdIsisSysAreaAuthenticationKeyType does not modify the
+        usdIsisSysAreaAuthenticationPwd value.
+
+        Reading this object always results in an OCTET STRING of length zero;
+        authentication may not be bypassed by reading the MIB object."
+    DEFVAL    { "" }
+    ::= { usdIsisSysAreaAuthenticationEntry 3 }
+
+usdIsisSysAreaAuthenticationKeyType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    plaintext(1),
+                    hmacMd5(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "What authentication scheme, if any, is used to protect Level 1 Link
+        State packets and sequence number packets"
+    DEFVAL    { hmacMd5 }
+    ::= { usdIsisSysAreaAuthenticationEntry 4 }
+
+usdIsisSysAreaAuthenticationStartAcceptTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will start to be used to
+        validate level 1 LSPs and SNPs received.  The Default value the start
+        accept time will be the current time when the key was created"
+    ::= { usdIsisSysAreaAuthenticationEntry 5 }
+
+usdIsisSysAreaAuthenticationStartGenerateTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will start to be used to
+        authenticate level 1 LSPs and SNPs transmitted.  The Default value the
+        start accept time will be the current time when the key was created + 2
+        minutes"
+    ::= { usdIsisSysAreaAuthenticationEntry 6 }
+
+usdIsisSysAreaAuthenticationStopAcceptTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will stop being accepted
+        as a valid level 1 LSP and SNP key received.  A value of zero indicates
+        the key will never stop being used to authenticate packets."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysAreaAuthenticationEntry 7 }
+
+usdIsisSysAreaAuthenticationStopGenerateTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will stop being used to
+        authenticate level 1 LSPs and SNPs transmitted.  A value of zero
+        indicates the key will never stop being used to authenticate packets."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysAreaAuthenticationEntry 8 }
+
+usdIsisSysAreaAuthenticationRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The existence state of this authentication key.  This object follows
+        the RowStatus behaviour."
+    ::= { usdIsisSysAreaAuthenticationEntry 9 }
+
+-- The Domain Authentication Table
+
+-- The Domain Authentication Table contains the manually configured set of
+-- authentication keys used to authenticate Level 2 LSPs and SNPs in each
+-- instance of the Integrated ISIS protocol.
+--
+usdIsisSysDomainAuthenticationTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisSysDomainAuthenticationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains the manually configured set of domain
+        authentication keys supported by each instance of the Integrated ISIS
+        protocol."
+    ::= { usdIsisSystemGroup 7 }
+
+usdIsisSysDomainAuthenticationEntry OBJECT-TYPE
+    SYNTAX      UsdIsisSysDomainAuthenticationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains one domain authentication key supported by an
+        instance of the Integrated ISIS protocol."
+    INDEX     { usdIsisSysDomainAuthenticationSysInstance,
+                usdIsisSysDomainAuthenticationKeyId }
+    ::= { usdIsisSysDomainAuthenticationTable 1 }
+
+UsdIsisSysDomainAuthenticationEntry ::= SEQUENCE {
+    usdIsisSysDomainAuthenticationSysInstance       Integer32,
+    usdIsisSysDomainAuthenticationKeyId             Integer32,
+    usdIsisSysDomainAuthenticationPwd               OCTET STRING,
+    usdIsisSysDomainAuthenticationKeyType           INTEGER,
+    usdIsisSysDomainAuthenticationStartAcceptTime   AuthTime,
+    usdIsisSysDomainAuthenticationStartGenerateTime AuthTime,
+    usdIsisSysDomainAuthenticationStopAcceptTime    AuthTime,
+    usdIsisSysDomainAuthenticationStopGenerateTime  AuthTime,
+    usdIsisSysDomainAuthenticationRowStatus         RowStatus }
+
+usdIsisSysDomainAuthenticationSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisSysDomainAuthenticationEntry 1 }
+
+usdIsisSysDomainAuthenticationKeyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the instance to which this row corresponds.
+        This object follows the index behaviour."
+    ::= { usdIsisSysDomainAuthenticationEntry 2 }
+
+usdIsisSysDomainAuthenticationPwd OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (0..20))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The value to be used as the Authentication Key in Level 2 Link State
+        Packets whenever the value of usdIsisSysDomainAuthenticationKeyType has a
+        value of plaintext or hmacMd5.  A modification of
+        usdIsisSysDomainAuthenticationKeyType does not modify the
+        usdIsisSysDomainAuthenticationPwd value.
+
+        Reading this object always results in an OCTET STRING of length zero;
+        authentication may not be bypassed by reading the MIB object."
+    DEFVAL    { "" }
+    ::= { usdIsisSysDomainAuthenticationEntry 3 }
+
+usdIsisSysDomainAuthenticationKeyType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    plaintext(1),
+                    hmacMd5(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "What authentication scheme, if any, is used to protect Level 2 Link
+        State packets and Sequence Number packets"
+    DEFVAL    { hmacMd5 }
+    ::= { usdIsisSysDomainAuthenticationEntry 4 }
+
+usdIsisSysDomainAuthenticationStartAcceptTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will start to be used to
+        validate level 2 LSPs and SNPs received.  The Default value the start
+        accept time will be the current time when the key was created"
+    ::= { usdIsisSysDomainAuthenticationEntry 5 }
+
+usdIsisSysDomainAuthenticationStartGenerateTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will start to be used to
+        authenticate level 2 LSPs and SNPs transmitted.  The Default value the
+        start accept time will be the current time when the key was created + 2
+        minutes"
+    ::= { usdIsisSysDomainAuthenticationEntry 6 }
+
+usdIsisSysDomainAuthenticationStopAcceptTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will stop being accepted
+        as a valid level 2 LSP and SNP key received.  A value of zero indicates
+        the key will never stop being used to authenticate packets."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysDomainAuthenticationEntry 7 }
+
+usdIsisSysDomainAuthenticationStopGenerateTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will stop being used to
+        authenticate level 2 LSPs and SNPs transmitted.  A value of zero
+        indicates the key will never stop being used to authenticate packets."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysDomainAuthenticationEntry 8 }
+
+usdIsisSysDomainAuthenticationRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The existence state of this authentication key.  This object follows
+        the RowStatus behaviour."
+    ::= { usdIsisSysDomainAuthenticationEntry 9 }
+
+-- The Level 1 Circuit Authentication Table
+
+-- The Level 1 Circuit Authentication Table contains the manually configured
+-- set of authentication keys used to authenticate Level 1 hello packets in each
+-- instance of the Integrated ISIS protocol.
+--
+usdIsisSysL1CircAuthenticationTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisSysL1CircAuthenticationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains the manually configured set of Level 1 Circuit
+        authentication keys supported by each instance of the Integrated ISIS
+        protocol."
+    ::= { usdIsisCircuitGroup 2 }
+
+usdIsisSysL1CircAuthenticationEntry OBJECT-TYPE
+    SYNTAX      UsdIsisSysL1CircAuthenticationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains one Level 1 circuit authentication key supported by
+        an instance of the Integrated ISIS protocol."
+    INDEX     { usdIsisSysL1CircAuthenticationSysInstance,
+                usdIsisSysL1CircAuthenticationIfIndex,
+                usdIsisSysL1CircAuthenticationKeyId }
+    ::= { usdIsisSysL1CircAuthenticationTable 1 }
+
+UsdIsisSysL1CircAuthenticationEntry ::= SEQUENCE {
+    usdIsisSysL1CircAuthenticationSysInstance       Integer32,
+    usdIsisSysL1CircAuthenticationIfIndex           Integer32,
+    usdIsisSysL1CircAuthenticationKeyId             Integer32,
+    usdIsisSysL1CircAuthenticationPwd               OCTET STRING,
+    usdIsisSysL1CircAuthenticationKeyType           INTEGER,
+    usdIsisSysL1CircAuthenticationStartAcceptTime   AuthTime,
+    usdIsisSysL1CircAuthenticationStartGenerateTime AuthTime,
+    usdIsisSysL1CircAuthenticationStopAcceptTime    AuthTime,
+    usdIsisSysL1CircAuthenticationStopGenerateTime  AuthTime,
+    usdIsisSysL1CircAuthenticationRowStatus         RowStatus }
+
+usdIsisSysL1CircAuthenticationSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisSysL1CircAuthenticationEntry 1 }
+
+usdIsisSysL1CircAuthenticationIfIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The value of ifIndex for the interface to which this circuit
+        corresponds."
+    ::= { usdIsisSysL1CircAuthenticationEntry 2 }
+
+usdIsisSysL1CircAuthenticationKeyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the instance to which this row corresponds.
+        This object follows the index behaviour."
+    ::= { usdIsisSysL1CircAuthenticationEntry 3 }
+
+usdIsisSysL1CircAuthenticationPwd OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(0..20))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The value to be used as the Authentication Key in Level 1 Hello Packets
+        whenever the value of usdIsisSysL1CircAuthenticationKeyType has a value
+        of hmacMd5.  A modification of usdIsisSysL1CircAuthenticationKeyType does
+        not modify the usdIsisSysL1CircAuthenticationPwd value.
+
+        Reading this object always results in an OCTET STRING of length zero;
+        authentication may not be bypassed by reading the MIB object."
+    DEFVAL    { "" }
+    ::= { usdIsisSysL1CircAuthenticationEntry 4 }
+
+usdIsisSysL1CircAuthenticationKeyType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    plaintext(1),
+                    hmacMd5(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "What authentication scheme, if any, is used to protect Level 1 hello
+        packets."
+    DEFVAL    { hmacMd5 }
+    ::= { usdIsisSysL1CircAuthenticationEntry 5 }
+
+usdIsisSysL1CircAuthenticationStartAcceptTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will start to be used to
+        validate level 1 IIH packets received.  The Default value the start
+        accept time will be the current time when the key was created."
+    ::= { usdIsisSysL1CircAuthenticationEntry 6 }
+
+usdIsisSysL1CircAuthenticationStartGenerateTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will start to be used to
+        authenticate level 1 IIH packets transmitted.  The Default value the
+        start accept time will be the current time when the key was created + 2
+        minutes."
+    ::= { usdIsisSysL1CircAuthenticationEntry 7 }
+
+usdIsisSysL1CircAuthenticationStopAcceptTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will stop being accepted
+        as a valid level 1 IIH packets key received.  A value of zero indicates
+        the key will never stop being used to authenticate packets."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysL1CircAuthenticationEntry 8 }
+
+usdIsisSysL1CircAuthenticationStopGenerateTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will stop being used to
+        authenticate level 1 IIH packets transmitted.  A value of zero indicates
+        the key will never stop being used to authenticate packets."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysL1CircAuthenticationEntry 9 }
+
+usdIsisSysL1CircAuthenticationRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The existence state of this authentication key.  This object follows
+        the RowStatus behaviour."
+    ::= { usdIsisSysL1CircAuthenticationEntry 10 }
+
+-- The Level 2 Circuit Authentication Table
+
+-- The Level 2 Circuit Authentication Table contains the manually configured set
+-- of authentication keys used to authenticate Level 2 hello packets in each
+-- instance of the Integrated ISIS protocol.
+--
+usdIsisSysL2CircAuthenticationTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsdIsisSysL2CircAuthenticationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains the manually configured set of Level 2 Circuit
+        authentication keys supported by each instance of the Integrated ISIS
+        protocol."
+    ::= { usdIsisCircuitGroup 3 }
+
+usdIsisSysL2CircAuthenticationEntry OBJECT-TYPE
+    SYNTAX      UsdIsisSysL2CircAuthenticationEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry contains one Level 2 circuit authentication key supported by
+        an instance of the Integrated ISIS protocol."
+    INDEX     { usdIsisSysL2CircAuthenticationSysInstance,
+                usdIsisSysL2CircAuthenticationIfIndex,
+                usdIsisSysL2CircAuthenticationKeyId }
+    ::= { usdIsisSysL2CircAuthenticationTable 1 }
+
+UsdIsisSysL2CircAuthenticationEntry ::= SEQUENCE {
+    usdIsisSysL2CircAuthenticationSysInstance       Integer32,
+    usdIsisSysL2CircAuthenticationIfIndex           Integer32,
+    usdIsisSysL2CircAuthenticationKeyId             Integer32,
+    usdIsisSysL2CircAuthenticationPwd               OCTET STRING,
+    usdIsisSysL2CircAuthenticationKeyType           INTEGER,
+    usdIsisSysL2CircAuthenticationStartAcceptTime   AuthTime,
+    usdIsisSysL2CircAuthenticationStartGenerateTime AuthTime,
+    usdIsisSysL2CircAuthenticationStopAcceptTime    AuthTime,
+    usdIsisSysL2CircAuthenticationStopGenerateTime  AuthTime,
+    usdIsisSysL2CircAuthenticationRowStatus         RowStatus }
+
+usdIsisSysL2CircAuthenticationSysInstance OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the Integrated IS-IS instance to which this
+        row corresponds.  This object follows the index behaviour."
+    ::= { usdIsisSysL2CircAuthenticationEntry 1 }
+
+usdIsisSysL2CircAuthenticationIfIndex OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The value of ifIndex for the interface to which this circuit
+        corresponds."
+    ::= { usdIsisSysL2CircAuthenticationEntry 2 }
+
+usdIsisSysL2CircAuthenticationKeyId OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The unique identifier of the instance to which this row corresponds.
+        This object follows the index behaviour."
+    ::= { usdIsisSysL2CircAuthenticationEntry 3 }
+usdIsisSysL2CircAuthenticationPwd OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (0..20))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The value to be used as the Authentication Key in Level 2 Hello Packets
+        whenever the value of usdIsisSysL2CircAuthenticationKeyType has a value
+        of hmacMd5.  A modification of usdIsisSysL2CircAuthenticationKeyType does
+        not modify the usdIsisSysL2CircAuthenticationPwd value.
+
+        Reading this object always results in an OCTET STRING of length zero;
+        authentication may not be bypassed by reading the MIB object."
+    DEFVAL    { "" }
+    ::= { usdIsisSysL2CircAuthenticationEntry 4 }
+
+usdIsisSysL2CircAuthenticationKeyType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(0),
+                    plaintext(1),
+                    hmacMd5(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "What authentication scheme, if any, is used to protect Level 2 hello
+        packets."
+    DEFVAL    { hmacMd5 }
+    ::= { usdIsisSysL2CircAuthenticationEntry 5 }
+
+usdIsisSysL2CircAuthenticationStartAcceptTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will start to be used to
+        validate level 2 IIH packets received.  The Default value the start
+        accept time will be the current time when the key was created."
+    ::= { usdIsisSysL2CircAuthenticationEntry 6 }
+
+usdIsisSysL2CircAuthenticationStartGenerateTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will start to be used to
+        authenticate level 2 IIH packets transmitted.  The Default value the
+        start accept time will be the current time when the key was created + 2
+        minutes."
+    ::= { usdIsisSysL2CircAuthenticationEntry 7 }
+
+usdIsisSysL2CircAuthenticationStopAcceptTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will stop being accepted
+        as a valid level 2 IIH packets key received.  A value of zero indicates
+        the key will never stop being used to authenticate packets."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysL2CircAuthenticationEntry 8 }
+
+usdIsisSysL2CircAuthenticationStopGenerateTime OBJECT-TYPE
+    SYNTAX      AuthTime
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this authentication key will stop being used to
+        authenticate level 2 IIH packets transmitted.  A value of zero indicates
+        the key will never stop being used to authenticate packets."
+    DEFVAL    { 0 }
+    ::= { usdIsisSysL2CircAuthenticationEntry 9 }
+
+usdIsisSysL2CircAuthenticationRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The existence state of this authentication key.  This object follows
+        the RowStatus behaviour."
+    DEFVAL    { active }
+    ::= { usdIsisSysL2CircAuthenticationEntry 10 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+usdIsisCompliances  OBJECT IDENTIFIER ::= { usdIsisConformance 1 }
+usdIsisMIBGroups    OBJECT IDENTIFIER ::= { usdIsisConformance 2 }
+
+--
+-- Compliance Statements
+--
+usdIsisCompliance MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting ISIS
+        functionality.  This statement became obsolete when the usdIsisCircState
+        object was added."
+    MODULE   -- usdIsisMIB
+        MANDATORY-GROUPS {
+            usdIsisSystemMgmtGroup,
+            usdIsisCircuitMgmtGroup }
+    ::= { usdIsisCompliances 1 }                                       -- RX 2.0
+
+usdIsisCompliance2 MODULE-COMPLIANCE
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete compliance statement for systems supporting ISIS
+        functionality.  This statement became obsolete when MPSL support was
+        added."
+    MODULE   -- usdIsisMIB
+        MANDATORY-GROUPS {
+            usdIsisSystemMgmtGroup,
+            usdIsisCircuitMgmtGroup2 }
+    ::= { usdIsisCompliances 2 }                                       -- RX 3.0
+
+usdIsisCompliance3 MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for systems supporting ISIS functionality."
+    MODULE   -- usdIsisMIB
+        MANDATORY-GROUPS {
+            usdIsisSystemMgmtGroup2,
+            usdIsisCircuitMgmtGroup2 }
+    ::= { usdIsisCompliances 3 }                                       -- RX 4.0
+
+
+--
+-- Units of Conformance
+--
+usdIsisSystemMgmtGroup OBJECT-GROUP
+    OBJECTS {
+        usdIsisSysVersion,
+        usdIsisSysType,
+        usdIsisSysID,
+        usdIsisSysMaxPathSplits,
+        usdIsisSysMaxLSPGenInt,
+        usdIsisSysOrigL1LSPBuffSize,
+        usdIsisSysMaxAreaAddresses,
+        usdIsisSysMinL1LSPGenInt,
+        usdIsisSysMinL2LSPGenInt,
+        usdIsisSysPollESHelloRate,
+        usdIsisSysWaitTime,
+        usdIsisSysOperState,
+        usdIsisSysL1State,
+        usdIsisSysCorrLSPs,
+        usdIsisSysLSPL1DbaseOloads,
+        usdIsisSysManAddrDropFromAreas,
+        usdIsisSysAttmptToExMaxSeqNums,
+        usdIsisSysSeqNumSkips,
+        usdIsisSysOwnLSPPurges,
+        usdIsisSysIDFieldLenMismatches,
+        usdIsisSysMaxAreaAddrMismatches,
+        usdIsisSysOrigL2LSPBuffSize,
+        usdIsisSysL2State,
+        usdIsisSysLSPL2DbaseOloads,
+        usdIsisSysAuthFails,
+        usdIsisSysLSPIgnoreErrors,
+        usdIsisSysMaxAreaCheck,
+        usdIsisSysSetOverloadBit,
+        usdIsisSysSetOverloadBitStartupDuration,
+        usdIsisSysMaxLspLifetime ,
+        usdIsisSysL1SpfInterval,
+        usdIsisSysL2SpfInterval,
+        usdIsisSysIshHoldTime,
+        usdIsisSysIshConfigTimer,
+        usdIsisSysDistributeDomainWide,
+        usdIsisSysDistance,
+        usdIsisSysL1MetricStyle,
+        usdIsisSysL2MetricStyle,
+        usdIsisSysIsoRouteTag,
+        usdIsisManAreaAddrRowStatus,
+        usdIsisSysProtSuppRowStatus,
+        usdIsisSummAddrRowStatus,
+        usdIsisSummAddrOperState,
+        usdIsisSummAddrDefaultMetric,
+        usdIsisSummAddrDelayMetric,
+        usdIsisSummAddrExpenseMetric,
+        usdIsisSummAddrErrorMetric,
+        usdIsisSummLevel,
+        usdIsisSysHostNameAreaAddr,
+        usdIsisSysHostNameName,
+        usdIsisSysHostNameType,
+        usdIsisSysHostNameRowStatus,
+        usdIsisSysAreaAuthenticationPwd,
+        usdIsisSysAreaAuthenticationKeyType,
+        usdIsisSysAreaAuthenticationStartAcceptTime,
+        usdIsisSysAreaAuthenticationStartGenerateTime,
+        usdIsisSysAreaAuthenticationStopAcceptTime,
+        usdIsisSysAreaAuthenticationStopGenerateTime,
+        usdIsisSysAreaAuthenticationRowStatus,
+        usdIsisSysDomainAuthenticationPwd,
+        usdIsisSysDomainAuthenticationKeyType,
+        usdIsisSysDomainAuthenticationStartAcceptTime,
+        usdIsisSysDomainAuthenticationStartGenerateTime,
+        usdIsisSysDomainAuthenticationStopAcceptTime,
+        usdIsisSysDomainAuthenticationStopGenerateTime,
+        usdIsisSysDomainAuthenticationRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete system level objects for ISIS management functionality.  This
+        group became obsolete when the MPLS management objects were added."
+    ::= { usdIsisMIBGroups 1 }
+
+usdIsisCircuitMgmtGroup OBJECT-GROUP
+    OBJECTS {
+        usdIsisCircLocalID,
+        usdIsisCircOperState,
+        usdIsisCircRowStatus,
+        usdIsisCircType,
+        usdIsisCircL1DefaultMetric,
+        usdIsisCircL1DelayMetric,
+        usdIsisCircL1ExpenseMetric,
+        usdIsisCircL1ErrorMetric,
+        usdIsisCircExtDomain,
+        usdIsisCircAdjChanges,
+        usdIsisCircInitFails,
+        usdIsisCircRejAdjs,
+        usdIsisCircOutCtrlPDUs,
+        usdIsisCircInCtrlPDUs,
+        usdIsisCircIDFieldLenMismatches,
+        usdIsisCircL2DefaultMetric,
+        usdIsisCircL2DelayMetric,
+        usdIsisCircL2ExpenseMetric,
+        usdIsisCircL2ErrorMetric,
+        usdIsisCircManL2Only,
+        usdIsisCircL1ISPriority,
+        usdIsisCircL1CircID,
+        usdIsisCircL1DesIS,
+        usdIsisCircLANL1DesISChanges,
+        usdIsisCircL2ISPriority,
+        usdIsisCircL2CircID,
+        usdIsisCircL2DesIS,
+        usdIsisCircLANL2DesISChanges,
+        usdIsisCircMCAddr,
+        usdIsisCircPtToPtCircID,
+        usdIsisCircL1HelloTimer,
+        usdIsisCircL2HelloTimer,
+        usdIsisCircL1HelloMultiplier,
+        usdIsisCircL2HelloMultiplier,
+        usdIsisCircMinLSPTransInt,
+        usdIsisCircMinLSPReTransInt,
+        usdIsisCircL1CSNPInterval,
+        usdIsisCircL2CSNPInterval,
+        usdIsisCircLSPThrottle,
+        usdIsisCircMeshGroupEnabled,
+        usdIsisCircMeshGroup,
+        usdIsisCircLevel,
+        usdIsisSysL1CircAuthenticationPwd,
+        usdIsisSysL1CircAuthenticationKeyType,
+        usdIsisSysL1CircAuthenticationStartAcceptTime,
+        usdIsisSysL1CircAuthenticationStartGenerateTime,
+        usdIsisSysL1CircAuthenticationStopAcceptTime,
+        usdIsisSysL1CircAuthenticationStopGenerateTime,
+        usdIsisSysL1CircAuthenticationRowStatus,
+        usdIsisSysL2CircAuthenticationPwd,
+        usdIsisSysL2CircAuthenticationKeyType,
+        usdIsisSysL2CircAuthenticationStartAcceptTime,
+        usdIsisSysL2CircAuthenticationStartGenerateTime,
+        usdIsisSysL2CircAuthenticationStopAcceptTime,
+        usdIsisSysL2CircAuthenticationStopGenerateTime,
+        usdIsisSysL2CircAuthenticationRowStatus }
+    STATUS      obsolete
+    DESCRIPTION
+        "Obsolete circuit management objects.  This group became obsolete when
+        the usdIsisCircState object was added."
+    ::= { usdIsisMIBGroups 2 }
+
+usdIsisCircuitMgmtGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdIsisCircLocalID,
+        usdIsisCircOperState,
+        usdIsisCircRowStatus,
+        usdIsisCircType,
+        usdIsisCircL1DefaultMetric,
+        usdIsisCircL1DelayMetric,
+        usdIsisCircL1ExpenseMetric,
+        usdIsisCircL1ErrorMetric,
+        usdIsisCircExtDomain,
+        usdIsisCircAdjChanges,
+        usdIsisCircInitFails,
+        usdIsisCircRejAdjs,
+        usdIsisCircOutCtrlPDUs,
+        usdIsisCircInCtrlPDUs,
+        usdIsisCircIDFieldLenMismatches,
+        usdIsisCircL2DefaultMetric,
+        usdIsisCircL2DelayMetric,
+        usdIsisCircL2ExpenseMetric,
+        usdIsisCircL2ErrorMetric,
+        usdIsisCircManL2Only,
+        usdIsisCircL1ISPriority,
+        usdIsisCircL1CircID,
+        usdIsisCircL1DesIS,
+        usdIsisCircLANL1DesISChanges,
+        usdIsisCircL2ISPriority,
+        usdIsisCircL2CircID,
+        usdIsisCircL2DesIS,
+        usdIsisCircLANL2DesISChanges,
+        usdIsisCircMCAddr,
+        usdIsisCircPtToPtCircID,
+        usdIsisCircL1HelloTimer,
+        usdIsisCircL2HelloTimer,
+        usdIsisCircL1HelloMultiplier,
+        usdIsisCircL2HelloMultiplier,
+        usdIsisCircMinLSPTransInt,
+        usdIsisCircMinLSPReTransInt,
+        usdIsisCircL1CSNPInterval,
+        usdIsisCircL2CSNPInterval,
+        usdIsisCircLSPThrottle,
+        usdIsisCircMeshGroupEnabled,
+        usdIsisCircMeshGroup,
+        usdIsisCircLevel,
+        usdIsisCircState,
+        usdIsisSysL1CircAuthenticationPwd,
+        usdIsisSysL1CircAuthenticationKeyType,
+        usdIsisSysL1CircAuthenticationStartAcceptTime,
+        usdIsisSysL1CircAuthenticationStartGenerateTime,
+        usdIsisSysL1CircAuthenticationStopAcceptTime,
+        usdIsisSysL1CircAuthenticationStopGenerateTime,
+        usdIsisSysL1CircAuthenticationRowStatus,
+        usdIsisSysL2CircAuthenticationPwd,
+        usdIsisSysL2CircAuthenticationKeyType,
+        usdIsisSysL2CircAuthenticationStartAcceptTime,
+        usdIsisSysL2CircAuthenticationStartGenerateTime,
+        usdIsisSysL2CircAuthenticationStopAcceptTime,
+        usdIsisSysL2CircAuthenticationStopGenerateTime,
+        usdIsisSysL2CircAuthenticationRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "The circuit management objects."
+    ::= { usdIsisMIBGroups 3 }
+
+usdIsisSystemMgmtGroup2 OBJECT-GROUP
+    OBJECTS {
+        usdIsisSysVersion,
+        usdIsisSysType,
+        usdIsisSysID,
+        usdIsisSysMaxPathSplits,
+        usdIsisSysMaxLSPGenInt,
+        usdIsisSysOrigL1LSPBuffSize,
+        usdIsisSysMaxAreaAddresses,
+        usdIsisSysMinL1LSPGenInt,
+        usdIsisSysMinL2LSPGenInt,
+        usdIsisSysPollESHelloRate,
+        usdIsisSysWaitTime,
+        usdIsisSysOperState,
+        usdIsisSysL1State,
+        usdIsisSysCorrLSPs,
+        usdIsisSysLSPL1DbaseOloads,
+        usdIsisSysManAddrDropFromAreas,
+        usdIsisSysAttmptToExMaxSeqNums,
+        usdIsisSysSeqNumSkips,
+        usdIsisSysOwnLSPPurges,
+        usdIsisSysIDFieldLenMismatches,
+        usdIsisSysMaxAreaAddrMismatches,
+        usdIsisSysOrigL2LSPBuffSize,
+        usdIsisSysL2State,
+        usdIsisSysLSPL2DbaseOloads,
+        usdIsisSysAuthFails,
+        usdIsisSysLSPIgnoreErrors,
+        usdIsisSysMaxAreaCheck,
+        usdIsisSysSetOverloadBit,
+        usdIsisSysSetOverloadBitStartupDuration,
+        usdIsisSysMaxLspLifetime ,
+        usdIsisSysL1SpfInterval,
+        usdIsisSysL2SpfInterval,
+        usdIsisSysIshHoldTime,
+        usdIsisSysIshConfigTimer,
+        usdIsisSysDistributeDomainWide,
+        usdIsisSysDistance,
+        usdIsisSysL1MetricStyle,
+        usdIsisSysL2MetricStyle,
+        usdIsisSysIsoRouteTag,
+        usdIsisSysMplsTeLevel,
+        usdIsisSysMplsTeRtrIdIfIndex,
+        usdIsisManAreaAddrRowStatus,
+        usdIsisSysProtSuppRowStatus,
+        usdIsisSummAddrRowStatus,
+        usdIsisSummAddrOperState,
+        usdIsisSummAddrDefaultMetric,
+        usdIsisSummAddrDelayMetric,
+        usdIsisSummAddrExpenseMetric,
+        usdIsisSummAddrErrorMetric,
+        usdIsisSummLevel,
+        usdIsisSysHostNameAreaAddr,
+        usdIsisSysHostNameName,
+        usdIsisSysHostNameType,
+        usdIsisSysHostNameRowStatus,
+        usdIsisSysAreaAuthenticationPwd,
+        usdIsisSysAreaAuthenticationKeyType,
+        usdIsisSysAreaAuthenticationStartAcceptTime,
+        usdIsisSysAreaAuthenticationStartGenerateTime,
+        usdIsisSysAreaAuthenticationStopAcceptTime,
+        usdIsisSysAreaAuthenticationStopGenerateTime,
+        usdIsisSysAreaAuthenticationRowStatus,
+        usdIsisSysDomainAuthenticationPwd,
+        usdIsisSysDomainAuthenticationKeyType,
+        usdIsisSysDomainAuthenticationStartAcceptTime,
+        usdIsisSysDomainAuthenticationStartGenerateTime,
+        usdIsisSysDomainAuthenticationStopAcceptTime,
+        usdIsisSysDomainAuthenticationStopGenerateTime,
+        usdIsisSysDomainAuthenticationRowStatus }
+    STATUS      current
+    DESCRIPTION
+        "The system level objects for ISIS management functionality."
+    ::= { usdIsisMIBGroups 4 }
+
+END
