@@ -11,6 +11,7 @@ untold amounts of pain and suffering for the remainder of time.
 Do one of the following;
 
  1) Send me a link to the mibs you want to include
+
  2) Fork this repostiory, add your mibs and send me a pull request
 
 ## Using the MIBS
