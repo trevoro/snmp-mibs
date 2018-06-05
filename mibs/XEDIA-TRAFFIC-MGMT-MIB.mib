@@ -1,0 +1,3602 @@
+-- Open issues:
+
+--   o Do we need an Isolated parameter for a class? (see definition
+--   of "isolated" in Floyd/Jacobson paper).
+
+--   o Do we need the xtmUnsatisfied NOTIFICATION-TYPE (and associated
+--   on/off configuration attribute?)
+
+--   o What are the ranges, units and default values for MaxIdle,
+--   OffTime, and MinIdle?
+
+--   o Should we have a Counter64 version of xtmClassOutOctets?
+
+--   o Are there any other class parameters that can't be modified
+--   once the class is in use? (See the DESCRIPTION of xtmClassEntry.)
+
+-- ================================================================
+
+XEDIA-TRAFFIC-MGMT-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS 
+    MODULE-IDENTITY, OBJECT-TYPE, Gauge32, Integer32, Counter32,
+    NOTIFICATION-TYPE, IpAddress -- , Unsigned32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, DisplayString, TruthValue, RowStatus
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    ifIndex
+        FROM IF-MIB
+    xediaMibs
+        FROM XEDIA-REG
+    ;
+
+xediaTrafficMgmtMIB MODULE-IDENTITY
+    LAST-UPDATED "9907210000Z" -- July 21, 1999      
+    ORGANIZATION "Xedia Corp."
+    CONTACT-INFO
+        "support@xedia.com"
+    DESCRIPTION
+        "This module defines objects for the management of Xedia's
+        proprietary Traffic Management capability. This capability is
+        based on Class-Based Queueing (CBQ).
+
+        The purpose of the Xedia Traffic Management (xtm) function is
+        to share access to an interface's bandwidth based on policies
+        set up by the administrator."
+    ::= { xediaMibs 2 }
+
+-- ================================================================
+-- Top-level organization of the MIB
+-- ================================================================
+
+xtmObjects          OBJECT IDENTIFIER ::= { xediaTrafficMgmtMIB 1 }
+xtmNotifications    OBJECT IDENTIFIER ::= { xediaTrafficMgmtMIB 2 }
+xtmConformance      OBJECT IDENTIFIER ::= { xediaTrafficMgmtMIB 3 }
+
+-- ================================================================
+-- Textual Conventions (datatypes)
+-- ================================================================
+
+-- Hack for pre-1902 compiler:
+Unsigned32 ::= Gauge32
+
+XtmIpAddress ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT    "1d."
+    STATUS          current
+    DESCRIPTION
+        "An IPv4 or IPv6 address. The version can be inferred from
+        length."
+--    SYNTAX          OCTET STRING (SIZE (4 | 16))
+    SYNTAX          IpAddress
+
+XtmProtocol ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT    "d"
+    STATUS          current
+    DESCRIPTION
+        "The value of the IP Protocol field of an IP Datagram
+        Header. This identifies the protocol layer above IP. For
+        example, the value 6 is used for TCP and the value 17 is used
+        for UDP.  The values of this field are defined in the Assigned
+        Numbers RFC."
+    SYNTAX          INTEGER {
+                        any(0),
+                        icmp(1),
+                        tcp(6),
+                        udp(17),
+                        esp(50),
+                        ospf(89)
+                    }
+
+XtmPort ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT    "d"
+    STATUS          current
+    DESCRIPTION
+        "A UDP or TCP port value. The values of this field are defined
+        in the Assigned Numbers RFC."
+    SYNTAX          INTEGER {
+                        any(0),
+                        ftpdata(20),
+                        ftp(21),
+                        telnet(23),
+                        smtp(25),
+                        domain(53),
+                        bootps(67),
+                        bootpc(68),
+                        tftp(69),
+                        gopher(70),
+                        finger(79),
+                        http(80),
+                        pop3(110),
+                        nntp(119),
+                        ntp(123),
+                        snmp(161),
+                        snmpTrap(162),
+                        bgp(179),
+                        ldap(389),
+                        isakmp(500),
+                        ldapSsl(636),
+                        l2tp(1701),
+                        radius(1812)
+                    }
+
+XtmApplicationProtocol ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT    "d"
+    STATUS          current
+    DESCRIPTION
+        "A UDP or TCP application type value."
+    SYNTAX          INTEGER {
+                        none(0),
+                        tcp(1),
+                        udp(2),
+                        ftp(3),
+                        telnet(4),
+                        http(5),
+                        dns(6),
+                        tftp(7),
+                        snmp(8),
+                        smtp(9),
+                        bgp(10),
+                        slaProbe(11),
+                        icmp(12),
+                        ldap(13),
+                        ldapSsl(14),
+                        nntp(15),
+                        ntp(16),
+                        pop3(17),
+                        radius(18),
+                        isakmp(19),
+                        ssh(20),
+                        l2tp(21)
+                    }
+
+XtmBitRate ::= TEXTUAL-CONVENTION
+    STATUS          current
+    DESCRIPTION
+        "A data rate in bits/second."
+    SYNTAX          Integer32 (0..'7FFFFFFF'h)
+
+XtmTosOctet ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT    "1x"
+    STATUS          current
+    DESCRIPTION
+        "A single hexidecimal octet used to specify a type-of-service 
+        (TOS) value or mask."
+    SYNTAX          OCTET STRING (SIZE (1))
+
+XtmRange ::= TEXTUAL-CONVENTION
+    STATUS          current
+    DESCRIPTION
+        "A range of values.  A contiguous range may be specified
+        using a dash (-).  Thus a contiguous range of integers may
+        be expressed as 'lowValue-highValue', e.g. 5-10.  A discontiguous
+        range may be specified using a comma (,) separated list.
+        For example, '1,12,55'.  Contiguous and discontiguous ranges
+        may be combined, as in '1,5-10,12,55'.
+
+        When set, values are added to the existing XtmRange.  For 
+        example, setting '100-200' to the existing range of '1,5-10,12,55'
+        yields the value '1,5-10,12,55,100-200'.
+
+        Values may be deleted from a list using the minus (-) symbol.
+        For example, setting range consisting of '1,5-10,12,55,100-200'
+        to '-55,-150' yields the range string '1,5-10,12,100-149,151-200'.
+        String values may be completely deleted by setting them to the
+        NULL string.
+
+        This textual-convention may be used on a variety of data types,
+        including integers, integer enumerations, IpAddresses, and 
+        OCTET STRINGs."
+    SYNTAX          DisplayString
+
+XtmDlTrafIndex ::= TEXTUAL-CONVENTION
+    STATUS          current
+    DESCRIPTION
+        "An integer used to specify a traffic category to be
+        passed to the datalink.  The meaning of the value
+        depends on the datalink.
+
+        For ATM, the value selects the output VC; if it is
+        non-zero then the VC whose transmit traffic index
+        matches is chosen.  For Ethernet, it indicates the
+        802.1p priority.  For Frame Relay, it indicates the
+    DLCI."
+    SYNTAX          INTEGER (0..65535)
+
+XtmDlTrafFlags ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT    "1x"
+    STATUS          current
+    DESCRIPTION
+        "A single hexadecimal octet used to specify flags to be
+        passed to the datalink.  The meaning of the flags
+        depends on the datalink.
+
+        Currently it is only used by ATM, where 0 means normal
+        traffic and 1 indicates the CLP flag should be set on
+        transmitted traffic."
+    SYNTAX          OCTET STRING (SIZE (1))
+
+
+-- ================================================================
+-- Object Definitions
+-- ================================================================
+
+--
+-- The Interface Information Table
+--
+
+xtmIfInfoTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmIfInfoEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of the traffic management interfaces (CBQ interfaces)
+        in the system. CBQ interfaces are stacked on top of the
+        datalink layer interface (e.g., T3 or Ethernet) that they are
+        managing the traffic for."
+    ::= { xtmObjects 1 }
+
+xtmIfInfoEntry OBJECT-TYPE
+    SYNTAX      XtmIfInfoEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Traffic management information for a given CBQ interface."
+    INDEX       { ifIndex }
+    ::= { xtmIfInfoTable 1 }
+
+XtmIfInfoEntry ::= SEQUENCE {
+    xtmIfInfoHistoryAdmin         INTEGER,
+    xtmIfInfoHistoryTimer         Unsigned32,
+    xtmIfInfoHistoryQDepth        Unsigned32,
+    xtmIfInfoFilteredPkts         Counter32,
+    xtmIfInfoTimeLastModification Unsigned32,
+    xtmIfInfoMaxClasses           Unsigned32,
+    xtmIfInfoAutoClassAgeOut      INTEGER,
+    xtmIfInfoAutoClassAgeTime     INTEGER,
+    xtmIfInfoNumberOfClasses      Counter32
+}
+
+xtmIfInfoHistoryAdmin OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The CBQ wide object to update the History Admin Status of all 
+         class entries under this CBQ layer to either 'enabled' or 'disabled'.
+         CBQ History collection consists of rapidly moving the Class statistics
+         to a fixed length History Ring for collection by a manager."
+    DEFVAL      { disabled }
+    ::= { xtmIfInfoEntry 1 }
+
+xtmIfInfoHistoryTimer OBJECT-TYPE
+    SYNTAX      Unsigned32 (20..72000000)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The interval in  milliseconds to wait between moving the CBQ Class 
+        statistics to the History Ring. The range of acceptable interval
+        values is 20 milliseconds to 20 hours. Modification of this variable
+        while history collection is running may result in the immediate 
+        clearing of all older data for all classes."
+    DEFVAL { 5000 }
+    ::= { xtmIfInfoEntry 2 }
+
+xtmIfInfoHistoryQDepth OBJECT-TYPE
+    SYNTAX      Unsigned32 (10..1000) 
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of entries in the History Ring for each class
+        defined under the specified interface, that is doing a
+        history collection.  This number represents how many 
+        of the entries will be saved before the older entries are 
+        overwritten. Modification of this variable while history
+        collection is running may result in the immediate clearing
+        of all older data for all classes.  "      
+    DEFVAL { 10 }
+    ::= { xtmIfInfoEntry 3 }
+
+xtmIfInfoFilteredPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of packets that were dropped on this interface
+        because they did not match any traffic class (and therefore
+        implicitly had a bandwidth allocation of 0) or that were
+        explicitly filtered by a (bounded) class with a rate of 0
+        bits/second. This value will be a fraction of the
+        ifOutDiscards object for this interface."
+    ::= { xtmIfInfoEntry 4 }
+ 
+xtmIfInfoTimeLastModification OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The sysUpTime value in seconds the last time a configuration change
+        occurred, or an AutoClass was added to the system automatically as a
+        result of flow detection. Note that the value of this object is not 
+        saved to non-volatile storage. A value of zero indicates that no 
+        configuration changes have occurred, nor have AutoClasses been created
+        since the router was reset."
+    ::= { xtmIfInfoEntry 5 }
+
+xtmIfInfoMaxClasses OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of classes that may be added to this interface,
+        including classes added by operators at the command line console or
+        browser, and classes added to the system automatically, as a result 
+        of flow detection. After the number of classes present on the interface
+        matches the value that this object has been set to, no more classes
+        can be created.
+
+        The value of this object can not be set below the current number
+        of classes.  For example, if you currently have 100 classes on
+        cbq.1 and you with to have a maximum of 50 classes you must delete
+        50 classes before setting this object to 50."
+    DEFVAL      { 250 }
+    ::= { xtmIfInfoEntry 6 }
+
+xtmIfInfoAutoClassAgeOut OBJECT-TYPE
+    SYNTAX      INTEGER {
+                   doNotAge (1),
+                   ageOnce (2),
+                   agePeriodically (3)
+                   }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Indicates if auto-classes are to deleted if no activity is seen
+         over a given time period.
+
+         A value of 'doNotAge(1)' incicates that auto-classes are not to
+         be deleted based upon thier activity.
+
+         A value of 'ageOnce(2)' indicates that auto-classes which are not 
+         active over the next xtmIfInfoAutoClassAgeTime period are to
+         be deleted.  When read, the value of 'ageOnce(2) is returned for 
+         approximately xtmIfInfoAutoClassAgeTime seconds, then is set by 
+         the system back to a value of 'doNotAge(1)'.
+
+         A value of 'agePeriodically(3) indicates that auto-classes which
+         are not active over any xtmIfInfoAutoClassAgeTime period are to
+         be deleted."
+    DEFVAL { doNotAge }
+    ::= { xtmIfInfoEntry 7 }
+
+xtmIfInfoAutoClassAgeTime OBJECT-TYPE
+    SYNTAX      INTEGER (10..36000)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of seconds between aging auto-classes.  This value
+        is only affective when xtmIfInfoAutoClassAgeOut has a value
+        other than 'doNotAge(1)'.  Acceptable values range from 10
+        seconds to 10 hours."
+    DEFVAL { 100 }
+    ::= { xtmIfInfoEntry 8 }
+
+xtmIfInfoNumberOfClasses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The aggregate number of configured classes and AutoClasses on this 
+        interface."
+    ::= { xtmIfInfoEntry 9 }
+
+
+--
+-- The Class Definition/Status Table
+--
+
+xtmClassTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmClassEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table is a 'flattened' version of a hierarchical class
+        trees that specify the bandwidth allocation for the CBQ
+        interfaces of the system.
+
+        Each tree is rooted at an interface. A class may either be a
+        leaf, meaning it has no children, or it may be an interior
+        class which has children. As packets are forwarded out an
+        interface, they are compared to the 'flow definition' of each
+        class down the tree until a matching leaf is found or until
+        all classes are traversed. Once a matching class is found, the
+        packet is transmitted or not based on the constraints
+        configured for the class, most importantly the allocated
+        bandwidth as identified by xtmClassRate. If no matching class
+        is found, the packet is dropped.
+
+        The 'flow definition' for a class can be defined based on
+        inclusive ranges of the following packet fields:
+            o Source IP Address (or a domain name)
+            o Destination IP Address (or a domain name)
+            o Protocol above layer 3 (e.g., UDP, TCP, ICMP, etc.)
+            o Source Port (which identifies service, e.g., FTP,
+              Telnet, SMTP, etc.)
+            o Destination Port
+
+        It is important that packets only match zero or one traffic
+        class. In order for this to be true, certain rules must be
+        enforced when classes are defined. Specifically, all 'sibling'
+        classes must be defined using the same criteria. Also,
+        children must use criteria not already specified by one of
+        their ancestors or they must specify a subrange of an already
+        specified criteria. Therefore, this tree would be legal:
+
+        interface 1
+            subnet A
+                protocol UDP
+                    port SNMP
+                protocol TCP
+            subnet B
+
+        But this tree would be illegal:
+
+        interface 2
+            subnet A
+                subnet B (illegal -- not subrange of parent)
+            protocol TCP (illegal -- different criteria than sibling)" 
+    ::= { xtmObjects 2 }
+
+xtmClassEntry OBJECT-TYPE
+    SYNTAX      XtmClassEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a single traffic class. Traffic classes are
+        identified by their associated interface's ifIndex and their
+        name. (Which means class names must be unique for a particular
+        interface.)
+
+        Traffic classes can be created and destroyed using this
+        table's xtmClassRowStatus object. A class cannot be used by
+        the run-time system (xtmClassRowStatus = 'active(1)') if it
+        does not follow the rules listed in the DESCRIPTION of the
+        previous object. In this case, the xtmClassRowStatus will
+        remain 'notReady(3)' and the xtmClassOperStatus will be
+        'downConflict(3)'.
+
+        Also, in order to become active, the user must have specified
+        a valid value for xtmClassParent and xtmClassRate. All other
+        settable objects may be left at their default values.
+
+        Finally, the following objects cannot be modified once the row
+        is active: xtmClassParent, and xtmClassQueueElasticityFactor."
+    INDEX { ifIndex, xtmClassName }
+    ::= { xtmClassTable 1 }
+
+XtmClassEntry ::= SEQUENCE {
+    xtmClassName                    DisplayString,
+    xtmClassParent                  DisplayString,
+        
+    -- "Flow" Definition        
+        
+    xtmClassSrcIpAddrStart          XtmIpAddress,    -- obsolete 
+    xtmClassSrcIpAddrEnd            XtmIpAddress,    -- obsolete 
+    xtmClassDestIpAddrStart         XtmIpAddress,    -- obsolete 
+    xtmClassDestIpAddrEnd           XtmIpAddress,    -- obsolete 
+    xtmClassProtocolStart           XtmProtocol,     -- obsolete 
+    xtmClassProtocolEnd             XtmProtocol,     -- obsolete 
+    xtmClassSrcPortStart            XtmPort,         -- obsolete 
+    xtmClassSrcPortEnd              XtmPort,         -- obsolete 
+    xtmClassDestPortStart           XtmPort,         -- obsolete 
+    xtmClassDestPortEnd             XtmPort,         -- obsolete 
+        
+    -- Configuration Parameters
+        
+    xtmClassRate                    XtmBitRate,
+    xtmClassBounded                 TruthValue,
+    xtmClassPriority                Integer32,
+    xtmClassMaxIdle                 Integer32,
+    xtmClassOffTime                 Integer32,
+    xtmClassMinIdle                 Integer32,
+    xtmClassQueueElasticityFactor   Integer32,
+    xtmClassUnsatisfiedNotifEnable  TruthValue,
+    xtmClassHistoryAdmin            INTEGER,
+        
+    -- Status        
+        
+    xtmClassOperStatus              INTEGER,
+    xtmClassOperMsg                 DisplayString,
+    xtmClassBwUse                   INTEGER,
+    xtmClassUnsatisfied             TruthValue,
+    xtmClassQueueSize               Gauge32,
+    xtmClassRowStatus               RowStatus,
+
+    -- Max Bandwidth 
+
+    xtmClassMaxRate                 XtmBitRate,
+
+    -- AutoClass
+
+    xtmClassAutoClass               TruthValue,
+    xtmClassSaveAutoClassChildren   INTEGER,
+    xtmClassAutoClassChildBwAlloc   XtmBitRate,
+    xtmClassAutoClassChildBounded   TruthValue,
+    xtmClassAutoClassDepth          INTEGER,
+    xtmClassAutoClassResolveAddrs   TruthValue,
+
+    -- Domain Names
+
+    xtmClassSrcDomainName           DisplayString,   -- obsolete
+    xtmClassDestDomainName          DisplayString,   -- obsolete
+
+    -- Tos Controls, packet marking
+
+    xtmClassTosValue                XtmTosOctet,
+    xtmClassTosMask                 XtmTosOctet,
+    xtmClassBorrowTosValue          XtmTosOctet,
+    xtmClassBorrowTosMask           XtmTosOctet,
+
+    -- Tos Controls, packet classification
+
+    xtmClassClassificationTosStart  XtmTosOctet,     -- obsolete 
+    xtmClassClassificationTosEnd    XtmTosOctet,     -- obsolete 
+    xtmClassClassificationTosMask   XtmTosOctet,
+
+    -- Additional configuration parameters
+    xtmClassPeerClassificationOrder Integer32,
+
+    -- New "Flow" definition.
+
+    xtmClassSrcIpAddresses          XtmRange,
+    xtmClassDestIpAddresses         XtmRange,
+    xtmClassSrcPorts                XtmRange,
+    xtmClassDestPorts               XtmRange,
+    xtmClassProtocols               XtmRange,
+    xtmClassApplications            XtmRange,
+    xtmClassClassificationTos       XtmRange,
+    xtmClassSrcDomainNames          XtmRange,
+    xtmClassDestDomainNames         XtmRange,
+    xtmClassOperator                INTEGER,
+
+    -- Datalink traffic handling controls
+
+    xtmClassDlTrafficIndex          XtmDlTrafIndex,
+    xtmClassDlTrafficFlags          XtmDlTrafFlags,
+
+    xtmClassIcmpFilter              BIT STRING,
+    xtmClassConnectionAccounting    INTEGER,
+
+    -- Packet drop event control
+    xtmClassGenEventWhenDroppingPkt TruthValue,
+
+    -- auto class max bandwidth and divisor
+    xtmClassAutoClassChildMaxBwAlloc        XtmBitRate,
+    xtmClassAutoClassChildSrcIpDivisor      INTEGER,
+    xtmClassAutoClassChildDestIpDivisor     INTEGER,
+
+    xtmClassSynProtectMode          INTEGER,
+    -- Class description
+    xtmClassDescription             DisplayString
+}
+
+xtmClassName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..64))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A user-defined name for the traffic class. This is the unique
+        identifier for the class within the scope of the
+        interface. For example, the class that defines the IP address
+        range for a particular customer might be 'Customer Fred Co.'"
+    ::= { xtmClassEntry 1 }
+
+xtmClassParent OBJECT-TYPE          
+    SYNTAX      DisplayString (SIZE (1..64))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Prior to version 2.0, this object has one of the following values:
+            - the value of xtmClassName for the parent class in the
+              hierarchy,
+            - the value 'interface' if the class is directly under
+              the interface, which is the root of the tree, or
+            - the value 'orphan' if the class is defined but not yet
+              inserted into the tree.
+
+        Software version 2.0 and greater introduced traffic classification
+        on both input and output.  The value of this object has one of
+        the following values:
+            - the value of xtmClassName for the parent class in the
+              hierarchy,
+            - the value 'input' if the class is the root of the
+              input classification tree,
+            - the value 'output' if the class is the root of the
+              output classification tree, or
+            - the value 'orphan' if the class is defined but not yet
+              inserted into the tree.
+
+
+        If a parent name is specified, the row cannot become active
+        (have its xtmClassRowStatus set to 'active(1)' unless the
+        parent is valid and is itself active.
+
+        Note that an interface may have several traffic classes with
+        an xtmClassParent of 'interface'.
+
+        Note also that an 'orphan' class cannot become 'active(1)' -
+        it must first have a valid parent specified."
+    DEFVAL      { "interface" }
+    ::= { xtmClassEntry 2 }
+
+xtmClassSrcIpAddrStart OBJECT-TYPE       
+    SYNTAX      XtmIpAddress
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassSrcIpAddresses
+        object.)
+
+        The start of the (inclusive) range of IP source addresses
+        that match this class. An all zeros value for both
+        xtmClassSrcIpAddrStart and xtmClassSrcIpAddrEnd means 'any
+        source address' and both must naturally be the same length."
+    DEFVAL      { '00000000'h }
+    ::= { xtmClassEntry 3 }
+
+xtmClassSrcIpAddrEnd OBJECT-TYPE
+    SYNTAX      XtmIpAddress
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassSrcIpAddresses
+        object.)
+
+        The end of the (inclusive) range of IP source addresses that
+        match this class. An all zeros value for both
+        xtmClassSrcIpAddrStart and xtmClassSrcIpAddrEnd means 'any
+        source address' and both must naturally be the same
+        length. The maximum IPv4 address value is 255.255.255.255
+        decimal. (The similar, 16-byte value is the maximum IPv6
+        value.) The value of this object must be greater than or equal
+        to the value of xtmClassSrcIpAddrStart."
+    DEFVAL      { '00000000'h }
+    ::= { xtmClassEntry 4 }
+
+xtmClassDestIpAddrStart OBJECT-TYPE      
+    SYNTAX      XtmIpAddress
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassSrcIpAddresses
+        object.)
+
+        The start of the (inclusive) range of IP destination
+        addresses that match this class. An all zeros value for both
+        xtmClassDestIpAddrStart and xtmClassDestIpAddrEnd means 'any
+        destination address' and both must naturally be the same
+        length."
+    DEFVAL      { '00000000'h }
+    ::= { xtmClassEntry 5 }
+
+xtmClassDestIpAddrEnd OBJECT-TYPE      
+    SYNTAX      XtmIpAddress
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassSrcIpAddresses
+        object.)
+
+        The end of the (inclusive) range of IP destination addresses
+        that match this class. An all zeros value for both
+        xtmClassDestIpAddrStart and xtmClassDestIpAddrEnd means 'any
+        destination address' and both must naturally be the same
+        length. The maximum IPv4 address value is 255.255.255.255
+        decimal. (The similar, 16-byte value is the maximum IPv6
+        value.) The value of this object must be greater than or equal
+        to the value of xtmClassDestIpAddrStart."
+    DEFVAL      { '00000000'h }
+    ::= { xtmClassEntry 6 }
+
+xtmClassProtocolStart OBJECT-TYPE        
+    SYNTAX      XtmProtocol
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassProtocols
+        object.)
+
+        The start of the (inclusive) range of IP protocols that match
+        this class. The value '0' for both xtmClassProtocolStart and
+        xtmClassProtocolEnd means 'any protocol'."
+    DEFVAL      { any }
+    ::= { xtmClassEntry 7 }
+
+xtmClassProtocolEnd OBJECT-TYPE        
+    SYNTAX      XtmProtocol
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassProtocols
+        object.)
+
+        The end of the (inclusive) range of IP protocols that match
+        this class. The value '0' for both xtmClassProtocolStart and
+        xtmClassProtocolEnd means 'any protocol'. xtmClassProtocolEnd
+        must be greater than or equal to xtmClassProtocolStart."
+    DEFVAL      { any }
+    ::= { xtmClassEntry 8 }
+
+xtmClassSrcPortStart OBJECT-TYPE         
+    SYNTAX      XtmPort
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassSrcPorts
+        object.)
+
+        The start of the (inclusive) range of UDP or TCP source port
+        numbers that match this class. The value '0' for both
+        xtmClassSrcPortStart and xtmClassSrcPortEnd means 'any port'."
+    DEFVAL      { any }
+    ::= { xtmClassEntry 9 }
+
+xtmClassSrcPortEnd OBJECT-TYPE         
+    SYNTAX      XtmPort
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassSrcPorts
+        object.)
+
+        The start of the (inclusive) range of UDP or TCP source port
+        numbers that match this class. The value '0' for both
+        xtmClassSrcPortStart and xtmClassSrcPortEnd means 'any
+        port'. xtmClassSrcPortEnd must be greater than or equal to
+        xtmClassSrcPortStart."
+    DEFVAL      { any }
+    ::= { xtmClassEntry 10 }
+
+xtmClassDestPortStart OBJECT-TYPE         
+    SYNTAX      XtmPort
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassDestPorts
+        object.)
+
+        The start of the (inclusive) range of UDP or TCP destination
+        port numbers that match this class. The value '0' for both
+        xtmClassDestPortStart and xtmClassDestPortEnd means 'any
+        port'."
+    DEFVAL      { any }
+    ::= { xtmClassEntry 11 }
+
+xtmClassDestPortEnd OBJECT-TYPE         
+    SYNTAX      XtmPort
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassDestPorts
+        object.)
+
+        The start of the (inclusive) range of UDP or TCP destination
+        port numbers that match this class. The value '0' for both
+        xtmClassDestPortStart and xtmClassDestPortEnd means 'any
+        port'. xtmClassDestPortEnd must be greater than or equal to
+        xtmClassDestPortStart."
+    DEFVAL      { any }
+    ::= { xtmClassEntry 12 }
+
+xtmClassRate OBJECT-TYPE      
+    SYNTAX      XtmBitRate
+    UNITS       "bits per second"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A fraction of the bandwidth of the root interface to be
+        allocated to this traffic class. Note that specifying 0
+        bits/second effectively filters all traffic that matches this
+        class' flow specification. Also note that the sum of bit rates
+        for all classes defined under the same class must be less
+        than or equal to xtmClassRate of the parent."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 13 }
+
+xtmClassBounded OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The value of this object is 'true(1)' if the class is bounded
+        (can't 'borrow' bandwidth from its parent class) and
+        'false(2)' otherwise."
+    DEFVAL      { false }
+    ::= { xtmClassEntry 14 }
+
+xtmClassPriority OBJECT-TYPE        
+    SYNTAX      Integer32 (1..7)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The priority for this class. The smaller the value, the
+        higher the priority. Delay-sensitive flows (such as video or
+        audio) should be given higher priority values."
+    DEFVAL      { 3 }
+    ::= { xtmClassEntry 15 }
+
+xtmClassMaxIdle OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "tens of nanoseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An upper bound for the average idle time (see the DESCRIPTION
+        of xtmClassStatsIdle). Thus, xtmClassMaxIdle limits the
+        'credit' given to a class that has recently been under its
+        allocation."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 16 }
+
+xtmClassOffTime OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "tens of nanoseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The time interval that an overLimit class must wait before
+        sending another packet. This parameter determines the
+        steady-state burst size for a class when the class is running
+        over its limit."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 17 }
+
+xtmClassMinIdle OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "tens of nanoseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The negative lower bound of the average idle. Thus, a
+        negative minidle lets the router 'remember' that a class has
+        recently used more than its allocated bandwidth."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 18 }
+
+xtmClassQueueElasticityFactor OBJECT-TYPE
+    SYNTAX      Integer32 (0..1000)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A factor used to influence whether this traffic class gets a
+        proportionally larger or smaller queue size than other
+        classes. Other factors in the queue size include the percent
+        bandwidth allocated to this class and the priority."
+    DEFVAL      { 100 }
+    ::= { xtmClassEntry 19 }
+
+xtmClassUnsatisfiedNotifEnable OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether xtmUnsatisfied traps should be generated
+        for this class. By default, this object should have the value
+        'false(2)' and the traps are not sent."
+    DEFVAL      { false }
+    ::= { xtmClassEntry 20 }
+
+xtmClassHistoryAdmin OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object indicating whether the history collection is
+        'enabled' or 'disabled' for the class.  CBQ History collection 
+        consists of rapidly moving the Class statistics to a fixed length
+        History Ring for collection by a manager."
+    DEFVAL      { disabled }
+    ::= { xtmClassEntry 21 }
+
+xtmClassOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2),
+                    downConflict(3),
+                    autoClassActive(4)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The actual operational status of the traffic class. The value
+        'up(1)' means this traffic class is in use, the value
+        'down(2)' indicates the traffic class is not in use either due
+        to an internal problem or because it (or an ancestor) is
+        administratively disabled, and the value 'downConflict(3)'
+        indicates the class definition conflicts with those of its
+        siblings. The value autoClassActive(4) means that the class is
+        a dynamically created AutoClass, which may not be modified in any
+        way until it is saved to Non-Volatile configuration memory. 
+        After an AutoClass is saved to NVRAM, it's operational status 
+        will transistion to up(1)."
+    ::= { xtmClassEntry 22 }
+                    
+xtmClassOperMsg OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The operational message associated with the operational
+        status.  The message usually provides additional information
+        that may not be obvious through the operational status."
+    ::= { xtmClassEntry 23 }
+                    
+xtmClassBwUse OBJECT-TYPE     
+    SYNTAX      INTEGER {
+                    atLimit(1),
+                    underLimit(2),
+                    overLimit(3)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An indication of whether this traffic class has used its
+        allocated bandwidth (as indicated by xtmClassPercent), has not
+        used its allocated bandwidth or has used more than its
+        allocated bandwidth and is therefore 'atLimit(1)',
+        'underLimit(2)', or 'overLimit(3)' respectively."
+    ::= { xtmClassEntry 24 }
+
+xtmClassUnsatisfied OBJECT-TYPE       
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An indication of whether this traffic class is
+        'unsatisfied'. The value of this object is 'true(1)' if it is
+        underLimit and has a persistent backlog, meaning it has
+        packets waiting in its queue. The value is 'false(1)'
+        otherwise. Note that a class can be considered satisfied if it
+        is underLimit and it just hasn't had anything to transmit. 
+
+        The presence of an unsatisfied class indicates that some other
+        class is overLimit and 'hogging' bandwidth. Persistently
+        unsatisfied classes indicate that tuning some of the
+        parameters (such as xtmClassMaxIdle or xtmClassBounded) may be
+        necessary."
+    ::= { xtmClassEntry 25 }
+
+xtmClassQueueSize OBJECT-TYPE       
+    SYNTAX      Gauge32 (0..2048)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The size of the queue associated with this traffic
+        class. This is the maximum number of packets that can be in
+        the queue, not the number that are currently queued (see
+        xtmClassStatsQueuedPkts)."
+    ::= { xtmClassEntry 26 }
+
+xtmClassRowStatus OBJECT-TYPE       
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Traffic classes are created and delected using this object
+        (using the conventions described in RFC1903)."
+    ::= { xtmClassEntry 27 }
+
+xtmClassMaxRate OBJECT-TYPE      
+    SYNTAX      XtmBitRate
+    UNITS       "bits per second"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The maximum bandwidth the class may achieve, including
+        bandwidth allocated to this class, and any bandwidth that
+        may be borrowed. A value of zero (0) indicates that this
+        feature is not being used. The xtmClassMaxRate must be set 
+        to a value higher than the xtmClassRate, but may also exceed
+        the parent class's xtmClassRate."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 28 }
+
+xtmClassAutoClass OBJECT-TYPE      
+    SYNTAX        TruthValue
+    MAX-ACCESS    read-create
+    STATUS        current
+    DESCRIPTION
+        "The CBQ Class object indicating whether the automatic child 
+        class creation capability is 'enabled' or 'disabled' for the 
+        class. Enabling this object allows the class to create child
+        classes based on flow detection, where flows are specified
+        by the class's classification parameters. Disabling this object
+        causes all classes created by flow-detection, and not yet saved
+        to Non-Volatile configuration memory to be destroyed."
+    DEFVAL        { false }
+    ::= { xtmClassEntry 29 }
+
+xtmClassSaveAutoClassChildren OBJECT-TYPE      
+    SYNTAX      INTEGER {
+                    oneLevel(1),
+                    twoLevels(2),
+                    threeLevels(3),
+                    saveInProgress(100),
+                    saveComplete(1000),
+                    ready(10000)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object which controls the save operation of
+        AutoClass children of this class to Non-Volatile configuration
+        memory. Setting this object to oneLevel(1) causes the immediate
+        children of this class to be saved to Non-Volatile configuration
+        memory, and their operational status to transistion to 'up'.
+        Setting this object to twoLevels(2) or threeLevels(3) causes the
+        classes two and three levels down, respectively, to be written
+        to Non-Volatile configuration memory, and their operational status
+        to transistion to 'up'. 
+
+        After this object is set to oneLevel(1), twoLevels(2), or 
+        threeLevels(3), but before all child classes have been written to 
+        Non-Volatile configuration memory, the object will have the value
+        saveInProgress(100) when read. After the save operation is complete,
+        the object will have the value saveComplete(1000).
+
+        Note that for operational convienence, an enumerated value of 
+        ready(10000) is included; setting the object to this value causes
+        no action."
+    DEFVAL      { ready }
+    ::= { xtmClassEntry 30 }
+
+xtmClassAutoClassChildBwAlloc OBJECT-TYPE      
+    SYNTAX      XtmBitRate
+    UNITS       "bits per second"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object which controls the allocation of bandwidth to
+        immediate children of AutoClasses. Each dynamically created child
+        will receive as a guaranteed rate allocation the value specified
+        by xtmClassAutoClassChildBwAlloc, as resources permit. For example,
+        if an AutoClass has a bandiwth allocation of 100M/s, and the 
+        xtmClassAutoClassChildBwAlloc is set to 10M/s, the first ten 
+        dynamically created children will receive 10M/s, and classes created
+        after the tenth class will receive an allocation of 0M/s."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 31 }
+
+xtmClassAutoClassChildBounded OBJECT-TYPE      
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object controlling whether the immediate children of an
+        AutoClass should be bounded. Setting this object to true causes all 
+        children of the AutoClass Parent to be bounded. Setting this object 
+        to false allows all children of the AutoClass Parent to borrow."
+    DEFVAL      { false }
+    ::= { xtmClassEntry 32 }
+
+xtmClassAutoClassDepth OBJECT-TYPE
+    SYNTAX      INTEGER (1..6) 
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object controlling the depth of growth of the sub tree 
+        below the AutoClass Parent. For example, setting this object to the
+        value one (1) causes the AutoClass tree to grow downwards only one
+        level from the AutoClass Parent. This object controls growth in 
+        conjunction with the number of individual classification policies
+        configured. For example, if the xtmClassAutoClassDepth is set to
+        two (2), and the total classification policy for the AutoClass Parent
+        is based on destination ip address only, the depth of the tree is
+        therefore constrained to one (1). However, if the total 
+        classification policy for the AutoClass Parent is based on 
+        destination ip address, plus protocol, plus destination port, and 
+        the xtmClassAutoClassDepth is set to two (2), the total depth of 
+        the tree will be two (2) levels deep from the AutoClass Parent, not 
+        three levels as the number of pieces of classification policy 
+        suggest. In this case, the leaf classes below the AutoClass Parent 
+        will have 2 pieces of classification policy.  Setting the 
+        xtmClassAutoClassDepth value to match the number of pieces of 
+        classification policy used by the AutoClass Parent will result in
+        each class, at each level of the sub-tree below the AutoClass Parent
+        having one piece of classification policy."
+    DEFVAL      { 1 }
+    ::= { xtmClassEntry 33 }
+
+xtmClassAutoClassResolveAddrs  OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        This object is currently not used."
+    ::= { xtmClassEntry 34 }
+
+xtmClassSrcDomainName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassSrcDomainNames
+        object.)
+
+        The domain name of the source host that matches this class.
+
+        Setting this object causes resolution of the source domain 
+        name to an IP address to be initiated.  Once resolved, the
+        xtmClassSrcIpAddrStart and xtmClassSrcIpAddrEnd objects are
+        overwritten with the resolved IP address.  
+
+        The binding between IP address and domain name is maintained
+        idefinitely while the traffic class exists. The units Domain
+        Name Resolver periodically resolves the name. If the IP address 
+        changes, the classes xtmClassSrcIpAddrStart and xtmClassSrcIp-
+        AddrEnd objects are automatically updated. This feature keeps 
+        the mapping data up to date so that when a site changes an IP 
+        address, the traffic specification is updated accordingly.
+
+        Since this object results is modification of xtmClassSrcIpAddr-
+        Start and xtmClassSrcIpAddrEnd care should be taken when mixing 
+        sets of this object with sets of xtmClassSrcIpAddrStart and 
+        xtmClassSrcIpAddrEnd.
+
+        If the unit's Domain Name Resolver component is not up 
+        (xsysDnsOperStatus equal to 'up(1)') an SNMPv1 'Bad Value' or 
+        SNMPv2 'Inconsistent Value' error is returned."
+    DEFVAL      { "" }
+    ::= { xtmClassEntry 35 }
+
+xtmClassDestDomainName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassDestDomainNames
+        object.)
+
+        The domain name of the destination host that matches this class.
+
+        Setting this object causes resolution of the destination domain 
+        name to an IP address to be initiated.  Once resolved, the
+        xtmClassDestIpAddrStart and xtmClassDestIpAddrEnd objects are
+        overwritten with the resolved IP address.  
+
+        The binding between IP address and domain name is maintained
+        idefinitely while the traffic class exists. The units Domain
+        Name Resolver periodically resolves the name. If the IP address 
+        changes, the classes xtmClassDestIpAddrStart and xtmClassDestIp-
+        AddrEnd objects are automatically updated. This feature keeps 
+        the mapping data up to date so that when a site changes an IP 
+        address, the traffic specification is updated accordingly.
+
+        Since this object results is modification of xtmClassDestIpAddr-
+        Start and xtmClassDestIpAddrEnd care should be taken when mixing 
+        sets of this object with sets of xtmClassDestIpAddrStart and 
+        xtmClassDestIpAddrEnd.
+
+        If the unit's Domain Name Resolver component is not up 
+        (xsysDnsOperStatus equal to 'up(1)') an SNMPv1 'Bad Value' or 
+        SNMPv2 'Inconsistent Value' error is returned."
+    DEFVAL      { "" }
+    ::= { xtmClassEntry 36 }
+
+xtmClassTosValue OBJECT-TYPE
+    SYNTAX      XtmTosOctet
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object indicating the value that should  
+        be written into the IP Header Tos octet for packets that 
+        are transmitted from this class, when the class is underlimit
+        or atLimit."
+    DEFVAL      { '00'H }
+    ::= { xtmClassEntry 37 }
+
+xtmClassTosMask OBJECT-TYPE
+    SYNTAX      XtmTosOctet
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This CBQ Class object is used in conjunction with the
+        xtmClassTosValue object to set the IP Header Tos octet 
+        for packets that are transmitted from this class, when 
+        the class is underlimit or atLimit. This object is
+        used to preserve values already present in the octet when
+        new information is written to the field."
+    DEFVAL      { '00'H }
+    ::= { xtmClassEntry 38 }
+
+xtmClassBorrowTosValue OBJECT-TYPE
+    SYNTAX      XtmTosOctet
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object indicating the value that should  
+        be written into the IP Header Tos octet for packets that 
+        are transmitted from this class, when the class is overlimit."
+    DEFVAL      { '00'H }
+    ::= { xtmClassEntry 39 }
+
+xtmClassBorrowTosMask OBJECT-TYPE
+    SYNTAX      XtmTosOctet
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This CBQ Class object is used in conjunction with the
+        xtmClassTosValue object to set the IP Header Tos octet 
+        for packets that are transmitted from this class, when 
+        the class is overlimit. This object is used to preserve 
+        values already present in the octet when new information 
+        is written to the field."
+    DEFVAL      { '00'H }
+    ::= { xtmClassEntry 40 }
+
+xtmClassClassificationTosStart OBJECT-TYPE
+    SYNTAX      XtmTosOctet
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassClassificationTos
+        object.)
+
+        The start of the (inclusive) range of IPv4 Tos Octet values
+        that match this class."
+    DEFVAL      { '00'H }
+    ::= { xtmClassEntry 41 }
+
+xtmClassClassificationTosEnd OBJECT-TYPE
+    SYNTAX      XtmTosOctet
+    MAX-ACCESS  read-create
+    STATUS      obsolete
+    DESCRIPTION
+        "
+        ***********************************************************
+        **                    O b s o l e t e                    **
+        ***********************************************************
+  
+        (This object has been obsoleted by the xtmClassClassificationTos
+        object.)
+
+        The start of the (inclusive) range of IPv4 Tos Octet values
+        that match this class."
+    DEFVAL      { '00'H }
+    ::= { xtmClassEntry 42 }
+
+xtmClassClassificationTosMask OBJECT-TYPE
+    SYNTAX      XtmTosOctet
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This CBQ Class object is used in conjunction with the
+        xtmClassClassificationTos object to classify packets based 
+        on the IP Header Tos octet."
+    DEFVAL      { '00'H }
+    ::= { xtmClassEntry 43 }
+
+xtmClassPeerClassificationOrder OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A positive integer representing the classification order 
+        of peers within the classification hierarchy.  For example,
+        when creating three children under the 'root' class the
+        packet classifier checks incoming packets againts classification
+        parameters from left to right in the order in which the children
+        were created.  Each peer (aka 'sibling') is assigned an xtmClass-
+        PeerClassificationOrder of 100 by default, as shown below.
+
+                            +_______+
+                            | root  |
+                            | class |
+                            +_______+
+                           /    |    \
+                          /     |     \
+                         /      |      \
+                        /       |       \
+                       /        |        \
+                      /         |         \
+                 +_______+  +_______+  +_______+
+                 |   A   |  |   B   |  |   C   |
+                 | class |  | class |  | class |
+                 |  100  |  |  100  |  |  100  | (peer classification order)
+                 +_______+  +_______+  +_______+
+
+        In the figure above, classification order proceeds from A to B
+        to C.  In order to alter this order, this object may be modified.
+        For example, to change the order to C, B A one might assign
+        an xtmClassPeerClassificationOrder of 50 to class C, and an
+        xtmClassPeerClassificationOrder of 150 to class A, resulting in
+        the ordered tree shown below.
+
+                            +_______+
+                            | root  |
+                            | class |
+                            +_______+
+                           /    |    \
+                          /     |     \
+                         /      |      \
+                        /       |       \
+                       /        |        \
+                      /         |         \
+                 +_______+  +_______+  +_______+
+                 |   C   |  |   B   |  |   A   |
+                 | class |  | class |  | class |
+                 |   50  |  |  100  |  |  150  | (peer classification order)
+                 +_______+  +_______+  +_______+
+
+        "
+    DEFVAL      { 100 }
+    ::= { xtmClassEntry 44 }
+
+xtmClassSrcIpAddresses OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The range of IP source addresses that match this class. 
+        An all zeros value means 'any source address'."
+    ::= { xtmClassEntry 45 }
+
+xtmClassDestIpAddresses OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The range of IP destination addresses that match this class. 
+        An all zeros value means 'any destination address'."
+    ::= { xtmClassEntry 46 }
+
+xtmClassProtocols OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The range of IP protocols that match this class. The value '0' 
+        'any protocol'.
+
+        Numeric strings, character strings, and combinations of the two
+        may be used. Valid strings include:
+
+        Numeric String       Character String
+        ______________       ________________
+              1              icmp
+              6              tcp
+             17              udp
+             50              esp
+             89              ospf
+        "
+    ::= { xtmClassEntry 47 }
+
+xtmClassSrcPorts OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The range of UDP or TCP source ports that match this class. 
+        The value '0' 'any port'.
+
+        Numeric strings, character strings, and combinations of the two
+        may be used. Valid strings include, but are not limited to the
+        following:
+
+        Numeric String       Character String
+        ______________       ________________
+             20              ftpdata
+             21              ftp
+             23              telnet
+             25              smtp
+             53              domain
+             67              bootps
+             68              bootpc
+             69              tftp
+             70              gopher
+             79              finger
+             80              http
+            110              pop3
+            119              nntp
+            123              ntp
+            161              snmp
+            162              snmptrap
+            179              bgp
+            389              ldap
+            500              isakmp
+            636              ldapSsl
+           1701              l2tp
+           1812              radius
+        "
+    ::= { xtmClassEntry 48 }
+
+xtmClassDestPorts OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The range of UDP or TCP destination ports that match this class. 
+        The value '0' 'any port'.
+
+        Numeric strings, character strings, and combinations of the two
+        may be used. Valid strings include, but are not limited to the
+        following:
+
+        Numeric String       Character String
+        ______________       ________________
+             20              ftpdata
+             21              ftp
+             23              telnet
+             25              smtp
+             53              domain
+             67              bootps
+             68              bootpc
+             69              tftp
+             70              gopher
+             79              finger
+             80              http
+            110              pop3
+            119              nntp
+            123              ntp
+            161              snmp
+            162              snmptrap
+            179              bgp
+            389              ldap
+            500              isakmp
+            636              ldapSsl
+           1701              l2tp
+           1812              radius
+        "
+    ::= { xtmClassEntry 49 }
+
+xtmClassApplications OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The application level protocol of the class.
+
+        Application classification allows you to classify based on the
+        application level protocol.  Each application has a corresponding
+        'Established' enumeration which specifies that communication can 
+        not be initiated through this class.  For example, 'telnetEstablished'
+        specifies that telnet connections can not pass through this class.
+        'Established' enumerations provide stateful firewall capabily.  For
+        example, in the following configuration, telnet configurations can
+        only be initiated from Host B.  Host A can not initiate a telnet
+        connection.
+                    +__________________________________+
+                    |                                  |
+        Host A _____| telnet class    telnetEstablished|_____ Host B
+                    | on cbq.1        class on cbq.2   |
+                    +__________________________________+
+
+        Numeric strings, character strings, and combinations of the two
+        may be used. Valid strings include the following:
+
+        Numeric String       Character String
+        ______________       ________________
+              1              allTcp
+              2              allTcpEstablished
+              3              allUdp
+              4              allUdpEstablished
+              5              ftp
+              6              ftpEstablished
+              7              telnet
+              8              telnetEstablished
+              9              http
+             10              httpEstablished
+             11              dns
+             12              dnsEstablished
+             13              tftp
+             14              tftpEstablished
+             15              snmp
+             16              snmpEstablished
+             17              httpSSL
+             18              httpSSLEstablished
+             19              smtp
+             20              smtpEstablished
+             21              bgp
+             22              bgpEstablished
+             23              slaProbe
+             24              slaProbeEstablished
+             25              icmp
+             26              icmpEstablished
+             27              ldap
+             28              ldapEstablished
+             29              ldapSsl
+             30              ldapSslEstablished
+             31              nntp
+             32              nntpEstablished
+             33              ntp
+             34              ntpEstablished
+             35              pop3
+             36              pop3Established
+             37              radius
+             38              radiusEstablished
+             39              isakmp
+             40              isakmpEstablished
+             41              ssh
+             42              sshEstablished
+             43              l2tp
+             44              l2tpEstablished
+        "
+    ::= { xtmClassEntry 50 }
+
+xtmClassClassificationTos OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The range of IPv4 Tos Octet values that match this class."
+    ::= { xtmClassEntry 51 }
+
+xtmClassSrcDomainNames OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A list of domain names which are to be dynamically included
+        in the range of source IP addresses."
+    ::= { xtmClassEntry 52 }
+
+xtmClassDestDomainNames OBJECT-TYPE
+    SYNTAX      XtmRange
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A list of domain names which are to be dynamically included
+        in the range of destination IP addresses."
+    ::= { xtmClassEntry 53 }
+
+xtmClassOperator OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    and(1),
+                    or(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An operator applied to all classification parameters of this
+        class.  A value of 'and' indicates that packets must match all 
+        classification parameters specified by the class in order to
+        be classified within the class.  A value of 'or' indicates that
+        packets must match any one of the configured classification
+        parameters specified by the class in order to be classified 
+        within the class.
+
+        For example, consider a class with classification parameters 
+        xtmClassSrcIpAddresses of '198.202.232.10' and xtmClassProtocol 
+        of 'udp'.
+
+        When xtmClassOperator is 'and', packets with IP source addresses
+        of 198.202.232.10 and IP protocol of udp are classified within
+        this class.  Whe xtmClassOperator is 'or', packets with IP source
+        addresses of 198.202.232.10 or IP protocol or udp are classified
+        within this class."
+    DEFVAL      { and }
+    ::= { xtmClassEntry 54 }
+
+xtmClassDlTrafficIndex OBJECT-TYPE
+    SYNTAX      XtmDlTrafIndex
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The traffic index to be passed down to the datalink."
+    ::= { xtmClassEntry 55 }
+
+xtmClassDlTrafficFlags OBJECT-TYPE
+    SYNTAX      XtmDlTrafFlags
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Traffic handling flags to be passed down to the datalink."
+    ::= { xtmClassEntry 56 }
+
+xtmClassIcmpFilter OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    echoReply(0),
+                    destUnreachable(1),
+                    sourceQuench(2),
+                    redirect(3),
+                    echoRequest(4),
+                    ttlExceeded(5),
+                    paramProblem(6),
+                    timeRequest(7),
+                    timeReply(8),
+                    infoRequest(9),
+                    infoReply(10),
+                    maskRequest(11),
+                    maskReply(12)
+                    }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        ""
+    ::= { xtmClassEntry 57 }
+
+xtmClassConnectionAccounting OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2)
+                    }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object enabled and disables connection accounting.
+        When set to 'enabled(1)', connection accounting information
+        is logged when connections are closed."
+    DEFVAL      { disabled }
+    ::= { xtmClassEntry 58 }
+
+xtmClassGenEventWhenDroppingPkt OBJECT-TYPE      
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object controlling whether the class will generate
+         an event message when filtering a packet. Note that a filter
+         class (a class that is filtering all packets which match it) is
+         a class with no bandwidth allocated to it (xtmClassRate == 0) and
+         is also bounded and cannot borrow (xtmClassBounded == true).
+         Also note that filter classes do not queue packets; therefore
+         modifying the xtmClassQueueElasticityFactor has no effect on this
+         class. 
+         It is also important to understand that setting this object to
+         a value of true has performance implications for the system. 
+         During the time it takes to generate the event message, the CPU 
+         cannot be utilized to forward packets. As the system must generate 
+         an event message for each packet that matches the class and is 
+         subsequently dropped, the operator should be cautious and use
+         this feature where truly needed."
+    DEFVAL      { false }
+    ::= { xtmClassEntry 59 }
+
+
+xtmClassAutoClassChildMaxBwAlloc OBJECT-TYPE      
+    SYNTAX      XtmBitRate
+    UNITS       "bits per second"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object which controls the allocation of bandwidth to
+        immediate children of AutoClasses. Each dynamically created child
+        will be allocated a maximum value of bandwidth specified
+        by xtmClassAutoClassChildMaxBwAlloc, as resources permit. For example,
+        if an AutoClass has a bandiwth allocation of 10M/s, and the 
+        xtmClassAutoClassChildMaxBwAlloc should be greater than or equal to 
+        10M/s if xtmClassAutoClassChildBounded is false(2)."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 60 }
+    
+
+xtmClassAutoClassChildSrcIpDivisor OBJECT-TYPE      
+    SYNTAX      INTEGER (0..4294967295)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object which divids the destination IP address
+        into ranges according to its divisor for its immediate children
+        of AutoClasses. Each dynamically created child will be assigned to
+        AutoClass of that range.  For example,
+        an IP range:  198.200.0.0-198.200.0.255,  divisor: 4.
+        The ranges will be divided as following:
+                198.200.0.0     -       198.200.0.63
+                198.200.0.64    -       198.200.0.127
+                198.200.0.128   -       198.200.0.191
+                198.200.0.192   -       198.200.0.255
+        An IP source address of 198.200.0.18 will fall into
+        the range of 198.200.0.0 - 198.200.0.63.
+        Divisor must be a positive number. No divisor will be applied
+        at its zero value."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 61 }
+
+xtmClassAutoClassChildDestIpDivisor OBJECT-TYPE      
+    SYNTAX      INTEGER (0..4294967295)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The CBQ Class object which divids the destination IP address
+        into ranges according to its divisor for its immediate children
+        of AutoClasses. Each dynamically created child will be assigned to
+        AutoClass of that range.  For example,
+        an IP range:  198.200.0.0-198.200.0.255  divisor: 4.
+        The ranges will be divided following:
+                198.200.0.0     -       198.200.0.63
+                198.200.0.64    -       198.200.0.127
+                198.200.0.128   -       198.200.0.191
+                198.200.0.192   -       198.200.0.255
+        An IP destination address of 198.200.0.18 will fall into
+        the range of 198.200.0.0 - 198.200.0.63.
+        Divisor must be a positive number. No divisor will be applied
+        at its zero value."
+    DEFVAL      { 0 }
+    ::= { xtmClassEntry 62 }
+
+xtmClassSynProtectMode OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disabled(1),
+                    monitor(2),
+                    intervene(3)
+                    }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object controls operation of TCP SYN flood protection.
+        It is only relevant when the class is configured using established
+        application classification (see xtmClassApplications).
+
+        When set to 'disabled(1)' no TCP SYN flood protection is provided.
+        When set to 'monitor(2)' the class will reset half open TCP
+        connections as shown below.
+
+        External Net                   CBQ                Internal Host A
+        ============                   ===                ===============
+    
+          SYN                                   SYN
+        _____________________________>       ___________________________>
+                  Firewall intercepts the SYN to host A, records the 
+                  event, and passes the segment.
+    
+          SYN + ACK                             SYN + ACK
+        <____________________________        <___________________________
+                  Firewall intercepts the SYN + ACK to the Internet host 
+                  and correlates it to the first SYN segment, noting that 
+                  the connection is now 'half open', and passes the segment.
+                  Firewall starts a timer.
+    
+        Normal Case
+        ___________
+    
+          ACK                                  ACK
+        ____________________________>        ____________________________>
+                  Firewall intercepts the ACK to Host A, and passes the 
+                  packet.  A ignores the redundant ACK and the connection 
+                  is complete.  Firewall stops its timer.
+    
+        SYN Flood Case
+        ______________
+                                               RST
+                                             ____________________________>
+                  Firewall's timer expires before the Internet host's ACK 
+                  is received. Firewall resets the connection and deletes 
+                  its state information.
+
+
+        When set of 'intervene(3), the class will ACKnowledge half open
+        TCP connections as shown below.
+
+        External Net                   CBQ                Internal Host A
+        ============                   ===                ===============
+
+          SYN                                   SYN
+        _____________________________>       ___________________________>
+                  Firewall intercepts the SYN to host A, records the 
+                  event, and passes the segment.
+    
+          SYN + ACK                             SYN + ACK
+        <____________________________        <___________________________
+                  Firewall intercepts the SYN + ACK to the Internet host 
+                  and correlates it to the first SYN segment, noting that 
+                  the connection is now 'half_open', and passes the segment.
+    
+                                               ACK
+                                             ____________________________>
+                  Firewall send an ACK to host A, which moves the connection 
+                  out of A's backlog queue.  Firewall starts a timer.
+    
+        Normal Case
+        ___________
+    
+          ACK                                  ACK
+        ____________________________>        ____________________________>
+                  Firewall intercepts the ACK to Host A, and passes the 
+                  packet.  A ignores the redundant ACK and the connection 
+                  is complete.  Firewall stops its timer.
+    
+        SYN Flood Case
+        ______________
+                                               RST
+                                             ____________________________>
+                  Firewall's timer expires before the Internet host's ACK 
+                  is received. Firewall resets the connection and deletes 
+                  its state information.
+        "
+    DEFVAL      { disabled }
+    ::= { xtmClassEntry 63 }
+
+xtmClassDescription OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE(0..255))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Textual name associated with this class. "
+    ::= { xtmClassEntry 80 }
+
+--
+-- The Class Statistics Table
+--
+
+xtmClassStatsTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmClassStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table augments the basic class table to add
+        statistics."
+    ::= { xtmObjects 3 }
+
+xtmClassStatsEntry OBJECT-TYPE
+    SYNTAX      XtmClassStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Statistics for a single traffic class."
+    AUGMENTS    { xtmClassEntry }
+    ::= { xtmClassStatsTable 1 }
+
+XtmClassStatsEntry ::= SEQUENCE {
+    xtmClassStatsHighWater      Counter32,
+    xtmClassStatsIdle           Integer32,
+    xtmClassStatsQueuedPkts     Gauge32,
+    xtmClassStatsOctets         Counter32,
+    xtmClassStatsPkts           Counter32,
+    xtmClassStatsOverLimits     Counter32,
+    xtmClassStatsBorrowAttempts Counter32,
+    xtmClassStatsDroppedOctets  Counter32,
+    xtmClassStatsDroppedPkts    Counter32,
+    xtmClassStatsThrottles      Counter32,
+    xtmClassStatsUnsatisfieds   Counter32,
+    xtmClassStatsAggrOctets     Counter32,
+    xtmClassStatsAggrPkts       Counter32
+}
+
+xtmClassStatsHighWater OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The historical maximum number of packets that were queued for
+        this class since the system was last reinitialized."
+    ::= { xtmClassStatsEntry 1 }
+
+xtmClassStatsIdle OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "tens of nanoseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The difference between the desired time and the measured
+        actual time between the most recent packet transmissions for
+        the last two packets sent from this class. When the connection
+        is sending perfectly at its allocated rate, then xtmClassIdle
+        is zero. When the connection is sending more than its
+        allocated bandwidth, then xtmClassIdle is negative."
+    ::= { xtmClassStatsEntry 2 }
+
+xtmClassStatsQueuedPkts OBJECT-TYPE      
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of packets in the class' queue."
+    ::= { xtmClassStatsEntry 3 }
+
+xtmClassStatsOctets OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of bytes transmitted for this traffic class. Note
+        that a class with a configured xtmClassRate of 0 bits/second
+        will never transmit any octets and therefore this object's
+        value will be 0. These filtered octets will be counted as part
+        of xtmClassStatsDroppedOctets."
+    ::= { xtmClassStatsEntry 4 }
+
+xtmClassStatsPkts OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of packets transmitted for this traffic
+        class. Note that a class with a configured xtmClassRate of 0
+        bits/second will never transmit any packets and therefore this
+        object's value will be 0. These filtered packets will be
+        counted as part of xtmClassStatsDroppedPkts and will
+        contribute to xtmIfInfoFilteredPkts for the interface as a
+        whole."
+    ::= { xtmClassStatsEntry 5 }
+
+xtmClassStatsOverLimits OBJECT-TYPE      
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A count of the number of times the class used more than its
+        allocated bandwidth."
+    ::= { xtmClassStatsEntry 6 }
+
+xtmClassStatsBorrowAttempts OBJECT-TYPE  
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A count of the number of times the class attempted to
+        'borrow' bandwidth from another class."
+    ::= { xtmClassStatsEntry 7 }
+
+xtmClassStatsDroppedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A count of the number of octets dropped for this class
+        because of lack of buffer space in the queue or because the
+        class exceeded its allocated bandwidth."
+    ::= { xtmClassStatsEntry 8 }
+    
+xtmClassStatsDroppedPkts OBJECT-TYPE     
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A count of the number of packets dropped for this class
+        because of lack of buffer space in the queue or because the
+        class exceeded its allocated bandwidth."
+    ::= { xtmClassStatsEntry 9 }
+
+xtmClassStatsThrottles OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A count of the number of times the class was throttled (not
+        allowed to transmit packets) by the link-sharing algorithm."
+    ::= { xtmClassStatsEntry 10 }
+
+xtmClassStatsUnsatisfieds OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A count of the number of times the class was unsatisfied, as
+        indicated by the xtmClassUnsatisfied object."
+    ::= { xtmClassStatsEntry 11 }
+    
+xtmClassStatsAggrOctets OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The aggregate number of bytes transmitted by the children of
+        this traffic class."
+    ::= { xtmClassStatsEntry 12 }
+
+xtmClassStatsAggrPkts OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The aggregate number of packets transmitted by the children of
+        this traffic class."
+    ::= { xtmClassStatsEntry 13 }
+
+--
+-- The Class History Table
+--
+
+xtmClassHistoryTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmClassHistoryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table augments the basic class table to add
+        statistics."
+    ::= { xtmObjects 4 }
+
+xtmClassHistoryEntry OBJECT-TYPE
+    SYNTAX      XtmClassHistoryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Statistics for a single traffic class."
+    INDEX { ifIndex, xtmClassName, xtmClassHistoryIndex }
+    ::= { xtmClassHistoryTable 1 }
+
+XtmClassHistoryEntry ::= SEQUENCE {
+    xtmClassHistoryIndex          Unsigned32,
+    xtmClassHistoryHighWater      Counter32,
+    xtmClassHistoryIdle           Integer32,
+    xtmClassHistoryQueuedPkts     Gauge32,
+    xtmClassHistoryOctets         Counter32,
+    xtmClassHistoryPkts           Counter32,
+    xtmClassHistoryOverLimits     Counter32,
+    xtmClassHistoryBorrowAttempts Counter32,
+    xtmClassHistoryDroppedOctets  Counter32,
+    xtmClassHistoryDroppedPkts    Counter32,
+    xtmClassHistoryThrottles      Counter32,
+    xtmClassHistoryUnsatisfieds   Counter32,
+    xtmClassHistoryAggrOctets     Counter32,
+    xtmClassHistoryAggrPkts       Counter32
+}
+
+xtmClassHistoryIndex OBJECT-TYPE       
+    SYNTAX      Unsigned32(1..4294967295)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The index into the History Ring.  The index is incremented
+        for each new statistics entry put onto the ring. When the maximum
+        value is reached, the object wraps.  On a node reset, the 
+        object is reset to 0."
+    ::= { xtmClassHistoryEntry 1 }
+
+xtmClassHistoryHighWater OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's HighWater counter.  It is equivalent to
+        the xtmClassStatsHighWater object."
+    ::= { xtmClassHistoryEntry 2 }
+
+xtmClassHistoryIdle OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "tens of nanoseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Idle value.  It is equivalent to
+        the xtmClassStatsIdle object."
+    ::= { xtmClassHistoryEntry 3 }
+
+xtmClassHistoryQueuedPkts OBJECT-TYPE      
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's QueuedPkts counter.  It is equivalent to
+        the xtmClassStatsQueuedPkts object."
+    ::= { xtmClassHistoryEntry 4 }
+
+xtmClassHistoryOctets OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Octet counter.  It is equivalent to
+        the xtmClassStatsOctets object."
+    ::= { xtmClassHistoryEntry 5 }
+
+xtmClassHistoryPkts OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Packet counter.  It is equivalent to
+        the xtmClassStatsPkts object."
+    ::= { xtmClassHistoryEntry 6 }
+
+xtmClassHistoryOverLimits OBJECT-TYPE      
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Over Limit counter.  It is equivalent to
+        the xtmClassStatsOverLimits object."
+    ::= { xtmClassHistoryEntry 7 }
+
+xtmClassHistoryBorrowAttempts OBJECT-TYPE  
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Borrow Attempts counter.  It is equivalent to
+        the xtmClassStatsBorrowAttempts object."
+    ::= { xtmClassHistoryEntry 8 }
+
+xtmClassHistoryDroppedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Dropped Octets counter.  It is equivalent to
+        the xtmClassStatsDroppedOctets object."
+    ::= { xtmClassHistoryEntry 9 }
+    
+xtmClassHistoryDroppedPkts OBJECT-TYPE     
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Dropped Packets counter.  It is equivalent to
+        the xtmClassStatsDroppedPkts object."
+    ::= { xtmClassHistoryEntry 10 }
+
+xtmClassHistoryThrottles OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Throttle counter.  It is equivalent to
+        the xtmClassStatsThrottles object."
+    ::= { xtmClassHistoryEntry 11 }
+
+xtmClassHistoryUnsatisfieds OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's Unsatisfied counter.  It is equivalent to
+        the xtmClassStatsUnsatisfied object."
+    ::= { xtmClassHistoryEntry 12 }
+    
+xtmClassHistoryAggrOctets OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's aggregate Octet counter.  It is equivalent to
+        the xtmClassStatsAggrOctets object."
+    ::= { xtmClassHistoryEntry 13 }
+
+xtmClassHistoryAggrPkts OBJECT-TYPE       
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The history table's aggregate Packet counter.  It is equivalent to
+        the xtmClassStatsAggrPkts object."
+    ::= { xtmClassHistoryEntry 14 }
+
+--
+-- The Class Display Table
+--
+
+xtmClassDisplayTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmClassDisplayEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains a read-only display of the traffic
+        management class hierarchy in indented format. For each CBQ
+        interface in the system, the first row for that interface will
+        be for the root class. The following rows will have the other
+        classes under that interface in appropriate order and with
+        xtmClassDisplayString values starting with blank spaces to
+        show the hierarchy as an outline."
+    ::= { xtmObjects 5 }
+
+xtmClassDisplayEntry OBJECT-TYPE
+    SYNTAX      XtmClassDisplayEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about one traffic class in the system."
+    INDEX       { ifIndex, xtmClassDisplayIndex }
+    ::= { xtmClassDisplayTable 1 }
+    
+XtmClassDisplayEntry ::= SEQUENCE {
+    xtmClassDisplayIndex    Integer32,
+    xtmClassDisplayString   DisplayString
+}
+
+xtmClassDisplayIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The row number in the table."
+    ::= { xtmClassDisplayEntry 1 }
+
+xtmClassDisplayString OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A descriptive string for the class. This string will contain
+       (at least) the class name of the corresponding traffic
+       class. The string will start with blank space in order to
+       indent the text so that the resulting table presents an
+       outline view of the traffic class tree."
+    ::= { xtmClassDisplayEntry 2 }
+
+--
+-- The Application Timeout Table
+--
+
+xtmApplicationInitialTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (15..86400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The amount of time, in seconds, after opening a hole in
+        the firewall in which to wait for a response before timing 
+        out an Application Established protocol flow and closing the
+        hole in the firewall.  After initial activity is seen, the
+        protocol's value in the xtmApplicationTimeout table is used
+        to regulate the firewall."
+    DEFVAL      { 30 }
+    ::= { xtmObjects 6 }
+
+xtmApplicationFinRstTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (15..86400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The amount of time, in seconds, after receiving a FIN or RST
+        in which to wait before timing out an Application Established 
+        protocol flow.  Prior to seeing a TCP FIN or RST segment
+        the protocol's value in the xtmApplicaitonTimeout table is
+        used to regulate the firewall."
+    DEFVAL       { 120 }
+    ::= { xtmObjects 7 }
+
+xtmApplicationTimeoutTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmApplicationTimeoutEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table is used to specify timeout values for application
+        classes.  Application classes are class whose flow definition
+        includes a non-zero xpcApplicationClass.  For example, the
+        'telnet' and 'ftp' application classes."
+    ::= { xtmObjects 8 }
+
+xtmApplicationTimeoutEntry OBJECT-TYPE
+    SYNTAX      XtmApplicationTimeoutEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A per application class entry specifying timeout values for
+        the application class."
+    INDEX       { xtmApplicationInactiveIndex }
+    ::= {  xtmApplicationTimeoutTable 1 }
+
+
+XtmApplicationTimeoutEntry ::= SEQUENCE {
+    xtmApplicationInactiveIndex         XtmApplicationProtocol,
+    xtmApplicationInactiveTimeout       Integer32,
+    xtmApplicationInactiveTimeoutAction INTEGER
+}
+
+xtmApplicationInactiveIndex OBJECT-TYPE
+    SYNTAX      XtmApplicationProtocol
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Index into the XpcApplicationTimeoutTable."
+    ::= { xtmApplicationTimeoutEntry 1 }
+
+xtmApplicationInactiveTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (0 | 15..86400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The amount of time, in seconds, before timing out inactive 
+        Application protocol flows.  This value is in affect after
+        initial activity is seen within the flow, and prior to seeing
+        a FIN or RST segment for the flow.
+
+        A value of zero indicates that the entry should never be aged."
+    ::= { xtmApplicationTimeoutEntry 2 }
+
+xtmApplicationInactiveTimeoutAction OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    age(1),
+                    ageAndReset(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "When set to 'age(1)' connection table entries which exceed
+        the value of xtmApplicationInactiveTimeout are removed from
+        the connection table.  When set to 'ageAndReset(2)' connection
+        table entries which exceed the value of xtmApplicationInactiveTimeout
+        are removed and both ends of the connection are reset."
+    ::= { xtmApplicationTimeoutEntry 3 }
+
+--
+-- IP Fragment Filtering.
+--
+
+xtmFragmentControl OBJECT IDENTIFIER ::= { xtmObjects 9 }
+
+xtmIpFragmentTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF  XtmIpFragmentEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table is used to monitor and control IP fragments
+        traversing the XTM layer."
+    ::= { xtmFragmentControl 1 }
+
+xtmIpFragmentEntry OBJECT-TYPE
+    SYNTAX      XtmIpFragmentEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A per interface entry for monitor and control of IP fragments."
+    INDEX       { ifIndex }
+    ::= {  xtmIpFragmentTable 1 }
+
+
+XtmIpFragmentEntry ::= SEQUENCE {
+    xtmIpFragmentDisposition    INTEGER,
+    xtmIpFragmentMaxSize        INTEGER,
+    xtmIpFragmentPkts           Counter32,
+    xtmIpFragmentOctets         Counter32,
+    xtmIpFragmentFilteredPkts   Counter32,
+    xtmIpFragmentFilteredOctets Counter32
+}
+
+xtmIpFragmentDisposition OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    forward(1),
+                    filter(2),
+                    classify(3)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies how to process IP fragments.  Fragments may be either
+        'initial' fragments, 'subsequent' fragments, or 'final' fragments.
+
+           - The value 'forward(1)' indicates the all IP fragments less 
+             than xtmIpFragmentMaxSize are to be forwarded.  Fragments
+             greater than xtmIpFragmentMaxSize are dropped.  Only the
+             initial fragment is classified.  Subsequent fragments are
+             forwarded without passing through the classifier.
+             
+           - The value 'filter(2)' indicates that all IP fragments are 
+             to be dropped, regardless of the value of xtmIpFragmentMaxSize.
+             (This is the same as a value of 'forward(1)' and
+             xtmIpFragmentMaxSize of zero.  It is provided for convenience.)
+
+           - The value 'classify(3)' indicates that all IP fragment less
+             than xtmIpFragmentMaxSize are to be classified.  Fragments
+             greater than xtmIpFragmentMaxSize are dropped.  When this
+             value is selected, the 'initial' fragment *must* be received
+             before any subsequent fragments."
+    DEFVAL      { forward }
+    ::= { xtmIpFragmentEntry 1 }
+
+xtmIpFragmentMaxSize OBJECT-TYPE
+    SYNTAX      INTEGER (0..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The size of the largest fragment which is permitted to be
+        forwarded.  For example, when set to 8192, Ethernet IP 
+        fragments with a fragment offset of 8000 and a length greater
+        than 192 are not permitted."
+    DEFVAL      { 65535 }
+    ::= { xtmIpFragmentEntry 2 }
+
+xtmIpFragmentPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of IP fragments on this interface."
+    ::= { xtmIpFragmentEntry 3 }
+
+xtmIpFragmentOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of bytes in IP fragment packets on this interface."
+    ::= { xtmIpFragmentEntry 4 }
+
+xtmIpFragmentFilteredPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of fragmented IP packets on this interface which
+        were filtered."
+    ::= { xtmIpFragmentEntry 5 }
+
+xtmIpFragmentFilteredOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of bytes in IP fragment packets on this interface
+        which were filtered."
+    ::= { xtmIpFragmentEntry 6 }
+
+--
+-- Fragment Summary
+--
+
+xtmFragmentSummary OBJECT IDENTIFIER ::= { xtmFragmentControl 2 }
+
+xtmIpFragmentInactiveTimeout OBJECT-TYPE
+    SYNTAX      INTEGER (15..3600)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The amount of time, in seconds, before timing out inactive
+        fragmented flows.
+
+        This object is only relevant when the value of
+        xtmIpFragmentDisposition is set to 'classify(3)'.  When 
+        classifying fragments, if a subsequent fragment is not
+        received within this timeout the fragment and all further
+        fragments are dropped."
+    DEFVAL      { 30 }
+    ::= { xtmFragmentSummary 1 }
+
+xtmIpFragmentLastTimeout OBJECT-TYPE
+    SYNTAX      INTEGER (15..3600)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The amount of time, in seconds, to wait after a final fragment
+        in seen before disallowing subsequent IP fragments.  This timeout
+        should be between 0 and the value of xtmIpFragmentInactiveTimeout.
+        A value of zero would not further fragments if the final fragment
+        were delivered out of order.  A value greater than 
+        xtmIpFragmentInactiveTimeout has no affect.  A value less than 
+        xtmIpFragmentInactiveTimeout allows state information to be aged 
+        more quickly after the final fragment is seen.
+
+        This object is only relevant when the value of
+        xtmIpFragmentDisposition is set to 'classify(3)'.  When 
+        classifying fragments, if a subsequent fragment is not
+        received within this timeout the fragment and all further
+        fragments are dropped."
+    DEFVAL      { 15 }
+    ::= { xtmFragmentSummary 2 }
+
+xtmIpFragmentMaxOutstanding OBJECT-TYPE
+    SYNTAX      INTEGER (0..500)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of outstanding fragmented packets allowed at
+        any one time.
+
+        When this value is decreased, no new fragments will be allowed
+        to be 'outstanding' until the current number of fragments outstanding
+        drops below this value.  In other words, if there are 175 outstanding
+        fragments and this value is set to 100 no new fragments will be
+        outstanding until 76 entries are aged out."
+    DEFVAL      { 100 }
+    ::= { xtmFragmentSummary 3 }
+
+xtmIpFragmentCurrentOutstanding OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of outstanding fragmented packets."
+    ::= { xtmFragmentSummary 4 }
+
+xtmIpFragmentMostOutstanding OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The largest value of xtmIpFragmentCurrentOutStanding."
+    ::= { xtmFragmentSummary 5 }
+
+xtmIpFragmentNoHashBucketsAvailable OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of initial fragments dropped because no
+        hash bucket were available."
+    ::= { xtmFragmentSummary 6 }
+
+xtmIpFragmentAgedDueToInactiveTimeout OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of state entries aged using xtmIpFragmentInactiveTimeout."
+    ::= { xtmFragmentSummary 7 }
+
+xtmIpFragmentAgedDueToFinalTimeout OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of state entries aged using xtmIpFragmentLastTimeout."
+    ::= { xtmFragmentSummary 8 }
+
+--
+-- Active Connection Monitoring - globals.
+--
+
+-- A group of primitive objects pertaining to connections.
+xtmConnectionsGlobal OBJECT IDENTIFIER ::= { xtmObjects 10 }
+
+xtmConnectionsCurrentConnected OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of active connections."
+    ::= { xtmConnectionsGlobal 1 }
+
+xtmConnectionsCurrentUnconnected OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of yet to be fully established connections. 
+        This gauge is incremented when a connection is attempted, and 
+        decremented when: 
+
+            1. The connection becomes active.  TCP connections become
+               active when the three-way connection establishment 
+               handshake completes.  UDP and ICMP, although connectionless
+               protocols, are modeled as connected when at least one
+               return packet is seen.
+
+            2. The connection attempt is timed out due to no response 
+               from the destination."
+    ::= { xtmConnectionsGlobal 2 }
+
+xtmConnectionsTotalConnected OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections active since the unit was powered."
+    ::= { xtmConnectionsGlobal 3 }
+
+xtmConnectionsTotalTcpConnectFailures OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of TCP connection attempts which failed due
+        to no response from the destination, or a RESET segment from
+        the destination upon receipt of the initial SYN segment. 
+        Since the connection was never established, these attempts 
+        are not counted in xtmConnectionsTotalConnected."
+    ::= { xtmConnectionsGlobal 4 }
+
+xtmConnectionsTotalKilledInactive OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections which were killed due to inactivity 
+        since the unit was powered."
+    ::= { xtmConnectionsGlobal 5 }
+
+xtmConnectionsTotalKilledMgmt OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections which were killed by management 
+        since the unit was powered up."
+    ::= { xtmConnectionsGlobal 6 }
+
+xtmConnectionsTotalReclassifications OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections which were killed by due to
+        reclassification since the unit was powered up.  Reclassification
+        is when one of the classes taking part in the connection is removed
+        or deactivated."
+    ::= { xtmConnectionsGlobal 7 }
+
+xtmConnectionsTotalOutOfWindowRejects OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets which matched all other criteria, 
+        but were rejected by the classifier because the tcp sequence
+        number was outside the tcp window advertisement."
+    ::= { xtmConnectionsGlobal 8 }
+
+xtmConnectionsTotalNoResourcesAvailable OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets which required creation of state 
+        information to allow return flow traffic but no resources were 
+        available for the state information.  Although the packet was
+        'classified', return traffic will not be allowed."
+    ::= { xtmConnectionsGlobal 9 }
+
+xtmConnectionsTotalSynProtectTimeouts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of time SYN flood prevention in monitor
+        mode timed out a connection."
+    ::= { xtmConnectionsGlobal 10 }
+
+xtmConnectionsSynProtectTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (15..86400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The amount of time, in seconds to wait when SYN flood
+        prevention is configured in monitor mode before timing out
+        a connection."
+    DEFVAL      { 30 }
+    ::= { xtmConnectionsGlobal 11 }
+
+--
+-- Active Connection Monitoring - the connection table.
+--
+
+xtmConnectionTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmConnectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table containing information about connections going through
+        the Acess Point.  Connections only appear within this table when
+        application classification is configured."
+    ::= { xtmObjects 11 }
+
+xtmConnectionEntry OBJECT-TYPE
+    SYNTAX      XtmConnectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about connection going through the Access Point."
+    INDEX       { xtmConnectionSrcIpAddress, xtmConnectionDestIpAddress,
+                  xtmConnectionProtocol, xtmConnectionSrcPort,
+                  xtmConnectionDestPort, xtmConnectionApplicationProtocol }
+    ::= { xtmConnectionTable 1 }
+
+XtmConnectionEntry ::= SEQUENCE {
+    xtmConnectionSrcIpAddress            IpAddress,
+    xtmConnectionDestIpAddress           IpAddress,
+    xtmConnectionProtocol                XtmProtocol,
+    xtmConnectionSrcPort                 XtmPort,
+    xtmConnectionDestPort                XtmPort,
+    xtmConnectionApplicationProtocol     XtmApplicationProtocol,
+    xtmConnectionConnectTime             DisplayString,
+    xtmConnectionElapsedTime             DisplayString,
+    xtmConnectionState                   DisplayString,
+    xtmConnectionSrcPkts                 Counter32,
+    xtmConnectionSrcOctets               Counter32,
+    xtmConnectionSrcRetransmittedPkts    Counter32,
+    xtmConnectionSrcRetransmittedOctets  Counter32,
+    xtmConnectionDestPkts                Counter32,
+    xtmConnectionDestOctets              Counter32,
+    xtmConnectionDestRetransmittedPkts   Counter32,
+    xtmConnectionDestRetransmittedOctets Counter32,
+    xtmConnectionKill                    INTEGER
+}
+
+xtmConnectionSrcIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The source ip address.  The source is the host which
+        initiates the connection."
+    ::= { xtmConnectionEntry 1}
+
+xtmConnectionDestIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The destination ip address.  The destination is the host
+        to which the connection is made."
+    ::= { xtmConnectionEntry 2 }
+
+xtmConnectionProtocol OBJECT-TYPE
+    SYNTAX      XtmProtocol
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ip protocol of the connection."
+    ::= { xtmConnectionEntry 3 }
+
+xtmConnectionSrcPort OBJECT-TYPE
+    SYNTAX      XtmPort
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The source port of the connection.  The source is the host
+        which initiates the connection."
+    ::= { xtmConnectionEntry 4 }
+
+xtmConnectionDestPort OBJECT-TYPE
+    SYNTAX      XtmPort
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The destination port of the connection.  The destination is 
+        the host to which the connection is made."
+    ::= { xtmConnectionEntry 5 }
+
+xtmConnectionApplicationProtocol OBJECT-TYPE
+    SYNTAX      XtmApplicationProtocol
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The application type of the connection."
+    ::= { xtmConnectionEntry 6 }
+
+xtmConnectionConnectTime OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The time at which the connection was initiated."
+    ::= { xtmConnectionEntry 7 }
+
+xtmConnectionElapsedTime OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The duration of the connection."
+    ::= { xtmConnectionEntry 8 }
+
+xtmConnectionState OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The state of the connection.  Truely connection oriented
+        protocols like tcp have states like 'Listening, Connecting,
+        etc., while connectionless protocols like udp and icmp are
+        modeled as having connection state of 'OneWay' or 'TwoWay'
+        where 'OneWay' means that one packet has been seen, and
+        'TwoWay' means that at least one response packet has also
+        been seen."
+    ::= { xtmConnectionEntry 9 }
+
+xtmConnectionSrcPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets sent by the source of the
+        connection."
+    ::= { xtmConnectionEntry 10 }
+
+xtmConnectionSrcOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets sent by the source of the
+        connection."
+    ::= { xtmConnectionEntry 11 }
+
+xtmConnectionSrcRetransmittedPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of TCP packets retransmitted by the source
+        of the connection."
+    ::= { xtmConnectionEntry 12 }
+
+xtmConnectionSrcRetransmittedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets in TCP packets retransmitted by
+        the source of the connection."
+    ::= { xtmConnectionEntry 13 }
+
+xtmConnectionDestPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets sent by the destination of the
+        connection."
+    ::= { xtmConnectionEntry 14 }
+
+xtmConnectionDestOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets sent by the destination of the
+        connection."
+    ::= { xtmConnectionEntry 15 }
+
+xtmConnectionDestRetransmittedPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of TCP packets retransmitted by the destination
+        of the connection."
+    ::= { xtmConnectionEntry 16 }
+
+xtmConnectionDestRetransmittedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets in TCP packets retransmitted by
+        the destination of the connection."
+    ::= { xtmConnectionEntry 17 }
+
+xtmConnectionKill OBJECT-TYPE
+    SYNTAX      INTEGER { 
+                    true(1), 
+                    false(2) 
+                    }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "When set to the value of 'true(1)' the will attempt to
+        reset both ends of a TCP connection.  When set to 'true(1)'
+        when the connection is not over TCP, nothing happens."
+    DEFVAL      { false }
+    ::= { xtmConnectionEntry 18 }
+
+--
+-- The Class Connection Table - connection information on a per class basis.
+--
+
+xtmClassConnectionTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmClassConnectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains information about connections going
+        through a class.  This information is only available for 
+        classes which use application classification.  That is,
+        information is only available when xtmClassApplications
+        has been set."
+    ::= { xtmObjects 12 }
+
+xtmClassConnectionEntry OBJECT-TYPE
+    SYNTAX      XtmClassConnectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about connections going through a class."
+    INDEX { ifIndex, xtmClassName }
+    ::= { xtmClassConnectionTable 1 }
+
+XtmClassConnectionEntry ::= SEQUENCE {
+    xtmClassConnectionCurConnected              Gauge32,
+    xtmClassConnectionCurUnconnected            Gauge32,
+    xtmClassConnectionTotalConnected            Counter32,
+    xtmClassConnectionTotalTcpConnectFailures   Counter32,
+    xtmClassConnectionTotalKilledInactive       Counter32,
+    xtmClassConnectionTotalKilledMgmt           Counter32,
+    xtmClassConnectionTotalReclassifications    Counter32,
+    xtmClassConnectionTotalOutOfWindowRejects   Counter32,
+    xtmClassConnectionTotalNoResourcesAvailable Counter32,
+    xtmClassConnectionTotalSynProtectTimeouts   Counter32,
+    xtmClassConnectionRetransPkts               Counter32,
+    xtmClassConnectionRetransOctets             Counter32
+}
+
+xtmClassConnectionCurConnected OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of active connections through this class."
+    ::= { xtmClassConnectionEntry 1 }
+
+xtmClassConnectionCurUnconnected OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of yet to be fully established connections. 
+        This gauge is incremented when a connection is attempted, and 
+        decremented when: 
+
+            1. The connection becomes active.  TCP connections become
+               active when the three-way connection establishment 
+               handshake completes.  UDP and ICMP, although connectionless
+               protocols, are modeled as connected when at least one
+               return packet is seen.
+
+            2. The connection attempt is timed out due to no response 
+               from the destination."
+    ::= { xtmClassConnectionEntry 2 }
+
+xtmClassConnectionTotalConnected OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections active within this class
+        since the unit was powered."
+    ::= { xtmClassConnectionEntry 3 }
+
+xtmClassConnectionTotalTcpConnectFailures OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of TCP connection attempts which failed due
+        to no response from the destination, or a RESET segment from
+        the destination upon receipt of the initial SYN segment. 
+        Since the connection was never established, these attempts 
+        are not counted in xtmConnectionsTotalConnected."
+    ::= { xtmClassConnectionEntry 4 }
+
+xtmClassConnectionTotalKilledInactive OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections which were killed due to inactivity 
+        since the unit was powered."
+    ::= { xtmClassConnectionEntry 5 }
+
+xtmClassConnectionTotalKilledMgmt OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections which were killed by management 
+        since the unit was powered up."
+    ::= { xtmClassConnectionEntry 6 }
+
+xtmClassConnectionTotalReclassifications OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections which were killed by due to
+        reclassification since the unit was powered up.  Reclassification
+        is when one of the classes taken part in the connection is removed
+        or deactivated."
+    ::= { xtmClassConnectionEntry 7 }
+
+xtmClassConnectionTotalOutOfWindowRejects OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets which matched all other criteria, 
+        but were rejected by the classifier because the tcp sequence
+        number was outside the tcp window advertisement."
+    ::= { xtmClassConnectionEntry 8 }
+
+xtmClassConnectionTotalNoResourcesAvailable OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets which required creation of state 
+        information to allow return flow traffic but no resources were 
+        available for the state information.  Although the packet was
+        'classified', return traffic will not be allowed."
+    ::= { xtmClassConnectionEntry 9 }
+
+xtmClassConnectionTotalSynProtectTimeouts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of connections which were killed by due to
+        tcp syn flood protection."
+    ::= { xtmClassConnectionEntry 10 }
+
+xtmClassConnectionRetransPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of TCP packets retransmitted."
+    ::= { xtmClassConnectionEntry 11 }
+
+xtmClassConnectionRetransOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of TCP octets retransmitted."
+    ::= { xtmClassConnectionEntry 12 }
+
+--
+--
+--
+
+xtmConnectionTimeTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XtmConnectionTimeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table containing information about connections going through
+        the Acess Point.  Connections only appear within this table when
+        application classification is configured."
+    ::= { xtmObjects 13 }
+
+xtmConnectionTimeEntry OBJECT-TYPE
+    SYNTAX      XtmConnectionTimeEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about connection going through the Access Point."
+    INDEX       { xtmConnectionTimeIndex }
+    ::= { xtmConnectionTimeTable 1 }
+
+XtmConnectionTimeEntry ::= SEQUENCE {
+    xtmConnectionTimeIndex                   INTEGER,
+    xtmConnectionTimeSrcIpAddressString      DisplayString,
+    xtmConnectionTimeDestIpAddressString     DisplayString,
+    xtmConnectionTimeProtocol                XtmProtocol,
+    xtmConnectionTimeSrcPort                 XtmPort,
+    xtmConnectionTimeDestPort                XtmPort,
+    xtmConnectionTimeApplicationProtocol     XtmApplicationProtocol,
+    xtmConnectionTimeConnectTime             DisplayString,
+    xtmConnectionTimeElapsedTime             DisplayString,
+    xtmConnectionTimeSrcClassName            DisplayString,
+    xtmConnectionTimeDestClassName           DisplayString,
+    xtmConnectionTimeState                   DisplayString,
+    xtmConnectionTimeSrcPkts                 Counter32,
+    xtmConnectionTimeSrcOctets               Counter32,
+    xtmConnectionTimeSrcRetransmittedPkts    Counter32,
+    xtmConnectionTimeSrcRetransmittedOctets  Counter32,
+    xtmConnectionTimeDestPkts                Counter32,
+    xtmConnectionTimeDestOctets              Counter32,
+    xtmConnectionTimeDestRetransmittedPkts   Counter32,
+    xtmConnectionTimeDestRetransmittedOctets Counter32,
+    xtmConnectionTimeKill                    INTEGER
+}
+
+xtmConnectionTimeIndex OBJECT-TYPE
+    SYNTAX      INTEGER (0..4294967295)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        ""
+    ::= { xtmConnectionTimeEntry 1}
+
+xtmConnectionTimeSrcIpAddressString OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The source ip address.  The source is the host which
+        initiates the connection."
+    ::= { xtmConnectionTimeEntry 2 }
+
+xtmConnectionTimeDestIpAddressString OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The destination ip address.  The destination is the host
+        to which the connection is made."
+    ::= { xtmConnectionTimeEntry 3 }
+
+xtmConnectionTimeProtocol OBJECT-TYPE
+    SYNTAX      XtmProtocol
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ip protocol of the connection."
+    ::= { xtmConnectionTimeEntry 4 }
+
+xtmConnectionTimeSrcPort OBJECT-TYPE
+    SYNTAX      XtmPort
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The source port of the connection.  The source is the host
+        which initiates the connection."
+    ::= { xtmConnectionTimeEntry 5 }
+
+xtmConnectionTimeDestPort OBJECT-TYPE
+    SYNTAX      XtmPort
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The destination port of the connection.  The destination is 
+        the host to which the connection is made."
+    ::= { xtmConnectionTimeEntry 6 }
+
+xtmConnectionTimeApplicationProtocol OBJECT-TYPE
+    SYNTAX      XtmApplicationProtocol
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The application type of the connection."
+    ::= { xtmConnectionTimeEntry 7 }
+
+xtmConnectionTimeConnectTime OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The time at which the connection was initiated."
+    ::= { xtmConnectionTimeEntry 8 }
+
+xtmConnectionTimeElapsedTime OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The duration of the connection."
+    ::= { xtmConnectionTimeEntry 9 }
+
+xtmConnectionTimeSrcClassName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "."
+    ::= { xtmConnectionTimeEntry 10 }
+
+xtmConnectionTimeDestClassName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "."
+    ::= { xtmConnectionTimeEntry 11 }
+
+xtmConnectionTimeState OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The state of the connection.  Truely connection oriented
+        protocols like tcp have states like 'Listening, Connecting,
+        etc., while connectionless protocols like udp and icmp are
+        modeled as having connection state of 'OneWay' or 'TwoWay'
+        where 'OneWay' means that one packet has been seen, and
+        'TwoWay' means that at least one response packet has also
+        been seen."
+    ::= { xtmConnectionTimeEntry 12 }
+
+xtmConnectionTimeSrcPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets sent by the source of the
+        connection."
+    ::= { xtmConnectionTimeEntry 13 }
+
+xtmConnectionTimeSrcOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets sent by the source of the
+        connection."
+    ::= { xtmConnectionTimeEntry 14 }
+
+xtmConnectionTimeSrcRetransmittedPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of TCP packets retransmitted by the source
+        of the connection."
+    ::= { xtmConnectionTimeEntry 15 }
+
+xtmConnectionTimeSrcRetransmittedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets in TCP packets retransmitted by
+        the source of the connection."
+    ::= { xtmConnectionTimeEntry 16 }
+
+xtmConnectionTimeDestPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets sent by the destination of the
+        connection."
+    ::= { xtmConnectionTimeEntry 17 }
+
+xtmConnectionTimeDestOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets sent by the destination of the
+        connection."
+    ::= { xtmConnectionTimeEntry 18 }
+
+xtmConnectionTimeDestRetransmittedPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of TCP packets retransmitted by the destination
+        of the connection."
+    ::= { xtmConnectionTimeEntry 19 }
+
+xtmConnectionTimeDestRetransmittedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets in TCP packets retransmitted by
+        the destination of the connection."
+    ::= { xtmConnectionTimeEntry 20 }
+
+xtmConnectionTimeKill OBJECT-TYPE
+    SYNTAX      INTEGER { 
+                    true(1), 
+                    false(2) 
+                    }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "When set to the value of 'true(1)' the will attempt to
+        reset both ends of a TCP connection.  When set to 'true(1)'
+        when the connection is not over TCP, nothing happens."
+    DEFVAL      { false }
+    ::= { xtmConnectionTimeEntry 21 }
+
+-- ================================================================
+-- Notifications
+-- ================================================================
+
+xtmNotificationPrefix OBJECT IDENTIFIER ::= { xtmNotifications 0 }
+
+xtmUnsatisfied NOTIFICATION-TYPE
+    OBJECTS {
+        xtmClassRate,
+        xtmClassStatsQueuedPkts
+    }
+    STATUS      current
+    DESCRIPTION
+        "This notification indicates that the class was unsatisfied
+        because of a failure of the link-sharing algorithm
+        (xtmClassUnsatisfied transitioned from 'false(2)' to
+        'true(1)'). This may indicate that parameters of this or other
+        classes may need to be tuned.
+
+        The agent will not generate more than one of these traps in a
+        five minute interval in order to avoid a flood of traps. The
+        manager should retrieve the object xtmClassStatsUnsatisfieds
+        to determine if any traps were not sent because of this
+        throttling."
+    ::= { xtmNotificationPrefix 1 }
+
+-- ================================================================
+-- Conformance Information
+-- ================================================================
+
+xtmCompliances  OBJECT IDENTIFIER ::= { xtmConformance 1 }
+xtmGroups       OBJECT IDENTIFIER ::= { xtmConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+xtmCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for all agents that support this
+        MIB. A compliant agent implements all objects defined in this
+        MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS {
+        xtmClassGroup
+    }
+    ::= { xtmCompliances 1 }
+
+--
+-- Object Groups
+--
+
+xtmClassGroup OBJECT-GROUP
+    OBJECTS {
+        xtmIfInfoHistoryAdmin,
+        xtmIfInfoHistoryTimer,
+        xtmIfInfoHistoryQDepth,
+        xtmIfInfoFilteredPkts,
+        xtmIfInfoTimeLastModification,
+        xtmIfInfoMaxClasses,
+        xtmIfInfoAutoClassAgeOut,
+        xtmIfInfoAutoClassAgeTime,
+        xtmIfInfoNumberOfClasses,
+        xtmClassParent,
+--        xtmClassSrcIpAddrStart,
+--        xtmClassSrcIpAddrEnd,
+--        xtmClassDestIpAddrStart,
+--        xtmClassDestIpAddrEnd,
+--        xtmClassProtocolStart,
+--        xtmClassProtocolEnd,
+--        xtmClassSrcPortStart,
+--        xtmClassSrcPortEnd,
+--        xtmClassDestPortStart,
+--        xtmClassDestPortEnd,
+        xtmClassSrcIpAddresses,
+        xtmClassDestIpAddresses,
+        xtmClassSrcPorts,
+        xtmClassDestPorts,
+        xtmClassProtocols,
+        xtmClassApplications,
+        xtmClassClassificationTos,
+        xtmClassSrcDomainNames,
+        xtmClassDestDomainNames,
+        xtmClassRate,
+        xtmClassBounded,
+        xtmClassPriority,
+        xtmClassMaxIdle,
+        xtmClassOffTime,
+        xtmClassMinIdle,
+        xtmClassQueueElasticityFactor,
+        xtmClassUnsatisfiedNotifEnable,
+        xtmClassHistoryAdmin,
+        xtmClassOperStatus,
+        xtmClassOperMsg,
+        xtmClassBwUse,
+        xtmClassUnsatisfied,
+        xtmClassQueueSize,
+        xtmClassRowStatus,
+        xtmClassMaxRate,
+        xtmClassAutoClass,
+        xtmClassSaveAutoClassChildren,
+        xtmClassAutoClassChildBwAlloc,
+        xtmClassAutoClassChildBounded,
+        xtmClassAutoClassDepth,
+--        xtmClassAutoClassResolveAddrs,
+--        xtmClassSrcDomainName,
+--        xtmClassDestDomainName,
+        xtmClassTosValue,
+        xtmClassTosMask,
+        xtmClassPeerClassificationOrder,
+        xtmClassBorrowTosValue,
+        xtmClassBorrowTosMask,
+--        xtmClassClassificationTosStart,
+--        xtmClassClassificationTosEnd,
+        xtmClassClassificationTosMask,
+        xtmClassOperator,
+        xtmClassDlTrafficIndex,
+        xtmClassDlTrafficFlags,
+        xtmClassIcmpFilter,
+        xtmClassConnectionAccounting,
+        xtmClassSynProtectMode,
+        xtmClassDescription,
+        xtmClassGenEventWhenDroppingPkt,
+	xtmClassAutoClassChildMaxBwAlloc,
+        xtmClassAutoClassChildSrcIpDivisor,
+        xtmClassAutoClassChildDestIpDivisor,
+        xtmClassStatsHighWater,
+        xtmClassStatsIdle,
+        xtmClassStatsQueuedPkts,
+        xtmClassStatsOctets,
+        xtmClassStatsPkts,
+        xtmClassStatsOverLimits,
+        xtmClassStatsBorrowAttempts,
+        xtmClassStatsDroppedOctets,
+        xtmClassStatsDroppedPkts,
+        xtmClassStatsThrottles,
+        xtmClassStatsUnsatisfieds,
+        xtmClassStatsAggrOctets,
+        xtmClassStatsAggrPkts,
+        xtmClassHistoryHighWater,
+        xtmClassHistoryIdle,
+        xtmClassHistoryQueuedPkts,
+        xtmClassHistoryOctets,
+        xtmClassHistoryPkts,
+        xtmClassHistoryOverLimits,
+        xtmClassHistoryBorrowAttempts,
+        xtmClassHistoryDroppedOctets,
+        xtmClassHistoryDroppedPkts,
+        xtmClassHistoryThrottles,
+        xtmClassHistoryUnsatisfieds,
+        xtmClassHistoryAggrOctets,
+        xtmClassHistoryAggrPkts,
+        xtmClassDisplayString,
+        xtmApplicationInitialTimeout,
+        xtmApplicationFinRstTimeout,
+        xtmApplicationInactiveIndex,
+        xtmApplicationInactiveTimeout,
+        xtmApplicationInactiveTimeoutAction,
+        xtmIpFragmentDisposition,
+        xtmIpFragmentMaxSize,
+        xtmIpFragmentPkts,
+        xtmIpFragmentOctets,
+        xtmIpFragmentFilteredPkts,
+        xtmIpFragmentFilteredOctets,
+        xtmIpFragmentInactiveTimeout,
+        xtmIpFragmentLastTimeout,
+        xtmIpFragmentMaxOutstanding,
+        xtmIpFragmentCurrentOutstanding,
+        xtmIpFragmentMostOutstanding,
+        xtmIpFragmentNoHashBucketsAvailable,
+        xtmIpFragmentAgedDueToInactiveTimeout,
+        xtmIpFragmentAgedDueToFinalTimeout,
+        xtmConnectionsCurrentConnected,
+        xtmConnectionsCurrentUnconnected,
+        xtmConnectionsTotalConnected,
+        xtmConnectionsTotalTcpConnectFailures,
+        xtmConnectionsTotalKilledInactive,
+        xtmConnectionsTotalKilledMgmt,
+        xtmConnectionsTotalReclassifications,
+        xtmConnectionsTotalOutOfWindowRejects,
+        xtmConnectionsTotalNoResourcesAvailable,
+        xtmConnectionsTotalSynProtectTimeouts,
+        xtmConnectionsSynProtectTimeout,
+        xtmConnectionSrcIpAddress,
+        xtmConnectionDestIpAddress,
+        xtmConnectionProtocol,
+        xtmConnectionSrcPort,
+        xtmConnectionDestPort,
+        xtmConnectionApplicationProtocol,
+        xtmConnectionConnectTime,
+        xtmConnectionElapsedTime,
+        xtmConnectionState,
+        xtmConnectionSrcPkts,
+        xtmConnectionSrcOctets,
+        xtmConnectionSrcRetransmittedPkts,
+        xtmConnectionSrcRetransmittedOctets,
+        xtmConnectionDestPkts,
+        xtmConnectionDestOctets,
+        xtmConnectionDestRetransmittedPkts,
+        xtmConnectionDestRetransmittedOctets,
+        xtmConnectionKill,
+        xtmClassConnectionCurConnected,
+        xtmClassConnectionCurUnconnected,
+        xtmClassConnectionTotalConnected,
+        xtmClassConnectionTotalTcpConnectFailures,
+        xtmClassConnectionTotalKilledInactive,
+        xtmClassConnectionTotalKilledMgmt,
+        xtmClassConnectionTotalReclassifications,
+        xtmClassConnectionTotalOutOfWindowRejects,
+        xtmClassConnectionTotalNoResourcesAvailable,
+        xtmClassConnectionTotalSynProtectTimeouts,
+        xtmClassConnectionRetransPkts,
+        xtmClassConnectionRetransOctets,
+        xtmConnectionTimeSrcIpAddressString,
+        xtmConnectionTimeDestIpAddressString,
+        xtmConnectionTimeProtocol,
+        xtmConnectionTimeSrcPort,
+        xtmConnectionTimeDestPort,
+        xtmConnectionTimeApplicationProtocol,
+        xtmConnectionTimeConnectTime,
+        xtmConnectionTimeElapsedTime,
+        xtmConnectionTimeSrcClassName,
+        xtmConnectionTimeDestClassName,
+        xtmConnectionTimeState,
+        xtmConnectionTimeSrcPkts,
+        xtmConnectionTimeSrcOctets,
+        xtmConnectionTimeSrcRetransmittedPkts,
+        xtmConnectionTimeSrcRetransmittedOctets,
+        xtmConnectionTimeDestPkts,
+        xtmConnectionTimeDestOctets,
+        xtmConnectionTimeDestRetransmittedPkts,
+        xtmConnectionTimeDestRetransmittedOctets,
+        xtmConnectionTimeKill
+    }
+    STATUS      current
+    DESCRIPTION
+        "The set of all accessible objects in this MIB."
+    ::= { xtmGroups 1 }
+
+xtmClassObsoleteGroup OBJECT-GROUP
+    OBJECTS {
+        xtmClassSrcIpAddrStart,
+        xtmClassSrcIpAddrEnd,
+        xtmClassDestIpAddrStart,
+        xtmClassDestIpAddrEnd,
+        xtmClassProtocolStart,
+        xtmClassProtocolEnd,
+        xtmClassSrcPortStart,
+        xtmClassSrcPortEnd,
+        xtmClassDestPortStart,
+        xtmClassDestPortEnd,
+        xtmClassAutoClassResolveAddrs,
+        xtmClassSrcDomainName,
+        xtmClassDestDomainName,
+        xtmClassClassificationTosStart,
+        xtmClassClassificationTosEnd
+    }
+    STATUS      obsolete
+    DESCRIPTION
+        "The set of all obsolete objects in this MIB."
+    ::= { xtmGroups 2 }
+
+
+END
+
+

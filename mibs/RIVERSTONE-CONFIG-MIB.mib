@@ -1,0 +1,792 @@
+RIVERSTONE-CONFIG-MIB DEFINITIONS ::= BEGIN
+
+--  This module provides authoritative definitions for Riverstone
+--  Network's enterprise-specific SNMP API to manage Router
+--  configuration files.
+--
+--  This module will be extended, as required.
+--  Riverstone Networks reserves the right to make changes in
+--  specification and other information contained in this document
+--  without prior notice.  The reader should consult Riverstone Networks
+--  to determine whether any such changes have been made.
+--
+--  In no event shall Riverstone Networks be liable for any incidental,
+--  indirect, special, or consequential damages whatsoever (including
+--  but not limited to lost profits) arising out of or related to this
+--  document or the information contained in it, even if Riverstone
+--  Networks has been advised of, known, or should have known, the
+--  possibility of such damages.
+--
+--  Riverstone grants vendors, end-users, and other interested parties
+--  a non-exclusive license to use this Specification in connection
+--  with the management of Riverstone's products.
+ 
+IMPORTS
+    OBJECT-TYPE, MODULE-IDENTITY, NOTIFICATION-TYPE, Unsigned32, TimeTicks
+        FROM SNMPv2-SMI
+    riverstoneMibs
+        FROM RIVERSTONE-SMI-MIB
+    DisplayString, TruthValue, DateAndTime, RowStatus
+        FROM SNMPv2-TC
+    InetAddressType, InetAddress
+        FROM INET-ADDRESS-MIB           -- RFC2851
+    RSChangeSessionType, RSTransferStatus, RSFileTransferProtocol,
+    RSConfigErrorCode
+        FROM RIVERSTONE-TC-MIB
+    MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+        FROM SNMPv2-CONF;
+
+rsConfigMIB MODULE-IDENTITY  
+    LAST-UPDATED "200305060000Z"  -- May 06, 2003
+    ORGANIZATION "Riverstone Networks, Inc."
+    CONTACT-INFO
+    "Riverstone Networks, Inc
+     5200 Great America Parkway
+     Santa Clara, CA 95054
+     (408) 878-6500
+     nms-eng@riverstonenet.com
+     http://www.riverstonenet.com"
+
+    DESCRIPTION
+         "This mib module defines an SNMP API to manage Riverstone's
+          Router configuration files"
+
+    REVISION     "200305060000Z"  -- May 06, 2003
+    DESCRIPTION
+         "Made rsCfgActiveChangeSessionType use an enumration in
+          the definition."
+
+    REVISION     "200211300000Z"  -- Nov 30, 2002
+    DESCRIPTION
+         "Fixed an error in the IMPORTS clause. RSFileTransferProtocol
+          was RSTransferProtocol."
+ ::= { riverstoneMibs 20 }
+
+-- The Config Management Group
+
+rsCfgObjects              OBJECT IDENTIFIER ::= { rsConfigMIB 1 }
+rsCfgChangeLogs           OBJECT IDENTIFIER ::= { rsConfigMIB 2 }
+rsCfgNotification         OBJECT IDENTIFIER ::= { rsConfigMIB 3 }
+rsCfgBootDetails          OBJECT IDENTIFIER ::= { rsConfigMIB 4 }
+
+rsCfgNotificationControl  OBJECT IDENTIFIER ::= { rsCfgNotification 1 }
+rsCfgNotifications        OBJECT IDENTIFIER ::= { rsCfgNotification 2 }
+rsCfgNotifyPrefix         OBJECT IDENTIFIER ::= { rsCfgNotifications 0 }
+
+-- Transfer Table
+
+rsCfgNextTransferId OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "This object contains the next appropriate value to
+         be used for rsCfgTransferId when creating
+         entries in the rsCfgTransferTable.  If the number
+         of unassigned entries is exhausted, this object will
+         take on the value of 0.  To obtain the
+         rsCfgTransferId value for a new entry, the
+         manager must first issue a management protocol
+         retrieval operation to obtain the current value of
+         this object.  The agent should modify the value to
+         reflect the next unassigned index after each
+         retrieval operation.  After a manager retrieves a
+         value the agent will determine through its local
+         policy when this index value will be made available
+         for reuse."
+       ::=  { rsCfgObjects 1 }
+
+rsCfgTransferTable  OBJECT-TYPE
+       SYNTAX        SEQUENCE OF RsCfgActiveChangeSessionEntry
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "This table specifies Parameters related to a change session
+         in the active config.  This table is not persistent across
+         reboots."
+       ::=  { rsCfgObjects 2 }
+
+rsCfgTransferEntry  OBJECT-TYPE
+       SYNTAX        RsCfgTransferEntry
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "An entry in this table supplies necessary parameters like who
+         did the change and when."
+       INDEX         { rsCfgTransferId }
+       ::=  { rsCfgTransferTable 1 }
+
+RsCfgTransferEntry ::=  SEQUENCE {
+       rsCfgTransferId             Unsigned32,
+       rsCfgTransferOp             INTEGER,
+       rsCfgHostAddressType        InetAddressType,
+       rsCfgHostAddress            InetAddress,
+       rsCfgFileName               DisplayString,
+       rsCfgFileTransferProtocol   RSFileTransferProtocol,
+       rsCfgActivateTransfer       TruthValue,
+       rsCfgTransferStatus         RSTransferStatus,
+       rsCfgTransferStartTime      TimeTicks,
+       rsCfgTransferEndTime        TimeTicks,
+       rsCfgTransferError          RSConfigErrorCode,
+       rsCfgTransferErrorReason    DisplayString,
+       rsCfgTransferRowStatus      RowStatus
+}
+
+rsCfgTransferId OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "Primary index for the conceptual row identifying a transfer session."
+       ::=  { rsCfgTransferEntry 1 }
+
+rsCfgTransferOp  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      noop(1),
+                      sendActiveConfigToHost(2),
+                      receiveActiveConfigFromHost(3),
+                      sendStartupConfigToHost(4),
+                      receiveStartupConfigFromHost(5),
+                      copyActiveToStartup(6),
+                      copyStartupToActive(7),
+                      copyActiveToFlash(8),
+                      copyStartupToFlash(9),
+                      copyFlashToActive(10),
+                      copyFlashToStartup(11),
+                      receiveBootlogFromHost(12)
+                   }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+	"Transfer operation to be performed. Configuration
+	files are ASCII NVT text files describing the operation of the router.
+	Send operations transfer a file from the router to host.
+        Receive operations transfer the file from the host to the 
+        router. Operations to Active include a 2 step process of copying to 
+        scratch-pad, and copying the scratch-pad to active. Default 
+        value is no operation or noop."
+       DEFVAL      { noop }
+
+       ::= { rsCfgTransferEntry 2 }
+
+rsCfgHostAddressType  OBJECT-TYPE
+       SYNTAX      InetAddressType
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+        "Specifies the type of host address to be used at a remote
+         host for performing the transfer operation."
+       DEFVAL { unknown }
+       ::= { rsCfgTransferEntry 3 }
+
+rsCfgHostAddress  OBJECT-TYPE
+       SYNTAX      InetAddress
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+        "Specifies the host address to be used as a remote host for
+        performing the transfer operation.  The host address type is
+        determined by the object value of corresponding
+        rsCfgHostAddressType."
+       DEFVAL { ''H }
+       ::= { rsCfgTransferEntry 4 }
+
+rsCfgFileName  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+	"The file name to be retrieved from the host rsCfgServerAddress or 
+         to be written to. Default value is blank.  By blank it is a zero
+         length octet string.  No spaces in filenames.  In case of 
+         copy to flash, this filename should be as a url including the slot, 
+         like slot0:config/rs8.conf"
+       ::= { rsCfgTransferEntry 5 }
+
+rsCfgFileTransferProtocol  OBJECT-TYPE
+       SYNTAX      RSFileTransferProtocol
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+        "The protocol to be used for transferring the file to / from the host."
+       ::= { rsCfgTransferEntry 6 }
+
+rsCfgActivateTransfer  OBJECT-TYPE
+       SYNTAX  TruthValue
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+	"Activate the file transfer operation with a value of True(1) or 
+         stop it with False(2). Poll rsCfgTransferStatus for current status. 
+	 Default value is False. rsCfgTransferStatus should be either 
+         active(1) or createAndGo(4) to set this object to True(1)."
+       ::= { rsCfgTransferEntry 7 }
+
+
+rsCfgTransferStatus  OBJECT-TYPE
+       SYNTAX      RSTransferStatus
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+	"The current status of the transfer task. Default state is idle. 
+         sending indicates a file transfer (router->host) in progress. 
+         receiving indicates sending a file from Host to Router. 
+         transferComplete indicates a successful transfer. error indicates
+         a failed transfer. See rsCfgLastError to diagnose why the transfer 
+         failed."
+       ::= { rsCfgTransferEntry 8 }
+
+rsCfgTransferStartTime  OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "The time when the transfer was started.  Initially this
+         value is 0, meaning no transfer was started yet."
+       ::= { rsCfgTransferEntry 9 }
+
+rsCfgTransferEndTime  OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "The time when the transfer was completed.  Initially this
+         value is 0, meaning no transfer was started or completed yet."
+       ::= { rsCfgTransferEntry 10 }
+
+rsCfgTransferError  OBJECT-TYPE
+       SYNTAX      RSConfigErrorCode 
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+	"A reason code for the last transfer operation. Poll this value
+         when doing sets against rsCfgActivateTransfer for config files 
+         obtain status."
+       ::=  { rsCfgTransferEntry 11 }
+
+rsCfgTransferErrorReason  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+	"A string representation of rsCfgLastError which may contain 
+         additional details."
+       ::=  { rsCfgTransferEntry 12 }
+
+rsCfgTransferRowStatus OBJECT-TYPE
+       SYNTAX        RowStatus
+       MAX-ACCESS    read-create
+       STATUS        current
+       DESCRIPTION
+        "For creating, modifying, and deleting this row.
+	 rsCfgFileName, rsCfgHostAddressType, rsCfgHostAddress and 
+         rsCfgTransferOp must be set to valid values prior to activating 
+         this row or when the status is createAndGo(4)."
+       ::= { rsCfgTransferEntry 13 }
+
+rsCfgMaxEntriesInTransferTable OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-write
+       STATUS        current
+       DESCRIPTION
+        "Denotes the maximum number of lines the rsCfgTransferTable can
+         contain.  If this maximum is reached, no more additions to this
+         table is possible."
+       ::=  { rsCfgObjects 3 }
+
+rsCfgMaxSimultaneousTransfers OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-write
+       STATUS        current
+       DESCRIPTION
+        "Denotes how many transfers can simultaneously take place.  In
+         other words, how many rsCfgActivateTransfer instances can be
+         set simultaneously.  Also, when the rsCfgTransferStatus of
+         any of  rsCfgMaxSimultaneousTransfers row is set to sending(2) 
+         or receiving(3), another transfer cannot be initiated by setting
+         the rsCfgActivateTransfer of another row."
+       ::=  { rsCfgObjects 4 }
+
+--  Object to show whether the current startup and active are same
+
+rsCfgIsStartupActiveAlike  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      alike(1),
+                      alikeExceptVolatile(2),
+                      different(3)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "The volatile config lines (marked as V) will not be stored
+         in startup.  This object returns alike(1) if both startup
+         and active are alike and no sync necessary between them.
+
+         It returns alikeExceptVolatile(2), only when the difference
+         is that there are some volatile commands in the active config.
+         In this case too, there is no need of syn between the both.
+
+         It returns different(3), when the startup and active are 
+         different and may need a sync before the next reboot."
+       ::=  { rsCfgObjects 5 }
+
+--  LastChange Objects
+
+rsCfgActiveLastChange  OBJECT-TYPE
+       SYNTAX  DateAndTime
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "This object returns the date and time when the active config
+         was changed last."
+       ::=  { rsCfgObjects 6 }
+
+rsCfgStartupLastChange  OBJECT-TYPE
+       SYNTAX  DateAndTime
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "This object returns the date and time when the startup config
+         was changed last."
+       ::=  { rsCfgObjects 7 }
+
+-- ActiveConfig Change Log
+
+-- Change Session Table
+
+rsCfgActiveChangeSessionTable  OBJECT-TYPE
+       SYNTAX        SEQUENCE OF RsCfgActiveChangeSessionEntry
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "This table specifies Parameters related to a change session
+         in the active config.  This table is not persistent across
+         reboots."
+       ::=  { rsCfgChangeLogs 1 }
+
+rsCfgActiveChangeSessionEntry  OBJECT-TYPE
+       SYNTAX        RsCfgActiveChangeSessionEntry
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "An entry in this table supplies necessary parameters like who
+         did the change and when."
+       INDEX         { rsCfgActiveChangeSessionId }
+       ::=  { rsCfgActiveChangeSessionTable 1 }
+
+RsCfgActiveChangeSessionEntry ::=  SEQUENCE {
+       rsCfgActiveChangeSessionId             Unsigned32,
+       rsCfgActiveChangeSessionType           RSChangeSessionType,
+       rsCfgActiveChangeSessionUser           DisplayString,
+       rsCfgActiveChangeSessionHostType       InetAddressType,
+       rsCfgActiveChangeSessionHostAddress    InetAddress,
+       rsCfgActiveChangeSessionTime           DateAndTime,
+       rsCfgActiveChangeAddedLines            Unsigned32,
+       rsCfgActiveChangeDeletedLines          Unsigned32,
+       rsCfgActiveChangePresentInChangeTable  TruthValue
+}
+
+rsCfgActiveChangeSessionId OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "Primary index for the conceptual row identifying a change session."
+       ::=  { rsCfgActiveChangeSessionEntry 1 }
+
+rsCfgActiveChangeSessionType OBJECT-TYPE
+       SYNTAX        RSChangeSessionType
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Denotes which entity caused this change in the active config."
+       ::=  { rsCfgActiveChangeSessionEntry 2 }
+
+rsCfgActiveChangeSessionUser OBJECT-TYPE
+       SYNTAX        DisplayString
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Denotes which user caused this change in the active config. In
+         case of console/telnet/ssh, this denotes the user name and in
+         case of snmp this denotes the user in case of snmpV3 and community
+         string in case of v1 or v2c."
+       ::=  { rsCfgActiveChangeSessionEntry 3 }
+
+rsCfgActiveChangeSessionHostType OBJECT-TYPE
+       SYNTAX        InetAddressType
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Denotes the type of address specified by 
+         rsCfgActiveChangeSessionHostAddress.  If the change was made by 
+         console, this is set to unknown."
+       ::=  { rsCfgActiveChangeSessionEntry 4 }
+
+rsCfgActiveChangeSessionHostAddress OBJECT-TYPE
+       SYNTAX        InetAddress
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Denotes the address of the entity which caused this change. If
+         the change was made through console, this object is set with a 
+         NULL value."
+       ::=  { rsCfgActiveChangeSessionEntry 5 }
+
+rsCfgActiveChangeSessionTime OBJECT-TYPE
+       SYNTAX        DateAndTime
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Denotes the Time when this change was done to the active config."
+       ::=  { rsCfgActiveChangeSessionEntry 6 }
+
+rsCfgActiveChangeAddedLines OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Number of lines added in the active config as part of this 
+         change session."
+       ::=  { rsCfgActiveChangeSessionEntry 7 }
+
+rsCfgActiveChangeDeletedLines OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Number of lines deleteded in the active config as part of this 
+         change session."
+       ::=  { rsCfgActiveChangeSessionEntry 8 }
+
+rsCfgActiveChangePresentInChangeTable OBJECT-TYPE
+       SYNTAX        TruthValue
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "This variable has a value of True(1), when the changes are
+         present in the change table.  Otherwise, this variable has
+         a value of False(2).  The change table can have entries for
+         this session, only there is enough space to hold all the 
+         changes.  This depends upon the maximum lines that could
+         be stored in the change table."
+       ::=  { rsCfgActiveChangeSessionEntry 9 }
+
+-- Change Table
+
+rsCfgActiveChangeTable  OBJECT-TYPE
+       SYNTAX        SEQUENCE OF RsCfgActiveChangeEntry
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "This table lists the changes per session.  This table is not 
+         persistent across reboots."
+       ::=  { rsCfgChangeLogs 2 }
+
+rsCfgActiveChangeEntry  OBJECT-TYPE
+       SYNTAX        RsCfgActiveChangeEntry
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "An entry in this table supplies one change in a single session."
+       INDEX         { rsCfgActiveChangeSessionId,
+                       rsCfgActiveChangeId }
+       ::=  { rsCfgActiveChangeTable 1 }
+
+RsCfgActiveChangeEntry ::=  SEQUENCE {
+       rsCfgActiveChangeId             Unsigned32,
+       rsCfgActiveChangeAction         INTEGER,
+       rsCfgActiveChangeLine           DisplayString
+}
+
+rsCfgActiveChangeId OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+        "Secondary index for the conceptual row identifying a change 
+         in a session."
+       ::=  { rsCfgActiveChangeEntry 1 }
+
+rsCfgActiveChangeAction OBJECT-TYPE
+       SYNTAX        INTEGER {
+                        add(1),  
+                        delete(2)
+                     }
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Denotes what action was taken.  Whether the line specified
+         is added or deleted."
+       ::=  { rsCfgActiveChangeEntry 2 }
+
+rsCfgActiveChangeLine OBJECT-TYPE
+       SYNTAX        DisplayString
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+        "Denotes the line which was affected by this change.  This line
+         was either added or the line was deleted."
+       ::=  { rsCfgActiveChangeEntry 3 }
+
+-- Change Log Maintenance
+
+rsCfgEnableChangeLog OBJECT-TYPE
+       SYNTAX        TruthValue
+       MAX-ACCESS    read-write
+       STATUS        current
+       DESCRIPTION
+        "When set to True(1), the logging begins.  By default the logging
+         is disabled and this value returns False(2).
+
+         When logging is enabled, the log tables are updated for every 
+         change session in the rsCfgActiveChangeSessionTable and 
+         rsCfgActiveChangeTable for the active config depending upon
+         the value of rsCfgMaxActiveChangeLines.  Logging included what,
+         when and who changed anything, if any in the active config file."
+       ::=  { rsCfgChangeLogs 3 }
+
+rsCfgResetChangeLog OBJECT-TYPE
+       SYNTAX        TruthValue
+       MAX-ACCESS    read-write
+       STATUS        current
+       DESCRIPTION
+        "When set to True(1), the changes logged this further is deleted.
+         When get, this object always returns False(2).  If logging is
+         disabled, setting this object to True(1) results in noop."
+       ::=  { rsCfgChangeLogs 4 }
+
+rsCfgMaxActiveChangeLines OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-write
+       STATUS        current
+       DESCRIPTION
+        "Denotes the maximum number of lines allowed in the whole log.  
+         If the maximum number is reached, the lines of the older sessions
+         will be deleted (one session at a time), to accommodate the lines
+         of the new session.  If this maximum limit is less
+         than the affected lines in a change, the lines are not stored
+         in the Change table.  There will only be an entry in the
+         session table.  So make sure that this number is large enough.  
+         Higher this value, the memory consumption is also high."
+       ::=  { rsCfgChangeLogs 5 }
+
+rsCfgMaxActiveChangeLinesPerSession OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-write
+       STATUS        current
+       DESCRIPTION
+        "Denotes the maximum number of rows that can be present in the 
+         change table per session.  If the number of lines changed per
+         session is more than this value, the changes are not recorded.
+         The rsCfgActiveChangePresentInChangeTable object in the session
+         table will have a value of False(2)."
+       ::=  { rsCfgChangeLogs 6 }
+
+rsCfgMaxActiveChangeSessions OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-write
+       STATUS        current
+       DESCRIPTION
+        "Denotes the maximum number of sessions that need to be stored.
+         The older sessions are deleted when newer sessions are created
+         when the total number of sessions reach this value."
+       ::=  { rsCfgChangeLogs 7 }
+
+-- Change statistics
+
+rsCfgNumberOfActiveChanges OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+       "Denotes the number of times the active config is changed since
+        the system started."
+       ::=  { rsCfgChangeLogs 8 }
+
+rsCfgNumberOfStartupChanges OBJECT-TYPE
+       SYNTAX        Unsigned32
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+       "Denotes the number of times the startup config is changed since
+        the system started."
+       ::=  { rsCfgChangeLogs 9 }
+
+-- Current system software image description
+
+rsCfgActiveImageVersion  OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+         "The Version string of the current image executing on this control 
+          module. This is the same description as the system show version 
+          command. example:  1.1.0.0"
+         ::=  { rsCfgBootDetails 1 }
+
+rsCfgActiveImageBootLocation  OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+         "The URL location string from whence the current image was loaded. 
+          example:  slot0:boot/rs8.tar.gz/"
+        ::=  { rsCfgBootDetails 2 }
+
+--  Notifications
+
+rsCfgEnableNotifications  OBJECT-TYPE
+       SYNTAX  TruthValue
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+        "When this object is set to True(1), the notifications will be sent
+         out when the config files change.  If set to False(2), the 
+         notifications will not go out.  By default, the notifications are
+         disabled. "                                
+       ::=  { rsCfgNotificationControl 1 }
+
+rsCfgActiveConfigChange NOTIFICATION-TYPE
+       OBJECTS  {
+         rsCfgActiveChangeSessionType,
+         rsCfgActiveChangeSessionUser,
+         rsCfgActiveChangeSessionHostType,
+         rsCfgActiveChangeSessionHostAddress,
+         rsCfgActiveChangeSessionTime 
+                }
+       STATUS      current
+       DESCRIPTION
+        "This notification is generated when there is a change in the
+         ActiveConfig."
+       ::=  { rsCfgNotifyPrefix 1 }
+
+rsCfgStartupConfigChange NOTIFICATION-TYPE
+       OBJECTS  {
+         rsCfgStartupLastChange  
+                }
+       STATUS      current
+       DESCRIPTION
+        "This notification is generated when there is a change in the
+         StartupConfig."
+       ::=  { rsCfgNotifyPrefix 2 }
+
+-- Conformance statements
+rsConfigConformance OBJECT IDENTIFIER ::=  { rsConfigMIB 5 }
+rsConfigCompliances OBJECT IDENTIFIER ::=  { rsConfigConformance 1 }
+rsConfigGroups      OBJECT IDENTIFIER ::=  { rsConfigConformance 2 }
+ 
+rsConfigCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+            "The compliance statement for SNMP entities which implement
+            the Riverstone Router Config Management MIB."
+    MODULE  -- this module
+        MANDATORY-GROUPS { rsConfigGroup,
+                           rsBootInfoGroup }
+
+    OBJECT      rsCfgFileTransferProtocol
+    MIN-ACCESS  read-only
+    DESCRIPTION
+     "Write access is not required."
+
+    OBJECT      rsCfgMaxEntriesInTransferTable
+    MIN-ACCESS  read-only
+    DESCRIPTION
+     "Write access is not required."
+
+    OBJECT      rsCfgMaxSimultaneousTransfers
+    MIN-ACCESS  read-only
+    DESCRIPTION
+     "Write access is not required."
+
+    ::=  { rsConfigCompliances 1 }
+
+
+-- MIB groupings
+ 
+rsConfigGroup    OBJECT-GROUP
+    OBJECTS {
+      rsCfgNextTransferId,
+      rsCfgTransferOp,
+      rsCfgHostAddressType,
+      rsCfgHostAddress,
+      rsCfgFileName,
+      rsCfgFileTransferProtocol,
+      rsCfgActivateTransfer,
+      rsCfgTransferStatus,
+      rsCfgTransferStartTime,
+      rsCfgTransferEndTime,
+      rsCfgTransferError,
+      rsCfgTransferErrorReason,
+      rsCfgTransferRowStatus,
+      rsCfgMaxEntriesInTransferTable,
+      rsCfgMaxSimultaneousTransfers,
+      rsCfgIsStartupActiveAlike,
+      rsCfgActiveLastChange,
+      rsCfgStartupLastChange
+    }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent 
+             config file operations in the Riverstone Router."
+    ::=  { rsConfigGroups 1 }
+
+rsChangeLogGroup    OBJECT-GROUP
+    OBJECTS {
+      rsCfgActiveChangeSessionType,
+      rsCfgActiveChangeSessionUser,
+      rsCfgActiveChangeSessionHostType,
+      rsCfgActiveChangeSessionHostAddress,
+      rsCfgActiveChangeSessionTime,
+      rsCfgActiveChangeAddedLines,
+      rsCfgActiveChangeDeletedLines,
+      rsCfgActiveChangePresentInChangeTable,
+      rsCfgActiveChangeAction,
+      rsCfgActiveChangeLine,
+      rsCfgEnableChangeLog,
+      rsCfgResetChangeLog,
+      rsCfgMaxActiveChangeLines,
+      rsCfgMaxActiveChangeLinesPerSession,
+      rsCfgMaxActiveChangeSessions,
+      rsCfgNumberOfActiveChanges,
+      rsCfgNumberOfStartupChanges
+    }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent 
+             configuration operations in the Riverstone Router.
+             This is an optional group."
+    ::=  { rsConfigGroups 2 }
+
+rsConfigNotificationGroup NOTIFICATION-GROUP
+    NOTIFICATIONS { rsCfgActiveConfigChange,
+                   rsCfgStartupConfigChange }
+    STATUS  current
+    DESCRIPTION
+     "Set of notifications implemented in this module.
+      None are mandatory."
+   ::=  { rsConfigGroups 3 }
+
+rsConfigNotificationControlGroup OBJECT-GROUP
+    OBJECTS { rsCfgEnableNotifications }
+                    
+    STATUS  current
+    DESCRIPTION
+     "This object is mandatory to control emission of notifications,
+      when the SNMP-NOTIFICATION-MIB is not available in a given agent."
+   ::=  { rsConfigGroups 4 }
+
+rsBootInfoGroup    OBJECT-GROUP
+    OBJECTS {
+      rsCfgActiveImageVersion,
+      rsCfgActiveImageBootLocation
+    }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent 
+             configuration operations in the Riverstone Router."
+    ::= { rsConfigGroups 5 }
+
+END
+

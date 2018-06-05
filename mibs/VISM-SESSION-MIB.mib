@@ -1,0 +1,938 @@
+-- *****************************************************************
+-- VISM RUDP Session MIB
+--
+-- Feburary 2000
+--
+-- Copyright (c) 1999-2001 by cisco Systems, Inc.
+-- All rights reserved.
+--
+-- *****************************************************************
+--       
+--    LAST-UPDATED "200004051500Z"
+--    DESCRIPTION
+--        "This table is used for maintaining the configuration of
+--         the RUDP session parameters on VISM"
+--
+--    REVISION    "200004051500Z"
+--    DESCRIPTION "
+--                Change the upper limit of the following object to be 
+--                65535 and modify description accordingly:
+--                vismSessionSetNum, vismSessionGrpNum, vismRudpSessionNum,
+--                vismRudpSessionGrpNum, vismRudpSessionPriority,
+--                vismRudpSessionLocalPort, vismRudpSessionRmtPort and 
+--                vismRudpSessionStatNum. Change vismSessionSetState 
+--                enumeration type "active-is", "standby-is", "full-is" to 
+--                be "activeIs", "standbyIs", and "fullIs". Modify 
+--                descirption. Take out DEFVAL for vismSessionSetState, 
+--                vismRudpSessionLocalPort, and vismRudpSessionRmtPort. 
+--                Add "unknown" state and modify description for 
+--                vismSessionSetState, vismSessionGrpState and 
+--                vismRudpSessionGrpState."
+--           
+--    REVISION    "200003241500Z"
+--    DESCRIPTION " 
+--                Modification based on reviewing of the changes on 03/21:
+--                Move vismSessionSetFaultTolerant and vismSessionGrpMgcName 
+--                to the end of table. Put vismRudpSessionCurrSession back 
+--                to VismRudpSessionCnfEntry table. Modify the description 
+--                of vismSessionSetRowStatus. "
+--        
+--    REVISION    "200003211500Z"
+--    DESCRIPTION " 
+--                Add r/w object vismSessionSetFaultTolerant to vismSessionSetTable.
+--                Add r/w object vismSessionGrpMgcName to vismSessionGrpTable.
+--                change r/w object vismRudpSessionMgcName to r/o object 
+--                vismRudpSessionRmtIp. Remove vismRudpSessionCurrSession from 
+--                vismRudpSessionCnfTable.  Take out default value for 
+--                vismRudpSessionPriority. Modify the description of 
+--                vismSessionSetState, vismSessionSetRowStatus, vismSessionGrpState,
+--                vismRudpSessionState, vismSessionGrpRowStatus, vismSessionGrpSetNum, 
+--                vismSessionGrpCurrSession and vismSessionGrpNum."
+--        
+--    REVISION    "200002191500Z"
+--    DESCRIPTION " 
+--                Change the description of createAndGo in vismRudpSessionCnfRowStatus
+--                Correct typo."
+--
+--    REVISION    "200002091500Z"
+--    DESCRIPTION " 
+--                Initial version. Incorporated the changes suggested in the 
+--                review meetings. This is not an official release."
+--             
+
+
+VISM-SESSION-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    Counter, IpAddress                  FROM RFC1155-SMI
+    OBJECT-TYPE                         FROM RFC-1212
+    DisplayString                       FROM RFC1213-MIB
+    voice                               FROM BASIS-MIB;
+
+vismSessionGrp          OBJECT IDENTIFIER ::= { voice 11 }
+
+-- Boolean
+   TruthValue  ::= INTEGER { true (1), false (2) }
+
+-- The relationship between session set, session group and RUDP session 
+-- is that: For fault tolerant case each session set contains two groups.
+-- Each group connects to one MGC, One active, one standby. 
+-- If one MGC fails, the other MGC will inform the session mamager to 
+-- switch over.  
+-- If the set configuration is non-fault tolerant, each set contains one group.
+--
+-- Each session group contains upto four RUDP sessions. 
+--
+-- Session set is explicitly created first, then session group can be  
+-- created in this set.
+-- After session group is created, session can be created in the group.
+-- 
+-- For deletion, session has to be deleted first. However, the last session 
+-- can not be deleted if there is still LAPD entry. 
+-- A group can only be deleted if there is no more session in it. 
+-- Session set will be deleted when the last group in the set has been 
+-- deleted.
+--
+-- --------------------------------
+-- vismSessionSet table
+-- --------------------------------
+--
+
+vismSessionSetTable    OBJECT-TYPE
+    SYNTAX  SEQUENCE OF VismSessionSetEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "This table has entries for a collection of sessGrp(s) each 
+         providing connectivity to a different Media gateway Controller
+         (MGC)."
+    ::= { vismSessionGrp 1 }
+
+vismSessionSetEntry    OBJECT-TYPE
+    SYNTAX  VismSessionSetEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "An entry for vismSessionSetTable."
+    INDEX { vismSessionSetNum }
+    ::= { vismSessionSetTable 1 }
+
+VismSessionSetEntry ::=
+    SEQUENCE {
+                vismSessionSetNum             INTEGER,
+                vismSessionSetRowStatus       INTEGER,
+                vismSessionSetState           INTEGER,
+                vismSessionSetTotalGrps       INTEGER,
+                vismSessionSetActiveGrp       INTEGER,
+                vismSessionSetSwitchFails     Counter,
+                vismSessionSetSwitchSuccesses Counter,
+                vismSessionSetFaultTolerant   TruthValue
+             }
+                 
+vismSessionSetNum    OBJECT-TYPE
+    SYNTAX  INTEGER(1..65535)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the logical index of this table.
+         Currently only set 1 is used and all the signaling channels are 
+         implicitly mapped to set 1. 
+        "
+    ::= { vismSessionSetEntry 1 }
+
+vismSessionSetRowStatus    OBJECT-TYPE
+    SYNTAX  INTEGER {
+                active(1),
+                createAndGo(4),
+                destroy(6)
+                }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This variable is used to allow add or delete a session set.
+         createAndGo: Use this to add an entry in set table.
+         vismSessionSetNum and vismSessionSetFaultTolerant are the 
+         mandatory parameters while adding a set. Currently only 
+         one set (set #1) can be created. 
+         The entry will become 'active' after creation. 
+
+         A set entry may be deleted by setting this object to 'destory'.
+         Deletion of a set is not allowed if there is still group in
+         this set.
+        "
+    ::= { vismSessionSetEntry 2 }
+
+vismSessionSetState    OBJECT-TYPE
+    SYNTAX  INTEGER {
+                idle(1), 
+                oos(2),
+                activeIs(3),
+                standbyIs(4),
+                fullIs(5),
+                unknown(6)
+                }
+    ACCESS  read-only 
+    STATUS  mandatory
+    DESCRIPTION
+        "When an entry in sessionSet table is created and no group
+         has been added to this set yet or group has been created
+         in this set but no session has been added yet the set state
+         is 'idle'.
+
+         After a group has been created in this set and one session
+         has been added to the group the set state becomes 'oos',i.e,
+         out of service.         
+
+         After successfully open socket and the session has sent 
+         START message to MGC, the state of the set will be changed
+         based on whether this set is fault tolerant(FT) or none fault
+         tolerant(NFT).  
+
+         In NFT case the set state becomes 'activeIs'.
+
+         In FT case, if one session from a group received an active message 
+         from MGC and no standby message received from a session in the
+         other group, the state of the set will change to 'activeIs'.
+         On the other hand, if at least one session from a group 
+         received standby message from MGC and no other  
+         session from the other group received active message then the set 
+         state is transferred to 'standbyIs'.
+         The set becomes 'fullIs' when at least one  session from one group
+         receives active message and at least one session from the
+         other group receives standby message.  
+         
+         'unknown' is a state other than the above states.
+        "
+    ::= { vismSessionSetEntry 3 }
+
+vismSessionSetTotalGrps    OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This counter keeps track the number of session groups that has 
+         been added to a session set."
+    ::= { vismSessionSetEntry 4 }
+
+vismSessionSetActiveGrp    OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the current active group number."
+    ::= { vismSessionSetEntry 5 }
+
+vismSessionSetSwitchFails    OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This counter keeps track of failed attempts to switch between 
+         session groups in this set."
+    ::= { vismSessionSetEntry 6 }
+
+vismSessionSetSwitchSuccesses    OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This counter keeps track of successful attempts to switch 
+         between session groups in this set.
+        "
+    ::= { vismSessionSetEntry 7 } 
+
+vismSessionSetFaultTolerant    OBJECT-TYPE
+    SYNTAX  TruthValue 
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates whether the set configuration is fault 
+         tolerant or not.  
+         If the set is fault tolerant then there can be two groups 
+         in this set.  
+         If the set is non-fault tolerant then only one group
+         can be added in this set.
+         Once the entry is created this object cannot be modified.
+        "
+    ::= { vismSessionSetEntry 8 }
+
+-- --------------------
+-- vismSessionGrp table
+-- --------------------
+
+vismSessionGrpTable    OBJECT-TYPE
+    SYNTAX  SEQUENCE OF VismSessionGrpEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "This table has entries for a collection of sessions"
+    ::= { vismSessionGrp 2 }
+
+vismSessionGrpEntry    OBJECT-TYPE
+    SYNTAX  VismSessionGrpEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "An entry for vismSessionGrpTable."
+    INDEX { vismSessionGrpNum }
+    ::= { vismSessionGrpTable 1 }
+
+VismSessionGrpEntry ::=
+    SEQUENCE {
+                vismSessionGrpNum             INTEGER,
+                vismSessionGrpSetNum          INTEGER,
+                vismSessionGrpRowStatus       INTEGER,
+                vismSessionGrpState           INTEGER,
+                vismSessionGrpCurrSession     INTEGER,
+                vismSessionGrpTotalSessions   INTEGER,
+                vismSessionGrpSwitchFails     Counter,
+                vismSessionGrpSwitchSuccesses Counter,
+                vismSessionGrpMgcName         DisplayString
+             }
+                 
+vismSessionGrpNum    OBJECT-TYPE 
+    SYNTAX  INTEGER(1..65535)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Index for vismSessionGrpEntry table. 
+         Currently the range of 1 to 16 is used.
+         One set can have upto two groups. 
+        " 
+    ::= { vismSessionGrpEntry 1 }
+   
+vismSessionGrpSetNum    OBJECT-TYPE 
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the session set number to which this session Group
+         belongs.
+         Once the entry is created this object cannot be modified.
+        "
+    ::= { vismSessionGrpEntry 2 }
+    
+vismSessionGrpRowStatus    OBJECT-TYPE
+    SYNTAX  INTEGER {
+                active(1),
+                createAndGo(4),
+                destroy(6)
+                }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This variable allows to add or delete an entry in this table.
+         createAndGo: Use this to add an entry in this table. 
+         vismSessionGrpNum, vismSessionGrpSetNum and vismSessionGrpMgcName
+         are required to add an entry.  Before adding the session group, 
+         the session set should already be created. 
+
+         active: This value is returned once the session group is 
+         created
+
+         destroy: Use this to delete a session group. Session group 
+         number is the only  mandatory parameter to delete an entry. 
+        "
+    ::= { vismSessionGrpEntry 3 }
+
+vismSessionGrpState    OBJECT-TYPE
+    SYNTAX  INTEGER {
+                idle           (1),
+                oos            (2),
+                is             (3),
+                unknown        (4)
+                }
+    ACCESS  read-only 
+    STATUS  mandatory
+    DESCRIPTION
+        "'idle': This is the initial state. 
+         'oos': Out of service state. when a session group has been 
+                created the state of the session group becomes 'oos' 
+                or when all sessions belonging to this group are deleted, 
+                session group state becomes 'oos'
+         'is': In service state. After at least one  session has been 
+               added to the group, socket has been successfully set up 
+               and the session has sent a START message to MGC the group 
+               state changes to 'is'.
+         'unknown': This is the state other than the above states.
+        "
+    ::= { vismSessionGrpEntry 4 }
+
+vismSessionGrpCurrSession    OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates the current session that is open to 
+         communication with MGC.
+         There is only one active session per session group."
+    ::= { vismSessionGrpEntry 5 }
+
+vismSessionGrpTotalSessions    OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This object keeps track the total number of sessions that
+         have been added to this group.
+        "
+    ::= { vismSessionGrpEntry 6 }
+
+vismSessionGrpSwitchFails    OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This counter keeps track of failed attempts to switch between 
+         sessions in this group."
+    ::= { vismSessionGrpEntry 7 }
+
+vismSessionGrpSwitchSuccesses    OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This counter keeps track of successful attempts to switch 
+         between sessions in this group."
+    ::= { vismSessionGrpEntry 8 } 
+
+vismSessionGrpMgcName    OBJECT-TYPE
+    SYNTAX  DisplayString(SIZE(1..64)) 
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This denotes the name of the media gateway controller.
+         This corresponds to a domain name under which the MGC
+         could also be registered in a DNS.
+         Once this entry becomes active, this value may not be modified.
+        "
+    ::= { vismSessionGrpEntry 9 }
+
+-- ----------------------------------------------------------------------
+-- vismRudpSessionCnfTable
+-- ----------------------------------------------------------------------
+
+vismRudpSessionCnfTable    OBJECT-TYPE
+    SYNTAX  SEQUENCE OF VismRudpSessionCnfEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "This table has entries of sessions, which are the connection
+         between MGC and a gateway (VISM). A session is identified by 
+         a local IP address, port, remote IP address and remote port. The 
+         combination of these four numbers has to be unique to identify
+         one session. This table also maintains the configuration for 
+         every session."
+    ::= { vismSessionGrp 3 }
+
+vismRudpSessionCnfEntry    OBJECT-TYPE
+    SYNTAX  VismRudpSessionCnfEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "An entry for vismSessionCnfEntry."
+    INDEX { vismRudpSessionNum }
+    ::= { vismRudpSessionCnfTable 1 }
+
+VismRudpSessionCnfEntry ::=
+    SEQUENCE {
+                vismRudpSessionNum             INTEGER,
+                vismRudpSessionGrpNum          INTEGER,
+                vismRudpSessionCnfRowStatus    INTEGER,
+                vismRudpSessionPriority        INTEGER,
+                vismRudpSessionState           INTEGER,
+                vismRudpSessionCurrSession     INTEGER,
+                vismRudpSessionLocalIp         IpAddress,
+                vismRudpSessionLocalPort       INTEGER,
+                vismRudpSessionRmtIp           IpAddress,
+                vismRudpSessionRmtPort         INTEGER,
+                vismRudpSessionMaxWindow       INTEGER,
+                vismRudpSessionSyncAttempts    INTEGER,
+                vismRudpSessionMaxSegSize      INTEGER,
+                vismRudpSessionMaxAutoReset    INTEGER,
+                vismRudpSessionRetransTmout    INTEGER,
+                vismRudpSessionMaxRetrans      INTEGER,
+                vismRudpSessionMaxCumAck       INTEGER,
+                vismRudpSessionCumAckTmout     INTEGER,
+                vismRudpSessionMaxOutOfSeq     INTEGER,
+                vismRudpSessionNullSegTmout    INTEGER,
+                vismRudpSessionTransStateTmout INTEGER,
+                vismRudpSessionType            INTEGER,
+                vismRudpSessionRmtGwIp         IpAddress
+             }
+                 
+vismRudpSessionNum    OBJECT-TYPE
+    SYNTAX  INTEGER(1..65535)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the index of vismRudpSessionCnfEntry table.
+         Currently the range of 1 to 64 is used.
+         One group can have maximum four sessions.
+        "
+    ::= { vismRudpSessionCnfEntry 1 }
+
+vismRudpSessionGrpNum    OBJECT-TYPE
+    SYNTAX  INTEGER(1..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This indicates the session group that this session belongs to.
+         Currently the range of 1 to 16 is used.
+         Once the entry is created, it cannot be modified.
+        "
+    ::= { vismRudpSessionCnfEntry 2 }
+
+vismRudpSessionCnfRowStatus    OBJECT-TYPE
+    SYNTAX  INTEGER {
+                active(1),
+                createAndGo(4),
+                destroy(6)
+                }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This variable allows the user to add or delete the entry 
+         for this table.
+         createAndGo: Use this to add a Rudp session in this table.
+         Rudp session number, session group number, priority, local 
+         port and remote port are required while creating an entry for
+         PRI Backhaul. On the other hand Rudp session number, local
+         port, remote port, remote VISM IP and rudp session type are 
+         required for Lapd trunking. 
+
+         active: This value is returned, once the row is created.
+
+         destroy: Use this to delete an RUDP session from this table.
+         Only RUDP session number is needed for deleting.
+         The last session shall not be deleted if there are still 
+         active LAPD entries.
+        "
+    ::= { vismRudpSessionCnfEntry 3 }
+
+vismRudpSessionPriority    OBJECT-TYPE
+    SYNTAX  INTEGER(1..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object is used when creating a Rudp session. Once a session
+         has been added it can not be modified. 
+         When a session fails it indicates which session the session manager 
+         should try to bring active.
+         A lower number means higher priority.
+        "
+    ::= { vismRudpSessionCnfEntry 4 }
+
+vismRudpSessionState    OBJECT-TYPE
+    SYNTAX  INTEGER {
+                      oos (1),
+                      is (2),
+                      unknown (3)
+                    } 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "'oos': Out of service state. This is the initial state when 
+                create a RUDP session.
+         'is': In service state. When a channel has been created between 
+               gateway (VISM) and MGC and VISM has sent Start message the 
+               state of the session changes to 'is'.  
+         If the communication is lost between VISM and the MGC, the state 
+         of this session becomes 'oos'.
+         'unknown': This is the state other than the above states.
+        "
+    ::= { vismRudpSessionCnfEntry 5 }
+
+vismRudpSessionCurrSession    OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates which session has got active message
+         from MGC.
+         The session manager will always try to bring the first added
+         session to active.
+         If the current active session fails the state of this session is
+         changed to 'oos' and the session manager will try to bring the
+         'primary-is' session with highest priority among the rest of
+         sessions in this group to active.
+        "
+    ::= { vismRudpSessionCnfEntry 6 }
+
+vismRudpSessionLocalIp    OBJECT-TYPE
+    SYNTAX  IpAddress
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The IP address of gateway (VISM)."
+    ::= { vismRudpSessionCnfEntry 7 }
+
+vismRudpSessionLocalPort    OBJECT-TYPE
+    SYNTAX  INTEGER(1124..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The port number of gateway (VISM) for this session.
+         It can be modified after creation. This port number should
+         be unique across other sessions and XGCP/SRCP.
+        "
+    ::= { vismRudpSessionCnfEntry 8 }
+
+vismRudpSessionRmtIp    OBJECT-TYPE
+    SYNTAX  IpAddress
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the IP address of the media gateway controller.
+         It is resolved by using vismSessionGrpMgcName in 
+         vismSessionGrpTable.
+        "
+    ::= { vismRudpSessionCnfEntry 9 }
+
+vismRudpSessionRmtPort    OBJECT-TYPE
+    SYNTAX  INTEGER(1124..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The port number of MGC for this session.
+         It can be modified after creation.  This port number should
+         be unique across other sessions and XGCP/SRCP.
+        "
+    ::= { vismRudpSessionCnfEntry 10 }
+
+vismRudpSessionMaxWindow    OBJECT-TYPE
+    SYNTAX  INTEGER(1..64)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object is the maximum number of segments that should be 
+         sent without getting an acknowledgment, i.e. the max size of 
+         the receive window in segments. This is used for flow control.
+         This object can be modified after a session is created.
+        "
+    DEFVAL {32}
+    ::= { vismRudpSessionCnfEntry 11 }
+
+vismRudpSessionSyncAttempts    OBJECT-TYPE
+    SYNTAX  INTEGER(1..32)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Maximum number of attempts to synchronize with other side (MGC).
+         This object can be modified after a session is created.
+        "
+    DEFVAL {5}
+    ::= { vismRudpSessionCnfEntry 12 }
+
+vismRudpSessionMaxSegSize    OBJECT-TYPE
+    SYNTAX  INTEGER(30..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The maximum number of octets that can be received by the peer 
+         sending the SYN segment.
+         This object can be modified after a session is created.
+        "
+    DEFVAL {384}
+    ::= { vismRudpSessionCnfEntry 13 }
+ 
+vismRudpSessionMaxAutoReset    OBJECT-TYPE
+    SYNTAX  INTEGER(0..255)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The maximum number of consecutive auto reset that will be 
+         performed before a connection is reset. A value 0 indicates 
+         that an auto reset will not be attempted, the connection 
+         will be reset immediately if an auto reset condition occurs.
+         This object can be modified after a session is created.
+        "
+    DEFVAL {5}
+    ::= { vismRudpSessionCnfEntry 14 } 
+
+vismRudpSessionRetransTmout    OBJECT-TYPE
+    SYNTAX  INTEGER(100..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The timeout value for retransmission of unacknowledged 
+         packets in milliseconds.  This is a negotiable parameter, 
+         MGC and VISM must agree on the same value for this parameter.
+         This object can be modified after a session is created.
+        "
+    DEFVAL {600}
+    ::= { vismRudpSessionCnfEntry 15 } 
+
+vismRudpSessionMaxRetrans    OBJECT-TYPE
+    SYNTAX  INTEGER(0..255)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The maximum number of times consecutive retransmission 
+         will be attempted before the connection is considered 
+         broken.  A value 0 indicates retransmission should be 
+         attempted forever.  This is a negotiable parameter, both 
+         MGC and VISM must agree on the value for this parameter.
+         This object can be modified after a session is created.
+        " 
+    DEFVAL {3}
+    ::= { vismRudpSessionCnfEntry 16 } 
+
+vismRudpSessionMaxCumAck    OBJECT-TYPE
+    SYNTAX  INTEGER(0..255)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates the maximum number of acknowledgments 
+         that will be accumulated before sending an acknowledgment 
+         if another segment is not sent. A value of 0 indicates an 
+         acknowledgment segment will be sent immediately when a data, 
+         null, or reset segment is received. Negotiable parameter.
+         This object can be modified after a session is created.
+        "
+    DEFVAL {3}
+    ::= { vismRudpSessionCnfEntry 17 } 
+
+vismRudpSessionCumAckTmout    OBJECT-TYPE
+    SYNTAX  INTEGER(100..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object is the timeout value for sending an acknowledgment 
+         segment if another segment is not sent. This value is 
+         specified in milliseconds.  This parameter should be smaller 
+         than rudpRetransTmout. Negotiable parameter.
+         This object can be modified after a session is created.
+        "
+    DEFVAL {300}
+    ::= { vismRudpSessionCnfEntry 18 } 
+
+vismRudpSessionMaxOutOfSeq    OBJECT-TYPE
+    SYNTAX  INTEGER(0..255)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object is the maximum number of out of sequence packets 
+         that will be accumulated before an EACK segment is sent.
+         The EACK segment is used to acknowledge segments received out
+         of sequence. 
+         A value of 0 indicates a EACK will be sent immediately if 
+         an out of order segment is received.  Negotiable parameter.
+         This object can be modified after a session is created.
+        "
+    DEFVAL {4}
+    ::= { vismRudpSessionCnfEntry 19 } 
+
+vismRudpSessionNullSegTmout    OBJECT-TYPE
+    SYNTAX  INTEGER(0..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object is the number of milliseconds of idle time 
+         before sending a null segment.  A value of 0 disables null 
+         segments. Negotiable parameter.
+         This object can be modified after a session is created.
+        "
+    DEFVAL {2000}
+    ::= { vismRudpSessionCnfEntry 20 } 
+
+vismRudpSessionTransStateTmout    OBJECT-TYPE
+    SYNTAX  INTEGER(0..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates the number of milliseconds to wait 
+         for transfer state before an auto reset occurs. 0 
+         indicates the connection will be auto-reset immediately
+         and would not be used with redundant links.
+         This object can be modified after a session is created.
+        " 
+    DEFVAL {2000}
+    ::= { vismRudpSessionCnfEntry 21 } 
+
+vismRudpSessionType              OBJECT-TYPE
+    SYNTAX  INTEGER {
+            backhaul (1),
+            lapdTrunking (2)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates if the session is configured for Trunking or
+         PRI Backhaul. By default the object is set to 'backhaul' and it
+         needs to set to lapdTrunking if Lapd trunking needs to be done.
+        "
+    DEFVAL { backhaul }
+    ::= { vismRudpSessionCnfEntry 22 } 
+
+vismRudpSessionRmtGwIp    OBJECT-TYPE
+    SYNTAX  IpAddress
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the IP address of the remote VISM. This will be used only
+         for Lapd Trunking applications and the vismRudpSessionType must be 
+         set to Lapd trunking.
+        "
+    ::= { vismRudpSessionCnfEntry 23 }
+
+-- ------------------------------------------------------------------------
+-- vismRudpSessionStatTable
+-- ------------------------------------------------------------------------
+
+vismRudpSessionStatTable    OBJECT-TYPE
+    SYNTAX  SEQUENCE OF VismRudpSessionStatEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "This table keeps track of state and connection-specific 
+         counts. It is per connection based."
+    ::= { vismSessionGrp 4 }
+
+vismRudpSessionStatEntry    OBJECT-TYPE
+    SYNTAX  VismRudpSessionStatEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "An entry for vismSessionStatEntry."
+    INDEX { vismRudpSessionStatNum }
+    ::= { vismRudpSessionStatTable 1 }
+
+VismRudpSessionStatEntry ::=
+    SEQUENCE {
+                vismRudpSessionStatNum         INTEGER,
+                vismRudpSessionAutoResets      Counter,
+                vismRudpSessionRcvdAutoResets  Counter,
+                vismRudpSessionRcvdInSeqs      Counter,
+                vismRudpSessionRcvdOutSeqs     Counter,
+                vismRudpSessionSentPackets     Counter,
+                vismRudpSessionRcvdPackets     Counter,
+                vismRudpSessionSentBytes       Counter,
+                vismRudpSessionRcvdBytes       Counter,
+                vismRudpSessionDataSentPkts    Counter,
+                vismRudpSessionDataRcvdPkts    Counter,
+                vismRudpSessionDiscardPkts     Counter,
+                vismRudpSessionRetransPkts     Counter
+             }
+                 
+vismRudpSessionStatNum    OBJECT-TYPE
+    SYNTAX  INTEGER(1..65535)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the index of vismRudpSessionStatEntry table.
+         Currently the range of 1 to 64 is used.
+         It is the same as the index of vismRudpSessionCnfEntry 
+         table."
+    ::= { vismRudpSessionStatEntry 1 }
+
+vismRudpSessionAutoResets    OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Auto reset is also known as soft reset. VISM (gateway) 
+         initiates an auto reset when it detects that a connection 
+         has failed.
+         This keeps track of the number of auto resets initiated 
+         by VISM.
+        "
+    ::= { vismRudpSessionStatEntry 2 }
+
+vismRudpSessionRcvdAutoResets     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the counter for the number of auto resets initiated 
+         by MGC and received by VISM.
+        "
+    ::= { vismRudpSessionStatEntry 3 }
+
+vismRudpSessionRcvdInSeqs     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates number of packets received in sequence.
+        "
+    ::= { vismRudpSessionStatEntry 4 }
+ 
+vismRudpSessionRcvdOutSeqs     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Number of packets received out of sequence."
+    ::= { vismRudpSessionStatEntry 5 }
+
+vismRudpSessionSentPackets     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the number of packets sent by VISM.
+         Including SYN message."
+    ::= { vismRudpSessionStatEntry 6 }
+
+vismRudpSessionRcvdPackets     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the number of packets received by VISM.
+         Including active message.
+        "
+    ::= { vismRudpSessionStatEntry 7 }
+   
+vismRudpSessionSentBytes     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates the number of bytes sent to MGC."
+    ::= { vismRudpSessionStatEntry 8 }    
+
+vismRudpSessionRcvdBytes     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This object keeps track of the number of bytes received 
+         from MGC.
+        "
+    ::= { vismRudpSessionStatEntry 9 } 
+
+vismRudpSessionDataSentPkts     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This object is the number of data packets sent to MGC."
+    ::= { vismRudpSessionStatEntry 10 } 
+ 
+vismRudpSessionDataRcvdPkts     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This object is the number of data packets received from MGC."
+    ::= { vismRudpSessionStatEntry 11 } 
+
+vismRudpSessionDiscardPkts     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the number of packets discarded."
+    ::= { vismRudpSessionStatEntry 12 }
+
+vismRudpSessionRetransPkts     OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "This is the number of packets retransmitted."
+    ::= { vismRudpSessionStatEntry 13 }
+
+END

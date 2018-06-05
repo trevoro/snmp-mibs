@@ -1,0 +1,1193 @@
+ART-MIB DEFINITIONS ::= BEGIN
+ IMPORTS
+--    netscout2 FROM NETSCOUT-MIB
+    MODULE-IDENTITY, OBJECT-TYPE, enterprises, Counter32, Integer32,
+        Counter64 FROM SNMPv2-SMI
+    RowStatus, TimeStamp
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP FROM SNMPv2-CONF
+    OwnerString FROM RMON-MIB
+    DataSource, protocolDirEntry, protocolDirLocalIndex
+        FROM RMON2-MIB;
+
+art MODULE-IDENTITY
+    LAST-UPDATED "9910050000Z"
+    ORGANIZATION "NetScout Systems, Inc."
+    CONTACT-INFO
+        "Albin Warth
+         Postal: NetScout Systems, Inc.
+         4 Technology Park Drive
+         Westford, MA 01886
+         Phone: +1 978 614 4306
+         Email: albin@netscout.com"
+    DESCRIPTION
+        "The MIB module for Application Response Time measurement."
+    ::= { netscout2 5 }
+
+
+--
+-- ART extends Enterprise RMON by creating a new branch...
+--
+-- (Can also do this by importing netscout2 FROM NETSCOUT-MIB)
+--
+
+frontier  OBJECT IDENTIFIER ::= { enterprises 141 }
+mibdoc2   OBJECT IDENTIFIER ::= { frontier 2 }
+netscout2 OBJECT IDENTIFIER ::= { mibdoc2 1 }
+
+--
+-- The ART augmentation of the RMON-2 Protocol Directory.
+-- This defines (in effect) an additional column in the
+-- protocolDirTable.
+--
+
+protocolDir2Table  OBJECT-TYPE
+    SYNTAX     SEQUENCE OF ProtocolDir2Entry
+    MAX-ACCESS not-accessible
+    STATUS     current
+    DESCRIPTION
+        "Contains the ART augmentations to RMON-2."
+    ::= { art 1 }
+
+protocolDir2Entry  OBJECT-TYPE
+    SYNTAX     ProtocolDir2Entry
+    MAX-ACCESS not-accessible
+    STATUS     current
+    DESCRIPTION
+        "Contains the ART augmentations to RMON-2."
+    AUGMENTS { protocolDirEntry }
+    ::= { protocolDir2Table 1 }
+
+ProtocolDir2Entry ::= SEQUENCE {
+    protocolDir2ArtConfig INTEGER
+}
+
+protocolDir2ArtConfig OBJECT-TYPE
+    SYNTAX INTEGER {
+          notSupported(1),
+          supportedOff(2),
+          supportedOn(3)
+    }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object describes and configures the probe's support for
+
+
+        application response time monitoring for the protocol.
+
+        When the probe creates entries in this table for
+        all protocols that it understands, it will set the entry to
+        notSupported(1) if it doesn't have the capability to track
+        application response time for this protocol.
+
+        If the value of this object is supportedOff(2), the probe
+        supports tracking of application response time, but is
+        configured to not track response time for any control
+        entries or data sources.
+
+        If the value of this object is supportedOn(3), the probe
+        supports tracking of application response time for this
+        protocol, and will allow creation of entries in the
+        artControlTable for the associated protocol.
+
+        Whenever this value changes from supportedOn(3) to
+        supportedOff(2), the probe shall delete all related entries
+        in the artTable and artSummaryTable."
+    ::= { protocolDir2Entry 1 }
+
+--
+-- The ART Report Control Table
+--
+
+artControlTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF ArtControlEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table lists the data sources (typically, probe
+        interfaces) for which application response time collection
+        is enabled, and additionally controls the generation of
+        ART reports in the artTable and artSummaryTable."
+    ::= { art 2 }
+
+artControlEntry OBJECT-TYPE
+    SYNTAX      ArtControlEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A conceptual row in the artControlTable.
+
+        Creation of a row enables ART collection and report
+        generation for the corresponding data source.
+
+
+        The artControlRspTime{1..6} objects are used to categorize
+        the request-response pairs observed during an ART sample
+        interval.
+
+        The NMS is responsible to ensure that:
+          artControlRspTime1 <= artControlRspTime2
+          artControlRspTime2 <= artControlRspTime3
+          artControlRspTime3 <= artControlRspTime4
+          artControlRspTime4 <= artControlRspTime5
+          artControlRspTime5 <= artControlRspTime6
+
+        and that:
+          artControlRspTime6 <= artControlRspTimeout
+
+        If these relationships do not hold, the probe rejects any
+        attempt to set the artControlStatus object to active(1).
+
+        Suggested default values for the time ranges are:
+          artControlRspTime1     25 milliseconds
+          artControlRspTime2     50 milliseconds
+          artControlRspTime3    100 milliseconds
+          artControlRspTime4    200 milliseconds
+          artControlRspTime5    400 milliseconds
+          artControlRspTime6    800 milliseconds
+
+        The table is implicitly indexed by data source,
+        using the DataSource identifier corresponding to
+        the data source."
+    INDEX { artControlIndex }
+    ::= { artControlTable 1 }
+
+ArtControlEntry ::= SEQUENCE {
+    artControlIndex               Integer32,
+    artControlDataSource          DataSource,
+    artControlTimeRemaining       Integer32,
+    artControlDuration            Integer32,
+    artControlRspTime1            Integer32,
+    artControlRspTime2            Integer32,
+    artControlRspTime3            Integer32,
+    artControlRspTime4            Integer32,
+    artControlRspTime5            Integer32,
+    artControlRspTime6            Integer32,
+    artControlRspTimeout          Integer32,
+    artControlRptStartTime        TimeStamp,
+    artControlRequestedSize       Integer32,
+    artControlGrantedSize         Integer32,
+    artControlGeneratedRpts       Integer32,
+
+
+    artControlDroppedFrames       Counter32,
+    artControlOwner               OwnerString,
+    artControlStatus              RowStatus
+}
+
+artControlIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A unique index for this artControlEntry."
+    ::= { artControlEntry 1 }
+
+artControlDataSource OBJECT-TYPE
+    SYNTAX      DataSource
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The source of data for application response-time collection,
+        i.e., the data source (typically, a probe interface) for
+        which ART statistics are to be collected and reports generated.
+
+        This object shall not be modified if the associated
+        artControlStatus is equal to active(1)."
+    ::= { artControlEntry 2 }
+
+artControlTimeRemaining OBJECT-TYPE
+    SYNTAX      Integer32 (0..86400)    -- 24 hours
+    UNITS       "seconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The number of seconds remaining in the current report
+        interval.  When this value reaches zero, the probe deletes
+        any existing reports for the associated data source, creates
+        a new report corresponding to the just-expired interval,
+        copies the current value of artControlDuration to this
+        object, and starts a new collection interval.
+
+        The value of this object is latched in artControlDuration
+        whenever it is written to using SNMP, allowing automatic
+        restart of collection using the same duration.
+
+        If this object is overwritten while the associated
+        artStatus is equal to active(1), the current collection
+        for the associated data source is abandoned, and a new
+        collection started using the new interval.
+
+
+        Setting this value to 0 abandons current collection and
+        disables report generation for the associated data source.
+        (This is not recommended -- better to delete the row.)
+
+        The probe should delay the initial countdown of this
+        object in order to align report intervals to 12:00 AM UTC."
+    ::= { artControlEntry 3 }
+
+artControlDuration OBJECT-TYPE
+    SYNTAX      Integer32 (0..86400)    -- 24 hours
+    UNITS       "seconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This object is used to latch the value of artTimeRemaining
+        for automatic collection restart at the end of a collection
+        interval."
+
+    ::= { artControlEntry 4 }
+
+artControlRspTime1 OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The first of six time values used to categorize the response
+        times observed during the report interval.
+
+        This object may not be changed while artControlStatus is set
+        to active(1)."
+    ::= { artControlEntry 5 }
+
+artControlRspTime2 OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The second of six time values used to categorize the response
+        times observed during the report interval.
+
+        This object may not be changed while artControlStatus is set
+        to active(1)."
+    ::= { artControlEntry 6 }
+
+artControlRspTime3 OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+
+
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The third of six time values used to categorize the response
+        times observed during the report interval.
+
+        This object may not be changed while artControlStatus is set
+        to active(1)."
+    ::= { artControlEntry 7 }
+
+artControlRspTime4 OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The fourth of six time values used to categorize the response
+        times observed during the report interval.
+
+        This object may not be changed while artControlStatus is set
+        to active(1)."
+    ::= { artControlEntry 8 }
+
+artControlRspTime5 OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The fifth of six time values used to categorize the response
+        times observed during the report interval.
+
+        This object may not be changed while artControlStatus is set
+        to active(1)."
+    ::= { artControlEntry 9 }
+
+artControlRspTime6 OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The sixth of six time values used to categorize the response
+        times observed during the report interval.
+
+        This object may not be changed while artControlStatus is set
+        to active(1)."
+
+
+    ::= { artControlEntry 10 }
+
+artControlRspTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The maximum interval that the probe will wait for a server
+        response to a client request.  Requests older than this value
+        are abandoned, and counted as artTimeouts in the artTable and
+        as artSummaryTimeouts in the artSummaryTable.
+
+        This object may not be changed while artControlStatus is set
+        to active(1)."
+    ::= { artControlEntry 11 }
+
+artControlRptStartTime OBJECT-TYPE
+    SYNTAX      TimeStamp
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The time at which collection of the currently available
+        reports was started."
+    ::= { artControlEntry 12 }
+
+artControlRequestedSize OBJECT-TYPE
+    SYNTAX     Integer32 (-1..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of report rows to be generated in the
+        artTable for the associated data source.  If set to -1, the
+        maximum number of report rows shall be determined by the
+        probe based on available resources."
+    ::= { artControlEntry 13 }
+
+artControlGrantedSize OBJECT-TYPE
+    SYNTAX     Integer32 (0..65535)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of report rows in the artTable granted by
+        the probe for the associated data source.  The value of this
+        object may be less than the requested size."
+    ::= { artControlEntry 14 }
+
+artControlGeneratedRpts OBJECT-TYPE
+
+
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of report sets that have been generated by this
+        entry.
+
+        The NMS may use this value to poll for the availability of
+        a new report set.  It may also sample this value before and
+        after a sweep of the artTable or artSummaryTable in order
+        to verify that a new report set was not generated during
+        the sweep."
+    ::= { artControlEntry 15 }
+
+artControlDroppedFrames OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "The total number of frames which were received by the probe
+        and therefore not accounted for in the *StatsDropEvents, but
+        for which the probe chose not to count for this entry for
+        whatever reason.  Most often, this event occurs when the probe
+        is out of some resources and decides to shed load from this
+        collection.
+
+        This count does not include packets that were not counted
+        because they had MAC-layer errors.
+
+        Note that, unlike the dropEvents counter, this number is the
+        exact number of frames dropped."
+    ::= { artControlEntry 16 }
+
+artControlOwner OBJECT-TYPE
+    SYNTAX      OwnerString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The entity that configured this entry and is therefore using
+        the resources assigned to it."
+    ::= { artControlEntry 17 }
+
+artControlStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The status of this control table entry.
+
+
+        An entry must not exist in the active state unless all
+        objects in the entry have an appropriate value.
+
+        If this object is not equal to active(1), all associated
+        entries in the artTable and artSummaryTable shall be
+        deleted."
+    ::= { artControlEntry 18 }
+
+--
+-- The ART Report Table
+--
+
+artTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF ArtEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table provides sets of application response time
+        reports.  Each row of the table corresponds to a report.
+        Existing reports are deleted by the probe at the expiration
+        of each sampling period, and replaced with new reports for
+        the just-ended period.  Generation of reports is controlled
+        using the objects in the artControlTable.
+
+        The maximum number of report rows in this table is the sum
+        of each of the artControlGrantedSize object values in
+        the artControlTable.
+
+        Note that this table is shared by all data sources,
+        although reports are generated independently for each
+        data source."
+    ::= { art 3 }
+
+artEntry OBJECT-TYPE
+    SYNTAX      ArtEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A conceptual row in the artTable.
+
+        Each row corresponds to an application response time
+        report for an individual {data source, application-protocol,
+        client, server} quadruple.
+
+        Rows are created and deleted by the probe, and all objects
+        are read-only to the NMS.
+
+
+        Rows are indexed (in effect) by data source, application
+        protocol identifier, server address, and client address.
+
+        Note that only the client and server address index
+        components correspond to objects in the table."
+    INDEX   {
+            artControlIndex,        -- identifies data source
+            protocolDirLocalIndex,  -- identifies application
+                                    -- protocol
+            artServerAddress,       -- identifies server
+            artClientAddress        -- identifies client
+            }
+    ::= { artTable 1 }
+
+ArtEntry ::= SEQUENCE {
+    artServerAddress         OCTET STRING,
+    artClientAddress         OCTET STRING,
+    artAvgRspTime            Integer32,
+    artMinRspTime            Integer32,
+    artMaxRspTime            Integer32,
+    artTotalResponses        Counter32,
+    artRsps1                 Counter32,
+    artRsps2                 Counter32,
+    artRsps3                 Counter32,
+    artRsps4                 Counter32,
+    artRsps5                 Counter32,
+    artRsps6                 Counter32,
+    artRsps7                 Counter32,
+    artClientOctets          Counter32,
+    artClientOverflowOctets  Counter32,
+    artClientHCOctets        Counter64,
+    artServerOctets          Counter32,
+    artServerOverflowOctets  Counter32,
+    artServerHCOctets        Counter64,
+    artRetries               Counter32,
+    artTimeouts              Counter32
+}
+
+artServerAddress OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The address of the server.
+
+        This is identified as an octet string with specific
+        semantics and length as identified by the
+        protocolDirLocalIndex component of the index."
+
+
+    ::= { artEntry 1 }
+
+artClientAddress OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The address of the client.
+
+        This is identified as an octet string with specific
+        semantics and length as identified by the
+        protocolDirLocalIndex component of the index."
+    ::= { artEntry 2 }
+
+artAvgRspTime OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The average response time, in milliseconds, observed
+        during the report interval.  Specification of milliseconds
+        as the time units does not require the probe to maintain
+        one-millisecond time granularity.
+
+        Response time is measured as the number of milliseconds,
+        as observed by the probe, between the final packet
+        of an application-layer request PDU from client to
+        server and the first packet of a response PDU from
+        server client.
+
+        This object is the arithmetical mean of the individual
+        response times observed during the interval.  Only server
+        responses that the probe has successfully paired with
+        client requests are included in the calculation.
+
+        Additional semantics of 'response time' may depend on
+        the application being monitored."
+    ::= { artEntry 3 }
+
+artMinRspTime OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The minimum response time, in milliseconds, observed
+        during the report interval.
+
+
+        This object is the minimum value of the individual
+        response times observed during the interval.  Only server
+        responses that the probe has successfully paired with
+        client requests are included in the calculation."
+    ::= { artEntry 4 }
+
+artMaxRspTime OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum response time, in milliseconds, observed
+        during the report interval.
+
+        This object is the maximum value of the individual
+        response times observed during the interval.  Only server
+        responses that the probe has successfully paired with
+        client requests are included in the calculation.
+
+        The probe should use wait for for artControlRspTimeout
+        milliseconds before abandoning the wait for a server
+        response."
+    ::= { artEntry 5 }
+
+artTotalResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of client requests that have been
+        successfully paired with a corresponding server response
+        during the report interval.
+
+        Requests that have been timed-out by the probe are not
+        counted by this object."
+    ::= { artEntry 6 }
+
+artRsps1 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The first of seven counters used to categorize the response
+        times observed during the report interval.  This object is a
+        count of responses that required less than artRspTime1
+        milliseconds."
+    ::= { artEntry 7 }
+
+
+artRsps2 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The second of seven counters used to categorize the response
+        times observed during the report interval.  This object
+        is a count of responses that required at least artRspTime1
+        milliseconds but less than artRspTime2 milliseconds."
+    ::= { artEntry 8 }
+
+artRsps3 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The third of seven counters used to categorize the response
+        times observed during the report interval.  This object
+        is a count of responses that required at least artRspTime2
+        milliseconds but less than artRspTime3 milliseconds."
+    ::= { artEntry 9 }
+
+artRsps4 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The fourth of seven counters used to categorize the response
+        times observed during the report interval.  This object
+        is a count of responses that required at least artRspTime3
+        milliseconds but less than artRspTime4 milliseconds."
+    ::= { artEntry 10 }
+
+artRsps5 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The fifth of seven counters used to categorize the response
+        times observed during the report interval.  This object
+        is a count of responses that required at least artRspTime4
+        milliseconds but less than artRspTime5 milliseconds."
+
+    ::= { artEntry 11 }
+
+artRsps6 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+
+
+    STATUS      current
+    DESCRIPTION
+        "The sixth of seven counters used to categorize the response
+        times observed during the report interval.  This object
+        is a count of responses that required at least artRspTime5
+        milliseconds but less than artRspTime6 milliseconds."
+    ::= { artEntry 12 }
+
+artRsps7 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The seventh of seven counters used to categorize the
+        response times observed during the report interval.  This
+        object is a count of responses that required at least
+        artRspTime6"
+    ::= { artEntry 13 }
+
+artClientOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets observed in client requests
+        during the report interval.  If the application-layer PDU has
+        been fragmented into multiple packets, all octets in each of
+        the packets are included in this count."
+    ::= { artEntry 14 }
+
+artClientOverflowOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times the associated artClientOctets counter
+        has overflowed."
+    ::= { artEntry 15 }
+
+artClientHCOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The high-capacity version of artClientOctets."
+    ::= { artEntry 16 }
+
+artServerOctets OBJECT-TYPE
+
+
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets in server responses
+        during the report interval.  If the application-layer PDU
+        has been fragmented into multiple packets, all octets in each
+        of the packets are included in this count."
+    ::= { artEntry 17 }
+
+artServerOverflowOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times the associated artServerOctets counter
+        has overflowed."
+    ::= { artEntry 18 }
+
+artServerHCOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The high-capacity version of artServerOctets."
+    ::= { artEntry 19 }
+
+artRetries OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This total number of application-layer client retries
+        observed during the report interval."
+    ::= { artEntry 20 }
+
+artTimeouts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times the probe has timed-out a client
+        request while waiting for a server response during the
+        report interval.  Timeouts may occur due to server
+        congestion or failure, network congestion or failure,
+        or probe congestion."
+    ::= { artEntry 21 }
+
+
+--
+-- The ART Summary Report Table
+--
+
+artSummaryTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF ArtSummaryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table provides sets of application response time
+        summary reports.  Each row of the table corresponds to a
+        report.
+
+        Existing reports are deleted by the probe at the expiration
+        of each sampling period, and replaced with new reports for
+        the just-ended period.  Generation of reports is controlled
+        using the objects in the artControlTable.
+
+        Note that this table is shared by all probe data sources,
+        although reports are generated independently for each
+        data source."
+    ::= { art 5 }
+
+artSummaryEntry OBJECT-TYPE
+    SYNTAX      ArtSummaryEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A conceptual row in the artSummaryTable.
+
+        Each row corresponds to an application response time
+        report for an individual {data source, application-protocol,
+        server} triple.  Values in the each row correspond to the
+        summary of response time information of all clients of
+        the associated server, whereas the rows in the artTable
+        contain detailed information for {data source, application-
+        protocol, client, server} quadruples.
+
+        Rows are created and deleted by the probe, and all objects are
+        read-only to the NMS.
+
+        Rows are indexed (in effect) by data source, application
+        protocol identifier, and server address.
+
+        Note that only the server address index component
+        corresponds to an object in the table."
+    INDEX   {
+            artControlIndex,         -- identifies data source
+
+
+            protocolDirLocalIndex,   -- identifies application
+                                     -- protocol
+            artSummaryServerAddress  -- identifies server
+            }
+    ::= { artSummaryTable 1 }
+
+ArtSummaryEntry ::= SEQUENCE {
+    artSummaryServerAddress         OCTET STRING,
+    artSummaryClients               Integer32,
+    artSummaryAvgRspTime            Integer32,
+    artSummaryMinRspTime            Integer32,
+    artSummaryMaxRspTime            Integer32,
+    artSummaryTotalResponses        Counter32,
+    artSummaryRsps1                 Counter32,
+    artSummaryRsps2                 Counter32,
+    artSummaryRsps3                 Counter32,
+    artSummaryRsps4                 Counter32,
+    artSummaryRsps5                 Counter32,
+    artSummaryRsps6                 Counter32,
+    artSummaryRsps7                 Counter32,
+    artSummaryClientOctets          Counter32,
+    artSummaryClientOverflowOctets  Counter32,
+    artSummaryClientHCOctets        Counter64,
+    artSummaryServerOctets          Counter32,
+    artSummaryServerOverflowOctets  Counter32,
+    artSummaryServerHCOctets        Counter64,
+    artSummaryRetries               Counter32,
+    artSummaryTimeouts              Counter32
+}
+
+artSummaryServerAddress OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The address of the server.
+
+        This is identified as an octet string with specific
+        semantics and length as identified by the
+        protocolDirLocalIndex component of the index."
+    ::= { artSummaryEntry 1 }
+
+artSummaryClients OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+
+
+        "The number of clients of this server for which requests
+        were successfully paired with server responses during
+        the report interval."
+    ::= { artSummaryEntry 2 }
+
+artSummaryAvgRspTime OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The average response time, in milliseconds, observed
+        during the report interval.  Specification of milliseconds
+        as the time units does not require the probe to maintain
+        one-millisecond time granularity.
+
+        Response time is measured as the number of milliseconds,
+        as observed by the probe, between the final packet
+        of an application-layer request PDU from client to
+        server and the first packet of a response PDU from
+        server client.
+
+        This object is the arithmetical mean of the individual
+        response times observed during the interval.  Only server
+        responses that the probe has successfully paired with
+        client requests are included in the calculation.
+
+        Additional semantics of 'response time' may depend on
+        the application being monitored."
+    ::= { artSummaryEntry 3 }
+
+artSummaryMinRspTime OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The minimum response time, in milliseconds, observed
+        during the report interval.
+
+        This object is the minimum value of the individual
+        response times observed during the interval.  Only server
+        responses that the probe has successfully paired with
+        client requests are included in the calculation."
+    ::= { artSummaryEntry 4 }
+
+artSummaryMaxRspTime OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+
+
+    UNITS       "milliseconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum response time, in milliseconds, observed
+        during the report interval.
+
+        This object is the maximum value of the individual
+        response times observed during the interval.  Only server
+        responses that the probe has successfully paired with
+        client requests are included in the calculation.
+
+        The probe should use a reasonable timeout period before
+        abandoning the wait for a server response."
+    ::= { artSummaryEntry 5 }
+
+artSummaryTotalResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of client requests that have been
+        successfully paired with a corresponding server response
+        during the report interval.
+
+        Requests that have been timed-out by the probe are not
+        counted by this object."
+    ::= { artSummaryEntry 6 }
+
+artSummaryRsps1 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The first of seven counters used to categorize the response
+        times observed during the report interval.  This object is a
+        count of responses that required less than artControlRspTime1
+        milliseconds."
+    ::= { artSummaryEntry 7 }
+
+artSummaryRsps2 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The second of seven counters used to categorize the response
+        times observed during the report interval.  This object is a
+        count of responses that required at least artControlRspTime1
+
+
+        milliseconds but less than artControlRspTime2 milliseconds."
+    ::= { artSummaryEntry 8 }
+
+artSummaryRsps3 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The third of seven counters used to categorize the response
+        times observed during the report interval.  This object is a
+        count of responses that required at least artControlRspTime2
+        milliseconds but less than artControlRspTime3 milliseconds."
+    ::= { artSummaryEntry 9 }
+
+artSummaryRsps4 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The fourth of seven counters used to categorize the response
+        times observed during the report interval.  This object is a
+        count of responses that required at least artControlRspTime3
+        milliseconds but less than artControlRspTime4 milliseconds."
+    ::= { artSummaryEntry 10 }
+
+artSummaryRsps5 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The fifth of seven counters used to categorize the response
+        times observed during the report interval.  This object is a
+        count of responses that required at least artControlRspTime4
+        milliseconds but less than artControlRspTime5 milliseconds."
+    ::= { artSummaryEntry 11 }
+
+artSummaryRsps6 OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The sixth of seven counters used to categorize the response
+        times observed during the report interval.  This object is a
+        count of responses that required at least artControlRspTime5
+        milliseconds but less than artControlRspTime6 milliseconds."
+    ::= { artSummaryEntry 12 }
+
+artSummaryRsps7 OBJECT-TYPE
+
+
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The seventh of seven counters used to categorize the response
+        times observed during the report interval.  This object is a
+        count of responses that required at least artControlRspTime6"
+    ::= { artSummaryEntry 13 }
+
+artSummaryClientOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets observed in client requests
+        during the report interval.  If the application-layer PDU has
+        been fragmented into multiple packets, all octets in each of
+        the packets are included in this count."
+    ::= { artSummaryEntry 14 }
+
+artSummaryClientOverflowOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times the associated artClientOctets counter
+        has overflowed."
+    ::= { artSummaryEntry 15 }
+
+artSummaryClientHCOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The high-capacity version of artSummaryClientOctets."
+    ::= { artSummaryEntry 16 }
+
+artSummaryServerOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of octets in server responses
+        during the report interval.  If the application-layer PDU
+        has been fragmented into multiple packets, all octets in each
+        of the packets are included in this count."
+    ::= { artSummaryEntry 17 }
+
+
+artSummaryServerOverflowOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times the associated artSummaryServerOctets
+        counter has overflowed."
+    ::= { artSummaryEntry 18 }
+
+artSummaryServerHCOctets OBJECT-TYPE
+    SYNTAX      Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The high-capacity version of artSummaryServerOctets."
+    ::= { artSummaryEntry 19 }
+
+artSummaryRetries OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This total number of application-layer client retries
+        observed during the report interval."
+    ::= { artSummaryEntry 20 }
+
+artSummaryTimeouts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of times the probe has timed-out a client
+        request while waiting for a server response during the
+        report interval.  Timeouts may occur due to server
+        congestion or failure, network congestion or failure,
+        or probe congestion."
+    ::= { artSummaryEntry 21 }
+
+--
+-- ART Groups and conformance.
+--
+
+artConformance OBJECT IDENTIFIER ::= { art 4 }
+
+artMIBCompliances OBJECT IDENTIFIER ::= { artConformance 1 }
+artMIBGroups      OBJECT IDENTIFIER ::= { artConformance 2 }
+
+
+artMIBCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+        "Describes the requirements for conformance to
+        the ART MIB."
+    MODULE  -- this module
+        MANDATORY-GROUPS { artGroup }
+    ::= { artMIBCompliances 1 }
+
+artGroup OBJECT-GROUP
+    OBJECTS {
+        protocolDir2ArtConfig,
+        artControlDataSource,
+        artControlTimeRemaining,
+        artControlDuration,
+        artControlRspTime1,
+        artControlRspTime2,
+        artControlRspTime3,
+        artControlRspTime4,
+        artControlRspTime5,
+        artControlRspTime6,
+        artControlRspTimeout,
+        artControlRptStartTime,
+        artControlRequestedSize,
+        artControlGrantedSize,
+        artControlGeneratedRpts,
+        artControlDroppedFrames,
+        artControlOwner,
+        artControlStatus,
+        artAvgRspTime,
+        artMinRspTime,
+        artMaxRspTime,
+        artTotalResponses,
+        artRsps1,
+        artRsps2,
+        artRsps3,
+        artRsps4,
+        artRsps5,
+        artRsps6,
+        artRsps7,
+        artClientOctets,
+        artClientOverflowOctets,
+        artClientHCOctets,
+        artServerOctets,
+        artServerOverflowOctets,
+        artServerHCOctets,
+        artRetries,
+        artTimeouts,
+
+
+        artSummaryClients,
+        artSummaryAvgRspTime,
+        artSummaryMinRspTime,
+        artSummaryMaxRspTime,
+        artSummaryTotalResponses,
+        artSummaryRsps1,
+        artSummaryRsps2,
+        artSummaryRsps3,
+        artSummaryRsps4,
+        artSummaryRsps5,
+        artSummaryRsps6,
+        artSummaryRsps7,
+        artSummaryClientOctets,
+        artSummaryClientOverflowOctets,
+        artSummaryClientHCOctets,
+        artSummaryServerOctets,
+        artSummaryServerOverflowOctets,
+        artSummaryServerHCOctets,
+        artSummaryRetries,
+        artSummaryTimeouts
+    }
+    STATUS  current
+    DESCRIPTION
+        "This group adds application response time measurement
+        to RMON-2."
+    ::= { artMIBGroups 1 }
+
+END

@@ -1,0 +1,654 @@
+          MLM-MIB DEFINITIONS ::= BEGIN
+
+          IMPORTS
+				enterprises FROM RFC1155-SMI
+              MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, experimental,
+              Integer32, IpAddress, Counter32, Gauge32, TimeTicks,
+              Counter64, snmpModules
+                  FROM SNMPv2-SMI
+              DisplayString, TestAndIncr, RowStatus
+                  FROM SNMPv2-TC
+              MODULE-COMPLIANCE, OBJECT-GROUP
+                  FROM SNMPv2-CONF;
+
+          snmpResearch    OBJECT IDENTIFIER ::= { enterprises 99 }
+
+          mlmMIB MODULE-IDENTITY
+              LAST-UPDATED "9310150000Z"
+              ORGANIZATION "SNMP Research, Inc."
+              CONTACT-INFO
+                      "   David B. Levi
+                          Postal: SNMP Research, Inc.
+                          3001 Kimberlin Heights Road
+                          Knoxville, TN 37920-9716
+                          Tel: (615)573-1434
+                          Fax: (615)573-9197
+                          E-mail: levi@snmp.com"
+              DESCRIPTION
+                      "The MIB module for the SNMP Mid-Level-Manager MIB"
+              ::= { snmpResearch 42 }
+
+          mlmMIBObjects OBJECT IDENTIFIER ::= { mlmMIB 1 }
+
+          mlmLock OBJECT-TYPE
+              SYNTAX      TestAndIncr
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "This variable is used for creating new rows in the
+                      mlmCompileTable.  When creating a new row, this
+                      variable must be set as well as the mlmRowStatus.  If
+                      the value it is set to does not equal its current
+                      value, the set completely fails.  A manager should
+                      only perform set requests on rows in the
+                      mlmCompileTable which it has created using mlmLock.
+                      The value of mlmLock is equal to the first unused row
+                      in the mlmCompileTable."
+              ::= { mlmMIBObjects 1 }
+
+          mlmScriptWrite OBJECT-TYPE
+              SYNTAX      INTEGER (0..2147483647)
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "This variable is used to instruct the MLM to write
+                      a script stored in the mlmScriptTable to non-volatile
+                      storage.  This is done by performing a set on the
+                      variable.  The value to which it is set should be
+                      the index of a row in the mlmCompileTable, which
+                      should contain a non-zero value for mlmScriptNumber,
+                      and a non-empty value for mlmScriptName.  If these
+                      two values are not set, the set will fail with a
+                      BAD_VALUE_ERROR.  Otherwise, the script in the
+                      mlmScriptTable referenced by the value of
+                      mlmScriptNumber is written to non-volatile memory
+                      using the name in mlmScriptName, and the value of
+                      mlmScriptNumber is set to 0.  In addition, any other
+                      entries in the mlmCompileTable whose values for
+                      mlmScriptNumber and mlmScriptName match those for
+                      the row being written will also have their values
+                      for mlmScriptNumber set to 0.  Finally, if there
+                      are no more references to the script stored in the
+                      mlmScriptTable, the script will be removed.
+
+                      The value returned for this variable on a get request
+                      should be the last value it was successfully set to,
+                      or zero (0) if it has never been set."
+              ::= { mlmMIBObjects 2 }
+
+          mlmExecutionSpeed OBJECT-TYPE
+              SYNTAX      INTEGER (1..2147483647)
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "This variable controls the performance of scripts.
+                      The Mid-Level-Manager is event driven, and uses
+                      timeout events to advance execution of all currently
+                      running (active) scripts.  This variable controls this
+                      timeout interval.  Setting it to a low value will
+                      cause scripts to run faster, but the MLM will not
+                      respond to SNMP requests as quickly.  Setting it to a
+                      higher value will reduce the speed of scripts, but
+                      will allow the MLM to respond to SNMP requests more
+                      quickly.  This value is measured in 100ths of
+                      seconds."
+              DEFVAL { 15 }
+              ::= { mlmMIBObjects 3 }
+
+          mlmTimeSlice OBJECT-TYPE
+              SYNTAX      Integer32
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "This variable controls the time-slice size for
+                      executing scripts.  It works in conjunction with the
+                      mlmExecutionSpeed variable.  After each timeout, each
+                      script is advanced by the number of instructions
+                      specified by this variable (or until blocked on a
+                      network request).  If the value of this variable is
+                      negative, then all scripts will be advanced to
+                      completion, or until blocked on a network request."
+              DEFVAL { 10 }
+              ::= { mlmMIBObjects 4 }
+
+          mlmNextScript OBJECT-TYPE
+              SYNTAX      TestAndIncr
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "This variable is used for creating scripts in
+                      the mlmScriptTable.  It should be used for creating
+                      scripts from scratch, or for reading scripts from
+                      non-volatile storage into the mlmScriptTable (by setting
+                      mlmScriptNumber as described later).  The current value
+                      of mlmNextScript should first be retrieved, and this
+                      value should then be included in the set request for
+                      creating the first row of a new script, or in the
+                      set request for changing mlmScriptNumber to read
+                      a script from non-volatile storage.  If the value
+                      it is set to does not equal its current value, the
+                      set completely fails.  A manager should only perform
+                      set requests on rows in the mlmScriptTable which
+                      it has created using mlmNextScript.  The value of
+                      mlmNextScript is equal to the first unused set of rows
+                      in the mlmScriptTable."
+              ::= { mlmMIBObjects 8 }
+
+
+
+
+          -- mlmCompileTable
+          --   Contains list of indices into mlmScriptTable and script
+          --   arguments.  Each row of the table provides a runnable script.
+          --   The script code to be run by a particular row may be shared
+          --   by other rows, either through the use of identical
+          --   mlmScriptNumber or mlmScriptName values.  The mlmScriptNumber
+          --   variable associates a set of columns in the mlmScriptTable
+          --   with a row in the mlmCompileTable.  Each set of columns in
+          --   the mlmScriptTable may be associated with several rows in
+          --   the mlmCompileTable.  Thus, the same script code can be
+          --   running several times in parallel with differing arguments.
+
+          -- Note that the MLM configuration file should only be updated
+          -- when a SET operation is performed on the mlmPermanence
+          -- variable.  There is a single exception to this.  If a 'permanent'
+          -- or 'startup' row is deleted by setting mlmRowStatus to 'destroy',
+          -- the corresponding entry stored in non-volatile memory is also
+          -- deleted.
+
+          mlmCompileTable OBJECT-TYPE
+              SYNTAX      SEQUENCE OF MlmCompileEntry
+              MAX-ACCESS  not-accessible
+              STATUS      current
+              DESCRIPTION
+                      "Contains list of runnable scripts, including indices
+                      into the mlmScriptTable, script arguments, and script
+                      execution period"
+              ::= { mlmMIBObjects 5 }
+
+          mlmCompileEntry OBJECT-TYPE
+              SYNTAX      MlmCompileEntry
+              MAX-ACCESS  not-accessible
+              STATUS      current
+              DESCRIPTION
+                      "An entry in the mlm compile table."
+              INDEX   { mlmCompileIndex }
+              ::= { mlmCompileTable 1 }
+
+          MlmCompileEntry ::=
+              SEQUENCE {
+                  mlmCompileIndex
+                      INTEGER,
+                  mlmScriptNumber
+                      INTEGER,
+                  mlmScriptName
+                      DisplayString,
+                  mlmCompileResult
+                      INTEGER,
+                  mlmExecutionArgs
+                      OCTET STRING,
+                  mlmExecutionPeriod
+                      INTEGER,
+                  mlmRowStatus
+                      RowStatus,
+                  mlmPermanence
+                      INTEGER
+              }
+
+          mlmCompileIndex OBJECT-TYPE
+              SYNTAX      INTEGER (1..2147483647)
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Unique identifier for a mlmCompileEntry."
+              ::= { mlmCompileEntry 1 }
+
+          mlmScriptNumber OBJECT-TYPE
+              SYNTAX      INTEGER (0..2147483647)
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "Pointer into the mlmScriptTable.  If this is not
+                      provided when the row is created, it defaults to a
+                      non-existent script.  If the value for this
+                      variable references a non-empty script, this script
+                      will be used instead of any script referenced by
+                      the mlmScriptName variable.  If mlmScriptNumber is
+                      set to a non-zero value from a zero value, and
+                      the value to which it is set references an unused
+                      set of entries in the mlmScriptTable, and
+                      the value of mlmScriptName is not empty, the script
+                      referenced by mlmScriptName will be read from
+                      non-volatile memory into the appropriate entries of
+                      the mlmScriptTable.  The mlmNextScript variable can
+                      be retrieved to find the next unused set of entries
+                      in the mlmScriptTable."
+              ::= { mlmCompileEntry 2 }
+
+          mlmScriptName OBJECT-TYPE
+              SYNTAX      DisplayString
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "This variable is used to reference a script stored
+                      in non-volatile memory, instead of entries in the
+                      mlmScriptTable.  The mlmScriptName variable can also
+                      be used for downloading scripts from a management
+                      station to non-volatile storage on the agent, or
+                      for examining the contents of a script stored in
+                      non-volatile memory on the agent.  If this variable
+                      is not empty, and mlmScriptNumber is equal to zero,
+                      the script referenced by mlmScriptName will be run
+                      when mlmRowStatus is set to the appropriate value.
+
+                      When launching a script from within a script, the
+                      string :<mlmScriptIndex> can be used as the script
+                      filename.  This will cause the script stored in the
+                      mlmScriptTable with index <mlmScriptIndex> to be
+                      executed."
+              ::= { mlmCompileEntry 3 }
+
+          mlmCompileResult OBJECT-TYPE
+              SYNTAX      Integer32
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Indicates whether the script has been compiled(0),
+                      the number of errors found during compilation, or that
+                      the script has not been compiled(-1)."
+              ::= { mlmCompileEntry 4 }
+
+          mlmExecutionArgs OBJECT-TYPE
+              SYNTAX      OCTET STRING (SIZE(0..2048))
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "Space separated list of arguments to be passed to the
+                      script when it is executed."
+              ::= { mlmCompileEntry 5 }
+
+          mlmExecutionPeriod OBJECT-TYPE
+              SYNTAX      INTEGER (0..2147483647)
+              UNITS       "100ths of seconds"
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "Specifies the time period which the agent will wait
+                      when the script finished executing.  After this
+                      period, the script will be executed again.  The value
+                      is measured in 100ths of a second.  A value of 0 means
+                      periodic polling is disabled for this table entry.  A
+                      script may still be explicitly halted/restarted when
+                      periodic polling is enabled."
+              ::= { mlmCompileEntry 6 }
+
+          mlmRowStatus OBJECT-TYPE
+              SYNTAX      RowStatus
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "To create new row, a manager sets this object to
+                      createAndWait.  Until this object is set to active or
+                      notInService, its value is returned as notReady.  If
+                      its value is notReady, and is set to notInService, the
+                      script is compiled.  If its value is notReady and is
+                      set to active, the script is compiled and executed.
+                      If its value is notInService and is set to active, the
+                      script is executed.  When the script is finished
+                      executing, the agent sets this object to notInService.
+                      To halt execution of a script, the manager sets this
+                      object to notInService.  To force a script to be re-
+                      compiled, the manager sets this object to notReady,
+                      and then to notInService.  To delete a row, the
+                      manager sets this object to destroy.  When all rows
+                      with a particular mlmScriptNumber have been destroyed,
+                      all rows with corresponding mlmScriptIndex values in the
+                      mlmScriptTable are destroyed.  The value of
+                      mlmRowStatus may be set to notInService or to active
+                      by the agent if the mlmExecutionPeriod variable is set
+                      to a value greater than zero.  If the manager sets
+                      mlmRowStatus to active or notInService when the values
+                      of mlmScriptNumber and mlmScriptName to not reference
+                      a script, the agent will return a BAD_VALUE_ERROR."
+              ::= { mlmCompileEntry 7 }
+
+          mlmPermanence OBJECT-TYPE
+              SYNTAX      INTEGER {
+                             temporary(1),
+                             startup(2),
+                             permanent(3)
+                          }
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                     "This column indicates how the MLM should treat the
+                      current row in the mlmScriptCompileTable.  If the value
+                      is 'temporary', no record of the row is kept when the
+                      MLM is restarted (e.g. the machine is rebooted).
+                      If the value is 'startup', the row is recorded in
+                      non-volatile memory, is restored when the MLM is
+                      restarted, and the row is immediately activated
+                      (i.e. the script is run) when the MLM is restarted.
+                      If the value is 'permanent', the row is stored in
+                      non-volatile memory and is restored when the MLM is
+                      restarted."
+              DEFVAL { 1 }
+              ::= { mlmCompileEntry 8 }
+
+
+
+
+          -- mlmScriptTable
+          --   Contains code for downloaded scripts, one line of code
+          --   per row in the table.  Also holds compiler error
+          --   messages.
+
+          mlmScriptTable OBJECT-TYPE
+              SYNTAX      SEQUENCE OF MlmScriptEntry
+              MAX-ACCESS  not-accessible
+              STATUS      current
+              DESCRIPTION
+                      "A mlmScriptTable entry."
+              ::= { mlmMIBObjects 6 }
+
+          mlmScriptEntry OBJECT-TYPE
+              SYNTAX      MlmScriptEntry
+              MAX-ACCESS  not-accessible
+              STATUS      current
+              DESCRIPTION
+                      "A mlmScriptTable entry."
+              INDEX   { mlmScriptIndex, mlmScriptLineIndex }
+              ::= { mlmScriptTable 1 }
+
+          MlmScriptEntry ::=
+              SEQUENCE {
+                  mlmScriptIndex
+                      INTEGER,
+                  mlmScriptLineIndex
+                      INTEGER,
+                  mlmScriptCode
+                      OCTET STRING,
+                  mlmCompileErrors
+                      OCTET STRING
+              }
+
+          mlmScriptIndex OBJECT-TYPE
+              SYNTAX      INTEGER (1..2147483647)
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Index into the mlmScriptTable.  This is the major
+                      index, and indicates which script the row belongs to.
+                      This object matches the mlmScriptNumber variable in
+                      the mlmCompileTable."
+              ::= { mlmScriptEntry 1 }
+
+          mlmScriptLineIndex OBJECT-TYPE
+              SYNTAX      INTEGER (1..2147483647)
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Index into the mlmScriptTable.  This is the minor
+                      index, and indicates the line number of this row
+                      within the script indicated by mlmScriptIndex.  Empty
+                      rows are not allowed in the mlmScriptTable, so the
+                      rows with a particular mlmScriptIndex value must have
+                      ascending values starting at 1."
+              ::= { mlmScriptEntry 2 }
+
+          mlmScriptCode OBJECT-TYPE
+              SYNTAX      OCTET STRING (SIZE(0..132))
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "This variable contains the actual code of the
+                      script."
+              ::= { mlmScriptEntry 3 }
+
+          mlmCompileErrors OBJECT-TYPE
+              SYNTAX      OCTET STRING (SIZE(0..132))
+              MAX-ACCESS  read-write
+              STATUS      current
+              DESCRIPTION
+                      "This contains compile time errors.  The error appears
+                      in the row in which the error was found."
+              ::= { mlmScriptEntry 4 }
+
+
+
+
+
+
+          -- mlmResultTable
+          --   Contains results of script execution, including runtime
+          --   error messages.
+
+          mlmResultTable OBJECT-TYPE
+              SYNTAX      SEQUENCE OF MlmResultEntry
+              MAX-ACCESS  not-accessible
+              STATUS      current
+              DESCRIPTION
+                      "Table containing results of script execution."
+              ::= { mlmMIBObjects 7 }
+
+          mlmResultEntry OBJECT-TYPE
+              SYNTAX      MlmResultEntry
+              MAX-ACCESS  not-accessible
+              STATUS      current
+              DESCRIPTION
+                      "Note that rows in this table are only visible after a
+                      script has been run.  If a script is currently
+                      running, the rows will reflect the values of the
+                      previous run (or will be absent if this is the first
+                      time the script is run).  It is unfortunate that
+                      SNMP/SNMPv2 does not provide a better way to return a
+                      discriminated union."
+              INDEX   { mlmCompileIndex, mlmResultIndex }
+              ::= { mlmResultTable 1 }
+
+          MlmResultEntry ::=
+              SEQUENCE {
+                  mlmCompileIndex
+                      INTEGER,
+                  mlmResultIndex
+                      INTEGER,
+                  mlmResultOID
+                      OBJECT IDENTIFIER,
+                  mlmResultType
+                      INTEGER,
+                  mlmIntegerValue
+                      INTEGER,
+                  mlmCounter32Value
+                      Counter32,
+                  mlmGauge32Value
+                      Gauge32,
+                  mlmTimeTicksValue
+                      TimeTicks,
+                  mlmIpAddressValue
+                      IpAddress,
+                  mlmOctetStringValue
+                      OCTET STRING,
+                  mlmObjectIDValue
+                      OBJECT IDENTIFIER,
+                  mlmCounter64Value
+                      Counter64,
+                  mlmRuntimeError
+                      OCTET STRING
+              }
+
+          mlmResultIndex  OBJECT-TYPE
+              SYNTAX      INTEGER (1..2147483647)
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Index into the list of VarBinds returned by a
+                      script."
+              ::= { mlmResultEntry 1 }
+
+          mlmResultOID OBJECT-TYPE
+              SYNTAX      OBJECT IDENTIFIER
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Contains the OIDs of the VarBinds returned from a
+                      script.  These may not necessarily have any meaning,
+                      depending on the particular script."
+              ::= { mlmResultEntry 2 }
+
+          mlmResultType OBJECT-TYPE
+              SYNTAX      INTEGER {
+                         error(1),
+                         nothing(2), -- corresponds to NULL_TYPE
+                         null(3),
+                         integer(4),
+                         counter32(5),
+                         gauge32(6),
+                         timeticks(7),
+                         ipaddress(8),
+                         octetstring(9),
+                         objectid(10),
+                         counter64(13)
+                      }
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Contains a code representing the type of the varbind
+                      returned by the script, or a 1 if an error occurred
+                      during execution."
+              ::= { mlmResultEntry 3 }
+
+          mlmIntegerValue OBJECT-TYPE
+              SYNTAX      Integer32
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Signed 32-bit integer value"
+              ::= { mlmResultEntry 4 }
+
+          mlmCounter32Value OBJECT-TYPE
+              SYNTAX      Counter32
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "32-bit counter value"
+              ::= { mlmResultEntry 5 }
+
+          mlmGauge32Value OBJECT-TYPE
+              SYNTAX      Gauge32
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "32-bit gauge value"
+              ::= { mlmResultEntry 6 }
+
+          mlmTimeTicksValue OBJECT-TYPE
+              SYNTAX      TimeTicks
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Time ticks value"
+              ::= { mlmResultEntry 7 }
+
+          mlmIpAddressValue OBJECT-TYPE
+              SYNTAX      IpAddress
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "IP address value"
+              ::= { mlmResultEntry 8 }
+
+          mlmOctetStringValue OBJECT-TYPE
+              SYNTAX      OCTET STRING (SIZE(0..2048))
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Octet string value"
+              ::= { mlmResultEntry 9 }
+
+          mlmObjectIDValue OBJECT-TYPE
+              SYNTAX      OBJECT IDENTIFIER
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "object id value"
+              ::= { mlmResultEntry 10 }
+
+          mlmCounter64Value OBJECT-TYPE
+              SYNTAX      Counter64
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "64-bit counter value"
+              ::= { mlmResultEntry 13 }
+
+          mlmRuntimeError OBJECT-TYPE
+              SYNTAX      OCTET STRING (SIZE(0..132))
+              MAX-ACCESS  read-only
+              STATUS      current
+              DESCRIPTION
+                      "Contains a description of any runtime errors which
+                      occurred during script execution."
+              ::= { mlmResultEntry 15 }
+
+
+          -- conformance information
+
+          mlmMIBConformance
+                       OBJECT IDENTIFIER ::= { mlmMIB 2 }
+
+          mlmMIBCompliances
+                       OBJECT IDENTIFIER ::= { mlmMIBConformance 1 }
+          mlmMIBGroups
+                       OBJECT IDENTIFIER ::= { mlmMIBConformance 2 }
+
+
+          -- compliance statements
+
+          mlmCompliance MODULE-COMPLIANCE
+              STATUS  current
+              DESCRIPTION
+                      "The compliance statement for SNMPv2 entities which
+                      implement the SNMP MLM Script MIB."
+              MODULE  -- this module
+                  MANDATORY-GROUPS { mlmMIBGroup }
+              ::= { mlmMIBCompliances 1 }
+
+          -- units of conformance
+
+          mlmMIBGroup    OBJECT-GROUP
+              OBJECTS { mlmLock,
+                        mlmScriptWrite,
+                        mlmExecutionSpeed,
+                        mlmTimeSlice,
+                        mlmNextScript,
+                        mlmCompileIndex,
+                        mlmScriptNumber,
+                        mlmScriptName,
+                        mlmCompileResult,
+                        mlmExecutionArgs,
+                        mlmExecutionPeriod,
+                        mlmRowStatus,
+                        mlmPermanence,
+                        mlmScriptIndex,
+                        mlmScriptLineIndex,
+                        mlmScriptCode,
+                        mlmCompileErrors,
+                        mlmResultIndex,
+                        mlmResultOID,
+                        mlmResultType,
+                        mlmIntegerValue,
+                        mlmCounter32Value,
+                        mlmGauge32Value,
+                        mlmTimeTicksValue,
+                        mlmIpAddressValue,
+                        mlmOctetStringValue,
+                        mlmObjectIDValue,
+                        mlmCounter64Value,
+                        mlmRuntimeError }
+              STATUS  current
+              DESCRIPTION
+                      "A collection of objects providing an interface for
+                      configuring and controlling an SNMP MLM."
+              ::= { mlmMIBGroups 1 }
+
+          END

@@ -1,0 +1,482 @@
+--	Quantum Bridge DWS Management Information Base
+--	Version 1.0.0
+--	October 20, 2000
+--
+--	Quantum Bridge Corporation
+--	One High Street
+--	North Andover, MA 01845
+--	(978) 688-9100
+--
+----------------------------------------------------------------------------------------
+-- 05/07/2001 dqin Added holdover to qbTimingModeAdminStatus
+-- 01/01/2001 mvaysman		Imported timing framing and linecoding 
+--				from DS1 MIB
+--
+--  11/26/2000 mvaysman		Added changes requested by NMS
+--
+--  11/02/2000 mvaysman		Added objects requested by NMS
+--
+--  10/15/2000 mvaysman		Replaced some objects
+--
+--  08/09/2000 mvaysman		Incorporated Tim Steele comments
+--				
+--  08/04/2000 mvaysman    	Original version
+----------------------------------------------------------------------------------------
+--
+	QB-TIMING-MIB DEFINITIONS ::= BEGIN
+
+	IMPORTS 
+	MODULE-IDENTITY, OBJECT-TYPE
+			 FROM SNMPv2-SMI
+	TEXTUAL-CONVENTION,  DisplayString, RowStatus, TruthValue
+		FROM SNMPv2-TC
+	InterfaceIndex, InterfaceIndexOrZero, ifIndex
+	    	FROM IF-MIB
+	MODULE-COMPLIANCE, OBJECT-GROUP
+		FROM SNMPv2-CONF
+	qbMibs
+		FROM QUANTUMBRIDGE-REG
+    ;    
+
+    qbTimingMIB MODULE-IDENTITY
+    LAST-UPDATED "0101011634Z" -- January 1, 2001
+    ORGANIZATION "Quantum Bridge Inc."
+    CONTACT-INFO
+	    "mvaysman@quantumbridge.com"
+    DESCRIPTION
+        "This module defines objects for timing management of OAS 
+        system."
+    ::= { qbMibs 11 }
+
+    -- Top-level organization of the MIB
+
+    qbTimingObjects          OBJECT IDENTIFIER ::= { qbTimingMIB 1 }
+    qbTimingTables	     OBJECT IDENTIFIER ::= { qbTimingMIB 2 }
+    qbTimingConformance      OBJECT IDENTIFIER ::= { qbTimingMIB 3 }
+
+   --
+   -- The Quantum Bridge System Timing MIB defines the MIB objects for provisioning
+   -- system synchronization within the OAS system.
+   --
+   -- Structure of MIB
+   -- The objects are arranged into the following categories:
+   -- 1. Scalar objects to provision the system wide timing
+   -- parameters. These objects are listed below:
+   --   qbTimingModeAdminStatus,
+   --   qbTimingModeOperStatus 
+   --   qbTimingOutputMode
+   --   qbTimingSourceStatus
+   --   qbTimingHoldoverCtl
+   --   qbTimingSourceStatus
+   --   qbTimingInLineRef
+   --   qbTimingOutLineRef 
+   --
+   --   The  qbTimingPortTable contains timing objects for provisioning timing ports
+   --   
+   QbTimingCableLength ::= TEXTUAL-CONVENTION
+	STATUS      current
+    	DESCRIPTION
+        	"The range of feet of cable from the QB5000 to
+		the Building Integrated Timing Supply."
+	SYNTAX      INTEGER {
+			length0to110ft(1),
+			length110to220ft(2),
+			length220to330ft(3),
+			length330to440ft(4),
+			length440to550ft(5),
+			length550to660ft(6),
+			lengthGreater660ft(7)
+			}
+
+     QbTimingFraming ::= TEXTUAL-CONVENTION
+	STATUS      current
+    	DESCRIPTION
+        	"Indicates the signal framing."
+	SYNTAX      INTEGER {
+		    other(1),
+                     dsx1ESF(2),	-- valid for ds1 (esf)
+                     dsx1D4(3),		-- not valid value
+                     dsx1E1(4),		-- valid for e1 (fas)
+                     dsx1E1CRC(5),	-- valid for e1 (fas-crc4)
+                     dsx1E1MF(6),	-- valid for e1 (mfas)
+                     dsx1E1CRCMF(7),	-- valid for e1 (mfas-crc4)
+                     dsx1Unframed(8),	-- not valid value
+                     dsx1E1Unframed(9), -- not valid value
+                     dsx1DS2M12(10),	-- not valid value
+                     dsx2E2(11),	-- not valid value
+		     dsx1SF(12)         -- valid for ds1 (sf)
+		}
+
+    QbTimingPort ::= TEXTUAL-CONVENTION
+	STATUS      current
+    	DESCRIPTION
+        	"Indicates a selected timing port."
+	SYNTAX      INTEGER {
+        	        timing-port1(1),
+                	timing-port2(2)
+			}			
+
+-- ****************************************************************
+-- The Top level System Groups
+-- ****************************************************************
+   qbTimingGroup         OBJECT IDENTIFIER ::= { qbTimingObjects  1 }    
+
+    qbTimingModeAdminStatus OBJECT-TYPE
+        SYNTAX      INTEGER {
+                    freerun(1),
+                    external(2),
+		    loop(3),
+		    holdover(8)
+                }
+	MAX-ACCESS  read-write   
+	STATUS      current
+	DESCRIPTION
+		"The object is used to set the desired timing configuration
+		of an OAS system.
+		Setting this object to 'freerun(1)' depending on the
+		installed TGS3 option, causes one of the following results:
+			1. If the board in the MAIN slot does not have the
+			TGS3 card installed, the local oscillator on the board 
+			is used as the synchronization source.
+			2. If the board in the MAIN slot has the TGS3 card
+			installed, the synchronization is derived from the TGS3 card.
+		Setting this object to 'external(2)' selects the
+		external BITS input as the timing source.
+		Setting this object to 'loop(3)' causes the timing
+		mode to switch loop-timed. When the object is set to
+		'loop', the 'qbTimingLoopInLineRef' must be set to an
+		appropriate ifindex.
+		The value holdover can not be set here. When qbTimingModeAdminStatus is loop(3), and
+		you set the qbTimingHoldoverCtl 
+		to holdover, qbTimingModeAdminStatus will have a value of  holdover"
+	::= { qbTimingGroup 1 }
+
+    qbTimingModeOperStatus OBJECT-TYPE
+        SYNTAX      INTEGER {
+		    freerun(1),
+                    external(2),
+		    loop(3),
+                    holdoverMntc(4),
+		    holdoverAuto(5),
+		    notOperational(6)
+                }
+	MAX-ACCESS  read-only   
+	STATUS      current
+	DESCRIPTION
+		"The object indicates the actual status of the timing
+		of an OAS system.
+		A value 'notOperational(6)' indicates that the
+		shelf doesn't have operational timing equpment
+		available.
+		A value 'freerun(1) indicates the free-running timing
+		mode.
+		A value 'external(2)' indicates the external timing
+		mode of the shelf.
+ 		A value 'loop(3)' indicates the loop-timed timing
+		mode of the shelf.
+		A value 'holdoverMntc(4)' indicates the timing mode
+		was intentionally switched to 'holdover' by setting
+		'qbTimingHooldover' to 'holdover'.
+		A value 'holdoverAuto(5)' indicates the timing mode
+		was intentionally switched due to hardware problems"
+	::= { qbTimingGroup 2 }
+
+   qbTimingOutputMode OBJECT-TYPE
+        SYNTAX      INTEGER {
+		    disable(1),
+                    lock(2),
+		    track(3)
+                }
+	MAX-ACCESS  read-write    
+	STATUS      current
+	DESCRIPTION
+		"This object is used to disable or enable the BITS output
+		signals at the timing ports. Setting the object to
+		'lock' or track must be accompanied by setting
+		 'qbTimingOutLineRef to an appropriate ifIndex"
+	::= { qbTimingGroup 3 }
+
+    qbTimingHoldoverCtl OBJECT-TYPE
+        SYNTAX      INTEGER {
+                    holdover(1),
+                    clearholdover(2)
+                }
+	MAX-ACCESS  read-write    
+	STATUS      current
+	DESCRIPTION
+	        "The object forces the OAS system into one of two
+		states depending on whether the TGS3 is equipped.
+		If the TGS3 card is not installed the set command fails.    
+		Setting this object to 'holdover(1)', when the TGS3
+		card is installed,forces the OAS system into holdover 
+		maintenance mod. Setting the value to 'holdover' is
+		only valid when the system 'qbTimingOperStatus' is either
+		'external' or 'loop'
+		Setting this object to 'clearholdover(2)' causes the
+		timing mode to reinstate the original timing mode and
+		can achieved if 'qbTimingOperStatus' is set to 'holdoverMntc'."
+    ::= { qbTimingGroup 4 }
+
+    qbTimingSourceStatus OBJECT-TYPE
+        SYNTAX      INTEGER {
+                    primary(1),
+                    secondary(2)
+                }
+	 MAX-ACCESS  read-write    
+    STATUS      current
+    DESCRIPTION
+        "This is used to switch the external output source to the 
+	primary or secondary source.  Note: this object works in
+	conjunction with 'qbTimingModeAdminStatus'."
+    ::= { qbTimingGroup 5 }
+
+   qbTimingInLineRef OBJECT-TYPE
+	SYNTAX      InterfaceIndexOrZero
+	MAX-ACCESS  read-write    
+	STATUS      current
+	DESCRIPTION
+		"The value of ifIndex corresponding to the optical
+		port interface that provides a source for the system 
+		time reference.  The object is changed in conjunction 
+		with 'qbTimingOutputMode'. 
+		When 'qbTimingModeAdminStatus' is set to
+		'freerun' the object is irrelevant and the agent
+		returns 0.
+		Note: only slots main-a, au-1 or au-7 may be selected
+		for this port.   
+		The object is relevant only 
+		for WAN622, S622-T, Q-155, Q-155T, D155VT/VC, and
+		D155VT/VC-T ports. Only one port at the time can be used as the
+		timing source."
+    DEFVAL { 0 }		
+    ::= { qbTimingGroup 6 }
+
+ qbTimingOutLineRef OBJECT-TYPE
+	SYNTAX      InterfaceIndexOrZero
+	MAX-ACCESS  read-write    
+	STATUS      current
+	DESCRIPTION
+		"The value of ifIndex corresponding to the 
+		port interface that provides a line reference for the external 
+		timing outputs. The object is changed in conjunction 
+		with 'qbTimingOutputMode'.  When 'qbTimingAdminStatus' is set to 
+		'freerun' this object is irrelevant and the agent
+		returns 0. Note: this object is relevant only for main and
+		au-1/au-2 and au-7/au-8 slots."
+    DEFVAL { 0 }		
+    ::= { qbTimingGroup 7 }
+
+--
+-- Timing Port Table
+-- 
+    qbTimingPortTable   OBJECT-TYPE
+	SYNTAX        SEQUENCE OF QbTimingPortEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION   
+		"A list of timing port entries. The number of entries is
+		2 (timing_port1 and timing_port2). Every entry contains
+		the following configuration settings: the format line,
+		format cable length(for ports configured for as DS1), 
+		line coding, framing
+		and impendance(for ports configures as E1)."  		
+        ::= { qbTimingGroup 8 }
+   
+     qbTimingPortEntry OBJECT-TYPE
+        SYNTAX        QbTimingPortEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION   
+		"Entry containing information for a particular timing
+		port in the OAS system."
+        INDEX         {qbTimingPort}
+        ::= { qbTimingPortTable 1 }
+
+      QbTimingPortEntry ::=
+        SEQUENCE {
+                qbTimingPort
+                         QbTimingPort,
+                qbTimingPortName
+                        DisplayString,
+		qbTimingPortFormat
+		        INTEGER,
+		qbTimingPortLineCoding
+			INTEGER,
+		qbTimingPortFraming
+			QbTimingFraming,
+		qbTimingPortCableLength
+			 QbTimingCableLength,
+		qbTimingPortImpedanceMode
+			INTEGER,	
+		qbTimingPortOperStatus	
+			INTEGER,
+	        qbTimingPortInOperStatus
+			INTEGER
+        }
+
+    qbTimingPort OBJECT-TYPE
+        SYNTAX        QbTimingPort
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION  
+		"The timing port number"
+        ::= { qbTimingPortEntry 1 }
+
+   qbTimingPortName OBJECT-TYPE
+        SYNTAX        DisplayString
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION  
+		"A descriptive string of the timing port"
+        ::= { qbTimingPortEntry 2 }
+
+   qbTimingPortFormat OBJECT-TYPE
+        SYNTAX        INTEGER {
+		      ds1(1),
+		      e1(2),
+		      noValue(3)
+		      }
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION  
+		"The object is used to set the signal format for the
+		external timing ports."
+	 DEFVAL	{ ds1 }	
+        ::= { qbTimingPortEntry 3 }
+
+   qbTimingPortLineCoding OBJECT-TYPE
+        SYNTAX        INTEGER {
+		     dsx1JBZS (1),	-- Not valid 
+                     dsx1B8ZS (2),	-- Valid value
+                     dsx1HDB3 (3),	-- Valid value
+                     dsx1ZBTSI (4),	-- Not valid 
+                     dsx1AMI (5),	-- Valid Value
+                     other(6),		-- Valid value
+                     dsx1B6ZS(7)	-- Not valid 
+		      }
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION  
+		"The object is used to set the signal linecoding."
+	DEFVAL	{ dsx1AMI }	
+        ::= { qbTimingPortEntry 4 }
+
+    qbTimingPortFraming OBJECT-TYPE
+        SYNTAX        QbTimingFraming 
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION  
+		"The object is used to set the signal linecoding."
+	DEFVAL	{ dsx1SF }	
+        ::= { qbTimingPortEntry 5 }
+
+   qbTimingPortCableLength OBJECT-TYPE
+        SYNTAX         QbTimingCableLength 
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION  
+		"The object is used to set the range of cable from the 
+		OAS to the external synchronization source. The value 
+		entered  is interpreted by the agent to have a cable length
+		within the range associated with the value. Note: this value 
+		is applicable only for DS1 ports. "
+	DEFVAL	{ 1 }	
+        ::= { qbTimingPortEntry 6 }
+
+     qbTimingPortImpedanceMode OBJECT-TYPE
+        SYNTAX        INTEGER (75 | 120)
+	UNITS         "in ohms"
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION  
+		"The object is used to set the impendance in ohms.
+		Note:  this value is applicable only for E1 ports." 
+	DEFVAL	{ 120 }	
+        ::= { qbTimingPortEntry 7 }
+
+     qbTimingPortOperStatus OBJECT-TYPE
+        SYNTAX        INTEGER {
+		      up(1),
+		      down(2),
+		      los(3),
+		      eqpFailure(4)
+	}
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION  
+		"The object indicates the output operational status of the 
+		timing port.
+		up(1)  - timing port up
+		down(2)- timing port down
+		los(3) - Los of Signal
+		eqpFailure(4) - Equipment problem or TGS card is removed"
+        ::= { qbTimingPortEntry 8 }
+
+  qbTimingPortInOperStatus OBJECT-TYPE
+        SYNTAX        INTEGER {
+		      up(1),
+		      down(2),
+		      los(3),
+		      eqpFailure(4)
+	}
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION  
+		"The object indicates the input operational status of the 
+		timing port.
+		up(1)  - timing port up
+		down(2)- timing port down
+		los(3) - Los of Signal
+		eqpFailure(4) - Equipment problem or TGS card is removed"
+        ::= { qbTimingPortEntry 9 }
+
+-- ****************************************************************
+-- Conformance Information
+-- ****************************************************************
+
+   qbTimingCompliances OBJECT IDENTIFIER ::= { qbTimingConformance 1 }
+   qbTimingGroups      OBJECT IDENTIFIER ::= { qbTimingConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+    qbTimingCompliance MODULE-COMPLIANCE
+	STATUS      current
+	DESCRIPTION
+		"The compliance statement for all agents that support this
+		MIB. A compliant agent implements all objects defined in this
+		MIB."
+	MODULE  -- this module
+	MANDATORY-GROUPS {
+		qbTimingAllGroup
+		}
+    ::= { qbTimingCompliances 1 }
+
+--
+-- All Object Groups
+--
+     qbTimingAllGroup OBJECT-GROUP
+        OBJECTS {
+	qbTimingModeAdminStatus,
+        qbTimingModeOperStatus, 
+        qbTimingOutputMode,
+        qbTimingSourceStatus,
+        qbTimingHoldoverCtl,
+        qbTimingSourceStatus,
+        qbTimingInLineRef,
+        qbTimingOutLineRef,
+        qbTimingPortName,
+	qbTimingPortFormat,
+	qbTimingPortLineCoding,
+	qbTimingPortFraming,
+	qbTimingPortCableLength,
+	qbTimingPortImpedanceMode,
+	qbTimingPortOperStatus	
+	}
+	STATUS      current
+	DESCRIPTION
+		"The set of all accessible objects in this MIB."
+    ::= { qbTimingGroups 1 }
+
+END

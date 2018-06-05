@@ -1,0 +1,1452 @@
+	 MICROCOM-MBR-MIB DEFINITIONS ::= BEGIN
+
+--	This document defines the MBR portion of the Microcom enterprise MIB
+--	Any subsequent Microcom product subtrees are defined elsewhere
+
+--	**************************************************************
+--
+--	THIS DOCUMENT IS A BETA VERSION OF THE MICROCOM MBR MIB
+--
+--	**************************************************************
+
+-- Title:   	Microcom MBR MIB
+-- Edition:    	October 1991
+-- Copyright:	1991, Microcom Systems Inc.
+-- Edited By:	Mark Therieau/Microcom <markt@python.eng.microcom.com>
+
+	 IMPORTS
+	       enterprises, Counter, NetworkAddress,
+	       IpAddress, Gauge, TimeTicks
+		  FROM RFC1155-SMI
+        DisplayString FROM RFC1213-MIB
+	       OBJECT-TYPE
+		  FROM RFC1155-SMI
+	       TRAP-TYPE
+		  FROM RFC-1215;
+
+        -- Local definitions for convenience and clarity only:
+        MacAddress ::= OCTET STRING (SIZE (6))
+
+        -- This type is used for WAN compression ratios.  It represents
+        -- the ratio of a raw count divided by a compressed count and
+        -- then multiplied by 100. E.g. a raw count of 128 bytes in a LAN
+        -- packet that reduced to 40 compressed bytes would yield a
+        -- CompRatio value of (128/40)*100 = 320, displayable as a 3.2
+        -- compression ratio.
+        CompRatio ::= INTEGER
+
+        -- This type is used to represent MBR ports for INDEX clauses.
+        -- The valid range is 1..5.
+        PortNum ::= INTEGER   (1..5)
+
+        -- This type is used to represent MBR VCs for INDEX clauses.
+        -- The valid range is 1..15
+        VcNum ::= INTEGER (1..15)
+
+        -- This type is used to represent the relative statistics interval
+        -- in INDEX clauses.
+        StatsInterval ::= INTEGER 
+--			{
+--                             shortTerm(1),
+--                             longTerm(2)
+--                             }
+
+        -- This type represents the long term statistics period that the
+        -- MBR is currently using to count stats with an index value of
+        -- longTerm(2).  Both a time interval and a divisor can be calculated
+        -- from this value.  The time interval represents the number of
+        -- seconds in the sliding window for long term statistics.  It is
+        -- obtained by the formula:  seconds = 2**(LongTermStatsPeriod + 6).
+        -- The divisor is applied to the long term stats raw value to obtain
+        -- a per second value.  It is obtained by the formula:
+        -- divisor = 2**(LongTermStatsPeriod + 2).
+        -- The exception to the above formulas is the LongTermStatsPeriod value
+        -- of zero.  The value zero should be modified to the value one for
+        -- purposes of the above formulas.
+        LongTermStatsPeriod ::= INTEGER (0..6)
+
+        -- This type is used to represent the raw statistics counts available
+        -- from the MBR.  The raw counts may be converted into per second
+        -- values by using the appropriate divisor.  Short terms stats always
+        -- use a divisor of 128.  Long term stats use the divisor implied
+        -- by the LongTermStatsPeriod associated with the statistic.
+        StatsRawCount ::= INTEGER
+
+        -- The MBR provides two transport stacks for SNMP.  One is the
+        -- standard SNMP/UDP/IP.  The other is a Microcom proprietary -
+        -- SNMP/LLC-SNAP.  Some objects in this MIB are meaningful only
+        -- in the context of the proprietary SNMP/LLC-SNAP transport.
+        -- These objects are labeled as such, and can be ignored when using
+        -- the standard SNMP/UDP/IP transport.
+
+	-- Microcom Enterprise MIB
+	 mnpi		OBJECT IDENTIFIER ::= { enterprises 102 }
+
+	-- Product lines
+	 mbr		OBJECT IDENTIFIER ::= { mnpi 1 }
+
+	-- System group
+	 mbrSystem	OBJECT IDENTIFIER ::= { mbr 1 }
+
+	-- The System Information group provides overall system
+	-- parameters: e.g Software Version
+	 mbrSysInfo	OBJECT IDENTIFIER ::= { mbrSystem 1 }
+
+	-- The software version group provides software version control
+	-- information.
+         mbrSysSwVers   OBJECT IDENTIFIER ::= { mbrSysInfo 1 }
+
+	 mbrSWRev    OBJECT-TYPE
+		     SYNTAX INTEGER
+		     ACCESS read-only
+		     STATUS mandatory
+		     DESCRIPTION
+			"Major release number of the current software image"
+		     ::= { mbrSysSwVers 1 }
+
+	 mbrSWRel    OBJECT-TYPE
+		     SYNTAX INTEGER
+		     ACCESS read-only
+		     STATUS mandatory
+		     DESCRIPTION
+			"Minor release number of the current software image"
+		     ::= { mbrSysSwVers 2 }
+
+	 mbrSWTstVers OBJECT-TYPE
+		     SYNTAX INTEGER
+		     ACCESS read-only
+		     STATUS mandatory
+		     DESCRIPTION
+			"Internal test release number of the current software
+                         image"
+		     ::= { mbrSysSwVers 3 }
+
+	 mbrSWSpecial OBJECT-TYPE
+		     SYNTAX INTEGER
+		     ACCESS read-only
+		     STATUS mandatory
+		     DESCRIPTION
+			"'Customer Special' release number of the current
+                         software image"
+		     ::= { mbrSysSwVers 4 }
+
+	 mbrBootDate OBJECT-TYPE
+		     SYNTAX Counter
+		     ACCESS read-only
+		     STATUS mandatory
+		     DESCRIPTION
+			"Date of last system boot in an opaque format.
+                         When the value is represented as a four-byte number
+                         in canonical form with byte 0 being the most
+                         significant, then the following is true:
+                           bytes 0-1: two-byte number is the year value
+                           byte    2: one-byte number is the month value
+                           byte    3: one-byte number is the day of the month"
+		     ::= { mbrSysInfo 2 }
+
+	 mbrBootTime OBJECT-TYPE
+		     SYNTAX Counter
+		     ACCESS read-only
+		     STATUS mandatory
+		     DESCRIPTION
+			"Hour of last system boot in an opaque format.
+                         When the value is represented as a four-byte number
+                         in canonical form with byte 0 being the most
+                         significant, then the following is true:
+                           byte 0: one-byte number is the hour (1-24)
+                           byte 1: one-byte number is the minute (0-59)
+                           byte 2: one-byte number is the second (0-59)
+                           byte 3: has no significance"
+		     ::= { mbrSysInfo 3 }
+
+
+	 mbrConfigString OBJECT IDENTIFIER ::= { mbrSysInfo 4 }
+
+	 mbrArchCfgStr OBJECT-TYPE
+		      SYNTAX OCTET STRING
+                      ACCESS read-only
+		      STATUS mandatory
+		      DESCRIPTION
+		         "Archived (backup) config string.  This corresponds
+                          to the file bridge.bak.
+                          Each instance of this object corresponds to a
+                          fixed size record that is a portion of the entire
+                          configuration string.  The integer index identifies
+                          the logical record accessed in the config string."
+                      INDEX { INTEGER }
+		      ::= { mbrConfigString 1 }
+
+	 mbrCurCfgStr OBJECT-TYPE
+		      SYNTAX OCTET STRING
+                      ACCESS read-write
+		      STATUS mandatory
+		      DESCRIPTION
+		         "Current config string--This config will be read and
+                          used the next time the mbr restarts.  This corresponds
+                          to the file bridge.cfg.
+                          Each instance of this object corresponds to a
+                          fixed size record that is a portion of the entire
+                          configuration string.  The integer index identifies
+                          the logical record accessed in the config string.
+                          After writing a new mbrCurCfgStr, use mbrCtrlCmd(8)
+                          to save the string to the MBR's disk."
+                      INDEX { INTEGER }
+		      ::= { mbrConfigString 2 }
+
+	 mbrRunCfgStr OBJECT-TYPE
+		      SYNTAX OCTET STRING
+                      ACCESS read-only
+		      STATUS mandatory
+		      DESCRIPTION
+		         "Running config string--The config the mbr used when
+                          it was last started.  This corresponds to the file
+                          bridge.run.
+                          Each instance of this object corresponds to a
+                          fixed size record that is a portion of the entire
+                          configuration string.  The integer index identifies
+                          the logical record accessed in the config string."
+                      INDEX { INTEGER }
+		      ::= { mbrConfigString 3 }
+		     		     
+	 mbrSysAddress OBJECT-TYPE
+		     SYNTAX MacAddress
+		     ACCESS read-only
+		     STATUS mandatory
+		     DESCRIPTION
+			"System MAC Address.  Corresponds to the MAC address
+			 of one of the LAN ports present in the MBR."
+		     ::= { mbrSysInfo 5 }
+
+         mbrConfigRec OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Number of logical configuration records in a config
+                         string (of size 400 octets).  The integer index value
+                         is one of the following:
+                            1: mbrArchCfgStr,
+                            2: mbrCurCfgStr,
+                            3: mbrRunCfgStr"
+                     INDEX { INTEGER }
+                     ::= { mbrSysInfo 6 }
+
+         --  The system config group defines unit-level configuration
+         --  parameters.
+	 mbrSysCfgTbl OBJECT IDENTIFIER ::= { mbrSystem 2 }
+
+	 mbrSysType  OBJECT-TYPE
+		     SYNTAX INTEGER {
+                               mbr6000(2),
+                               mbr6500(4)
+                               }
+		     ACCESS read-only
+		     STATUS mandatory
+		     DESCRIPTION
+			"MBR product type"
+		     ::= { mbrSysCfgTbl 1 }
+
+	 mbrSysName  OBJECT-TYPE
+		     SYNTAX DisplayString
+		     ACCESS read-write
+		     STATUS mandatory
+		     DESCRIPTION
+			"This object is identical to sysName.  It corresponds
+                         to the contents of the MBR file name.dat"
+                     REFERENCE
+                        "RFC1213, March 1991"
+		     ::= { mbrSysCfgTbl 2 }
+
+         mbrSysPasswd OBJECT-TYPE
+                     SYNTAX DisplayString
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The system password.  A read of this object results
+                         with a zero length string.  Note that a control
+                         session is required to write this object.  The maximum
+                         allowed length of this object is 32 octets"
+                     --DEFVAL { NULL }
+                     ::= { mbrSysCfgTbl 3 }
+
+         --  The system statistics group defines unit-level statistics,
+         --  in particular, the Spanning Tree Algorithm state information.
+         mbrSysStats OBJECT IDENTIFIER ::= { mbrSystem 3 }
+
+         mbrDesigRootAddr OBJECT-TYPE
+                     SYNTAX MacAddress
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The MAC address of the root of the spanning tree as
+                         determined by the Spanning Tree Protocol executing
+                         on this bridge."
+                     REFERENCE
+                         "P802.1d/D9, July 14, 1989: Section 4.5.3.1"
+                     ::= { mbrSysStats 1 }
+
+         mbrDesigRootPriority OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The priority value of the root of the spanning tree
+                         as determined by the Spanning Tree Protocol executing
+                         on this bridge"
+                     REFERENCE
+                         "P802.1d/D9, July 14, 1989: Section 4.5.3.1"
+                     ::= { mbrSysStats 2 }
+
+         mbrRootPathCost OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The cost of the path to the root as seen from this
+                         bridge"
+                     REFERENCE
+                        "P802.1d/D9, July 14, 1989: Section 4.5.3.2"
+                     ::= { mbrSysStats 3 }
+
+         mbrRootPort OBJECT-TYPE
+                     SYNTAX DisplayString
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "A string that describes the port number of the port
+                         which offers the lowest cost path from this bridge to
+                         the root bridge"
+                     REFERENCE
+                        "P802.1d/D9, July 14, 1989: Section 4.5.3.3"
+                     ::= { mbrSysStats 4 }
+
+         -- The System Control group allows a manager to cause the MBR to
+         -- initiate actions.  In general a manager should initiate a control
+         -- session with an MBR before attempting set-requests to objects
+         -- (one obvious exception to this rule is the set-requests required
+         -- to set up a control session).  The manager should abort the
+         -- operation if a control session can not be established.  The manager
+         -- is also responsible for terminating the control session.
+         -- Unpredictable results may occur if control session "etiquette" is
+         -- not adhered to.
+         mbrSysControl OBJECT IDENTIFIER ::= { mbrSystem 4 }
+
+         mbrCtrlRequester OBJECT-TYPE
+                     SYNTAX OCTET STRING (SIZE (6))
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "A unique string submitted by a manager when attempting
+                         to establish a control session.  When a control
+                         session has been established, this value is copied to
+                         mbrSessPartner.  The MAC address of the requesting
+                         manager is typically used (because it is unique).
+                         This object should be included first in each
+                         set-request that attempts to modify  mbrSessionFlag,
+                         and objects in the mbrSysControl group."
+                     ::= { mbrSysControl 1 }
+
+         mbrCtrlPasswd OBJECT-TYPE
+                     SYNTAX DisplayString
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The password value submitted for verification when
+                         attempting to establish a control session.
+                         Verification is performed by comparing this value to
+                         mbrSysPasswd.  An exact match is required for
+                         verification (and control session establishment).
+                         NULL is a valid value."
+                     ::= { mbrSysControl 2 }
+
+         mbrCtrlCmd OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Writing this object causes an action to be taken by
+                         the MBR.  The action taken corresponds to the value
+                         submitted by the manager.  Control commands consist of
+                         the following values:
+
+                          -verifyPassword(1): compares mbrCtrlPasswd to
+                             mbrSysPasswd.  If exact match, then 
+                             mbrCtrlRequester is copied to mbrSessPartner and
+                             control session is established.
+
+                          -systemBoot(2): initiates a system boot if control
+                             session is active.
+
+                          -requestDownload(3): performs a file operation on
+                             mbrDlFileName.  The operation is specified by
+                             mbrCtrlParm.
+
+                          -clearAlarms(4): clears the MBR alarm table.
+
+                          -clearStats(5): resets the statistics on the MBR
+                             port corresponding to mbrCtrlPort.
+
+                          -updateConfig(8): This command causes mbrCurCfgStr to
+                             copied into mbrArchCfgStr and saves mbrCurCfgStr to
+                             the MBR's disk.  Use this command after writing a
+                             new mbrCurCfgStr."
+                     ::= { mbrSysControl 3 }
+
+         mbrCtrlPort OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The port number value submitted by a manager to be
+                         referenced in conjunction with port-specific actions
+                         defined by mbrCtrlCmd values.  This value must be
+                         set when mbrCtrlCmd is set to clearStats(6)."
+                     ::= { mbrSysControl 4 }
+
+         mbrCtrlAddress OBJECT-TYPE
+                     SYNTAX OCTET STRING
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Meaningful to SNMP/LLC-SNAP communications only."
+                     ::= { mbrSysControl 5 }
+
+         mbrCtrlPath OBJECT-TYPE
+                     SYNTAX OCTET STRING
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Meaningful to SNMP/LLC-SNAP communications only."
+                     ::= { mbrSysControl 6 }
+
+         mbrCtrlParm OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object qualifies the download operation requested
+                         when mbrCtrlCmd is requestDownload(3).  The valid
+                         download operations are:
+                           0: open file mbrDlFileName for reading,
+                           1: open file mbrDlFileName for writing,
+                           2: close file mbrDlFileName"
+                     ::= { mbrSysControl 7 }
+
+         mbrCtrlVC OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Meaningful to SNMP/LLC-SNAP communications only."
+                     ::= { mbrSysControl 8 }
+
+         -- The session group identifies control session status and
+         -- control session partner information.
+         mbrSession OBJECT IDENTIFIER ::= { mbrSystem 5 }
+
+         mbrSessionFlag OBJECT-TYPE
+                     SYNTAX INTEGER {
+                               false(0),
+                               true(1)
+                     }
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object is true when a control session is active
+                         on this MBR.  The control session partner may write
+                         a value of false to terminate the control session.
+                         The session is terminated only if mbrSessionPartner
+                         is exactly equal to mbrCtrlRequester."
+                     ::= { mbrSession 1 }
+
+         mbrSessionPartner OBJECT-TYPE
+                     SYNTAX OCTET STRING (SIZE (6))
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object identifies the control session partner.
+                         It is copied from the value of mbrCtrlRequester when
+                         a control session is established."
+                     ::= { mbrSession 2 }
+
+         mbrSessionPath OBJECT-TYPE
+                     SYNTAX OCTET STRING
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Meaningful to SNMP/LLC-SNAP communications only."
+                     ::= { mbrSession 3 }
+
+         -- The download group provides a minimal SNMP based file transfer
+         -- method. Files can be uploaded to the manager, or downloaded to the 
+         -- MBR. File contents are separated into fixed-size records to achieve
+         -- these transfers.
+         -- A manager should implement each file transfer as a sequential
+         -- operation; that is the manager should wait for the get-response
+         -- confirmation of each logical record transfer before initiating
+         -- the next transfer. When writing a file, the logical records of the 
+         -- file must be written in order.
+         -- The principal files of interest to the MBR are the following:
+         --   bridge.exe:  compressed set of executables comprising the MBR
+         --                software release,
+         --   filter.dat:  address filter specification file,
+         --   packet.dat:  packet-type filter specification file,
+         --   bridge.cfg:  overall configuration file
+         mbrDownload OBJECT IDENTIFIER ::= { mbrSystem 6 }
+
+         mbrDlFileName OBJECT-TYPE
+                     SYNTAX DisplayString
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The target file's path name"
+                     ::= { mbrDownload 1 }
+
+        mbrDlDevice OBJECT-TYPE
+                    SYNTAX INTEGER
+                    ACCESS read-write
+                    STATUS mandatory
+                     DESCRIPTION
+                        "This object is obsolete"
+                     ::= { mbrDownload 2 }
+
+         mbrDlStatus OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                         "This object denotes the state of the current download
+                          operation as follows:
+                            0: download complete,
+                            3: download progressing,
+                            4: disk error occurred"
+                     ::= { mbrDownload 3 }
+
+         mbrDlReadRec OBJECT-TYPE
+                     SYNTAX OCTET STRING
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Each instance of this object corresponds to one
+                         fixed size record in the file mbrDlFileName.
+                         The integer index identifies the logical record
+                         accessed in mbrDlFileName.  This object can be
+                         read only after mbrDlFileName has been opened for
+                         reading."
+                     INDEX { INTEGER }
+                     ::= { mbrDownload 4 }
+
+         mbrDlWriteRec OBJECT-TYPE
+                     SYNTAX OCTET STRING
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Each instance of this object corresponds to one
+                         fixed size record in the file mbrDlFileName.
+                         The integer index identifies the logical record
+                         written to in mbrDlFileName.  This object can be
+                         set only after mbrDlFileName has been opened for
+                         writing.  The records must be written in order.
+                         Reading this object returns an octet string of
+                         length zero"
+                     INDEX { INTEGER }
+                     ::= { mbrDownload 5 }
+
+         mbrDlFileSize OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object provides the number of records in
+                         mbrDlFileName.  It is calculated by the MBR when
+                         mbrDlFileName is opened (for reading or writing).
+                         The fixed record size is 1024 octets."
+                     ::= { mbrDownload 6 }
+
+         -- The alarms table holds text-based information on MBR alarms.
+         -- This information is available in SNMP traps only.
+         mbrAlarms OBJECT IDENTIFIER ::= { mbrSystem 7 }
+
+         mbrAlarmTable OBJECT-TYPE
+                     SYNTAX SEQUENCE OF MbrAlarmEntry
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Information about MBR alarms"
+                     ::= { mbrAlarms 1 }
+
+         mbrAlarmEntry OBJECT-TYPE
+                     SYNTAX MbrAlarmEntry
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "An entry in the MBR alarm table.  The integer index
+                         corresponds to the MBR alarm code."
+                     INDEX { INTEGER }
+                     ::= { mbrAlarmTable 1 }
+
+         MbrAlarmEntry ::= SEQUENCE {
+                     mbrAlarmText OCTET STRING
+                     }
+
+         mbrAlarmText OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The alarm text string that corresponds to the alarm
+                         instance represented by the current SNMP trap.  Some
+                         alarm text strings contain printf-style format
+                         specifiers.  The parameters that apply to the format
+                         specifiers are specified by the instances of
+                         mbrTrapInfo in the same SNMP trap."
+                     ::= { mbrAlarmEntry 7 }
+
+         -- The Network Reports group defines SNMP trap destination
+         -- information for the MBR.
+         mbrNetReports OBJECT IDENTIFIER ::= { mbrSystem 8 }
+
+         mbrNetRptDestIpAddress OBJECT-TYPE
+                     SYNTAX IpAddress
+                     ACCESS read-write
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The IP address of a SNMP trap destination.  A control
+                         session should be established before writing this
+                         object."
+                     ::= { mbrNetReports 4 }
+
+         -- The Traps group defines information that specifies an instance
+         -- of an MBR alarm represented in an SNMP trap.  As such, all objects
+         -- in this group are only accessible in SNMP traps.
+         mbrTraps OBJECT IDENTIFIER ::= { mbrSystem 10 }
+
+         mbrTrapCode OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This value is the MBR alarm code.  An SNMP trap
+                         containing this object represents an instance of
+                         the MBR alarm."
+                     ::= { mbrTraps 1 }
+
+         mbrTrapPort OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This value is the MBR port that an alarm has
+                         occurred on.  Alarms that do not logically
+                         correspond to a port are assigned port number 1."
+                     ::= { mbrTraps 2 }
+
+         mbrTrapInfo OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "One or more parameters that apply to a specific
+                         MBR alarm.  The integer index identifies the position
+                         of the parameter in the printf argument list. The
+                         argument list is formed by ordering all  mbrTrapInfo
+                         instances in one SNMP trap.  This argument list is
+                         applied to the accompanying mbrAlarmText printf
+                         format string."
+                     INDEX { INTEGER }
+                     ::= { mbrTraps 3 }
+
+         -- The ring management alarms group holds information on MBR alarms
+         -- that are specific to Token Ring management.  This information is
+         -- available in SNMP traps only.
+         mbrRingMgtAlarms OBJECT IDENTIFIER ::= { mbrSystem 11 }
+
+         mbrRmAlarmStatAddr OBJECT-TYPE
+                      SYNTAX MacAddress
+                      ACCESS not-accessible
+                      STATUS mandatory
+                      DESCRIPTION
+                         "The MAC address of the Token Ring station that is
+                          experiencing a problem"
+                      ::= { mbrRingMgtAlarms 1 }
+
+         mbrRmAlarmNaunAddr OBJECT-TYPE
+                      SYNTAX MacAddress
+                      ACCESS not-accessible
+                      STATUS mandatory
+                      DESCRIPTION
+                         "The MAC address of the nearest active upstream
+                          neighbor (NAUN) of the Token Ring station that is
+                          experiencing a problem"
+                      ::= { mbrRingMgtAlarms 2 }
+
+         mbrRmAlarmBeaconType OBJECT-TYPE
+                      SYNTAX INTEGER {
+                                recoveryModeSet(1),
+                                signalLossError(2),
+                                streamSignalNotClaimToken(3),
+                                streamSignalClaimToken(4)
+                                }
+                      ACCESS not-accessible
+                      STATUS mandatory
+                      DESCRIPTION
+                         "The value of the Beacon Type subvector in the last
+                          Beacon MAC frame received"
+                      ::= { mbrRingMgtAlarms 14 }
+
+         -- The WAN interfaces group provides information specific to WAN
+         -- ports on the MBR, including compression ratios.
+         -- All MBR products that have WAN cards present support the
+         -- WANInterfaces group.
+         mbrWanInterfaces OBJECT IDENTIFIER ::= { mbr 2 }
+
+         mbrWifTable OBJECT IDENTIFIER ::= { mbrWanInterfaces 2 }
+
+         mbrWifEntry OBJECT IDENTIFIER ::= { mbrWifTable 1 }
+
+         -- The WifInfo group provides state information regarding MBR
+         -- WAN ports.
+         mbrWifInfo OBJECT IDENTIFIER ::= { mbrWifEntry 2 }
+
+         mbrWifLinkState OBJECT-TYPE
+                     SYNTAX INTEGER {
+                               disabled(0),
+                               blocked(1),
+                               listening(2),
+                               learning(3),
+                               forwarding(4),
+                               blockingInit(5),
+                               up(6),
+                               down(7)
+                               }
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This details the Spanning Tree Algorithm (STA) state of
+                         the port.  When STA is off, the port may be either
+                         up, down, or disabled."
+                     INDEX { PortNum }
+                     ::= { mbrWifInfo 1 }
+
+         mbrWifLinkDelay OBJECT IDENTIFIER ::= { mbrWifInfo 2 }
+
+         mbrWifLinkDelaySeconds OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The seconds component of the round-trip link delay 
+                         across the WAN port connection, including processing
+                         by the remote MBR."
+                     INDEX { PortNum }
+                     ::= { mbrWifLinkDelay 1 }
+
+         mbrWifLinkDelayMillis OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The milliseconds component of the round-trip link
+                         delay across a WAN port connection, including
+                         processing by the remote MBR."
+                     INDEX { PortNum }
+                     ::= { mbrWifLinkDelay 2 }
+
+         mbrWifSppActiveCount OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of active SPP connections for this WAN
+                         port.  This number is updated by the MBR only when
+                         the 3Com protocol support option is enabled for this
+                         WAN port."
+                     INDEX { PortNum }
+                     ::= { mbrWifInfo 3 }
+
+         mbrWifLinkSpeed OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The bandwith of the port in units of 100 bps.  This
+                         object is equivalent to ifSpeed/100"
+                     INDEX { PortNum }
+                     ::= { mbrWifInfo 4 }
+
+         mbrWifLinkChangeTime OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+			"Hour of last system boot in an opaque format.
+                         When the value is represented as a four-byte integer
+                         in canonical form with byte 0 being the most
+                         significant, then the following is true:
+                           byte 0: one-byte integer is the hour (1-24)
+                           byte 1: one-byte integer is the minute (0-59)
+                           byte 2: one-byte integer is the second (0-59)
+                           byte 3: has no significance"
+                     INDEX { PortNum }
+                     ::= { mbrWifInfo 5 }
+
+         mbrWifLinkChangeDate OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+			"Date of last system boot in an opaque format.
+                         When the value is represented as a four-byte integer
+                         in canonical form with byte 0 being the most
+                         significant, then the following is true:
+                           bytes 0-1: two-byte integer is the year value
+                           byte    2: one-byte integer is the month value
+                           byte    3: one-byte integer is the day of the month"
+                     INDEX { PortNum }
+                     ::= { mbrWifInfo 6 }
+
+         mbrWifLongTermStatsInterval OBJECT-TYPE
+                     SYNTAX LongTermStatsPeriod
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object represents the current time interval
+                         that the MBR is using to track its long term statistics
+                         for this port."
+                     INDEX { PortNum }
+                     ::= { mbrWifInfo 7 }
+
+         mbrWifCompNeg OBJECT-TYPE
+                     SYNTAX INTEGER {
+                               compressionOff(0),
+                               compressionOn(1)
+                               }
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Negotiated compression for this port"
+                     INDEX { PortNum }
+                     ::= { mbrWifInfo 8 }
+
+         mbrWifLoadShareSetId OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object is non-zero only if this port is a member
+                         of a set of load-sharing WAN ports.  All members of
+                         a single set of load-sharing WAN ports share the same
+                         mbrWifLoadShareSetId (usually the lowest port number
+                         of the set)"
+                     INDEX { PortNum }
+                     ::= { mbrWifInfo 9 }
+
+         mbrWifSpecificInfo OBJECT IDENTIFIER ::= { mbrWifInfo 10 }
+
+         -- The WAN X.25 information group is present in all MBR6500 products.
+         mbrWifX25Info OBJECT IDENTIFIER ::= { mbrWifSpecificInfo 1 }
+
+         mbrWifVcCount OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of VCs configured for this port."
+                     ::= { mbrWifX25Info 1 }
+
+         mbrWifVcInfo OBJECT IDENTIFIER ::= { mbrWifX25Info 2 }
+
+         mbrWifVcCallState OBJECT-TYPE
+                     SYNTAX INTEGER {
+                               noSwitch(0),      -- port not connected to switch
+                               idle(1),
+                               calling(2),       -- attempting to establish call
+                               listening(3),     -- waiting for incoming call
+                               established(4),   -- passing data
+                               disconnecting(5), -- disconnecting call
+                               available(6)      -- may call or answer
+                               }
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The call state of this VC."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcInfo 1 }
+
+         mbrWifVcDelay OBJECT IDENTIFIER ::= {mbrWifVcInfo 2 }
+
+         mbrWifVcDelaySeconds OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The seconds component of the round-trip delay across
+                         the VC, including processing by the remote MBR."
+                     ::= { mbrWifVcDelay 1 }
+
+         mbrWifVcDelayMillis OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The milliseconds component of the round-trip delay
+                         across the VC, including processing by the remote MBR."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcDelay 2 }
+
+         mbrWifVcLongTermStatsInterval OBJECT-TYPE
+                     SYNTAX LongTermStatsPeriod
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object represents the current time interval
+                         that the MBR is using to track its long term
+                         statistics for this VC."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcInfo 3 }
+
+         mbrWifVcCompNeg OBJECT-TYPE
+                     SYNTAX INTEGER {
+                               compressionOff(0),
+                               compressionOn(1)
+                               }
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Negotiated compression for this VC"
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcInfo 4 }
+
+         mbrWifVcLcn OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The LCN assigned to this VC"
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcInfo 5 }
+
+         mbrWifVcRemoteDte OBJECT-TYPE
+                     SYNTAX DisplayString
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The DTE address to which this VC call is established"
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcInfo 6 }
+
+         mbrWifStatTable OBJECT-TYPE
+                     SYNTAX SEQUENCE OF MbrWifStatEntry
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Table for short and long term WAN statistics"
+                     ::= { mbrWifEntry 3 }
+
+         mbrWifStatEntry OBJECT-TYPE
+                     SYNTAX MbrWifStatEntry
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "An entry in the WAN statistics table.  The first of
+                         the two integer index values specifies the relative
+                         time interval of the statistic value. Short term
+                         stats are measured over a sliding 128-second window.
+                         Long term stats are measured over the period specified
+                         by the WAN port's mbrWifLongTermStatsInterval. The
+                         second index value specifies the MBR WAN port."
+                     INDEX { StatsInterval, PortNum }
+                     ::= { mbrWifStatTable 1 }
+
+         MbrWifStatEntry ::= SEQUENCE {
+                     mbrWiRcvChars
+                          StatsRawCount,
+                     mbrWifXmtChars
+                          StatsRawCount,
+                     mbrWifRcvFrames
+                          StatsRawCount,
+                     mbrWifXmtFrames
+                          StatsRawCount,
+                     mbrWifRcvBadFrames
+                          StatsRawCount,
+                     mbrWifXmtRejects
+                          StatsRawCount,
+                     mbrWifRcvRejects
+                          StatsRawCount,
+                     mbrWifRexmtTimeouts
+                          StatsRawCount,
+                     mbrWifLanPktsDiscarded
+                          StatsRawCount,
+                     mbrWifMgmtPktsForwarded
+                          StatsRawCount
+                          }
+
+         mbrWifRcvChars OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of octets received from this WAN port
+                         during the last stats interval."
+                       ::= { mbrWifStatEntry 1 }
+
+         mbrWifXmtChars OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of octets transmitted from this WAN port 
+                         during the last stats interval."
+                     ::= { mbrWifStatEntry 2 }
+
+         mbrWifRcvFrames OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of HDLC frames received from this WAN port
+                         during the last stats interval."
+                     ::= { mbrWifStatEntry 3 }
+
+         mbrWifXmtFrames OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of HDLC frames transmitted out this WAN
+                         port during the last stats interval."
+                     ::= { mbrWifStatEntry 4 }
+
+         mbrWifRcvBadFrames OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of HDLC frames received with error during 
+                         the last stats interval."
+                     ::= { mbrWifStatEntry 5 }
+
+         mbrWifXmtRejects OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of HDLC frame rejects transmitted during
+                         the last stats interval."
+                     ::= { mbrWifStatEntry 6 }
+
+         mbrWifRcvRejects OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of HDLC frame rejects received during the
+                         last stats interval."
+                     ::= { mbrWifStatEntry 7 }
+
+         mbrWifRexmtTimeouts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of retransmission timer timeouts occurrences
+                         during the last stats interval."
+                     ::= { mbrWifStatEntry 8 }
+
+         mbrWifLanPktsDiscarded OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of LAN packets discarded due to lack of
+                         resources during the last stats interval."
+                     ::= { mbrWifStatEntry 9 }
+
+         mbrWifMgmtPktsForwarded OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of proprietary link-management packets 
+                         forwarded during the last stats interval."
+                     ::= { mbrWifStatEntry 10 }
+
+         mbrWifRcvCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The current ratio of raw octets to compressed octets
+                         received for this WAN connection.  The index indicates
+                         the MBR port number."
+                     INDEX { PortNum }
+                     ::= { mbrWifStatEntry 11 }
+
+         mbrWifXmtCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The current ratio of raw octets to compressed octets
+                         transmitted for this WAN connection.  The index
+                         indicates the MBR port number."
+                     INDEX { PortNum }
+                     ::= { mbrWifStatEntry 12 }
+
+         mbrWifRminCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The lowest ratio of raw octets to compressed octets
+                         received for this WAN connection.  The index indicates
+                         the MBR port number."
+                     INDEX { PortNum }
+                     ::= { mbrWifStatEntry 13 }
+
+         mbrWifXminCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The lowest ratio of raw octets to compressed octets
+                         transmitted for this WAN connection.  The index
+                         indicates the MBR port number."
+                     INDEX { PortNum }
+                     ::= { mbrWifStatEntry 14 }
+
+         mbrWifRmaxCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The highest ratio of raw octets to compressed octets
+                         received for this WAN connection.  The index indicates
+                         the MBR port number."
+                     INDEX { PortNum }
+                     ::= { mbrWifStatEntry 15 }
+
+         mbrWifXmaxCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The highest ratio of raw octets to compressed octets
+                         transmitted for this WAN connection.  The index
+                         indicates the MBR port number."
+                     INDEX { PortNum }
+                     ::= { mbrWifStatEntry 16 }
+
+         -- The VC statistics Table is implemented by each MBR6500 product.
+         mbrWifVcStatTable OBJECT-TYPE
+                     SYNTAX SEQUENCE OF MbrWifVcStatEntry
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Table for short and long term VC statistics"
+                     ::= { mbrWifStatTable 2 }
+
+         mbrWifVcStatEntry OBJECT-TYPE
+                     SYNTAX MbrWifVcStatEntry
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "An entry in the VC statistics table.  The first of
+                         the three integer index values specifies the relative
+                         time interval of the statisitics value.  Short term
+                         stats are measured over a sliding 128-second window.
+                         Long term stats are measured over the period specified
+                         by the VC's mbrWifVcLongTermStatsInterval.  The second
+                         index value specifies the MBR X.25 WAN port.  The third
+                         index value specifies the VC number."
+                     INDEX { StatInterval, PortNum, VcNum }
+                     ::= { mbrWifVcStatTable 1 }
+
+         MbrWifVcStatEntry ::= SEQUENCE {
+                     mbrWifVcRcvChars
+                          StatsRawCount,
+                     mbrWifVcXmtChars
+                          StatsRawCount,
+                     mbrWifVcRcvX25Pkts
+                          StatsRawCount,
+                     mbrWifVcXmtX25Pkts
+                          StatsRawCount
+                          }
+
+         mbrWifVcRcvChars OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of octets received from this VC during the
+                         last stats interval."
+                     ::= { mbrWifVcStatEntry 1 }
+
+         mbrWifVcXmtChars OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of octets transmitted on this VC during the
+                         last stats interval."
+                     ::= { mbrWifVcStatEntry 2 }
+
+         mbrWifVcRcvX25Pkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of X.25 packets received from this VC
+                         during the last stats interval."
+                     ::= { mbrWifVcStatEntry 3 }
+
+         mbrWifVcXmtX25Pkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of X.25 packets transmitted on this VC
+                         during the last stats interval."
+                     ::= { mbrWifVcStatEntry 4 }
+
+         mbrWifVcRcvCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The current ratio of raw octets to compressed octets
+                         received for this VC.  The index values indicate the
+                         MBR port number and VC number, respectively."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcStatEntry 5 }
+
+         mbrWifVcXmtCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The current ratio of raw octets to compressed octets
+                         transmitted for this VC.  The index values indicate
+                         the MBR port number and VC number, respectively."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcStatEntry 6 }
+
+         mbrWifVcRminCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The lowest ratio of raw octets to compressed octets
+                         received for this VC.  The index values indicate
+                         the MBR port number and VC number, respectively."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcStatEntry 7 }
+
+         mbrWifVcXminCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The lowest ratio of raw octets to compressed octets
+                         transmitted for this VC.  The index values indicate
+                         the MBR port number and VC number, respectively."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcStatEntry 8 }
+
+         mbrWifVcRmaxCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The highest ratio of raw octets to compressed octets
+                         received for this VC.  The index values indicate
+                         the MBR port number and VC number, respectively."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcStatEntry 9 }
+
+         mbrWifVcXmaxCompRatio OBJECT-TYPE
+                     SYNTAX CompRatio
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The highest ratio of raw octets to compressed octets
+                         transmitted for this VC.  The index values indicate
+                         the MBR port number and VC number, respectively."
+                     INDEX { PortNum, VcNum }
+                     ::= { mbrWifVcStatEntry 10 }
+
+         -- The LAN interfaces group provides information specific to LAN
+         -- ports on the MBR.
+         mbrLanInterfaces OBJECT IDENTIFIER ::= { mbr 3 }
+
+         mbrLifTable OBJECT IDENTIFIER ::= { mbrLanInterfaces 2 }
+
+         mbrLifEntry OBJECT IDENTIFIER ::= { mbrLifTable 1 }
+
+         mbrLifInfo OBJECT IDENTIFIER ::= { mbrLifEntry 2 }
+
+         mbrLifState OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object represents the Spanning Tree Algorithm
+                         (STA) state of the port.  The values are enumerated
+                         for the object mbrWifLinkState.  When STA is off, the
+                         port may be one of up, down, or disabled.
+                         The integer index value indicates the MBR port."
+                     INDEX { PortNum }
+                     ::= { mbrLifInfo 1 }
+
+         mbrLifMacAddress OBJECT-TYPE
+                     SYNTAX MacAddress
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The MAC address of the LAN card corresponding to this
+                         port.  The integer index value indicates the MBR port."
+                     INDEX { PortNum }
+                     ::= { mbrLifInfo 2 }
+
+         mbrLifHardwareRev OBJECT-TYPE
+                     SYNTAX Counter
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The hardware revision level of the LAN card correspond-
+                         ing to this port.  The integer index value indicates
+                         the MBR port."
+                     INDEX { PortNum }
+                     ::= { mbrLifInfo 3 }
+
+         mbrLifLongTermStatsInterval OBJECT-TYPE
+                     SYNTAX LongTermStatsPeriod
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "This object represents the current time interval
+                         that the MBR is using to track its long term
+                         statistics for this port."
+                     INDEX { PortNum }
+                     ::= { mbrLifInfo 4 }
+
+         mbrLifRingNumber OBJECT-TYPE
+                     SYNTAX INTEGER
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The ring number assigned to the 802.5 LAN that this
+                         port is connected to.  This object is available in
+                         SNMP traps only."
+                     INDEX { PortNum }
+                     ::= { mbrLifInfo 5 }
+
+         mbrLifStatistics OBJECT IDENTIFIER ::= { mbrLifEntry 3 }
+
+         mbrLifStatTable OBJECT-TYPE
+                     SYNTAX SEQUENCE OF MbrLifStatEntry
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "Table for short and long term LAN statistics"
+                     ::= { mbrLifStatistics 1 }
+
+         mbrLifStatEntry OBJECT-TYPE
+                     SYNTAX MbrLifStatEntry
+                     ACCESS not-accessible
+                     STATUS mandatory
+                     DESCRIPTION
+                        "An entry in the LAN statistics table.  The first of
+                         the two integer index values specifies the relative
+                         time interval of the statistic value. Short term
+                         stats are measured over a sliding 128-second window.
+                         Long term stats are measured over the period specified
+                         by the LAN port's mbrLifLongTermStatsInterval. The
+                         second value specifies the MBR LAN port."
+                     INDEX { StatsInterval, PortNum }
+                     ::= { mbrLifStatTable 1 }
+
+         MbrLifStatEntry ::= SEQUENCE {
+                     mbrLifRcvPkts
+                          StatsRawCount,
+                     mbrLifFwdPkts
+                          StatsRawCount,
+                     mbrLifRcvMcastPkts
+                          StatsRawCount,
+                     mbrLifFwdMcastPkts
+                          StatsRawCount,
+                     mbrLifRcvErrPkts
+                          StatsRawCount,
+                     mbrLifNobufDiscPkts
+                          StatsRawCount,
+                     mbrLifXmtPkts
+                          StatsRawCount
+                          }
+
+         mbrLifRcvPkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of packets received from this WAN port
+                         during the last stats interval."
+                     ::= { mbrLifStatEntry 1 }
+
+         mbrLifFwdPkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of packets transmitted from this LAN port
+                         during the last stats interval."
+                     ::= { mbrLifStatEntry 2 }
+
+         mbrLifRcvMcastPkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of multicast packets received from this
+                         LAN port during the last stats interval."
+                     ::= { mbrLifStatEntry 3 }
+
+         mbrLifFwdMcastPkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of multicast packets forwarded to other
+                         ports during the last stats interval."
+                     ::= { mbrLifStatEntry 4 }
+
+         mbrLifRcvErrPkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of packets received with error during the
+                         last stats interval."
+                     ::= { mbrLifStatEntry 5 }
+
+         mbrLifNobufDiscPkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of received packets discarded due to lack
+                         of resources during the last stats interval."
+                     ::= { mbrLifStatEntry 6 }
+
+         mbrLifXmtPkts OBJECT-TYPE
+                     SYNTAX StatsRawCount
+                     ACCESS read-only
+                     STATUS mandatory
+                     DESCRIPTION
+                        "The number of packets transmitted during the last
+                         stats interval."
+                     ::= { mbrLifStatEntry 7 }
+
+	 END
+			
+
+

@@ -1,0 +1,581 @@
+USR-REMOTE-PING-MIB DEFINITIONS ::= BEGIN
+        IMPORTS
+          OBJECT-TYPE,
+          Integer32,
+          IpAddress,
+          TimeTicks
+                FROM SNMPv2-SMI
+          DisplayString,
+          RowStatus
+                FROM SNMPv2-TC
+          MODULE-COMPLIANCE,
+          OBJECT-GROUP
+                FROM SNMPv2-CONF
+          usrRemotePing, UsrConfigStatus
+                FROM USR-DEFINITIONS-MIB;
+-- The remote ping MIB is a diagnostic tool intended to test reachability,
+-- reliability, and round trip delay between a managed USR NAS and any IP
+-- system (PC, UNIX, another NAS, etc.) implementing the common ICMP Echo
+-- protocol, also known as 'ping' (from the Unix command 'ping' based
+-- on that same protocol).
+--
+-- As a side effect the tool can also be used to estimate DNS processing
+-- delays by monitoring the object usrRemotePingDNSResolutionDelay.
+--
+--
+-- In order to test reachability to a given device, an SNMP client
+-- application should:
+--
+-- 1. Issue an SNMP GET for the object usrRemotePingIndexNext.0.
+--    (assume the reply is 'x'). This step is optional, clients might browse
+--    the table or just attempt a creation on any index until it succeeds.
+--
+-- 2. Create a new entry in the Remote Ping table by performing a command
+--    such as 'SNMP SET usrRemotePingRowStatus.x = createAndWait.
+--
+-- 3. If the above succeeds, set values of the various settable objects in
+--    the new row.
+--    In particular, make sure to set usrRemotePingDestination.x to the name
+--    or address to be 'pinged'.
+--
+--    Alternatively, it is possible to combine several settings on a single
+--    SNMP PDU. The PDU could also include a rowStatus value of createAndGo
+--    (it should be the last entry in the PDU in relation with a given row)
+--    in which case a new row will be created, modified and activated in one
+--    transaction.
+--
+-- 4. After setting the various objects of row x to desired values,
+--    modify usrRemotePingRowStatus.x to 'active'.
+--
+-- 5. If the above succeeds, clients will now typically monitor the value of
+--                'usrRemotePingConnectionStatus.x'
+--    in order to find out if the process is making progress as expected
+--    (it should return 'pinging' or 'completed' very soon now).
+--
+-- 6. Once 'usrRemotePingConnectionStatus' returns the value 'pinging',
+--    clients will typically monitor progress by displaying the ongoing
+--    values of:
+--         usrRemotePingRequestsSent
+--         usrRemotePingRepliesReceived
+--         usrRemotePingTimeouts
+--         usrRemotePingMinRoundTripTime
+--         usrRemotePingMaxRoundTripTime
+--         usrRemotePingAverageRoundTripTime
+--
+--    Other objects could be monitored for various diagnostics purposes,
+--    such as:
+--         usrRemotePingResolvedIPAddress
+--         usrRemotePingCreationTime
+--         usrRemotePingActivationTime
+--         usrRemotePingLastChanged
+--
+-- 7. A particular ping sequence is completed when
+--    'usrRemotePingConnectionStatus' returns 'completed'. At this point,
+--    all the values row x will be steady. Note that, unless
+--    'usrRemotePingSelfDestroyDelay' is zero, the row will be
+--    self-destroyed a number of minutes after completion (see
+--    'usrRemotePingSelfDestroyDelay' which has a default value of 10 minutes).
+--
+-- 8. In order to start a new sequence using the configuration values
+--    already available in an existing row, set 'usrRemotePingRowStatus'
+--    first to 'notInService' and then again to 'active'."
+--
+-- The managed objects
+--
+usrRemotePingObjects OBJECT IDENTIFIER ::= { usrRemotePing 1 }
+usrRemotePingBase OBJECT IDENTIFIER ::= { usrRemotePingObjects 1 }
+--
+-- base (global) objects
+--
+usrRemotePingIndexNext OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "This object contains an appropriate value that can be used for
+      'usrRemotePingIndex' when creating a new row in the Remote Ping
+      Table'. If the value 0 is returned, it indicates that the table
+      contains the maximum number of rows and thus it is not possible to add
+      another one."
+    ::= { usrRemotePingBase 1 }
+usrRemotePingNRows OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "Number of rows currently present in the remote ping table."
+    ::= { usrRemotePingBase 2 }
+usrRemotePingMaxRows OBJECT-TYPE
+    SYNTAX      Integer32 (1..1000)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+     "Maximum number of rows allowed in the remote ping table.
+      Note that setting this object to a number which is smaller than the
+      current number of rows will NOT cause any row deletions - rather, the
+      effect of such an action will be noted in future attempts at row creation."
+    DEFVAL  { 20 }
+    --CONFIGURABLE
+    ::= { usrRemotePingBase 3 }
+usrRemotePingConfigFileName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The name of a ConfigFile to read/write  permanent database records.
+     If the value of this object is an empty string, then the Remote Ping
+     process uses the default name `@file://RemotePingProcess.cfg'."
+    ::= { usrRemotePingBase 4 }
+usrRemotePingCFMStatusFlag  OBJECT-TYPE
+    SYNTAX      UsrConfigStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+     "Setting the value of this object to `save' causes the values of the
+     Remote Ping Group to be written out to the current config file, which
+     is stored in the usrRemotePingConfigFileName object. While the new
+     ConfigFile is being written, the Remote Ping process will set the value
+     of this flag set to `saving''. Any attempts to set the value while it
+     is  not `normal' (i.e. the file is currently being written to the
+     ConfigFile) will result in a badValue error being returned. Setting
+     the value to `normal' will result in no action."
+    ::= { usrRemotePingBase 5 }
+usrRemotePingTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF UsrRemotePingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+     "A table of remote ping entries."
+    ::= { usrRemotePingObjects 2 }
+usrRemotePingEntry OBJECT-TYPE
+    SYNTAX      UsrRemotePingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+     "A list of control entries used to control and monitor the remote
+      ping process."
+    INDEX   { usrRemotePingIndex }
+    ::= { usrRemotePingTable 1 }
+UsrRemotePingEntry ::= SEQUENCE {
+    usrRemotePingIndex                      Integer32 (1..65535),
+    usrRemotePingDestination                DisplayString (SIZE (1..255)),
+    usrRemotePingSize                       Integer32(1..1450),
+    usrRemotePingData                       OCTET STRING (SIZE (0..255)),
+    usrRemotePingTimeOut                    Integer32(1..60),
+    usrRemotePingCount                      Integer32(0..65535),
+    usrRemotePingInterval                   Integer32(1..65535),
+    usrRemotePingTtl                        Integer32(0..16),
+    usrRemotePingSelfDestroyDelay           Integer32(0..65535),
+    usrRemotePingState                      INTEGER,
+    usrRemotePingRequestsSent               Integer32,
+    usrRemotePingRepliesReceived            Integer32,
+    usrRemotePingTimeouts                   Integer32,
+    usrRemotePingLastRoundTripTime          Integer32,
+    usrRemotePingMinRoundTripTime           Integer32,
+    usrRemotePingMaxRoundTripTime           Integer32,
+    usrRemotePingAverageRoundTripTime       Integer32,
+    usrRemotePingResolvedIPAddress          IpAddress,
+    usrRemotePingDNSResolutionDelay         Integer32,
+    usrRemotePingCreationTime               TimeTicks,
+    usrRemotePingActivationTime             TimeTicks,
+    usrRemotePingLastChangeTime             TimeTicks,
+    usrRemotePingRowStatus                  RowStatus
+}
+usrRemotePingIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "A unique index identifying this entry in the table."
+    ::= { usrRemotePingEntry 1 }
+usrRemotePingDestination OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..255))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "The host name or IP address (in dot notation) of the target
+      destination being tested by this row. A row cannot be activated
+      unless this object has a length greater than zero.
+      When a row is activated, a request is sent to the internal DNS process
+      to resolve the symbolic name into an IP address. That address can be
+      displayed by querying the object 'usrRemotePingResolvedIPAddress'.
+      If DNS fails, the object usrRemotePingConnectionStatus will indicate
+      'dnsFailed'.
+      This object cannot be modified whenever usrRemotePingRowStatus is
+      'active'."
+    DEFVAL  { "" }
+    ::= { usrRemotePingEntry 2 }
+usrRemotePingSize OBJECT-TYPE
+    SYNTAX      Integer32(1..1450)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "Size of the data to be sent, in bytes.
+      Note that the actual datagram will be larger than this value, as it
+      will include:
+        - MAC header (14 octets on Ethernet)
+        - IP header (20 octets)
+        - ICMP header (8 octets)
+      Together these add to a typical 42 octets.
+      This object cannot be modified whenever usrRemotePingRowStatus is
+      'active'."
+    DEFVAL  { 64 }
+    ::= { usrRemotePingEntry 3 }
+usrRemotePingData OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (0..255))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "This object specifies the data to be transmitted. If the length of
+      this object is bigger than usrRemotePingSize, only the first
+      usrRemotePingSize octets will be used. If the length of this
+      object is zero, the agent will use random data. If the length of
+      this object is smaller than usrRemotePingSize, the data pattern
+      will be repeated as many times as necessary to fill up the
+      transmission buffer.
+      This object cannot be modified whenever usrRemotePingRowStatus is
+      'active'."
+    DEFVAL  { "" }
+    ::= { usrRemotePingEntry 4 }
+usrRemotePingTimeOut OBJECT-TYPE
+    SYNTAX      Integer32(1..60)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "Amount of time in seconds before deciding that a transmission has
+      not been replied to.
+      This object cannot be modified whenever usrRemotePingRowStatus is
+      'active'."
+    DEFVAL  { 20 }
+    ::= { usrRemotePingEntry 5 }
+usrRemotePingCount OBJECT-TYPE
+    SYNTAX      Integer32(0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "The number of ICMP ECHO requests to be sent in this sequence.
+      The conventional value of zero is interpreted as infinite: the process
+      will continue forever until the row is deleted or deactivated via an
+      SNMP SET command.
+      This object cannot be modified whenever usrRemotePingRowStatus is
+      'active'."
+    DEFVAL  { 1 }
+    ::= { usrRemotePingEntry 6 }
+usrRemotePingInterval OBJECT-TYPE
+    SYNTAX      Integer32(1..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "Number of seconds between successive ECHO REQUEST request
+      transmissions. Note that the actual interval might be different for
+      any given transmission, as the agent will not send a new request
+      before a previous request is completed (replied or timed-out).
+      This object cannot be modified whenever usrRemotePingRowStatus is
+      'active'."
+    DEFVAL  { 1 }
+    ::= { usrRemotePingEntry 7 }
+usrRemotePingTtl OBJECT-TYPE
+    SYNTAX      Integer32(0..16)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "The TTL (time to live) to be used for the ECHO REQUEST commands.
+      If this object is zero, the TTL value currently in use by the
+      IP stack will be in effect.
+      This object cannot be modified whenever usrRemotePingRowStatus is
+      'active'."
+    DEFVAL  { 0 }
+    ::= { usrRemotePingEntry 8 }
+usrRemotePingSelfDestroyDelay OBJECT-TYPE
+    SYNTAX      Integer32(0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "Number of minutes this row is allowed to be in a state of inactivity
+      before it is destroyed by the agent.
+      A row is considered inactive anytime 'usrRemotePingState' is one of:
+        - notActive
+        - dnsFailed
+        - badAddress
+        - completed
+        - allocFailed
+      The wait timer is reset upon any change in a row received through an
+      SNMP 'SET' command.
+      A value of zero implies no self-destruction will take place on
+      this row.
+      This object can be modified at any time."
+    DEFVAL  { 10 }
+    ::= { usrRemotePingEntry 9 }
+usrRemotePingState OBJECT-TYPE
+    SYNTAX      INTEGER {
+      notActive(1),    -- this row is not active.
+      waitingDns(2),   -- waiting for DNS resolution.
+      dnsFailed(3),    -- destination address could not be resolved.
+      badAddress(4),   -- the resolved IP address is illegal.
+      pinging(5),      -- sending ping commands after successful DNS.
+      completed(6),    -- the requested number of iterations is completed.
+      allocFailed(7)   -- failed to allocate resources.
+    }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The state of the 'remote ping' process associated with this row.
+      Before this row is activated, this object will have the value
+      'notActive(1)'.
+      Upon activation, if DNS resolution is needed, the object will
+      receive the value 'waitingDns(2)'. If DNS times out or otherwise
+      fails, this object will receive the value 'dnsFailed(3)'.
+      If the resolved IP address is not legal, this object value will be
+      'badAddress(4)'.
+      If none of the above fails, the first ping command will be sent
+      and this object will indicate the value 'pinging(5)'.
+      After the desired number of ping commands have been sent and
+      replied to (or timed-out) this object will receive the value
+      completed(6)'.
+      If there is a resource allocation error along the way, the process
+      will stop and this object will receive the value allocFailed(7)."
+    ::= { usrRemotePingEntry 10 }
+usrRemotePingRequestsSent OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "Number of requests transmitted so far since this row became active."
+    ::= { usrRemotePingEntry 11 }
+usrRemotePingRepliesReceived OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "Number of replies received so far since this row became active."
+    ::= { usrRemotePingEntry 12 }
+usrRemotePingTimeouts OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "Number of requests timed-out (no reply received after
+      'usrRemotePingTimeOut' seconds) since this row became active."
+    ::= { usrRemotePingEntry 13 }
+usrRemotePingLastRoundTripTime OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The round trip time in milliseconds experienced by the last
+      request-reply iteration. If the last iteration was a time-out, this
+      object will return the value -1.
+      This object remains zero until an actual reply or timeout is
+      received."
+    ::= { usrRemotePingEntry 14 }
+usrRemotePingMinRoundTripTime OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The minimum round trip time in milliseconds, not including timed out
+      requests. This object remains zero until an actual reply is received."
+    ::= { usrRemotePingEntry 15 }
+usrRemotePingMaxRoundTripTime OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The maximum round trip time in milliseconds, not including timed out
+      requests. This object remains zero until an actual reply is received."
+    ::= { usrRemotePingEntry 16 }
+usrRemotePingAverageRoundTripTime OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The average round trip time in milliseconds, not counting
+      timed-out requests. This object remains zero until an actual reply is
+      received."
+    ::= { usrRemotePingEntry 17 }
+usrRemotePingDNSResolutionDelay OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The time elapsed, in milliseconds, since the agent issued a DNS query
+      for this entry until it received a reply."
+    ::= { usrRemotePingEntry 18 }
+usrRemotePingResolvedIPAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The IP address resolved from the destination address string.
+      If there is no resolution, this object returns zero."
+    ::= { usrRemotePingEntry 19 }
+usrRemotePingCreationTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The value of sysUpTime at the time this row was created."
+    ::= { usrRemotePingEntry 20 }
+usrRemotePingActivationTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The value of sysUpTime at the time this row was last activated (or
+      zero, if never)."
+    ::= { usrRemotePingEntry 21 }
+usrRemotePingLastChangeTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+     "The value of sysUpTime at the time any object in this row was last
+      modified."
+    ::= { usrRemotePingEntry 22 }
+usrRemotePingRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+     "This object is used to create, modify or delete a row in this table.
+      Setting this object to 'createAndWait' creates the row with default
+      values. Right after creation the value of this object will be
+      'notReady'.
+      When all parameters are given proper values, this object
+      will return the value 'notInService', at which point the client can
+      set the object to 'active' to activate the row.
+      Modifying this object from 'active' to 'notInService' will stop any
+      on-going sequence, at which point the row can be re-activated by
+      setting the object to 'active' again, after possibly modifying some of
+      the associated parameters. Note that this will cause zeroing out of
+      any on-going counters such as 'usrRemotePingRequestsSent'.
+      Setting this object to 'destroy' will stop any on-going activity and
+      delete the row."
+    DEFVAL  { createAndWait }
+    ::= { usrRemotePingEntry 23 }
+--
+-- conformance information
+--
+usrRemotePingConformance OBJECT IDENTIFIER ::= { usrRemotePing 2 }
+usrRemotePingCompliances OBJECT IDENTIFIER ::= { usrRemotePingConformance 1 }
+usrRemotePingGroups      OBJECT IDENTIFIER ::= { usrRemotePingConformance 2 }
+usrRemotePingCompliance MODULE-COMPLIANCE
+        STATUS        current
+        DESCRIPTION
+            "The compliance statement for entities which implement
+             the MIB."
+        MODULE    -- this module
+            MANDATORY-GROUPS {
+                usrRemotePingGroup
+            }
+        ::= { usrRemotePingCompliances 1 }
+-- units of conformance
+usrRemotePingGroup OBJECT-GROUP
+        OBJECTS {
+                usrRemotePingIndexNext,
+                usrRemotePingNRows,
+                usrRemotePingMaxRows,
+                usrRemotePingIndex,
+                usrRemotePingDestination,
+                usrRemotePingSize,
+                usrRemotePingData,
+                usrRemotePingTimeOut,
+                usrRemotePingCount,
+                usrRemotePingInterval,
+                usrRemotePingTtl,
+                usrRemotePingSelfDestroyDelay,
+                usrRemotePingState,
+                usrRemotePingRequestsSent,
+                usrRemotePingRepliesReceived,
+                usrRemotePingTimeouts,
+                usrRemotePingLastRoundTripTime,
+                usrRemotePingMinRoundTripTime,
+                usrRemotePingMaxRoundTripTime,
+                usrRemotePingAverageRoundTripTime,
+                usrRemotePingResolvedIPAddress,
+                usrRemotePingDNSResolutionDelay,
+                usrRemotePingCreationTime,
+                usrRemotePingActivationTime,
+                usrRemotePingLastChangeTime,
+                usrRemotePingRowStatus
+        }
+        STATUS        current
+        DESCRIPTION
+          "All objects in this MIB."
+        ::= { usrRemotePingGroups 1 }
+END     -- End of USR-REMOTE-PING-MIB DEFINITIONS
+-- ************************************************************************
+--
+--      usr_traceroute.mib - An enterprise specific Traceroute MIB
+--
+-- Author:         Jeff Haag
+-- Created:        Mar-13-1997
+--
+--
+-- The traceroute MIB is a diagnostic tool intended to retrieve route 
+-- information between a managed CommWork's NAS and any IP system (PC, Unix, 
+-- another NAS etc).  It only requires the routers along the way to the
+-- the destination to implement IP routing and ICMP Time Exceeded messages.
+-- The destination must implement UDP and return ICMP error message 
+-- destination unreachable.
+-- The functionality is similar to the Unix command 'traceroute' based
+-- on those same protocols.
+--
+-- In order to determine the route to a host, the SNMP client application 
+-- should do the following:
+--
+--
+-- *********To start the traceroute*********
+--
+--  1. Create a new entry in the Traceroute table by performing a command
+--     such as 'SNMP SET usrTracerouteRowStatus.x = createAndWait.
+--
+--  2. If the above succeeds, set values of the various settable objects in
+--     the new row.  In particular, make sure to set 
+--     usrTracerouteDestination.x to the name or address whose route is to 
+--     be traced.
+--
+--  3. After setting the various objects of row x to desired values,
+--     modify usrTracerouteRowStatus.x to 'active'.
+--
+-- OR
+--
+--  1. set values of the various settable objects in a new row.  
+--     In particular, make sure to set usrTracerouteDestination.x to the 
+--     name or address whose route is to be traced. 
+--
+--  2. Create and activate new entry in the Traceroute table by performing a command
+--     such as 'SNMP SET usrTracerouteRowStatus.x = createAndGo.
+--
+--  3. The row status will automatically get set to active after row creation
+--     and the command will begin
+--
+-- *********After starting the traceroute*********
+--
+-- 4. If the above succeeds, clients will now typically monitor the values of
+--    'usrTracerouteState.x' in order to find out if the process is 
+--    'completed' or an error has occurred
+--
+-- 5. Once 'usrTracerouteState.x' returns the value 'completed',
+--    clients can view the route information in the usrTracerouteHopTable
+--    by looking at rows that have a matching usrTraceRouteIndex
+--
+-- 6. A particular traceroute is completed when
+--    'usrTracerouteState.x' returns 'completed'. At this point,
+--    all the values of row x will be steady and no more entries for this 
+--    traceroute will be added to the hop table. 
+--
+-- 7. In order to start a new sequence using the configuration values
+--    already available in an existing row, set 'usrTracerouteRowStatus'
+--    first to 'notInService' and then again to 'active'."  This will 
+--	  automatically clean up any previous corresponding entries in the 
+--    traceroute hop table
+--
+-- ******************
+-- additional notes
+-- ******************
+-- a)  A row will be removed from the table after 60 minutes if there has been
+--     no activity
+-- b)  A row may be deleted/destroyed at any time, even if the row status is 
+--     'active'
+--

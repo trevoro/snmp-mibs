@@ -1,0 +1,357 @@
+-- 
+-- Copyright 1999 by Fore Systems, Inc. 
+-- Converted to SMIv2 rfc 2578,2579,2580 - STD 58
+--
+--
+-- Copyright 1997 by Fore Systems, Inc.
+--
+------------------------------------------------------------------------
+-- This mib contains two tables:
+-- (1) funiConnTable
+-- (2) funiIfExtTable
+
+-- funiConnTable allows to initiate creation of a FUNI connection
+-- as well as to retrieve internal interworking mapping to the
+-- internal atm connection, i.e. to find out on which service,
+-- vpi, vci the data associated with this connection gets to the
+-- switching fabric. Later on, the service can be converted to the
+-- BNP notation by means of ifIndexMapTable from fore-switch MIB.
+--
+-- To create a FUNI PVC connection, the manager will request the agent
+-- to create a new row in this table, indexing it by serviceIfIndex, 
+-- funiVpi and funiVci, and setting funiConnRowStatus to
+-- createAndWait.
+--
+-- In response to this operation, the agent will do the following
+-- (after checking the validity of the ServiceIfIndex and Vpi, Vci
+-- values and making sure that a connection with these parameters
+-- does not yet exist):
+--  o  create a new entry in this table;
+--  o  create an entry in funiVclStatsTable defined in standard 
+--     FUNI MIB, i.e., funi.mib;
+--  o  define  the appropriate ATM sevice identifier, vpi and vci
+--     for the internal (between the netmod and the switching
+--     fabric) ATM part of the interworked connection, and populate
+--     them in the appropriate objects of this entry.
+--
+-- After the mentioned entries in different tables are created, the
+-- manager will populate other objects, in proprietory tables which
+-- are applicable to this connection (profile indices, output port,
+-- VPI, VCI, etc.) which will complete the FUNI/ATM connection
+-- definition. After that, changing funiConnRowStatus to
+-- active will cause the information to be passed down to the netmod,
+-- so that the connection will be created in the netmod database.
+-- Also, the connection (actually it's first hop, which is between the
+-- WAN and ATM interfaces on the netmod) to become operational.
+-- setting funiConnRowStatus to destroy will trigger the deletion
+-- process for this connection.
+--
+--Note: ATM MIB mentioned in this MIB refers to the one defined in
+--rfc1695.txt.
+
+Fore-Funi-MIB DEFINITIONS  ::= BEGIN
+
+ IMPORTS
+             Integer32, TimeTicks, IpAddress,
+             OBJECT-TYPE,
+             MODULE-IDENTITY                     FROM SNMPv2-SMI
+	     frameInternetworking            FROM Fore-Common-MIB
+	     RowStatus,
+	     DisplayString                   FROM SNMPv2-TC
+             ifIndex                         FROM IF-MIB;
+
+    funi  MODULE-IDENTITY
+          LAST-UPDATED         "9911050000Z"
+          ORGANIZATION         "FORE"
+          CONTACT-INFO         
+               "      Postal:   FORE Systems Inc.
+                                 1000 FORE Drive
+                                 Warrendale, PA 15086-7502
+                       Tel:      +1 724 742 6900
+                       Email:    nm_mibs@fore.com
+                       Web:      http://www.fore.com"
+          DESCRIPTION
+           "write something interesting here"
+     ::= { frameInternetworking 6 }
+
+--  internet         OBJECT IDENTIFIER ::= { iso(1) org(3) dod(6) 1 }
+--  private          OBJECT IDENTIFIER ::= { internet 4 }
+--  enterprises      OBJECT IDENTIFIER ::= { private 1 }
+--  fore             OBJECT IDENTIFIER ::= { enterprises 326 }
+--  systems          OBJECT IDENTIFIER ::= { fore 2 }
+
+--------------------------------------------------------------------
+-- This table contains the mapping of the WAN FUNI interface to 
+-- the internal switch interface for a FUNI connection.
+  funiConnTable    OBJECT-TYPE
+  SYNTAX                   SEQUENCE OF FuniConnEntry
+  MAX-ACCESS                   not-accessible
+  STATUS                   current
+  DESCRIPTION
+    "Table of cross connections between FUNI and ATM connections"
+  ::= { funi 1 }
+
+  funiConnEntry      OBJECT-TYPE
+  SYNTAX                     FuniConnEntry
+  MAX-ACCESS                     not-accessible
+  STATUS                     current
+  DESCRIPTION
+    "Entry in the FUNI/atm netmod crossconnect table"
+  INDEX   { funiConnFuniServiceIfIndex,
+            funiConnFuniVpi,
+            funiConnFuniVci
+          }
+  ::= { funiConnTable 1 }
+
+ FuniConnEntry ::= SEQUENCE {
+        funiConnFuniServiceIfIndex     Integer32,
+        funiConnFuniVpi                Integer32,
+        funiConnFuniVci                Integer32,
+        funiConnFabricServiceIfIndex   Integer32,
+        funiConnFabricVpi              Integer32,
+        funiConnFabricVci              Integer32,
+        funiConnRowStatus              RowStatus,
+        funiConnName                   DisplayString,
+	funiConnAdminStatus            INTEGER,
+	funiConnOperStatus             INTEGER,
+	funiConnProfileEpdPpdIndex     Integer32
+        }
+
+ funiConnFuniServiceIfIndex     OBJECT-TYPE
+     SYNTAX                      Integer32
+     MAX-ACCESS                      read-only
+     STATUS                      current
+     DESCRIPTION
+       "Interface index of the FUNI service this connection
+        exists on"
+     ::= { funiConnEntry 1 }
+
+ funiConnFuniVpi         OBJECT-TYPE
+     SYNTAX                      Integer32
+     MAX-ACCESS                      read-only
+     STATUS                      current
+     DESCRIPTION
+       "VPI of this connection on the FUNI service"
+     ::= { funiConnEntry 2 }
+
+ funiConnFuniVci         OBJECT-TYPE
+     SYNTAX                      Integer32
+     MAX-ACCESS                      read-only
+     STATUS                      current
+     DESCRIPTION
+       "VCI of this connection on the FUNI service"
+     ::= { funiConnEntry 3 }
+
+ funiConnFabricServiceIfIndex     OBJECT-TYPE
+     SYNTAX                     Integer32
+     MAX-ACCESS                     read-only
+     STATUS                     current
+     DESCRIPTION
+       "This is the IfIndex associated with the pseudo atm service
+        this connection is mapped to by the agent when this FUNI
+        connection is created. This IfIndex can be converted to
+        a BNP notation value through the IfIndexMapTable of the
+        fore-switch MIB.  This ifIndex will be stacked on top of
+        the portIfIndex for a port. That BNP value can be used to
+        establish a connection across the switching fabric by means
+        of the FORE-switch MIB."
+     ::= { funiConnEntry 4 }
+
+ funiConnFabricVpi         OBJECT-TYPE
+     SYNTAX                     Integer32
+     MAX-ACCESS                     read-only
+     STATUS                     current
+     DESCRIPTION
+       "This is the Fabric VPI of the ATM connection this FUNI
+        connection is mapped to by the agent when this row is
+        created. This VPI will be used to establish a connection
+        across the switching fabric by means of the FORE-switch MIB"
+     ::= { funiConnEntry 5 }
+
+ funiConnFabricVci         OBJECT-TYPE
+     SYNTAX                     Integer32
+     MAX-ACCESS                     read-only
+     STATUS                     current
+     DESCRIPTION
+       "This is the Fabric VCI of the ATM connection this FUNI
+        connection is mapped to by the agent when this row is
+        created. This VCI will be used to establish a connection
+        across the switching fabric by means of the FORE-switch MIB"
+     ::= { funiConnEntry 6 }
+
+ funiConnRowStatus      OBJECT-TYPE 
+     SYNTAX                     RowStatus
+     MAX-ACCESS                     read-create
+     STATUS                     current
+     DESCRIPTION
+       "This object is used for dynamic creation of entries in this
+        table. When the record is created, it is set to createAndWait,
+        when the second hop of the connection is established across
+        the fabric, this object's value is changed to go, which
+        activates the IWF on the netmod"
+     ::= { funiConnEntry 7 }
+
+ funiConnName                    OBJECT-TYPE
+        SYNTAX                  DisplayString
+        MAX-ACCESS                  read-create
+        STATUS                  current
+        DESCRIPTION
+          "Symbolic name assigned to this connection by the operator"
+        ::= { funiConnEntry 8 }
+
+funiConnAdminStatus    OBJECT-TYPE
+       SYNTAX                  INTEGER {
+				 up(1),
+				 down(2),
+                           	 testing(3)
+			        }
+       MAX-ACCESS                  read-create
+       STATUS                  current
+       DESCRIPTION 
+         "Indicates whether the particular virtual circuit is operational."
+       DEFVAL { down }
+       ::= { funiConnEntry 9 }
+        
+funiConnOperStatus    OBJECT-TYPE
+       SYNTAX                 INTEGER {
+				 up(1),
+                           	 down(2)
+		              }
+       MAX-ACCESS                  read-only
+       STATUS                  current
+       DESCRIPTION 
+         "Indicates the current operational status of a virtual circuit."
+       ::= { funiConnEntry 10 }
+
+funiConnProfileEpdPpdIndex    OBJECT-TYPE 
+       SYNTAX                 Integer32 
+       MAX-ACCESS                 read-create
+       STATUS                 current
+       DESCRIPTION
+         "The index of the EpdPpd Controller profile which contains: 
+          1 ) Enable/disable the EPD for CLP=0 cells for a specific connection;
+	  2 ) Enable/disable the EPD for CLP=1 cells for a specific connection;
+	  3 ) Enable/disable the PPD for CLP=1 cells for a specific connection."
+       DEFVAL { 0 }
+       ::= { funiConnEntry 11 }
+
+--------------------------------------------------------------------
+--This table contains proprietory configuration info for a FUNI service.
+--
+ funiIfExtTable      OBJECT-TYPE
+       SYNTAX        SEQUENCE OF FuniIfExtEntry
+       MAX-ACCESS        not-accessible
+       STATUS        current
+       DESCRIPTION
+    "This table incorporates the information pertinent to FUNI
+     services, which is not part of the standard FUNI mib. "
+  ::= { funi 2 }
+
+  funiIfExtEntry      OBJECT-TYPE
+  SYNTAX                   FuniIfExtEntry
+  MAX-ACCESS                   not-accessible
+  STATUS                   current
+  DESCRIPTION
+    "Entry in the extended FUNI Interface table"
+  INDEX   { ifIndex }
+  ::= { funiIfExtTable 1 }
+
+ FuniIfExtEntry ::= SEQUENCE {
+        funiIfExtProfileFuniIndex       Integer32,
+        funiIfExtProfileServiceIndex    Integer32,
+        funiIfExtStatsMonitor           INTEGER,
+        funiIfExtNeighborIpAddress      IpAddress,
+        funiIfExtStatsEnabledTimeStamp  TimeTicks,
+	funiIfExtSigStatus              INTEGER 
+        }
+ 
+ funiIfExtProfileFuniIndex          OBJECT-TYPE
+        SYNTAX                      Integer32
+        MAX-ACCESS                      read-write
+        STATUS                      current
+        DESCRIPTION
+            "This is index of the FUNI profile this service is
+            supposed to be using. This index should be used as a key
+            in profileFuniTable"
+        ::= { funiIfExtEntry 1 }
+
+ funiIfExtProfileServiceIndex           OBJECT-TYPE
+        SYNTAX                      Integer32
+        MAX-ACCESS                      read-write
+        STATUS                      current
+        DESCRIPTION
+            "This is index of the Generic Service profile this service is
+            supposed to be using. This index should be used as a key
+            in profileGenServiceTable"
+        ::= { funiIfExtEntry 2 }
+
+ funiIfExtStatsMonitor  OBJECT-TYPE
+        SYNTAX          INTEGER {
+                       enabled (1),
+                       disabled (2)
+                      }
+        MAX-ACCESS                 read-write
+        STATUS                 current
+        DESCRIPTION
+        "This object specifies whether statistics are to be counted at
+         a service level, this includes service and connection statistics. 
+         When the state changes from enabled to disabled all the related 
+         statistics will be frozen at their current value. When the state 
+         changes from disabled to enabled then all related statistics will 
+         be reset (zeroised). Note that this Monitor is overriden by the 
+         netmod level nmFramStatsMonitor. Refer to fore-fram.mib for more 
+         details. "
+	DEFVAL {disabled }
+        ::= { funiIfExtEntry 3 }
+
+ funiIfExtNeighborIpAddress    OBJECT-TYPE
+        SYNTAX                 IpAddress
+        MAX-ACCESS                 read-write
+        STATUS                 current
+        DESCRIPTION
+            "The IP address of the neighbor system connected to  the
+            far end of this interface, to which a Network Management
+            Station can send SNMP messages, as IP datagrams sent to
+            UDP port 161, in order to access network management
+            information concerning the operation of that system. Note
+            that the value of this object may be obtained in different
+            ways, e.g., by manual configuration, or through ILMI
+            interaction with the neighbor system.This object is a
+            mirror of atmInterfaceMyNeighborIpAddress from the ATM MIB"
+        ::= { funiIfExtEntry 4 }
+
+ funiIfExtStatsEnabledTimeStamp OBJECT-TYPE
+       SYNTAX  TimeTicks
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+       "This object reflects the point in time, with reference to sysUpTime, 
+        either when funIfExtStatsMonitor is set to enabled or when 
+        nmFramStatsMonitor is set to enabled. The time will reflect the last 
+        StatsMonitor to be enabled. The timestamp provides a starting 
+        timestamp for the current statistics that are being counted. "
+       ::= { funiIfExtEntry 5 } 
+
+ funiIfExtSigStatus OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   exist(1),
+                   nonexist(2) 
+		}
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+       "This object indicates whether there exists a FUNI signalling instance
+        associated with the FUNI service. The possible value for this object
+	is summarized as follows:
+	
+	  FUNI Signalling Support       Possible Value of this object
+	===============================================================
+	      disabled                      nonexist(2)
+	_______________________________________________________________
+	      enabled                       exist(1)
+	                                    nonexist(2)
+        _______________________________________________________________
+	"
+       ::= { funiIfExtEntry 6 } 
+
+END

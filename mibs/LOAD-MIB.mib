@@ -1,0 +1,831 @@
+--=========================================================
+--
+-- MIB: Lucent Common Download / Upload MIB
+--
+-- Version: 1.3.4			13, September 2000
+--
+-- Version 1.3.4 - 13/Sep/2000 - ItaiZ
+-- 1. syncStandbyAgent(11) replaces 
+--    copyConfigToStandbyAgent(11),copySoftwareToStandbyAgent(12)
+-- Version 1.3.3 - 13/Sep/2000 - ItaiZ
+-- 1. Support for P550/P880  stand-by Agent
+--  Added copyConfigToStandbyAgent(11),copySoftwareToStandbyAgent(12) to 
+--  genOpIndex.
+-- 2. genAppFileId is now bounded by range (1..65535).
+--=========================================================
+--
+-- Copyright 1999 Lucent Technologies, Ltd.
+-- All Rights Reserved.
+--
+-- Reproduction of this document is authorized on condition
+-- that the foregoing copyright notice is included.
+--
+-- This Lucent Technologies SNMP Management Information Base 
+-- Specification embodies Lucent Technologies confidential and
+-- proprietary intellectual property.  Lucent Technologies retains all
+-- title and ownership in the Specification, including any revisions
+--
+-- It is Lucent Technologies intent to encourage the widespread use of this
+-- Specification in connection with the management of Lucent Technologies
+-- products.
+--
+-- Lucent Technologies grants vendors, end-users, and other interested
+-- parties a non-exclusive license to use this Specification in connection
+-- with the management of Lucent Technologies products.
+--
+-- This Specification is supplied "as is," and Lucent Technologies makes
+-- no warranty, either express or implied, as to the use,
+-- operation, condition, or performance of the Specification.
+--
+--=========================================================
+--
+-- Overview:
+--
+-- The Load MIB defines upload, download and copy of application software
+-- and configuration information.
+--
+-- The genOperations group
+--
+--   Each row in the genOpTable represents an operation that this system can
+--   perform. A walk of this table should provide a list of available 
+--   operations that can be performed by the system.  The genOpTable contains
+--   all configuration information nessary to perform upload, download, and
+--   copy operations within the system.  Source, Destination, operational 
+--   trigger, opertional status and error logging information are contained 
+--   on a per row basis (each row again representing an operation that 
+--   this table can perform).
+--
+-- The genApplication Group
+--
+--   Table of Application (FILE) entries.  Each row uniquely defines an
+--   application in the system.  Applications can be defined as any entity 
+--   that can be read or written from or to the system.  This includes 
+--   software images, boot code, configuration files, prom code, etc. 
+--   Each row contains information used to catalog the application (FILE)
+--   entries present in the system. A walk of the genAppFileTable should
+--   provide a directory-like listing of all application software, 
+--   bootcode, configuration files and misc. accessable embedded software
+--   in the system.  Each entry contains information about the application 
+--   such as type, size, version number and date stamp.
+--
+--=========================================================
+
+LOAD-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+            MODULE-IDENTITY, OBJECT-TYPE, 
+	    enterprises, IpAddress, Integer32		FROM SNMPv2-SMI
+	    DisplayString, RowStatus			FROM SNMPv2-TC;
+
+lucent		OBJECT IDENTIFIER ::= { enterprises 1751 }
+products	OBJECT IDENTIFIER ::= { lucent 1 }
+mibs		OBJECT IDENTIFIER ::= { lucent 2 }
+
+load    MODULE-IDENTITY
+        LAST-UPDATED "0009131420Z" -- 13 Sep. 2000
+        ORGANIZATION "Lucent Technologies Inc."
+        CONTACT-INFO
+	        "Itai Zilbershtein -- izilbers@avaya.com
+	    	 Yigal Nehaysi -- ynehaysi@avaya.com
+	    	 Virginia Brown -- vibrown@avaya.com"
+		
+	DESCRIPTION
+       		"Lucent Common Download / Upload Private MIB"
+	REVISION "0009131555Z"
+    	DESCRIPTION
+	    "Rev 1.3.4 -one action sync all files between standby and 
+	     active agent in the P550/P880."
+	REVISION "0009131420Z"
+    	DESCRIPTION
+	    "Rev 1.3.3 -Support for P550/P880  stand-by Agent."
+	::= { mibs 53 }
+
+-- Groups in the Load mib
+    
+    	genOperations   OBJECT IDENTIFIER ::= { load 1 }
+	genApplications	OBJECT IDENTIFIER ::= { load 2 }
+
+-- The genOperations group
+--
+genLoadNumberOfSession OBJECT-TYPE
+	SYNTAX	Integer32
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"The number of operational sessions in progress in this system"
+	::= { genOperations 1 } 
+    
+genOpTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF GenOpEntry
+	MAX-ACCESS not-accessible
+	STATUS current
+	DESCRIPTION
+	"Table of configuration attributes which define the operational 
+	functions and the results on a per module basis.  This group provides
+	the mechanism by which available operations are initiated, monitored 
+	and reported."
+	::= { genOperations 2 }
+
+genOpEntry OBJECT-TYPE
+	SYNTAX GenOpEntry
+	MAX-ACCESS not-accessible
+	STATUS current
+	DESCRIPTION
+	"An entry in the table, containing data about a single modules 
+	operations." 
+ 	INDEX  { genOpModuleId , genOpIndex }
+	::= { genOpTable 1 }
+
+GenOpEntry  ::=
+	SEQUENCE  {
+		genOpModuleId		 INTEGER,
+		genOpIndex		 INTEGER,
+		genOpRunningState	 INTEGER,
+		genOpSourceIndex	 Integer32,
+		genOpDestIndex		 Integer32,
+		genOpServerIP		 IpAddress,
+		genOpUserName		 DisplayString,
+		genOpPassword		 OCTET STRING,
+		genOpProtocolType	 INTEGER,
+		genOpFileName		 DisplayString,
+		genOpRunningStateDisplay DisplayString,
+		genOpLastFailureIndex	 INTEGER,
+		genOpLastFailureDisplay	 DisplayString,
+		genOpLastWarningDisplay	 DisplayString,
+		genOpErrorLogIndex	 Integer32,
+		genOpResetSupported 	 INTEGER,
+		genOpEnableReset	 INTEGER,
+		genOpNextBootImageIndex	 Integer32,
+		genOpLastBootImageIndex	 Integer32,
+		genOpFileSystemType      INTEGER,
+	        genOpReportSpecificFlags INTEGER,
+	        genOpOctetsReceived      Integer32
+		}
+
+genOpModuleId OBJECT-TYPE
+	SYNTAX INTEGER (1..255)
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"Index which identifies the module inside the chassis for which this
+	entry contains information. Equals the number of the slot by which
+	the group is accessed or the stackable index."
+	::= { genOpEntry 1 }
+
+genOpIndex OBJECT-TYPE
+	SYNTAX INTEGER {
+		uploadConfig(1),
+		downloadConfig(2),
+		report(3),
+		uploadSoftware(4),
+		downloadSoftware(5),
+		localConfigFileCopy(6),
+		localSWFileCopy(7),
+		uploadLogfile(8),
+		eraseFile(9),
+	        show(10),
+		syncStandbyAgent(11)
+		}
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"Index to identify the operation supported by this row entry. 
+	Each operation type that is supported by this module should be 
+	represented by a unique row in this MIB Table.  A walk of this 
+	MIB table should reveal all the operations that are supported by 
+	the device.
+	
+	The operations supported are:
+
+	uploadConfig -- 
+	    The 'genOpDestIndex' should be set to 0 (to indicate destination
+	        of server).
+	    The 'genOpServerIP' should be set to the server to which the
+	        config will be saved.
+	    The 'genOpProtocolType' should be set to the IP protocol used
+	        to transport the file.
+	    The 'genOpSourceIndex' should be set to the 'genAppFileId'
+	        of the config file you are uploading.
+	    The 'genOpFileName' should be set to the name and path of the
+                config file on the TFTP server.
+
+	downloadConfig --
+	    The 'genOpDestIndex' should be set to the 'genAppFileId' of
+	        the config file you are downloading to (if one does not
+	        exist, you'll need to RowCreate it in the 'genAppFileTable').
+	    The 'genOpServerIP' should be set to the server from which the
+	        config will be copied.
+	    The 'genOpProtocolType' should be set to the IP protocol used
+	        to transport the file.
+	    The 'genOpSourceIndex' should be set to 0 (to indicate source
+	        of server).
+	    The 'genOpFileName' should be set to the name and path of the
+                config file on the TFTP server.
+
+	report --
+
+	uploadSoftware -- 
+	    The 'genOpDestIndex' should be set to 0 (to indicate destination
+	         of server).
+	    The 'genOpServerIP' should be set to the server to which the
+	        config file will be saved.
+	    The 'genOpProtocolType' should be set to the IP protocol used
+	         to transport the file.
+	    The 'genOpSourceIndex' should be set to the 'genAppFileId' of
+                the software file you are uploading.
+	    The 'genOpFileName' should be set to the name and path of the
+                image file on the TFTP server.
+
+	downloadSoftware --
+	    The 'genOpDestIndex' should be set to the 'genAppFileId' of
+                the software file you are downloading to (if one does not
+                exist, you'll need to RowCreate it in the 'genAppFileTable').
+	    The 'genOpServerIP' should be set to the server from which the
+                config file will be copied.
+	    The 'genOpProtocolType' should be set to the IP protocol used
+                to transport the file.
+	    The 'genOpSourceIndex' should be set to 0 (to indicate source
+                of server).
+	    The 'genOpFileName' should be set to the name and path of the
+                image file on the TFTP server.
+
+	localConfigFileCopy -- (using a 'genOpType' of 'localPeerTransport')
+	    The 'genOpDestIndex' should be set to the 'genAppFileId' of the
+	        config file you are copying to (if one does not exist
+	        you'll need to RowCreate it in the 'genAppFileTable').
+	    The 'genOpSourceIndex' should be set to the 'genAppFileId'
+                of the config file you are copying from.
+	    The 'genOpServerIP' should be set to NULL.
+	    The 'genOpProtocolType' should be set to 'localPeerTransport'.
+	    The 'genOpFileName' should be set to NULL.
+
+	localSWFileCopy -- (using a 'genOpType' of 'localPeerTransport')
+	    The 'genOpDestIndex' should be set to the 'genAppFileId' of
+                the software file you are copying to (if one does not
+	        exist you'll need to RowCreate it in the 'genAppFileTable').
+	    The 'genOpSourceIndex' should be set to the 'genAppFileId' of
+                the software file you are copying from.
+	    The 'genOpServerIP' should be set to NULL.
+	    The 'genOpProtocolType' should be set to 'localPeerTransport'.
+	    The 'genOpFileName' should be set to NULL.
+
+	localConfigFileCopy -- (using a 'genOpType' of 'localServerTransport')
+	    The 'genOpDestIndex' should be set to the 'genAppFileId' of the
+	        config file you are copying to (if one does not exist you'll
+	        need to RowCreate it in the 'genAppFileTable') or ZERO (0)
+	        if copying to a localServer.
+	    The 'genOpSourceIndex' should be set to the 'genAppFileId' of
+	        the config file you are copying from or ZERO (0) if
+	        copying from a localServer.
+	    The 'genOpServerIP' should be set to the address of the local
+	         server.
+	    The 'genOpProtocolType' should be set to 'localServerTransport'.
+
+	localSWFileCopy -- (using a 'genOpType' of 'localServerTransport')
+	    The 'genOpDestIndex' should be set to the 'genAppFileId' of the
+                software file you are copying to (if one does not exist
+	        you'll need to RowCreate it in the 'genAppFileTable').
+	    The 'genOpSourceIndex' should be set to the 'genAppFileId'
+	        of the software file you are copying from.
+	    The 'genOpServerIP' should be set to the address of the local
+	        server.
+	    The 'genOpProtocolType' should be set to 'localServerTransport'.
+
+	uploadLogfile --
+	    The 'genOpDestIndex' should be set to 0 (to indicate destination
+                of server).
+	    The 'genOpSourceIndex' should be set to the 'genAppFileId' of
+	        the log file you are copying from.
+	    The 'genOpServerIP' should be set to the server to which the
+	        config will be saved.
+	    The 'genOpProtocolType' should be set to the IP protocol used
+	        to transport the file.
+	    The 'genOpFileName' should be set to the name and path of the
+                log file on the TFTP server.
+
+	eraseFile --
+	    The 'genOpDestIndex' Is not applicable for this command.
+	    The 'genOpSourceIndex' should be set to the 'genAppFileId'
+	        of the file you wish to erase.
+	    The 'genOpServerIP' should be set to 0.
+	    The 'genOpProtocolType' should be set to 0.	
+	    The 'genOpFileName' should be set to NULL.
+
+	show -- 
+	    Reporting information to the CLI.
+
+	syncStandbyAgent(11) -- copy configuration AND software image files
+            to the (non-active) standby agent in a P550/P880.
+	    The 'genOpDestIndex' should be set to 1
+	    The 'genOpSourceIndex' should be set to 1
+	    The 'genOpServerIP' should be set to NULL.
+	    The 'genOpProtocolType' should be set to 'localPeerTransport'.
+	    The 'genOpFileName' should be set to NULL.
+		"
+	::= { genOpEntry 2 }
+
+genOpRunningState OBJECT-TYPE
+	SYNTAX INTEGER {
+		idle(1),
+		beginOperation(2),
+		waitingIp(3),
+		runningIp(4),
+		copyingLocal(5),
+		readingConfiguration(6),
+		executing(7)
+		}
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"Identifies the operation to perform and the state of that operation.
+	This field acts as both the trigger to initiate the operation (via
+	the beginOperation) and the status field of the operation itself 
+	(i.e. waiting-ip, running-ip, etc.).  It is expected that all 
+	dependent MIB objects will be set before the trigger is set to
+	beginOperation. The operations completion is triggered by the 
+	return to the idle state.
+
+	idle(1), - Operation not in progress
+	beginOperation(2), - Trigger by NMS to start the operation
+	waitingIp(3), - Communication phase; waiting for response
+	runningIp(4), - Communication phase; transferring data
+	copyingLocal(5), - Local operation
+	readingConfiguration(6), - Parsing / Executing configuration file
+	executing(7) - Executing Command (such as erasing a file or reporting)
+	"
+	DEFVAL {idle}
+	::= { genOpEntry 3 }
+
+genOpSourceIndex OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"The index value (taken from the genAppFileTable) of the source of
+	the operation.	NOTE: A value of zero (0) here indicates that the
+	Server (specified below) is the	source."
+	::= { genOpEntry 4 }
+
+genOpDestIndex OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"The index value (taken from the genAppFileTable) of the destination
+	of the operation.  NOTE: A value of zero (0) here indicates that 
+	the Server (specified below) is the Destination."
+	::= { genOpEntry 5 }
+
+genOpServerIP OBJECT-TYPE
+	SYNTAX IpAddress 
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"The IP Address of the server from/to which the file has to be
+	Download/Upload.  NOTE: In the case of localPeerTransport this
+	value should be NULL."
+	::= { genOpEntry 6 }
+
+genOpUserName OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..128))
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"Contains the username to be used if the protocol specified in
+	genOpProtocolType requires one. The default value will be the
+	empty string"
+        DEFVAL{'0'H}
+	::= { genOpEntry 7 }
+
+genOpPassword OBJECT-TYPE
+	SYNTAX OCTET STRING (SIZE(0..128))
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION	
+	"Contains the password to be used if the protocol specified in
+	genOpProtocolType requires one. The default value will be the
+	empty string"
+        DEFVAL{'0'H}
+	::= { genOpEntry 8 }
+
+genOpProtocolType OBJECT-TYPE
+	SYNTAX INTEGER {
+		tftp(1),
+		ftp(2),
+		localPeerTransport(3),
+		localServerTransport(4)
+		}
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"Identifies the protocol between the management station and the
+	device for Download/Upload of the file."
+	::= { genOpEntry 9 }
+
+genOpFileName OBJECT-TYPE
+	SYNTAX DisplayString 
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"The location (including the FULL path) of the file in the server.
+	NOTE: In the case of localPeerTransport this value should be NULL."
+	::= { genOpEntry 10 }
+
+genOpRunningStateDisplay OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..64))
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"The state of the operation for Display on the terminal during
+	operation process."
+	::= { genOpEntry 11 }
+
+genOpLastFailureIndex OBJECT-TYPE
+	SYNTAX INTEGER {
+		noError(1),
+		genError(2),
+		configError(3),
+		busy(4),
+		timeout(5),
+		cancelled(6),
+		incompatibleFile(7),
+		fileTooBig(8),
+		protocolError(9),
+		flashWriteError(10),
+		nvramWriteError(11),
+		confFileGenErr(12),
+		confFileParseError(13),
+		confFileExecError(14),
+		undefinedError(100),
+		fileNotFound(101),
+		accessViolation(102),
+		outOfMemory(103),
+		illegalOperation(104),
+		unknownTransferId(105),
+		fileAlreadyExists(106),
+		noSuchUser(107)
+		}
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"While a download is in progress this will 
+	always be 'no-error'.  After a download is complete 
+	this indicates the success or failure of the download.
+	If it is anything other than 'no-error' then 
+	'genOpLastFailureDisplay' will contain a textual 
+	description of the error.  Error codes from 100 
+	upwards are errors returned from a TFTP server.  
+	errors below this are locally generated.
+
+	Configuration files may return errors after download
+	as a result of reading a config file into the system.
+
+	confFileGenErr     - General (unknown error)
+	confFileParseError - Reading of config file resulted in 
+			     parsing errors.
+	confFileExecError  - Reading of config file resulted in
+			     execution errors."
+	::= { genOpEntry 12 }
+
+genOpLastFailureDisplay OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..64))
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"Contains the last error, Null if there is no error."
+	::= { genOpEntry 13 }
+
+genOpLastWarningDisplay OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..64))
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"Last warning which didn't stop the operation (not fatal error)."
+	::= { genOpEntry 14 }
+
+genOpErrorLogIndex OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"The Index in the 'genAppFileTable' under which an error log has
+	been created.  In the case of file that produce errors this file
+	should contain a log of errors that occurred. (This item should
+	be zero if it does not exist)"
+    	::= { genOpEntry 15 }
+
+genOpResetSupported OBJECT-TYPE
+	SYNTAX INTEGER {
+		supported(1),
+ 		notSupported(2)
+		} 
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"Indicates if a reset (after operation completion) is supported by
+	this Module."
+	::= { genOpEntry 16 }
+
+genOpEnableReset OBJECT-TYPE
+	SYNTAX INTEGER {
+		enable(1),
+		disable(2)
+		} 
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"Whether to do a reset after the operation completed successfully."
+	::= { genOpEntry 17 }
+
+genOpNextBootImageIndex OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"The row in the 'genAppFileTable' of the default Application that
+	the device will boot from when a standard reboot is performed."
+    	::= { genOpEntry 18 }
+
+genOpLastBootImageIndex OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"The Index in the 'genAppFileTable' of the default Application
+	that the device	was last booted from."
+    	::= { genOpEntry 19 }
+
+genOpFileSystemType OBJECT-TYPE
+	SYNTAX INTEGER {
+		static (1),
+		dynamic (2)
+		}
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"Indicates what type of file system is supported by this module.
+	A value of 'static' indicates that rows in the 'genAppFileTable'
+	are not removable nor can new entries be created.  
+
+	A value of 'dynamic' indicates that entries in the 'genAppFileTable'
+	are both removable and can be created."
+	::= { genOpEntry 20 }
+
+genOpReportSpecificFlags OBJECT-TYPE
+	SYNTAX INTEGER {
+		fullReport(1),   
+		partialReport(2), -- without OSPF database
+		notSupported(255)
+		}
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+	"Contain modifiers to the Report operation.
+
+	fullReport - Full configuration report
+	partialReport - A report without the information stored
+                        in the OSPF database
+	notSupported - For operations other than report, this MIB
+                       has no meaning and can return not Supported or
+                       not be supported."
+	::={ genOpEntry 21 }
+
+genOpOctetsReceived OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"While a download is in progress this indicates the number
+	of bytes transferred so far. "
+	::={ genOpEntry 22 }
+
+-- The genApplication Group
+--
+genAppFileTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF GenAppFileEntry
+	MAX-ACCESS not-accessible
+	STATUS current
+	DESCRIPTION
+	"Table of Application (FILE) entries.  Each row uniquely defines
+	an application in the system.  Applications can be defined as
+	any entity that can be read or written from or to the system.
+	This includes software images, boot code, configuration files,
+	prom code, etc."
+	::= { genApplications 1 }
+
+genAppFileEntry OBJECT-TYPE
+	SYNTAX GenAppFileEntry
+	MAX-ACCESS not-accessible
+	STATUS current
+	DESCRIPTION
+	"An entry in the table, containing data about a single application
+	/ config file."
+ 	INDEX  { genOpModuleId, genAppFileId }
+	::= { genAppFileTable 1 }
+
+GenAppFileEntry  ::=
+	SEQUENCE  {
+		genAppFileId		INTEGER (1..65535),
+		genAppFileName		DisplayString,
+		genAppFileType          INTEGER,
+		genAppFileDescription	DisplayString,
+		genAppFileSize		Integer32,
+		genAppFileVersionNumber	OCTET STRING,
+		genAppFileLocation	INTEGER,
+		genAppFileDateStamp     DisplayString,
+		genAppFileRowStatus	RowStatus
+		}
+
+genAppFileId OBJECT-TYPE
+	SYNTAX INTEGER (1..65535) 
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"Index which uniquely identifies the application. 
+	NOTE: This index CANNOT BE ZERO (0) since the index of zero is
+	reserved as an indication of network server location in the
+	genOpSourceIndex and genOpDestIndex above."
+	::= { genAppFileEntry 1 }
+
+genAppFileName OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..64))
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+	"The name of the application."
+	::= { genAppFileEntry 2 }
+
+genAppFileType OBJECT-TYPE
+	SYNTAX INTEGER {
+		runningConfiguration(1),
+		startupConfiguration(2),
+		defaultConfiguration(3),
+		report(4),
+		genConfigFile(5),
+		logFile(6),
+		nvramFile(7),
+		swRuntimeImage(8),
+		swBootImage(9),
+		swComponent(10),
+		other(11),
+		swWebImage(12)
+        }
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+	"The type (class) of the application. This class serves to catagorize
+	the many application files in the system into some fixed types:
+
+	runningConfiguration -- This entry represents a virtual file in
+	        the system.  Use of this entry in the genOpTable should
+                serve to cause the system to generate it's configuration 
+	        or to force the system to read a new config into it's
+                configuration.
+
+	startupConfiguration -- This entry represents a real file that
+                is used at start-up to configure the device.
+
+	defaultConfiguration -- This entry represents a file which contains
+	        the default configuration of the device.
+
+	report -- ??
+
+	genConfigFile -- This entry represents a file which contains
+	        configuration information (similar to the 
+                'startupConfiguration' above but is not automatically
+                read by the device.  This entry is used to represent
+                'alternate', 'backup' or 'experimental' configurations
+                that the user may which to store on the device.
+
+	nvramFile -- This entry represents a file that is contain in the
+	        nvram files system that does not fit any of the other
+                pre-defined types.
+
+	swRuntimeImage -- This entry represents a software images that
+	        contains operational code that is currently being used
+	        to run the device.
+
+	swBootImage -- This entry represents a software image that
+                contain operational code that is used to initally boot
+	        the device.
+
+	swComponent -- This entry represents a file that is stored as an
+	        'alternate', 'backup' or 'experimental' version of 
+	        operational code.
+
+	other -- other 
+
+	swWebImage -- The Image file of the embedded Web application
+                (java application, etc)."
+	::= { genAppFileEntry 3 }
+
+genAppFileDescription OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..64))
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+	"A description of the application."
+	::= { genAppFileEntry 4 }
+
+genAppFileSize OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+	"The size (expressed as the number of bytes) of the application."
+	::= { genAppFileEntry 5 }
+
+genAppFileVersionNumber OBJECT-TYPE
+	SYNTAX OCTET STRING
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"The current version of the application. If this files does not
+	carry a version this field should be NULL."
+	::= { genAppFileEntry 6 }
+
+genAppFileLocation OBJECT-TYPE
+	SYNTAX INTEGER {
+		ram (1),
+		flashBankA(2),
+		flashBankB(3),
+		nvram (4),
+		bootProm(5)
+		} 
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+	"The physical location of the application."
+	::= { genAppFileEntry 7 }
+
+genAppFileDateStamp OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..64))
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+	"The time stamp is the Real Time if supported otherwise sysUpTime.
+	The convention for this field is as follows:
+
+	Real Time: Entry is prefixed with an 'R' character and time is
+	   formatted using the convention for date-and-time (rfc1903)
+
+	   DISPLAY-HINT 'R-2d-1d-1d,1d:1d:1d.1d,1a1d:1d'
+
+            field  octets  contents                  range 
+            -----  ------  --------                  ----- 
+              1      1-2   year                      0..65536 
+              2       3    month                     1..12 
+              3       4    day                       1..31 
+              4       5    hour                      0..23 
+              5       6    minutes                   0..59 
+              6       7    seconds                   0..60 
+                           (use 60 for leap-second) 
+              7       8    deci-seconds              0..9 
+              8       9    direction from UTC        '+' / '-' 
+              9      10    hours from UTC            0..11 
+             10      11    minutes from UTC          0..59 
+
+            For example, Tuesday May 26, 1992 at 1:30:15 PM EDT would be 
+            displayed as: 
+
+                        R-1992-5-26,13:30:15.0,-4:0 
+
+            Note that if only local time is known, then timezone 
+            information (fields 8-10) is not present.
+
+	SysUpTime: Entry is prefixed with an 'S' character and time is
+	   formatted using a portion of that date-and-time convention
+
+	   DISPLAY-HINT 'S-1d-1d,1d:1d:1d.1d'
+
+            field  octets  contents                  range 
+            -----  ------  --------                  ----- 
+              1       3    month                     1..12 
+              2       4    day                       1..31 
+              3       5    hour                      0..23 
+              4       6    minutes                   0..59 
+              5       7    seconds                   0..60 
+              6       8    deci-seconds              0..9 
+
+            For example,
+                             S-5-26,13:30:15.0
+
+	    Represents a file that has existed in the system for 5 months, 
+	    26 days, 13 hours, 30 minutes, 15 seconds exactly.  This value
+	    will be reset after a reboot of the system."
+	::= { genAppFileEntry 8 }
+
+genAppFileRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+	    "The status of this entry in the table.  Note the available states:
+	    active(1), -- Fully configured and active.
+	    notInService(2) -- NOT SUPPORTED.
+	    notReady(3), -- Entry NOT FULLY configured.
+	    createAndGo(4), -- Used to add new Applications in the system. 
+	    createAndWait(5) -- Used to add new Applications in the system.   
+	    destroy(6) -- Used to delete Applications in the system."
+	::= { genAppFileEntry 9  }
+END

@@ -1,0 +1,1036 @@
+-- extracted from draft-ietf-ospf-mt-mib-01.txt
+-- at Sat Aug 25 06:09:00 2007
+
+   OSPFv2-MT-MIB  DEFINITIONS ::= BEGIN
+
+   IMPORTS
+       MODULE-IDENTITY, OBJECT-TYPE,
+       mib-2,
+       Integer32,
+       Counter32,
+       IpAddress                          FROM SNMPv2-SMI   -- [RFC2578]
+       MODULE-COMPLIANCE, OBJECT-GROUP    FROM SNMPv2-CONF  -- [RFC2580]
+       TEXTUAL-CONVENTION,
+       RowStatus,
+       TruthValue                         FROM SNMPv2-TC    -- [RFC2579]
+       InterfaceIndexOrZero               FROM IF-MIB       -- [RFC2863]
+       AreaID,
+       ospfAreaEntry,
+       RouterID,
+       Metric,
+       BigMetric                          FROM OSPF-MIB;    -- [RFC1850]
+                                                            -- [RFC4750]
+
+   ospfMtMIB  MODULE-IDENTITY
+       LAST-UPDATED  "200708090000Z"
+       ORGANIZATION  "IETF OSPF Working Group"
+       CONTACT-INFO
+            "WG E-Mail: ospf@peach.ease.lsoft.com
+
+             WG Chairs: acee@redback.com
+                        akr@cisco.com
+
+                    Namita Rawat
+                    Cisco Systems
+                    510 McCarthy Blvd.
+                    Milpitas, CA 95035 USA
+
+                    Rashmi Shrivastava
+                    Cisco Systems
+                    510 McCarthy Blvd.
+                    Milpitas, CA 95035 USA
+
+                    David M. Kushi
+                    F5
+                    401 Elliot Avenue W.
+                    Seattle, WA
+
+            "
+
+       DESCRIPTION
+               "The MIB module for the management of OSPF Version 2
+                Multi-topology routing.  This MIB module is used in
+                conjunction with the OSFPv2 MIB module to support
+                the Multi-topology extensions.
+
+                Copyright (C) The Internet Society (2007).
+                This version of this MIB module is part of
+                RFC XXXX;  see the RFC itself for full legal
+                notices."
+       REVISION  "200708090000Z"
+       DESCRIPTION
+               "Initial version of this MIB."
+       ::= { mib-2 1 } -- to be determined later
+
+   ospfMtMIBObjects       OBJECT IDENTIFIER ::= { ospfMtMIB 1 }
+   ospfMtMIBConformance   OBJECT IDENTIFIER ::= { ospfMtMIB 2 }
+   ospfMtMIBNotifications OBJECT IDENTIFIER ::= { ospfMtMIB 0 }
+   ospfMtGeneral          OBJECT IDENTIFIER ::= { ospfMtMIBObjects 1 }
+   ospfMtConfiguration    OBJECT IDENTIFIER ::= { ospfMtMIBObjects 2 }
+   ospfMt                 OBJECT IDENTIFIER ::= { ospfMtMIBObjects 3 }
+
+   -- Textual Conventions
+
+   TopologyID ::= TEXTUAL-CONVENTION
+       DISPLAY-HINT "d-0"
+       STATUS      current
+       DESCRIPTION
+               "A topology identifier.
+
+                Section 3.7 of RFC 4915 defines the mapping
+                of the topology id space."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       SYNTAX       Integer32 (0..127)
+
+   --
+   -- The objects used to manage OSPF MT
+   --
+
+   ospfMtSupport OBJECT-TYPE
+       SYNTAX        TruthValue
+       MAX-ACCESS    read-only
+       STATUS        current
+       DESCRIPTION
+               "This entity's support for Multi-topology routing.
+                When this object has a value of 'true' this entity
+                supports multi-topology routing.  When the value is
+                'false' or when this object doesn't exist, this
+                entity doesn't support MT routing.  This object is
+                instantiated by the agent during the managed system's
+                initialization."
+       ::= { ospfMtGeneral 1 }
+
+   -- OSPF MT Topology Information
+
+   -- A table containing a list of topologies configured on the
+   -- ospf router and each topology's name.
+
+   ospfMtTable OBJECT-TYPE
+       SYNTAX          SEQUENCE OF OspfMtEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A table mapping a configured topology id to a name."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+               ::= { ospfMtConfiguration 1 }
+
+   ospfMtEntry OBJECT-TYPE
+       SYNTAX          OspfMtEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "Information describing one of the topologies
+                on the router.
+
+                The managed system creates a row for the
+                device's default topology.  This row cannot
+                be destroyed by a management station."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       INDEX { ospfMtTopoId }
+       ::= { ospfMtTable 1 }
+
+   OspfMtEntry ::= SEQUENCE {
+       ospfMtTopoId           TopologyID,
+       ospfMtTopoName         OCTET STRING,
+       ospfMtTopoStatus       RowStatus
+   }
+
+   ospfMtTopoId OBJECT-TYPE
+       SYNTAX          TopologyID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The ID for a topology."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMtEntry 1 }
+
+   ospfMtTopoName OBJECT-TYPE
+       SYNTAX          OCTET STRING (SIZE(0..255))
+       MAX-ACCESS      read-only
+       STATUS          current
+       DESCRIPTION
+               "The name of the topology."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMtEntry 2 }
+
+   ospfMtTopoStatus OBJECT-TYPE
+       SYNTAX          RowStatus
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object permits management of the table by
+                facilitating actions such as row creation,
+                construction and destruction.  The value of
+                this object has no effect on whether other
+                objects in this conceptual row can be modified."
+       ::= { ospfMtEntry 3 }
+
+   -- Multi Topology OSPF Area Table
+
+   -- The OSPF MT Area Data Structure contains information
+   -- regarding the various areas. The interfaces and
+   -- virtual links are configured as part of these areas.
+   -- Area 0.0.0.0, by definition, is the Backbone Area. A
+   -- new object is added to the data structure to indicate
+   -- area's MT Routing Exclusion capability.
+
+   ospfMtAreaTable OBJECT-TYPE
+       SYNTAX          SEQUENCE OF OspfMtAreaEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "Information describing area parameters supporting
+                Multi-topology routing.
+
+                The entries in this table augment the entries contained
+                within the ospfAreaTable; an augmenting entry is created
+                by the managed system when the value of ospfMtSupport is
+                'true'."
+       REFERENCE
+               "OSPF Version 2, Section 6 The Area Data Structure
+                and RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMt 1 }
+
+   ospfMtAreaEntry OBJECT-TYPE
+       SYNTAX          OspfMtAreaEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "Information describing the configured parameters
+                and cumulative statistics of one of the router's
+                attached areas."
+       AUGMENTS        { ospfAreaEntry }
+       ::= { ospfMtAreaTable 1 }
+
+   OspfMtAreaEntry ::= SEQUENCE {
+       ospfMtAreaExclusion   TruthValue
+   }
+
+   ospfMtAreaExclusion OBJECT-TYPE
+       SYNTAX          TruthValue
+       MAX-ACCESS      read-only
+       STATUS          current
+       DESCRIPTION
+               "Describes the area's MT default exclusion
+                capability."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMtAreaEntry 1 }
+
+   -- Multi Topology OSPF Area Topology Table
+   -- This table gives topology specific information for the area.
+
+   ospfMtAreaTopoTable OBJECT-TYPE
+       SYNTAX          SEQUENCE OF OspfMtAreaTopoEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "Information describing the configured parameters
+                and cumulative statistics of the router's topologies
+                in an area."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMt 2 }
+
+   ospfMtAreaTopoEntry OBJECT-TYPE
+       SYNTAX          OspfMtAreaTopoEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "Information describing the configured parameters
+                and cumulative statistics of a topology in an area."
+       INDEX { ospfMtAreaTopoId, ospfMtAreaId }
+       ::= { ospfMtAreaTopoTable 1 }
+
+   OspfMtAreaTopoEntry ::= SEQUENCE {
+       ospfMtAreaTopoId        TopologyID,
+       ospfMtAreaId            AreaID,
+       ospfMtSpfRuns           Counter32,
+       ospfMtAreaSummary       INTEGER,
+       ospfMtAreaTopoStatus    RowStatus
+   }
+
+   ospfMtAreaTopoId OBJECT-TYPE
+       SYNTAX          TopologyID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The ID for a topology; this can
+                be derived from the OSPF instance."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMtAreaTopoEntry 1 }
+
+   ospfMtAreaId OBJECT-TYPE
+       SYNTAX          AreaID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The 32 bit identifier for the Area.  On creation,
+                this can be derived from the OSPF instance."
+       ::= { ospfMtAreaTopoEntry 2 }
+
+   ospfMtSpfRuns OBJECT-TYPE
+       SYNTAX          Counter32
+       MAX-ACCESS      read-only
+       STATUS          current
+       DESCRIPTION
+               "The number of times the SPF is run for a
+                given topology."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMtAreaTopoEntry 3 }
+
+   ospfMtAreaSummary OBJECT-TYPE
+       SYNTAX          INTEGER {
+                           noAreaSummary (1),
+                           sendAreaSummary (2)
+                       }
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object controls the importation of summary LSAs
+                into stub areas.  It has no effect on other areas.
+
+                If its value is 'noAreaSummary', the router will
+                neither originate nor propagate summary LSAs into
+                the stub area.  It will rely entirely on its default
+                route.
+
+                If its value is 'sendAreaSummary', the router will
+                both summarize and propagate summary LSAs."
+       DEFVAL   { noAreaSummary }
+       ::= { ospfMtAreaTopoEntry 4 }
+
+   ospfMtAreaTopoStatus OBJECT-TYPE
+       SYNTAX          RowStatus
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object permits management of the table by
+                facilitating actions such as row creation,
+                construction and destruction.
+
+                The value of this object has no effect on
+                whether other objects in this conceptual row can be
+                modified."
+       ::= { ospfMtAreaTopoEntry 5 }
+
+   -- OSPF MT Area Default Metric Table
+
+   -- The OSPF MT Area Default Metric Table describes the metrics
+   -- that a default Area Border Router advertises into a
+   -- Stub area for a particular topology. The ABR may advertise
+   -- different metrics for different topologies.
+
+   ospfMtStubAreaTable OBJECT-TYPE
+       SYNTAX          SEQUENCE OF OspfMtStubAreaEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The set of metrics that will be advertised
+                for a specific topology by a default Area
+                Border Router into a stub area."
+       REFERENCE
+               "OSPF Version 2, Appendix C.2, Area Parameters,
+                and RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMt 3 }
+
+   ospfMtStubAreaEntry OBJECT-TYPE
+       SYNTAX          OspfMtStubAreaEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The metric for a specific topology that will be
+                advertised  by  a default Area Border Router
+                into a stub area."
+       REFERENCE
+               "OSPF Version 2, Appendix C.2, Area Parameters
+                and RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       INDEX { ospfMtStubAreaTopoId, ospfMtStubAreaId }
+       ::= { ospfMtStubAreaTable 1 }
+
+   OspfMtStubAreaEntry ::= SEQUENCE {
+       ospfMtStubAreaTopoId       TopologyID,
+       ospfMtStubAreaId           AreaID,
+       ospfMtStubMetric           BigMetric,
+       ospfMtStubMetricType       INTEGER,
+       ospfMtStubStatus           RowStatus
+   }
+
+   ospfMtStubAreaTopoId OBJECT-TYPE
+       SYNTAX          TopologyID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The ID for a topology; this can be derived
+                from the OSPF instance."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMtStubAreaEntry 1 }
+
+   ospfMtStubAreaId OBJECT-TYPE
+       SYNTAX          AreaID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The 32 bit identifier for the Stub  Area; this
+                can be derived from the OSPF instance."
+      ::= { ospfMtStubAreaEntry 2 }
+
+   ospfMtStubMetric OBJECT-TYPE
+       SYNTAX          BigMetric
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "The metric value associated with a topology."
+       ::= { ospfMtStubAreaEntry 3 }
+
+   ospfMtStubMetricType OBJECT-TYPE
+       SYNTAX          INTEGER {
+                           ospfMtMetric (1),  -- OSPF Metric
+                           comparableCost (2), -- external type 1
+                           nonComparable (3) -- external type 2
+                       }
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object contains the type of metric advertised
+                as a default route."
+       DEFVAL   { ospfMtMetric }
+       ::= { ospfMtStubAreaEntry 4 }
+
+   ospfMtStubStatus OBJECT-TYPE
+       SYNTAX          RowStatus
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object permits management of the table by
+                facilitating actions such as row creation,
+                construction and destruction.
+
+                The value of this object has no effect on
+                whether other objects in this conceptual row can be
+                modified."
+       ::= { ospfMtStubAreaEntry 5 }
+
+   -- OSPF MT Host Table
+
+   -- The Host/Metric Table is used to indicate which hosts are
+   -- directly attached to the managed router, and the set of metrics
+   -- that should be advertised for them.
+   --
+   ospfMtHostTable OBJECT-TYPE
+       SYNTAX          SEQUENCE OF OspfMtHostEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The list of hosts and their associated metrics
+                that the router will advertise as host routes."
+       REFERENCE
+               "OSPF Version 2, Appendix C.6 Host route parameters
+                and RFC 4915, Multi-Topology (MT) Routing in OSPF"
+           ::= { ospfMt 4 }
+
+   ospfMtHostEntry OBJECT-TYPE
+       SYNTAX          OspfMtHostEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A metric to be advertised, for a specific topology,
+                when a given host is reachable."
+       INDEX { ospfMtHostTopoId, ospfMtHostIpAddress }
+       ::= { ospfMtHostTable 1 }
+
+   OspfMtHostEntry ::= SEQUENCE {
+       ospfMtHostTopoId          TopologyID,
+       ospfMtHostIpAddress       IpAddress,
+       ospfMtHostMetric          Metric,
+       ospfMtHostAreaID          AreaID,
+       ospfMtHostStatus          RowStatus
+   }
+
+   ospfMtHostTopoId OBJECT-TYPE
+       SYNTAX          TopologyID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The ID for a topology."
+       REFERENCE
+               "RFC 4915, Multi-Topology (MT) Routing in OSPF"
+       ::= { ospfMtHostEntry 1 }
+
+   ospfMtHostIpAddress OBJECT-TYPE
+       SYNTAX          IpAddress
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The IP Address of the Host."
+       REFERENCE
+               "OSPF Version 2, Appendix C.6 Host route parameters."
+       ::= { ospfMtHostEntry 2 }
+
+   ospfMtHostMetric OBJECT-TYPE
+       SYNTAX          Metric
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "The Metric to be advertised."
+       REFERENCE
+               "OSPF Version 2, Appendix C.6 Host route parameters."
+       ::= { ospfMtHostEntry 3 }
+
+   ospfMtHostAreaID OBJECT-TYPE
+       SYNTAX          AreaID
+       MAX-ACCESS      read-only
+       STATUS          current
+       DESCRIPTION
+               "The Area in which the Host Entry is to be found.
+                By  default, the area that a subsuming OSPF in-
+                terface is in, or 0.0.0.0."
+       REFERENCE
+               "OSPF Version 2, Appendix C.2 Area parameters."
+       ::= { ospfMtHostEntry 4 }
+
+   ospfMtHostStatus OBJECT-TYPE
+       SYNTAX          RowStatus
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object permits management of the table by
+                facilitating actions such as row creation,
+                construction and destruction.
+
+                The value of this object has no effect on
+                whether other objects in this conceptual row can be
+                modified."
+       ::= { ospfMtHostEntry 5 }
+
+   -- OSPF MT Interface Metric Table
+
+   -- The Metric Table describes the metrics to be advertised
+   -- for a specified interface for the configured topologies.
+   -- As such, this table is an adjunct of the OSPF Interface
+   -- Table.
+
+   -- For the purposes of this specification, the measure of
+   -- bandwidth
+
+   --      Metric = 10^8 / ifSpeed
+
+   -- is the default value.  For multiple link interfaces, note
+   -- that ifSpeed is the sum of the individual link speeds.
+   -- This yields a number having the following typical values:
+   -- Network Type/bit rate   Metric
+
+   --      >= 100 MBPS                 1
+   --      Ethernet/802.3             10
+   --      E1                         48
+   --      T1 (ESF)                   65
+   --       64 KBPS                 1562
+   --       56 KBPS                 1785
+   --       19.2 KBPS               5208
+   --        9.6 KBPS              10416
+   ospfMtIfMetricTable OBJECT-TYPE
+       SYNTAX          SEQUENCE OF OspfMtIfMetricEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The topology specific metrics for a non-virtual
+                interface identified by the interface index."
+       REFERENCE
+               "OSPF Version 2, Appendix C.3  Router  interface
+                parameters and RFC 4915, Multi-Topology (MT) Routing
+                in OSPF"
+       ::= { ospfMt 5 }
+
+   ospfMtIfMetricEntry OBJECT-TYPE
+       SYNTAX          OspfMtIfMetricEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A particular topology specific metric for
+                a non-virtual interface identified by the
+                interface index."
+       REFERENCE
+               "OSPF Version 2, Appendix C.3 Router interface
+                parameters."
+       INDEX { ospfMtIfMetricTopoId,
+               ospfMtIfMetricIpAddress,
+               ospfMtIfMetricAddressLessIf }
+       ::= { ospfMtIfMetricTable 1 }
+
+   OspfMtIfMetricEntry ::= SEQUENCE {
+       ospfMtIfMetricTopoId              TopologyID,
+       ospfMtIfMetricIpAddress           IpAddress,
+       ospfMtIfMetricAddressLessIf       InterfaceIndexOrZero,
+       ospfMtIfMetricValue               Metric,
+       ospfMtIfMetricTopoStatus          RowStatus
+   }
+
+   ospfMtIfMetricTopoId OBJECT-TYPE
+       SYNTAX          TopologyID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The topology specific metric being referenced.
+                On row creation, this can be derived from the
+                OSPF instance."
+       ::= { ospfMtIfMetricEntry 1 }
+
+   ospfMtIfMetricIpAddress OBJECT-TYPE
+       SYNTAX          IpAddress
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The IP address of this OSPF interface.  On
+                row creation, this can be derived from the
+                OSPF instance."
+       ::= { ospfMtIfMetricEntry 2 }
+
+   ospfMtIfMetricAddressLessIf OBJECT-TYPE
+       SYNTAX          InterfaceIndexOrZero
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "For the purpose of easing the instancing of
+                addressed and addressless interfaces, this
+                object takes the value 0 on interfaces having
+                IP Addresses, and the value of ifIndex for
+                interfaces having no IP Address.  On row
+                creation, this can be derived from the
+                OSPF instance."
+       ::= { ospfMtIfMetricEntry 3 }
+
+   ospfMtIfMetricValue OBJECT-TYPE
+       SYNTAX          Metric
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "The metric associated with this topology."
+       ::= { ospfMtIfMetricEntry 4 }
+
+   ospfMtIfMetricTopoStatus OBJECT-TYPE
+       SYNTAX          RowStatus
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object permits management of the table by
+                facilitating actions such as row creation,
+                construction and destruction.
+
+                The value of this object has no effect on
+                whether other objects in this conceptual row can be
+                modified."
+       ::= { ospfMtIfMetricEntry 5 }
+
+   -- OSPF MT Virtual Interface Metric Table
+
+   -- The  Virtual Interface Metric Table describes the metrics to be
+   -- advertised for a specific virtual interface under a specific
+   -- topology. As such, this table is an adjunct of the OSPF Virtual
+   -- Interface Table.
+
+   ospfMtVirtIfMetricTable OBJECT-TYPE
+       SYNTAX          SEQUENCE OF OspfMtVirtIfMetricEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The topology specific metrics for a virtual
+                interface."
+       REFERENCE
+               "OSPF Version 2, Appendix C.3 Router interface
+                parameters and RFC 4915, Multi-Topology (MT) Routing
+                in OSPF"
+       ::= { ospfMt 6 }
+
+   ospfMtVirtIfMetricEntry OBJECT-TYPE
+       SYNTAX          OspfMtVirtIfMetricEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A particular topology specific metric for
+                a virtual interface."
+       REFERENCE
+               "OSPF Version 2, Appendix C.3 Router interface
+                parameters."
+       INDEX { ospfMtVirtIfMetricTopoId,
+               ospfMtVirtIfMetricArea,
+               ospfMtVirtIfMetricNbrRtrId,
+               ospfMtVirtIfMetricNbrIpAddress }
+       ::= { ospfMtVirtIfMetricTable 1 }
+
+   OspfMtVirtIfMetricEntry ::= SEQUENCE {
+       ospfMtVirtIfMetricTopoId             TopologyID,
+       ospfMtVirtIfMetricArea               AreaID,
+       ospfMtVirtIfMetricNbrRtrId           RouterID,
+       ospfMtVirtIfMetricNbrIpAddress       IpAddress,
+       ospfMtVirtIfMetricValue              Metric,
+       ospfMtVirtIfMetricTopoStatus         RowStatus
+   }
+
+   ospfMtVirtIfMetricTopoId OBJECT-TYPE
+       SYNTAX          TopologyID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The topology specific metric being referenced.
+                On row creation, this can be derived from the
+                OSPF instance."
+       ::= { ospfMtVirtIfMetricEntry 1 }
+
+   ospfMtVirtIfMetricArea OBJECT-TYPE
+       SYNTAX          AreaID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A 32 bit identifier for Area ID."
+       ::= { ospfMtVirtIfMetricEntry 2 }
+
+   ospfMtVirtIfMetricNbrRtrId OBJECT-TYPE
+       SYNTAX          RouterID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A 32 bit identifier for Router ID."
+       ::= { ospfMtVirtIfMetricEntry 3 }
+
+   ospfMtVirtIfMetricNbrIpAddress OBJECT-TYPE
+       SYNTAX          IpAddress
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A 32 bit identifier identifying virtual neighbor
+                end point IP address."
+        ::= { ospfMtVirtIfMetricEntry 4 }
+
+   ospfMtVirtIfMetricValue OBJECT-TYPE
+       SYNTAX          Metric
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "The metric associated with the topology."
+       ::= { ospfMtVirtIfMetricEntry 5 }
+
+   ospfMtVirtIfMetricTopoStatus OBJECT-TYPE
+       SYNTAX          RowStatus
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object permits management of the table by
+                facilitating actions such as row creation,
+                construction and destruction.
+
+                The value of this object has no effect on
+                whether other objects in this conceptual row can be
+                modified."
+       ::= { ospfMtVirtIfMetricEntry 6 }
+
+   -- The OSPF MT Area Aggregate Table
+   -- When the value of ospfMtSupport is 'true' this table is
+   -- used instead of the ospfAreaAggregate table defined
+   -- in RFC 1850 & RFC 4750.  It is used to support aggregation
+   -- across multiple topologies.
+
+   ospfMtAreaAggregateTable OBJECT-TYPE
+       SYNTAX          SEQUENCE OF OspfMtAreaAggregateEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A range of IP addresses specified by an IP
+                address/IP network mask pair.  For example,
+                class B address range of X.X.X.X with a network
+                mask of 255.255.0.0 includes all IP addresses
+                from X.X.0.0 to X.X.255.255.  Note that if
+                ranges are configured such that one range
+                subsumes another range (e.g., 10.0.0.0 mask
+                255.0.0.0 and 10.1.0.0 mask 255.255.0.0), the
+                most specific match is the preferred one."
+       REFERENCE
+               "OSPF Version 2, Appendix C.2 Area parameters.
+                and RFC 4915, Multi-Topology (MT) Routing in OSPF"
+      ::= { ospfMt 7 }
+
+   ospfMtAreaAggregateEntry OBJECT-TYPE
+       SYNTAX          OspfMtAreaAggregateEntry
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "A range of IP addresses specified by an IP
+                address/IP network mask pair.  For example,
+                class B address range of X.X.X.X with a network
+                mask of 255.255.0.0 includes all IP addresses
+                from X.X.0.0 to X.X.255.255.  Note that if
+                ranges are range configured such that one range
+                subsumes another range (e.g., 10.0.0.0 mask
+                255.0.0.0 and 10.1.0.0 mask 255.255.0.0), the
+                most specific match is the preferred one."
+       REFERENCE
+               "OSPF Version 2, Appendix C.2 Area parameters."
+       INDEX { ospfMtAreaAggregateTopoId,
+               ospfMtAreaAggregateAreaID,
+               ospfMtAreaAggregateLsdbType,
+               ospfMtAreaAggregateNet,
+               ospfMtAreaAggregateMask }
+       ::= { ospfMtAreaAggregateTable 1 }
+
+   OspfMtAreaAggregateEntry ::= SEQUENCE {
+       ospfMtAreaAggregateTopoId          TopologyID,
+       ospfMtAreaAggregateAreaID          AreaID,
+       ospfMtAreaAggregateLsdbType        INTEGER,
+       ospfMtAreaAggregateNet             IpAddress,
+       ospfMtAreaAggregateMask            IpAddress,
+       ospfMtAreaAggregateEffect          INTEGER,
+       ospfMtAreaAggregateStatus          RowStatus
+   }
+
+   ospfMtAreaAggregateTopoId OBJECT-TYPE
+       SYNTAX          TopologyID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The ID for a topology."
+       REFERENCE
+               "RFC 4915, Multi Topology (MT) Routing in OSPF"
+       ::= { ospfMtAreaAggregateEntry 1 }
+
+   ospfMtAreaAggregateAreaID OBJECT-TYPE
+       SYNTAX          AreaID
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The Area in which the Address Aggregate is to
+                be found."
+       REFERENCE
+               "OSPF Version 2, Appendix C.2 Area parameters."
+       ::= { ospfMtAreaAggregateEntry 2 }
+
+   ospfMtAreaAggregateLsdbType OBJECT-TYPE
+       SYNTAX          INTEGER    {
+                           summaryLink (3),
+                           nssaExternalLink (7)
+
+                       }
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The type of the Address Aggregate.  This field
+                specifies  the  Lsdb type that this Address
+                Aggregate applies to."
+       REFERENCE
+               "OSPF Version 2, Appendix A.4.1 The Link State
+                Advertisement header."
+       ::= { ospfMtAreaAggregateEntry 3 }
+
+   ospfMtAreaAggregateNet OBJECT-TYPE
+       SYNTAX          IpAddress
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The IP Address of the Net or Subnet indicated
+                by the range."
+       REFERENCE
+               "OSPF Version 2, Appendix C.2 Area parameters."
+       ::= { ospfMtAreaAggregateEntry 4 }
+
+   ospfMtAreaAggregateMask OBJECT-TYPE
+       SYNTAX          IpAddress
+       MAX-ACCESS      not-accessible
+       STATUS          current
+       DESCRIPTION
+               "The Subnet Mask that pertains to the Net or
+                Subnet."
+       REFERENCE
+          "OSPF Version 2, Appendix C.2 Area parameters."
+       ::= { ospfMtAreaAggregateEntry 5 }
+
+   ospfMtAreaAggregateEffect OBJECT-TYPE
+       SYNTAX          INTEGER    {
+                           advertiseMatching (1),
+                           doNotAdvertiseMatching (2)
+                       }
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "Subnets subsumed by ranges either trigger the
+                advertisement of the indicated aggregate
+                (advertiseMatching), or result in the subnet's
+                not being advertised at all outside the area."
+       DEFVAL   { advertiseMatching }
+       ::= { ospfMtAreaAggregateEntry 6 }
+
+   ospfMtAreaAggregateStatus OBJECT-TYPE
+       SYNTAX          RowStatus
+       MAX-ACCESS      read-create
+       STATUS          current
+       DESCRIPTION
+               "This object permits management of the table by
+                facilitating actions such as row creation,
+                construction and destruction.
+
+                The value of this object has no effect on
+                whether other objects in this conceptual row can be
+                modified."
+       ::= { ospfMtAreaAggregateEntry 7 }
+
+   -- Conformance
+   ospfMtMIBCompliances OBJECT IDENTIFIER ::= { ospfMtMIBConformance 1 }
+   ospfMtMIBGroups      OBJECT IDENTIFIER ::= { ospfMtMIBConformance 2 }
+
+   ospfMIBCompliance MODULE-COMPLIANCE
+       STATUS       current
+       DESCRIPTION
+               "The compliance statement for entities which support
+                OSPFv2 Multi-topology routing."
+       MODULE MANDATORY-GROUPS { ospfMtAreaGroup,
+                                 ospfMtAreaTopoGroup,
+                                 ospfMtStubAreaGroup,
+                                 ospfMtHostGroup,
+                                 ospfMtIfMetricGroup,
+                                 ospfMtVirtIfMetricGroup,
+                                 ospfMtAreaAggregateGroup }
+
+       GROUP        ospfMtGeneralGroup
+       DESCRIPTION
+              "All systems supporting discovery of OSPFv2
+               capabilities should support this group."
+
+       GROUP        ospfMtConfigurationGroup
+       DESCRIPTION
+              "Only systems that reference topologies by name
+               instead of number need to support this group."
+       ::= { ospfMtMIBCompliances 1 }
+
+   -- Units of Conformance
+
+   ospfMtGeneralGroup OBJECT-GROUP
+       OBJECTS  { ospfMtSupport }
+       STATUS   current
+       DESCRIPTION
+               "A collection of objects used to manage OSPF
+                entities supporting Multi-topology routing."
+       ::= { ospfMtMIBGroups 1 }
+
+   ospfMtConfigurationGroup OBJECT-GROUP
+       OBJECTS  { ospfMtTopoName,
+                  ospfMtTopoStatus }
+       STATUS   current
+       DESCRIPTION
+               "A collection of objects used to manage OSPF
+                entities supporting Multi-topology routing."
+       ::= { ospfMtMIBGroups 2 }
+
+   ospfMtAreaGroup    OBJECT-GROUP
+       OBJECTS { ospfMtAreaExclusion }
+       STATUS  current
+       DESCRIPTION
+               "A collection of objects used to manage OSPF
+                entities supporting Multi-topology routing and
+                areas."
+       ::= { ospfMtMIBGroups 3 }
+
+   ospfMtAreaTopoGroup    OBJECT-GROUP
+       OBJECTS { ospfMtSpfRuns,
+                 ospfMtAreaSummary,
+                 ospfMtAreaTopoStatus }
+       STATUS  current
+       DESCRIPTION
+               "A collection of objects used to manage OSPF
+                entities supporting Multi-topology routing."
+      ::= { ospfMtMIBGroups 4 }
+
+   ospfMtStubAreaGroup    OBJECT-GROUP
+       OBJECTS { ospfMtStubMetric,
+                 ospfMtStubMetricType,
+                 ospfMtStubStatus }
+       STATUS  current
+       DESCRIPTION
+               "A collection of objects used to manage OSPF
+                entities supporting Multi-topology routing."
+      ::= { ospfMtMIBGroups 5 }
+
+   ospfMtHostGroup        OBJECT-GROUP
+       OBJECTS { ospfMtHostMetric,
+                 ospfMtHostAreaID,
+                 ospfMtHostStatus }
+           STATUS  current
+           DESCRIPTION
+              "A collection of objects used to manage OSPF
+               entities supporting Multi-topology routing."
+          ::= { ospfMtMIBGroups 6 }
+
+   ospfMtIfMetricGroup    OBJECT-GROUP
+       OBJECTS { ospfMtIfMetricValue,
+                 ospfMtIfMetricTopoStatus }
+       STATUS  current
+       DESCRIPTION
+               "A collection of objects used to manage OSPF
+                entities supporting Multi-topology routing."
+     ::= { ospfMtMIBGroups 7 }
+
+   ospfMtVirtIfMetricGroup    OBJECT-GROUP
+       OBJECTS { ospfMtVirtIfMetricValue,
+                 ospfMtVirtIfMetricTopoStatus }
+       STATUS  current
+       DESCRIPTION
+               "A collection of objects used to manage OSPF
+                entities supporting Multi-topology routing."
+      ::= { ospfMtMIBGroups 8 }
+
+   ospfMtAreaAggregateGroup    OBJECT-GROUP
+       OBJECTS { ospfMtAreaAggregateEffect,
+                 ospfMtAreaAggregateStatus
+       }
+       STATUS  current
+       DESCRIPTION
+               "A collection of objects used to manage OSPF
+                entities supporting Multi-topology routing."
+      ::= { ospfMtMIBGroups 9 }
+
+   END
+
+-- 
+--    Copyright (C) The IETF Trust (2007).
+-- 
+--    This document is subject to the rights, licenses and restrictions
+--    contained in BCP 78, and except as set forth therein, the authors
+--    retain all their rights.
+-- 
+--    This document and the information contained herein are provided on an
+--    "AS IS" basis and THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS
+--    OR IS SPONSORED BY (IF ANY), THE INTERNET SOCIETY, THE IETF TRUST AND
+--    THE INTERNET ENGINEERING TASK FORCE DISCLAIM ALL WARRANTIES, EXPRESS
+--    OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF
+--    THE INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+--    WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+-- 
+-- Intellectual Property
+-- 
+--    The IETF takes no position regarding the validity or scope of any
+--    Intellectual Property Rights or other rights that might be claimed to
+--    pertain to the implementation or use of the technology described in
+--    this document or the extent to which any license under such rights
+--    might or might not be available; nor does it represent that it has
+--    made any independent effort to identify any such rights.  Information
+--    on the procedures with respect to rights in RFC documents can be
+--    found in BCP 78 and BCP 79.
+-- 
+--    Copies of IPR disclosures made to the IETF Secretariat and any
+--    assurances of licenses to be made available, or the result of an
+--    attempt made to obtain a general license or permission for the use of
+--    such proprietary rights by implementers or users of this
+--    specification can be obtained from the IETF on-line IPR repository at
+--    http://www.ietf.org/ipr.
+-- 
+--    The IETF invites any interested party to bring to its attention any
+--    copyrights, patents or patent applications, or other proprietary
+--    rights that may cover technology that may be required to implement
+--    this standard.  Please address the information to the IETF at
+--    ietf-ipr@ietf.org.
+-- 
+

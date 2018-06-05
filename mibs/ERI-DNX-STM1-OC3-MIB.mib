@@ -1,0 +1,1253 @@
+ERI-DNX-STM1-OC3-MIB DEFINITIONS ::= BEGIN 
+
+IMPORTS
+	MODULE-IDENTITY, OBJECT-IDENTITY, OBJECT-TYPE, Integer32,
+	Counter32, NOTIFICATION-TYPE
+		FROM SNMPv2-SMI
+    DisplayString, TEXTUAL-CONVENTION
+        FROM SNMPv2-TC
+    eriMibs
+        FROM ERI-ROOT-SMI
+    devices, PortStatus, OneByteField, NestSlotAddress,
+    LinkPortAddress, LinkCmdStatus, trapSequence
+        FROM ERI-DNX-SMC-MIB;
+
+eriDNXStm1Oc3MIB MODULE-IDENTITY 
+      LAST-UPDATED    "200305050000Z"
+      ORGANIZATION    "Eastern Research, Inc."
+      CONTACT-INFO
+                      "Customer Service
+                Postal: Eastern Research, Inc.
+                        225 Executive Drive
+                        Moorestown, NJ 08057
+                Phone:  +1-800-337-4374
+                Email:  support@erinc.com"
+      DESCRIPTION
+              "The ERI Enterprise MIB Module for the DNX STM1 and OC3 devices."
+
+      REVISION        "200305050000Z"
+      DESCRIPTION
+              "Nevio Poljak - eri_DnxNest MIB Rev 01.3 (SW Rel. 15.2)
+               Added sts-3c(3) and au4-vc3-Seq(4) selections to optDevMultiplexMode 
+               field from the Optical Device Config table to support new Link 
+               numbering scheme. Added new error code 402 in optDevCmdStatus to support
+               new validation for au4-vc3-Seq Mode."
+
+      REVISION        "200302270000Z"
+      DESCRIPTION
+              "Nevio Poljak - eri_DnxNest MIB Rev 01.2 (SW Rel. 15.1)
+               Removed Reinitialize(15) command from opticalTransportStatusTable.
+               Renamed branch and enterprise names from Optical to Stm1Oc3.
+               Converted history comments to MODULE-IDENTITY REVISION format."
+
+      REVISION        "200204190000Z"
+      DESCRIPTION
+              "Nevio Poljak - Software Release 14.2
+              Converted to SMIv2 format."
+
+      REVISION        "200204120000Z"
+      DESCRIPTION
+              "Nevio Poljak - Software Release 14.1
+              Added New Table for Optical Transport Diagnostics."
+
+      REVISION        "200203010000Z"
+      DESCRIPTION
+              "Nevio Poljak - Software Release 14.1
+              Added new enumerations to optDevType field for STM1X & OC3X.
+              Also added new error code to optDevCmdStatus field."
+
+      REVISION        "200201040000Z"
+      DESCRIPTION
+              "Nevio Poljak - Software Release 14.1
+              Added new E1 InterNational Bit field to T1/E1 link Table.
+              Added New Tables for Mapper and TU Diagnostics & Statistics.
+              Added X-Link Pair and Ts Allocation fields to STM1/OC3 Device 
+              Config Table."
+
+      REVISION        "200111120000Z"
+      DESCRIPTION
+              "Nevio Poljak - Software Release 13.1
+              Added new E1 National Bit field."
+              
+      REVISION        "200108300000Z"
+      DESCRIPTION
+              "Initial Release of this MIB. - Nevio Poljak"
+
+  	::= { eriMibs 9 }
+
+-- *************************************************************************
+-- The enterprise OID will be { iso(1) org(3) dod(6) internet(1) private(4)
+--                              enterprises(1) virent(644) eri(2) dnx (4) 
+--                              devices(2), dnxOptical(7) }
+
+-- *************************************************************************
+-- All Optical cards (STM1, STM1X, OC3 & OC3X) are controlled via the Config branch.
+-- The Configuration branch is used to perform all Device and Link provisioning 
+-- functions. Generic Diagnostics and Statistics can be accessed from the 
+-- DNX Diagnostics and Performance Monitoring branches.
+-- *************************************************************************
+
+dnxStm1Oc3     OBJECT IDENTIFIER 	::= { devices 7 }
+opticalConfig  OBJECT IDENTIFIER 	::= { dnxStm1Oc3 1 }
+opticalDiag    OBJECT IDENTIFIER 	::= { dnxStm1Oc3 2 }
+
+-- *************************************************************************
+-- The following textual conventions are used in this MIB
+-- *************************************************************************
+
+PayLoadGroupType ::= TEXTUAL-CONVENTION
+		STATUS  current
+        DESCRIPTION
+           "Indicates the type of framing to use within a Synchronous Payload 
+           Envelope (SPE) Group. Using the E1, link numbers divisible by 4 
+           are skipped over and not used.
+            
+            (1) t1 - configures all 28 links within the same Payload for VC-11 framing
+            (0) e1 - configures all 21 links within the same Payload for VC-12 framing"
+        SYNTAX INTEGER {
+                e1(0),
+                t1(1)
+                }
+
+-- *************************************************************************
+-- This table is the STM1/OC3 Device configuration table
+
+opticalDevConfigTable OBJECT-TYPE
+        SYNTAX SEQUENCE OF OpticalDevConfigEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "This is the STM1/OC3 Device Configuration table which consists
+            of an entry for each of the STM1/OC3 cards.  The total number of
+            entries depends on the number of STM1/OC3 cards in the Node."
+        ::= { opticalConfig 1 }
+
+opticalDevConfigEntry OBJECT-TYPE
+        SYNTAX OpticalDevConfigEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "The conceptual row of the STM1/OC3 Device Configuration table. 
+            A row in this table cannot be added or deleted, only modified."
+        INDEX { optDevCfgAddr }
+        ::= { opticalDevConfigTable 1 }
+
+OpticalDevConfigEntry ::=
+        SEQUENCE {
+                optDevCfgAddr           NestSlotAddress,	-- RO
+                optDevCfgResource       Integer32,          -- RO
+                optDevType              INTEGER,            -- RO
+                optDevMultiplexMode     INTEGER,
+                optLineTiming           INTEGER,
+                optDevPayload1          PayLoadGroupType, 
+                optDevPayload2          PayLoadGroupType,
+                optDevPayload3          PayLoadGroupType,
+                optDevCmdStatus         INTEGER,
+                optDevTsAlloc			INTEGER,
+                optDevAssignedToNest    Integer32
+                }
+
+optDevCfgAddr OBJECT-TYPE
+        SYNTAX NestSlotAddress
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This number uniquely identifies a STM1/OC3 Device resource. 
+            This number will be used throughout the system to identify 
+            a unique resource."
+        ::= { opticalDevConfigEntry 1 }
+
+optDevCfgResource OBJECT-TYPE
+        SYNTAX Integer32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Uniquely identifies an STM1/OC3 Device in the system.
+                 This number is provided as key to allow the manager to 
+                 map this entry to a corresponding Resource Table entry."
+        ::= { opticalDevConfigEntry 2 }
+        
+optDevType OBJECT-TYPE
+        SYNTAX INTEGER {
+                stm1(0),
+                oc3(1),
+                stm1X(2),
+                oc3X(3)
+                }
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the Device as an STM1, OC3, STM1X, or OC3X module."
+        ::= { opticalDevConfigEntry 3 }
+
+optDevMultiplexMode OBJECT-TYPE
+        SYNTAX INTEGER {
+                au3(0),    -- VC3-G.707 numbering
+                au4(1),    -- VC3-G.707 numbering
+                sts-3(2),
+                sts-3c(3),
+                au4-vc3-Seq(4)
+                }
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Determines the Stm1Oc3 Multiplexing Map Structure to be used: 
+            
+            For STM1 SDH Device choose au3, au4, or au4-g707:    
+            -------------------------------------------------
+      (0) au3 - Maps the AUG (Administrative Unit Group) to an AU-3:                   
+          C-12<-->VC-12<-->TU-12<-->TUG-2<-->VC-3<-->AU-3<-->AUG<-->STM-1
+           	
+      (1) au4 - Maps the AUG (Administrative Unit Group) to an AU-4:                  
+          C-12<-->VC-12<-->TU-12<-->TUG-2<-->TUG-3<-->VC-4<-->AU-4<-->AUG<-->STM-1
+
+      (4) au4-vc3-Seq - Same format as AU-4 but uses sequential link numbering scheme    
+           	  
+            For OC3 SONET Device sts-3 or sts-3c: 
+           	-------------------------------------
+      (2) sts-3  - Maps the STS-3 (Synchronous Transport Signal 3) to an SPE:                   
+          VT-1.5<-->VT-G<-->SPE<-->STS-3<-->OC-3 
+      
+      (3) sts-3c - Maps the STS-3 (Synchronous Transport Signal 3) to an SPE 3c:                 
+          SPE3c<-->STS-3<-->OC-3           	 
+           "
+        ::= { opticalDevConfigEntry 4 }
+
+optLineTiming OBJECT-TYPE
+        SYNTAX INTEGER {
+                local(0),
+                loop(1)
+                }
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+                "Identifies the type of Clock Transmit Timing to use for 
+                the STM-1 or OC-3 module."
+        ::= { opticalDevConfigEntry 5 }
+
+optDevPayload1 OBJECT-TYPE
+        SYNTAX PayLoadGroupType 
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Indicates the group framing type to be used for links 1 through 28. 
+            Using E1, links 22 through 28 are not used."
+        ::= { opticalDevConfigEntry 6 }
+
+optDevPayload2 OBJECT-TYPE
+        SYNTAX PayLoadGroupType 
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Indicates the tgroup framing type to be used for links 29 through 56. 
+            Using E1, links 50 through 56 are not used."
+        ::= { opticalDevConfigEntry 7 }
+
+optDevPayload3 OBJECT-TYPE
+        SYNTAX PayLoadGroupType 
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Indicates the group framing type to be used for links 57 through 84. 
+            Using E1, links 78 through 84 are not used."
+        ::= { opticalDevConfigEntry 8 }
+
+
+optDevCmdStatus OBJECT-TYPE
+        SYNTAX INTEGER {
+    -- Initial default status for a row
+            ready-for-command (0),
+    -- Device Commands used in SET Command (1..99)
+            update-config (1),
+                		
+    -- Device Response States used in GET RESPONSE Command (100..199)
+            update-successful (101),
+                		
+    -- Device Config Error Codes used in GET RESPONSE Command (400..799)
+            err-general-opt-config-error (400),
+            err-au4Seq-cannot-be-mixed-framing (402),
+            err-invalid-opt-dev-command (403),
+            err-device-is-protection-module (414),
+            err-invalid-multiplex-map (415),
+            err-invalid-payload-framing (416),
+            err-invalid-xlink-nest-num (419),
+            err-invalid-line-timing (421),
+            err-ts-alloc-not-applicable (424),
+            err-xlink-pair-not-applicable (427),
+            err-data-locked-by-another-user (450),
+            err-snmp-parse-failed (500),
+            err-invalid-snmp-type (501),
+            err-invalid-snmp-var-size (502)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "The command status for this link configuration row/record.
+           The value used in a SET will be replaced by a response
+           value in the GET RESPONSE indicating success or failure.
+           		
+            Default Response State used in GET RESPONSE Command
+                ready-for-command (0)
+                    initial default status for a row           
+                    
+            Stm1Oc3 Device Cfg Commands used in SET Command (1..99)            
+                update-config(1),
+                    Change existing Stm1Oc3 Device Configuration
+               		
+            Response States used in GET RESPONSE Command (100..199)
+                update-successful (101)
+                    Device data has been successfully changed
+                                		
+            Stm1Oc3 Device Config Error Codes used in GET RESPONSE Command (400..799)
+                err-general-opt-config-error (400)
+                    Unknown Device configuration error occurred                
+                err-au4Seq-cannot-be-mixed-framing (402)
+                    Au4 sequential mode supports only all-E1 or all-T1 Payloads
+                err-invalid-opt-dev-command (403)
+                    Unrecognized device command-action                   
+                err-device-is-protection-module (414)
+                    Can't configure Device designated as Protection (odd # slot)
+                err-invalid-multiplex-map (415)
+                    Configured multiplexing structure not valid for device type                 
+                err-invalid-payload-framing (416)
+                    Unrecognized payload group type
+                err-invalid-xlink-nest-num (419)
+                    X-Link cannot be assigned to selected Nest
+                err-invalid-line-timing (421)
+                    Unrecognized clock setting
+                err-ts-alloc-not-applicable (424)
+                    Timeslot Alloc can only be configured for STM1 or OC3
+                    cards in Standalone DNX systems
+                err-xlink-pair-not-applicable (427)
+                    X-Link assignement can only be changed for STM1X or
+                    OC3X cards in DNX88 systems.
+                err-data-locked-by-another-user (450)
+                    Another administrative user is making changes to this
+                    part of the system via a terminal session. Check Event
+                    Log for user name.
+                err-snmp-parse-failed (500)
+                    Agent could not parse variable
+                err-invalid-snmp-type (501)
+                    Variable ASN type does not match Agent defined type 
+                err-invalid-snmp-var-size (502)
+                    Variable size is too big"                 		
+       ::= { opticalDevConfigEntry 9 }
+
+optDevTsAlloc OBJECT-TYPE
+        SYNTAX INTEGER {
+                normal(0),
+                alternate(1)
+                }
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+                "Identifies the Timeslot allocation method to use for 
+                the STM-1 or OC-3 module.  Only applies for stand-alone 
+                DNX-11 or DNX-4 systems. DNX-88 systems always use NORMAL."
+        ::= { opticalDevConfigEntry 10 }
+
+optDevAssignedToNest OBJECT-TYPE
+        SYNTAX Integer32 (0 | 2..8)
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+                "Identifies the virtual Nest to use for the STM1-X or 
+                OC3-X modules. Only applicable in DNX-88 systems and can only
+                be SET for cards configured in even numbered DNX slots."
+        ::= { opticalDevConfigEntry 11 }
+
+-- *************************************************************************
+-- This table is the Stm1Oc3 T1/E1 Link configuration table
+
+optT1E1LinkConfigTable OBJECT-TYPE
+        SYNTAX SEQUENCE OF OptT1E1LinkConfigEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "This is the Stm1Oc3 T1/E1 Link Configuration table which consists
+            of an entry for each of the card's 84 links.  The total number of
+            entries depends on the number of STM1 and/or OC3 cards in the Node."
+        ::= { opticalConfig 2 }
+
+optT1E1LinkConfigEntry OBJECT-TYPE
+        SYNTAX OptT1E1LinkConfigEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "The conceptual row of the Stm1Oc3 T1/E1 Link Configuration table. 
+            A row in this table cannot be added or deleted, only modified."
+        INDEX { optT1E1CfgLinkAddr }
+        ::= { optT1E1LinkConfigTable 1 }
+
+OptT1E1LinkConfigEntry ::=
+        SEQUENCE {
+                optT1E1CfgLinkAddr     LinkPortAddress,  -- RO
+                optT1E1CfgResource     Integer32,        -- RO
+                optT1E1CfgLinkName     DisplayString,
+                optT1E1Status          PortStatus,
+                optT1E1Clear           INTEGER,                
+                optT1E1Framing         INTEGER,
+                optT1E1RecoverTime     INTEGER,
+                optT1E1EsfFormat       INTEGER,
+                optT1E1UnusedTSs       INTEGER,
+                optT1E1CfgCmdStatus    LinkCmdStatus,
+                optT1E1NationalBits    OneByteField,
+                optT1E1InterNational   OneByteField
+                }
+
+optT1E1CfgLinkAddr OBJECT-TYPE
+        SYNTAX LinkPortAddress
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This number uniquely identifies a Stm1Oc3 T1/E1 Link resource. 
+            This number will be used throughout the system to identify 
+            a unique resource."
+        ::= { optT1E1LinkConfigEntry 1 }
+
+optT1E1CfgResource OBJECT-TYPE
+        SYNTAX Integer32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Uniquely identifies an Stm1Oc3 T1/E1 Link in the system.
+                 This number is provided as key to allow the manager to 
+                 map this entry to a corresponding Resource Table entry."
+        ::= { optT1E1LinkConfigEntry 2 }
+
+optT1E1CfgLinkName OBJECT-TYPE
+        SYNTAX DisplayString (SIZE(0..20))
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+        	"This is the user friendly text name to identify the link."
+        ::= { optT1E1LinkConfigEntry 3 }
+
+optT1E1Status OBJECT-TYPE
+        SYNTAX PortStatus
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Dictates the current status of the link, in-service or 
+           out-of-service."
+        ::= { optT1E1LinkConfigEntry 4 }
+
+optT1E1Clear OBJECT-TYPE
+        SYNTAX INTEGER {
+        	disabled (0),
+        	framed   (1),
+        	unframed (2)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Determines if the port supports T1 or E1 unframed clear mode 
+           or framed clear mode."
+        ::= { optT1E1LinkConfigEntry 5 }
+
+optT1E1Framing OBJECT-TYPE
+        SYNTAX INTEGER {
+        	e1 (0),
+        	e1Crc (1),
+        	e1Cas (2),
+        	e1CasCrc (3),
+        	e1Unframed (4),
+        	t1Esf (5),
+        	t1D4 (6),
+        	t1Unframed (7)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Determines the type of framing used on the line.  
+           Choose between T1 SuperFrame 'D4', Extended SuperFrame (ESF),
+           or T1 Unframed.  When value of optT1E1Clear is set to 
+           unframed (2), the only valid framing options are: e1Unframed(4) 
+           or t1Unframed(7)."
+        ::= { optT1E1LinkConfigEntry 6 }
+
+optT1E1RecoverTime OBJECT-TYPE
+        SYNTAX INTEGER {
+        	timeout-3-secs (3),
+        	timeout-10-secs(10),
+        	timeout-15-secs(15)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "This is the red alarm timeout value.  Determines the amount 
+           of seconds the port will wait to stop sending the yellow alarm 
+           when coming out of a red alarm condition."
+        ::= { optT1E1LinkConfigEntry 7 }
+
+optT1E1EsfFormat OBJECT-TYPE
+        SYNTAX INTEGER {
+        	att-54016 (0),
+        	ansi-t1-403 (1)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Determines the type of ESF network commands the T-1 link 
+           will respond to. It has no meaning for D4 or E1 networks. 
+           With ESF networks, this information must be obtained from 
+           the network supplier."
+        ::= { optT1E1LinkConfigEntry 8 }
+
+optT1E1UnusedTSs OBJECT-TYPE
+        SYNTAX INTEGER {
+        	busy (0),
+        	idle (1)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Determines the whether the code that will be transmitted over 
+           the unused timeslots will be 'idle' or 'busy' (all 1's)."
+        ::= { optT1E1LinkConfigEntry 9 }
+
+optT1E1CfgCmdStatus OBJECT-TYPE
+        SYNTAX LinkCmdStatus 
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "The command status for this link configuration row/record.
+           The value used in a SET will be replaced by a response
+           value in the GET RESPONSE indicating success or failure.
+           		
+            Default Response State used in GET RESPONSE Command
+                ready-for-command (0)
+                    initial default status for a row           
+                    
+            optical T1E1 Link Commands used in SET Command (1..199)            
+                update(1)
+                    Change existing Link Configuration
+                inServiceAll (7)
+                    Change Link Status to in-service for all links 
+                    within the same payload.
+                copyToAll (9)
+                    Copy T1/E1 Link configuration to all other links 
+                    within the same payload
+                outOfServiceAll (12)
+                    Change Link Status to out-of-service for all links
+                    within the same payload.
+               		
+            Response States used in GET RESPONSE Command (100..199)
+                update-successful (101)
+                    Link data has been successfully changed
+                insvc-successful (107)
+                    All Payload Links have been successfully placed In Service
+                copy-successful (109)
+                    Link data has been successfully copied to other links
+                oos-successful (112)
+                    All Payload Links have been successfully placed Out of Service
+                                		
+            optical T1E1 Link Config Error Codes used in GET RESPONSE Command (400..699)
+                err-general-link-config-error (400)
+                    Unknown link configuration error occurred                
+                err-invalid-link-status (401)
+                    Unrecognized link status setting
+                err-invalid-link-framing (402)         
+                    Line framing type not valid for link type
+                err-invalid-link-command (403)
+                    Unrecognized link command-action
+                err-invalid-esf-format (405)
+                    ESF type not applicable to link type
+                err-invalid-red-timeout (412)
+                    Unrecognized red alarm timeout
+                err-invalid-idle-code (413)
+                    Unrecognized unused TSs code
+                err-device-in-standby (414)
+                    Can't change config for designated Standby device
+                err-data-locked-by-another-user (450)
+                    Another administrative user is making changes to this
+                    part of the system via a terminal session. Check Event
+                    Log for user name           		
+                err-snmp-parse-failed (500)
+                    Agent could not parse variable
+                err-invalid-snmp-type (501)
+                    Variable ASN type does not match Agent defined type 
+                err-invalid-snmp-var-size (502)
+                    Variable size is too big"                 		
+        ::= { optT1E1LinkConfigEntry 10 }
+
+optT1E1NationalBits OBJECT-TYPE
+        SYNTAX OneByteField
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Enables E1 National S-bits to be set to zero or one.
+           This single byte field can be changed to set the values 
+           of the E1 NFA byte in odd frames as depicted below:
+           
+              sa8 sa7 sa6 sa5 sa4 reserved bits
+              --- --- --- --- --- -------------
+              1    1   1   1   1   0   0   0      = F8 (default)
+              
+           Values should be entered in Hex.  If reserved bits are changed,
+           an error code (427) will be returned in the command status.                 
+           "
+        ::= { optT1E1LinkConfigEntry 11 }
+
+optT1E1InterNational OBJECT-TYPE
+        SYNTAX OneByteField
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Enables InterNational S(i) Spare bit to be set to zero or one.
+           This single byte field can be changed to set the values 
+           of the Bit 1 of TS0 G.704 frame as depicted below:
+           
+                    reserved bits        S(i)
+              -------------------------- -----
+              0   0   0   0   0   0   0   1      = 01 (default)
+              
+           Values should be entered in Hex.  If reserved bits are changed,
+           an error code (427) will be returned in the command status.
+           "
+        ::= { optT1E1LinkConfigEntry 12 }
+
+-- *************************************************************************
+-- This table is the Stm1Oc3 TU Status table
+
+opticalTUStatusTable OBJECT-TYPE
+        SYNTAX SEQUENCE OF OpticalTUStatusEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "This is the Stm1Oc3 Tributary Unit Status table which consists
+            of an entry for each of the card's 84 links.  The total number of
+            entries depends on the number of STM1/OC3 cards in the Node."
+        ::= { opticalDiag 1 }
+
+opticalTUStatusEntry OBJECT-TYPE
+        SYNTAX OpticalTUStatusEntry
+        MAX-ACCESS not-accessible
+        STATUS current                          
+        DESCRIPTION
+            "The conceptual row of the Stm1Oc3 Tributary Unit Status table. 
+            A row in this table cannot be added or deleted, only modified."
+        INDEX { optTUStatusAddr }
+        ::= { opticalTUStatusTable 1 }
+
+OpticalTUStatusEntry ::=
+        SEQUENCE {
+                optTUStatusAddr           LinkPortAddress,	  
+                optTUStatusResrcId        Integer32,            
+                optTUStatusLinkState      INTEGER, 
+                optTUStatusErrSecs		  Counter32,
+                optTUStatusAisErrs        Counter32,
+                optTUStatusLopErrs		  Counter32,
+                optTUStatusRdiTUErrs	  Counter32,
+                optTUStatusRfiTUErrs      Counter32,
+                optTUStatusPSLMErrs		  Counter32,
+                optTUStatusPSLUErrs		  Counter32,
+                optTUStatusErrFreeSecs    Counter32 
+                }
+
+optTUStatusAddr OBJECT-TYPE
+        SYNTAX LinkPortAddress
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This number uniquely identifies a Stm1Oc3 TU link. 
+            This number will be used throughout the system to identify 
+            a unique resource."
+        ::= { opticalTUStatusEntry 1 }
+
+optTUStatusResrcId OBJECT-TYPE
+        SYNTAX Integer32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This number uniquely identifies a Stm1Oc3 TU resource. 
+            This number is provided as key to allow the manager to 
+            map this entry to a corresponding Resource Table entry."
+        ::= { opticalTUStatusEntry 2 }
+
+optTUStatusLinkState OBJECT-TYPE
+        SYNTAX INTEGER {
+        	ok  (0),
+        	yel (2),              -- bit 1
+        	ais (8),              -- bit 3
+        	lof (32),             -- bit 5
+        	los (64),             -- bit 6
+        	red (2048),           -- bit 11
+        	cfa (4096),           -- bit 12
+        	oos (65535),          -- all bits
+        	txSlip (2097152),     -- bit 21
+        	rxSlip (4194304),     -- bit 22
+        	sef (8388608),        -- bit 23
+        	slip (6291456),       -- bits 21,22
+        	underTest(1073741824),-- bit 30
+        	errors(2147483647)    -- all
+        	}
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+           "Determines the current STM1/OC3 Tributary Unit status of the link.
+        	ok       (0)          - In Sync
+        	yel      (2)          - Yellow Alarm
+        	ais      (8)          - Sending All Ones
+        	lof      (32)         - Loss of Frame
+        	los      (64)         - Loss of Signal
+        	red      (2048)       - Red Alarm
+        	cfa      (4096)       - Carrier Frame Alignment
+        	oos      (65535)	  - Out of Service
+        	txSlip   (2097152)    - Transmit Slip
+        	rxSlip   (4194304)    - Receive Slip
+        	sef      (8388608)    - Severely Errored Frames
+        	slip     (6291456)    - Transmit/Receive Slip
+        	underTest(1073741824) - Running Bit Error Test (BERT) 
+        	errors   (2147483647) - Multiple Errors displays raw bit field value
+           "
+        ::= { opticalTUStatusEntry 3 }
+
+optTUStatusErrSecs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Errored Seconds for the Tributary Unit."
+        ::= { opticalTUStatusEntry 4 }
+   
+optTUStatusAisErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of TU Alarm Indication Signal Errored Seconds."
+        ::= { opticalTUStatusEntry 5 }
+
+optTUStatusLopErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of TU Loss of Pointer Errored Seconds."
+        ::= { opticalTUStatusEntry 6 }
+
+optTUStatusRdiTUErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of TU Remote Defect Indication Errored Seconds."
+        ::= { opticalTUStatusEntry 7 }
+
+optTUStatusRfiTUErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of TU Remote Failure Indication Errored Seconds."
+        ::= { opticalTUStatusEntry 8 }
+
+optTUStatusPSLMErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of TU Path Signal Label Mismatch Errored Seconds."
+        ::= { opticalTUStatusEntry 9 }
+
+optTUStatusPSLUErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of TU Path Signal Label Unstable Errored Seconds."
+        ::= { opticalTUStatusEntry 10 }
+
+optTUStatusErrFreeSecs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Error-Free seconds for the Tributary Unit."
+        ::= { opticalTUStatusEntry 11 }
+        
+
+-- *************************************************************************
+-- This table is the Stm1Oc3 Mapper Status table
+
+opticalMapperStatusTable OBJECT-TYPE
+        SYNTAX SEQUENCE OF OpticalMapperStatusEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "This is the Stm1Oc3 Mapper Status table which consists
+            of an entry for each of the 3 STM1/OC3 Mapper Payloads. The 
+            total number of entries depends on the number of STM1/OC3 cards 
+            in the Node."
+        ::= { opticalDiag 2 }
+
+opticalMapperStatusEntry OBJECT-TYPE
+        SYNTAX OpticalMapperStatusEntry
+        MAX-ACCESS not-accessible
+        STATUS current                          
+        DESCRIPTION
+            "The conceptual row of the Stm1Oc3 Mapper Status table. 
+            A row in this table cannot be added or deleted, only modified."
+        INDEX { optMapperStatusAddr }
+        ::= { opticalMapperStatusTable 1 }
+
+OpticalMapperStatusEntry ::=
+        SEQUENCE {
+                optMapperStatusAddr           LinkPortAddress,	  
+                optMapperStatusResrcId        Integer32,            
+                optMapperState  			  INTEGER,
+                optMapperErrSecs	          Counter32,
+                optMapperErrFreeSecs	      Counter32,
+                optMapperLoop  			      INTEGER,  	    -- RW
+                optMapperPathLOPErrs		  Counter32,
+                optMapperPathAISErrs		  Counter32,
+                optMapperPathRDIErrs		  Counter32,
+                optMapperCmdStatus			  INTEGER           -- RW
+}
+
+optMapperStatusAddr OBJECT-TYPE
+        SYNTAX LinkPortAddress
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This number uniquely identifies a STM1/OC3 Mapper Payload. 
+            This number will be used throughout the system to identify 
+            a unique resource."
+        ::= { opticalMapperStatusEntry 1 }
+
+optMapperStatusResrcId OBJECT-TYPE
+        SYNTAX Integer32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This number uniquely identifies a STM1/OC3 Mapper resource. 
+            This number is provided as key to allow the manager to 
+            map this entry to a corresponding Resource Table entry."
+        ::= { opticalMapperStatusEntry 2 }
+
+optMapperState OBJECT-TYPE
+        SYNTAX INTEGER {
+        	ok  (0),
+        	yel (2),              -- bit 1
+        	ais (8),              -- bit 3
+        	lop (16),             -- bit 4
+        	lof (32),             -- bit 5
+        	los (64),             -- bit 6
+        	rdi (128),            -- bit 7
+        	red (2048),           -- bit 11
+        	cfa (4096),           -- bit 12
+        	oos (65535),          -- all bits
+        	txSlip (2097152),     -- bit 21
+        	rxSlip (4194304),     -- bit 22
+        	sef (8388608),        -- bit 23
+        	slip (6291456),       -- bits 21,22
+        	underTest(1073741824),-- bit 30
+        	errors(2147483647)    -- all
+        	}
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+           "This number uniquely identifies the Mapper Payload State.
+        	ok       (0)          - In Sync
+        	yel      (2)          - Yellow Alarm
+        	ais      (8)          - Sending All Ones
+            lop      (16)         - Loss of Ptr
+        	lof      (32)         - Loss of Frame
+        	los      (64)         - Loss of Signal
+        	rdi      (128)        - Receive Defect Indicator
+        	red      (2048)       - Red Alarm
+        	cfa      (4096)       - Carrier Frame Alignment
+        	oos      (65535)	  - Out of Service
+        	txSlip   (2097152)    - Transmit Slip
+        	rxSlip   (4194304)    - Receive Slip
+        	sef      (8388608)    - Severely Errored Frames
+        	slip     (6291456)    - Transmit/Receive Slip
+        	underTest(1073741824) - Running Bit Error Test (BERT) 
+        	errors   (2147483647) - Multiple Errors displays raw bit field value
+           "
+        ::= { opticalMapperStatusEntry 3 }
+        
+
+optMapperErrSecs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Errored Seconds for this Mapper Payload."
+        ::= { opticalMapperStatusEntry 4 }
+        
+optMapperErrFreeSecs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Mapper Error Free Seconds."
+        ::= { opticalMapperStatusEntry 5 }
+
+optMapperLoop OBJECT-TYPE
+        SYNTAX INTEGER {
+        	off (0),
+        	local (1),
+        	line (3)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+            "Indicates the loopback status of the Stm1Oc3 Mapper for this device..
+              off        (0)  - indicates loopback is disabled
+        	  local      (1)  - indicates Mapper local data is looped back to itself
+        	  line       (3)  - entire Mapper Frame is looped, framing is not regenerated
+        	"
+        ::= { opticalMapperStatusEntry 6 }
+
+optMapperPathLOPErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Mapper Path Loss of Pointer Errored 
+            Seconds."
+        ::= { opticalMapperStatusEntry 7 }
+
+optMapperPathAISErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Mapper Path Alarm Indication Signal 
+            Errored Seconds."
+        ::= { opticalMapperStatusEntry 8 }
+
+optMapperPathRDIErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Mapper Path Remote Defect Indication 
+            Errored Seconds."
+        ::= { opticalMapperStatusEntry 9 }
+
+optMapperCmdStatus OBJECT-TYPE
+        SYNTAX INTEGER {
+    -- Initial default status for a row
+            ready-for-command (0),
+    -- Action States used in SET Command (1..99)
+            updateTest (1),
+            clearErrors (14),
+                                
+    -- Response States used in GET RESPONSE Command (100..199)
+            update-successful (101),
+            clear-successful (114),
+                                
+    -- Mapper Error Codes used in GET RESPONSE Command (200..799)
+            err-general-test-error (200),
+            err-invalid-loop-type (202),
+            err-field-cannot-be-set (206),
+            err-snmp-parse-failed(500),
+            err-invalid-snmp-type(501),
+            err-invalid-snmp-var-size(502) 
+            }
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+            "This is the command status for the Framer Row.
+           The value used in a SET will be replaced by a response
+           value in the GET RESPONSE indicating success or failure.
+
+            Default Response State used in GET RESPONSE Command
+                ready-for-command (0)
+                    initial default status for a row           
+                    
+            Mapper Action Commands used in SET Command (1..99)            
+                updateTest (1)
+                    Can be used optionally when activating loops and berts
+                    in order to get status code back in response
+                clearErrors (14)
+                    Resets all error counters and bert test time to zero
+                                
+            Response States used in GET RESPONSE Command (100..199)
+                update-successful (101)
+                    Test action has been successfully performed
+                clear-successful (114)
+                    Error counts have been successfully cleared
+                                
+            The Error Codes used in GET RESPONSE Command (200..799)
+                err-general-test-error (200)
+                    Unknown Test request error occurred.
+                err-invalid-loop-type (202)
+                    Unrecognized loop selection
+                err-field-cannot-be-set (206)
+                    Read-only field was included in SET request
+                err-snmp-parse-failed (500)
+                    Agent could not parse variable
+                err-invalid-snmp-type (501)
+                    Variable ASN type does not match Agent defined type 
+                err-invalid-snmp-var-size (502)
+                    Variable size is too big" 
+        ::= { opticalMapperStatusEntry 10 } 
+   
+
+-- *************************************************************************
+-- This table is the Stm1Oc3 Transport Status table
+
+opticalTransportStatusTable OBJECT-TYPE
+        SYNTAX SEQUENCE OF OpticalTransportStatusEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "This is the Stm1Oc3 Transport Status table which consists
+            of an entry for each of the STM1/OC3 Transport Overhead. The 
+            total number of entries depends on the number of Stm1Oc3 cards 
+            in the Node."
+        ::= { opticalDiag 3 }
+
+opticalTransportStatusEntry OBJECT-TYPE
+        SYNTAX OpticalTransportStatusEntry
+        MAX-ACCESS not-accessible
+        STATUS current                          
+        DESCRIPTION
+            "The conceptual row of the Stm1Oc3 Transport Status table. 
+            A row in this table cannot be added or deleted, only modified."
+        INDEX { optTransportStatusAddr }
+        ::= { opticalTransportStatusTable 1 }
+
+OpticalTransportStatusEntry ::=
+        SEQUENCE {
+                optTransportStatusAddr        NestSlotAddress,	  
+                optTransportStatusResrcId     Integer32,            
+                optTransportLaserState  	  INTEGER,          -- RW
+                optTransportErrSecs	          Counter32,
+                optTransportErrFreeSecs	      Counter32,
+                optTransportLoop  			  INTEGER,  	    -- RW
+                optTransportLineAISErrs		  Counter32,
+                optTransportLineRDIErrs		  Counter32,
+                optTransportLineOOFErrs		  Counter32,
+                optTransportLineLOFErrs		  Counter32,
+                optTransportLineLOSErrs		  Counter32,
+                optTransportCmdStatus	      INTEGER           -- RW
+                }
+
+optTransportStatusAddr OBJECT-TYPE
+        SYNTAX NestSlotAddress
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This number uniquely identifies a STM1/OC3 Transport Overhead
+            Nest and Slot number. This number format will be used throughout 
+            the system to identify a resource."
+        ::= { opticalTransportStatusEntry 1 }
+
+optTransportStatusResrcId OBJECT-TYPE
+        SYNTAX Integer32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This number uniquely identifies a STM1/OC3 Transport resource. 
+            This number is provided as key to allow the manager to 
+            map this entry to a corresponding Resource Table entry."
+        ::= { opticalTransportStatusEntry 2 }
+
+optTransportLaserState OBJECT-TYPE
+        SYNTAX INTEGER {
+        	off (0),
+        	on (1)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "This specifies the State of the Laser Interface."
+        ::= { opticalTransportStatusEntry 3 }
+        
+
+optTransportErrSecs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Errored Seconds for this Transport Overhead."
+        ::= { opticalTransportStatusEntry 4 }
+        
+optTransportErrFreeSecs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Transport Error Free Seconds."
+        ::= { opticalTransportStatusEntry 5 }
+
+optTransportLoop OBJECT-TYPE
+        SYNTAX INTEGER {
+        	off (0),
+        	terminal (1),
+        	facility (2),
+        	pathFacility (3)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+            "Indicates the loopback status of the Stm1Oc3 Transport for this device.
+              off          (0)  - indicates Transport loopback is disabled
+        	  terminal     (1)  - The optical line interface transmit driver is looped back 
+        	                      to the optical receiver. Ultimately the payload is reflected 
+        	                      back to the Switch Fabric and the PCM Highway of the DNX 
+        	                      Backplane.
+        	  facility     (2)  - The Fiber Optic path is looped back to the facility.
+        	  pathFacility (3)  - The Stm1Oc3 incoming data (Rx) is transmitted back to its source 
+        	                      via the Tx path. The bus that interfaces to the mappers is in 
+        	                      loopback, and the entire payload is returned to its source with a 
+        	                      refreshed frame structure.
+        	"
+        ::= { opticalTransportStatusEntry 6 }
+
+optTransportLineAISErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Transport Line Alarm Indication Signal 
+            Errored Seconds."
+        ::= { opticalTransportStatusEntry 7 }
+
+optTransportLineRDIErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Transport Line Remote Defect Indication 
+            Errored Seconds."
+        ::= { opticalTransportStatusEntry 8 }
+
+optTransportLineOOFErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Transport Line Out of Frame Errored 
+            Seconds."
+        ::= { opticalTransportStatusEntry 9 }
+
+optTransportLineLOFErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Transport Line Loss of Frame Errored 
+            Seconds."
+        ::= { opticalTransportStatusEntry 10 }
+
+optTransportLineLOSErrs OBJECT-TYPE
+        SYNTAX Counter32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+            "This is the total number of Transport Line Loss of Signal Errored 
+            Seconds."
+        ::= { opticalTransportStatusEntry 11 }
+
+optTransportCmdStatus OBJECT-TYPE
+        SYNTAX INTEGER {
+    -- Initial default status for a row
+            ready-for-command (0),
+
+    -- Action States used in SET Command (1..99)
+            updateTest (1),
+            clearErrors (14),
+                                
+    -- Response States used in GET RESPONSE Command (100..199)
+            update-successful (101),
+            clear-successful (114),
+                                
+    -- Transport Error Codes used in GET RESPONSE Command (400..799)
+            err-general-test-error (400),
+            err-invalid-loop-type (402),
+            err-field-cannot-be-set (406),
+            err-snmp-parse-failed(500),
+            err-invalid-snmp-type(501),
+            err-invalid-snmp-var-size(502) 
+            }
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+            "This is the command status for the Framer Row.
+           The value used in a SET will be replaced by a response
+           value in the GET RESPONSE indicating success or failure.
+
+            Default Response State used in GET RESPONSE Command
+                ready-for-command (0)
+                    initial default status for a row           
+                    
+            Transport Action Commands used in SET Command (1..99)            
+                updateTest (1)
+                    Can be used optionally when activating loops and berts
+                    in order to get status code back in response
+                clearErrors (14)
+                    Resets all error counters and bert test time to zero
+                                
+            Response States used in GET RESPONSE Command (100..199)
+                update-successful (101)
+                    Test action has been successfully performed
+                clear-successful (114)
+                    Error counts have been successfully cleared
+                                
+            The Error Codes used in GET RESPONSE Command (400..799)
+                err-general-test-error (400)
+                    Unknown Test request error occurred.
+                err-invalid-loop-type (402)
+                    Unrecognized loop selection
+                err-field-cannot-be-set (406)
+                    Read-only field was included in SET request
+                err-snmp-parse-failed (500)
+                    Agent could not parse variable
+                err-invalid-snmp-type (501)
+                    Variable ASN type does not match Agent defined type 
+                err-invalid-snmp-var-size (502)
+                    Variable size is too big" 
+        ::= { opticalTransportStatusEntry 12 } 
+
+-- *************************************************************************
+
+dnxStm1Oc3Enterprise OBJECT-IDENTITY
+      STATUS current
+      DESCRIPTION "ERI DNX Stm1Oc3 Device Enterprise for Alarms/Events"
+    ::= { dnxStm1Oc3 0 }
+
+optDevConfigTrap NOTIFICATION-TYPE
+        OBJECTS {
+            trapSequence,
+            optDevCfgAddr,
+            optDevCmdStatus
+            }
+        STATUS current
+        DESCRIPTION
+              	"This trap is used to notify a NMS that a user has updated 
+              	the configuration for a given Stm1Oc3 Device entry."
+        ::= { dnxStm1Oc3Enterprise 1 }
+
+optT1E1ConfigTrap NOTIFICATION-TYPE
+        OBJECTS {
+            trapSequence,
+            optT1E1CfgLinkAddr,
+            optT1E1CfgCmdStatus
+            }
+        STATUS current
+        DESCRIPTION
+              	"This trap is used to notify a NMS that a user has updated 
+              	the configuration for a given Stm1Oc3 T1/E1 Link entry."
+        ::= { dnxStm1Oc3Enterprise 2 }
+                
+END
+
+-- *************************************************************************
+--
+--  MIB:    ERI-DNX-DS0-DP-MIB
+--
+--  Purpose:
+--          This will be the MIB for the DNX DS0-DP Interface Module.
+--          This will provide for Configuration of any DS0-DP card 
+--          in the nest.
+--
+--  Contact: Eastern Research Inc. 1-800-337-4374  Email: support@erinc.com
+-- 
+-- *************************************************************************
+

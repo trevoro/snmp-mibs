@@ -1,0 +1,782 @@
+-- 
+-- Copyright 1999 by Fore Systems, Inc. 
+-- Converted to SMIv2 rfc 2578,2579,2580 - STD 58
+--
+-- Copyright 1995 by Fore Systems, Inc.
+
+Fore-Callrecord-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	Counter32, TimeTicks, Integer32,
+	OBJECT-TYPE,
+	MODULE-IDENTITY				FROM SNMPv2-SMI
+	DisplayString				FROM SNMPv2-TC
+	EntryStatus, software			FROM Fore-Common-MIB;
+
+-- MIB Types Definition
+-- MIB Groups
+
+crGroup MODULE-IDENTITY
+    LAST-UPDATED         "9911050000Z"
+    ORGANIZATION         "FORE"
+    CONTACT-INFO         
+         "      Postal:   FORE Systems Inc.
+                          1000 FORE Drive
+                          Warrendale, PA 15086-7502
+                Tel:      +1 724 742 6900
+                Email:    nm_mibs@fore.com
+                Web:      http://www.fore.com"
+          DESCRIPTION
+           "Fore call recording mib."
+    ::= { software operations(3) 1 }
+
+crXfrGroup		OBJECT IDENTIFIER ::= { crGroup 1 }
+crConfGroup		OBJECT IDENTIFIER ::= { crGroup 2 }
+crStatsGroup		OBJECT IDENTIFIER ::= { crGroup 3 }
+perfConfGroup  		OBJECT IDENTIFIER ::= { crGroup 4 }
+crFilterGroup  		OBJECT IDENTIFIER ::= { crGroup 5 }
+
+
+------------------------------------------------------------------------
+
+CrXfrTrapStatus ::= INTEGER {
+	  crXfrNoError(1),
+          crXfrNoResponseFromServer(2),
+          crXfrAccessViolation(3),
+          crXfrDiskFullorAllocationExceeded(4),
+          crXfrOtherError(5)
+        } 
+
+------------------------------------------------------------------------
+--
+-- The Callrecord Transfer Group
+-- 
+-- For a description of a `Callrecord' or a `Performance record' please 
+-- refer to document `Call Recording Version 2 EDD, Specification'.
+--
+
+crXfrTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF CrXfrEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		" A table of feature-specific information pertaining
+		to Callrecord transfers."
+	::= { crXfrGroup 1 }
+
+crXfrEntry OBJECT-TYPE
+	SYNTAX  CrXfrEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		" A table entry containing information for Callrecord transfers
+		from the switch(fabric) for a particular feature."
+        INDEX   { crXfrIndex }
+	::= { crXfrTable 1 }
+
+CrXfrEntry ::=
+	SEQUENCE {
+		crXfrIndex			INTEGER,
+		crXfrPrimaryUrl			DisplayString,
+		crXfrSecondaryUrl		DisplayString,
+		crXfrRecordingInterval		Integer32,
+		crXfrUserId			DisplayString,
+		crXfrPassword			DisplayString,
+		crXfrTransferStatus		INTEGER,
+		crXfrStatusText			DisplayString,
+		crXfrPrimaryTrapStatus		CrXfrTrapStatus,
+		crXfrSecondaryTrapStatus	CrXfrTrapStatus,
+		crXfrPrimaryXfrFailed 		Counter32,
+		crXfrSecondaryXfrFailed 	Counter32,
+		crXfrEntryStatus		EntryStatus,
+		crXfrPrimaryUserId		DisplayString,
+		crXfrPrimaryPassword		DisplayString,
+		crXfrSecondaryUserId		DisplayString,
+		crXfrSecondaryPassword		DisplayString
+	}
+
+crXfrIndex OBJECT-TYPE
+	SYNTAX  INTEGER {
+			callrecord(1),
+			performance(2)
+		}
+	MAX-ACCESS  read-only
+	STATUS  current
+	DESCRIPTION
+		" The index for a particular feature within the crXfrTable." 
+	::= { crXfrEntry 1 }
+
+crXfrPrimaryUrl OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "This is the specification of the Primary URL for callrecord 
+                 transfers.  The URL is in the form:
+                         //<ip-address>[:port][<pathname>[<filename>]]
+                 This includes the IP address host to contact, and optionally
+		 the port on that host, the directory on that host to put the 
+		 data into and the filename.  
+		 The pathname and filename are each strings of characters 
+		 with the following special tokens:
+ 
+                 Token       Description
+                 _____ _______________________________________________________
+                  %T   SwitchType   - identifies the type of switch.
+                                        eg  `vss' for Vector
+                  %N   SwitchNumber - `SerialNumber.SwitchIndex' for a
+				       non-enclosure switch(fabric) or 
+				       `EnclosureNumber.SwitchIndex' of a
+                                       multi-fabric switch within an enclosure.
+				       The SwitchIndex is the slot number of the
+				       fabric within the enclosure(starting at 0).
+				       In the case of a non-enclosure switch,
+				       the SwitchIndex is always 0.
+                  %I   SwitchIP     - switch's IP address eg `169.144.1.90'
+                  %D   DateTime     - formatted as `YYMMDDhhmm'.
+                  %R   RecordingInterval - elapsed time in minutes.
+                  %C   CRType       - identifies the contents of the file.
+                                        - `account' for callrecord data
+                                        - `stats' for Performance data
+                  %F   FileStatus   - status of the file.
+                                        - `co' for file that switch(fabric) is 
+                                               currently writing to
+                                        - `cc' for file that switch(fabric) has
+                                               completed writing to
+		
+		 If the pathname is not specified, the default file is
+		 transferred to the login directory specified by crXfrUserid.  
+                 The following string will be used as the default filename in 
+                 the case where the URL ends with a `/'(i.e. without any 
+                 filename):
+                         %T_%C.%D.%R.%N.%F
+                 If multiple switches are to write to the same location, 
+                 the pathname or filename should contain either a %I or a 
+                 %N token.  A %D token in the filename portion will
+                 separate each RecordingInterval worth of data into a different
+                 file with the name being the time the file was created.
+                 The following example would record every switch type and 
+                 switch IP into a separate directory with a file at each 
+                 RecordingInterval:
+                         //169.144.1.5/usr/auditlog/%T/%I/%D
+                 Given a Work Group switch with an IP address of 169.44.4.4,
+		 this would produce files in the following directory tree 
+		 structure:
+                        /usr/auditlog/ASX200WG/169.44.4.4/9608252355
+		 If the filename specified is not made up of the above tokens,
+		 then it is used as a prefix to the default filename.
+
+                 If the file transfer attempt fails, the switch will generate a
+                 trap and attempt a transfer to crXfrSecondaryUrl.
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval."
+        ::= { crXfrEntry 2 }
+
+crXfrSecondaryUrl OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "This is the specification of the Secondary URL for callrecord 
+                 transfers.  The URL is in the form:
+                         //<ip-address>[:port][<pathname>[<filename>]]
+		 Please refer to the crXfrPrimaryUrl for more details.
+                 This URL is to be used only if the transfer to crXfrPrimaryUrl
+                 is not successful.
+
+                 If the file transfer attempt to this URL also fails, the 
+		 switch will generate a trap.
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval."
+        ::= { crXfrEntry 3 }
+
+crXfrRecordingInterval OBJECT-TYPE
+         SYNTAX  Integer32
+         MAX-ACCESS  read-create
+         STATUS  current
+         DESCRIPTION 
+                 "The interval (in minutes) at which the the relevant
+		 information is transferred to the host.
+		 The default setting will be 5 minutes.  
+
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval."
+	DEFVAL { 5 }
+	::= { crXfrEntry 4 }
+
+crXfrUserId OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-create
+        STATUS  obsolete
+        DESCRIPTION
+		"The userid to be used for the data transfer sessions
+		 to the primary and secondary data servers.
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval."
+	::= { crXfrEntry 5 }
+
+crXfrPassword OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-create
+        STATUS  obsolete
+        DESCRIPTION
+		"The password to be used for the data transfer sessions to 
+		 the primary and secondary data servers.
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval.
+
+		 Note this object is write-only and reading it will
+		 result in implementation-specific results."
+	::= { crXfrEntry 6 }
+
+crXfrTransferStatus OBJECT-TYPE
+        SYNTAX INTEGER {
+			primaryInProgress(1),
+			secondaryInProgress(2),
+			primarySucceeded(3),
+			secondarySucceeded(4),
+			bothFailed(5)
+			} 
+        MAX-ACCESS  read-only
+        STATUS current
+        DESCRIPTION
+                "A message describing the status of the current file 
+                 transfer. If the data transfer is not successful, refer to the
+		 crXfrPrimaryTrapStatus or crXfrSecondaryTrapStatus."
+        ::= { crXfrEntry 7 }
+
+crXfrStatusText OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-only
+        STATUS current
+        DESCRIPTION
+                "A message describing the status of the last file 
+                 transfer."
+        ::= { crXfrEntry 8 }
+
+crXfrPrimaryTrapStatus OBJECT-TYPE
+         SYNTAX  CrXfrTrapStatus
+         MAX-ACCESS  read-only
+         STATUS  current
+         DESCRIPTION
+		"The trap status of the file transfer to the primary URL.
+		 The trap status will be set to `crXfrNoError' at the start of
+		 the data transfer process and if the condition persists, a 
+		 trap will be generated and the crXfrPrimaryTrapStatus 
+		 updated to reflect the error condition."
+        ::= { crXfrEntry 9 }
+
+crXfrSecondaryTrapStatus OBJECT-TYPE
+         SYNTAX  CrXfrTrapStatus
+         MAX-ACCESS  read-only
+         STATUS  current
+         DESCRIPTION
+		"The trap status of the file transfer to the secondary URL.
+		 The trap status will be set to `crXfrNoError' at the start of
+		 the data transfer process and if the condition persists, a 
+		 trap will be generated and the crXfrSecondaryTrapStatus 
+		 updated to reflect the error condition."
+        ::= { crXfrEntry 10 }
+
+crXfrPrimaryXfrFailed OBJECT-TYPE
+        SYNTAX  Counter32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "The number of failed data transfers to the primary 
+		data server"
+        ::= { crXfrEntry 11 }
+
+crXfrSecondaryXfrFailed OBJECT-TYPE
+        SYNTAX  Counter32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "The number of failed data transfers to the secondary 
+		data server"
+        ::= { crXfrEntry 12 }
+
+crXfrEntryStatus OBJECT-TYPE
+	SYNTAX  EntryStatus
+	MAX-ACCESS  read-create
+	STATUS  current
+	DESCRIPTION
+		"The status of this entry in the crXfr table."
+	::= { crXfrEntry 13 }
+
+
+crXfrPrimaryUserId OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+		"The userid to be used for the data transfer session
+		 to the primary data server.
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval."
+	::= { crXfrEntry 14 }
+
+crXfrPrimaryPassword OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+		"The password to be used for the data transfer session to 
+		 the primary data server.
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval.
+
+		 Note this object is write-only and reading it will
+		 result in implementation-specific results."
+	::= { crXfrEntry 15 }
+
+crXfrSecondaryUserId OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+		"The userid to be used for the data transfer session
+		 to the secondary data server.
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval."
+	::= { crXfrEntry 16 }
+
+crXfrSecondaryPassword OBJECT-TYPE
+        SYNTAX  DisplayString
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+		"The password to be used for the data transfer session to 
+		 the secondary data server.
+		 If crAdminStatus is `on' and this value is changed,
+		 the change goes into effect at the next aligned 
+		 crXfrRecordingInterval.
+
+		 Note this object is write-only and reading it will
+		 result in implementation-specific results."
+	::= { crXfrEntry 17 }
+
+------------------------------------------------------------------------
+--
+-- The Callrecord Configuration Group
+-- This group contains Callrecord configuration information on a  
+-- switch-wide(fabric-wide) level.
+--
+
+crAdminStatus OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        off(1),
+			on(2)
+                }
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+                "Specifies whether Callrecord is On or Off.
+		By default, it is set to Off.
+		If it is changed, the change takes effect immediately. "
+        ::= { crConfGroup 1 }
+
+crMemoryAllocated OBJECT-TYPE
+        SYNTAX  Integer32 
+        MAX-ACCESS  read-write
+        STATUS  obsolete
+        DESCRIPTION
+		"A percentage specifying what portion of the mainheap 
+		(connection or user space) is to be reserved for 
+		Callrecords. The default setting will be 15%.
+		This variable can be set to any value between 1% and 50%.
+		Configuration of this value will affect memory available to 
+		signaling, routing and may result in increased call blocking. 
+		Engineering information will be provided as part of the 
+		deployment procedures. A change in this MIB value will be 
+		effective only after the next Callrecord initialization.
+		(i.e. when the crAdminStatus changes from `off' to `on'
+		the switch(fabric) is rebooted)"
+        ::= { crConfGroup 2 }
+
+crMemOflowAction OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        rejectCall(1),
+			dontRecordCall(2)
+                }
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+                "This specifies the action that the switch(fabric) should 
+		take if the memory allocated for Callrecord runs out.
+		rejectCall(1) specifies that the call should be rejected.
+		dontRecordCall(2) specifies that the call should be allowed
+		with no callrecord being generated for that call.
+		The default setting will be rejectCall(1).
+		If it is changed, the change takes effect immediately. "
+        ::= { crConfGroup 3 }
+
+crAdminMinRecords OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+                "This specifies the minimum number of call records which will be stored
+		in the pool memory. Specifying a value of 0 implies that the
+		default value for this variable will be set. " 
+        ::= { crConfGroup 4 }
+
+crAdminMaxRecords OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+                "This specifies the maximum number of call records which 
+		could be stored in the pool memory.  A value of 0 implies 
+		that the Call Records pool size is only limited by the 
+		amount of memory in the system. "
+        ::= { crConfGroup 5 }
+
+crOperRecords OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "This specifies the number of call records which are 
+		currently stored in the pool memory."
+        ::= { crConfGroup 6 }
+
+crAdminMinDTBs OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+                "This specifies the minimum number of data transfer buffers 
+		which will be stored in the pool memory.  Specifying a 
+		value of 0 implies that the default value for this 
+		variable will be set. "
+        ::= { crConfGroup 7 }
+
+crAdminMaxDTBs OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+                "This specifies the maximum number of data transfer 
+		buffers which could be stored in the pool memory. A value 
+		of 0 implies that the DTB pool size is only limited by the 
+		amount of memory in the system. "
+        ::= { crConfGroup 8 }
+
+crOperDTBs OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "This specifies the number of data transfer buffers 
+		which are currently stored in the pool memory."
+        ::= { crConfGroup 9 }
+
+crOperStatus OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        off(1),
+                        on(2),
+                        shutting-down(3)
+                }
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "Specifies whether Callrecord is Operationally active,
+                inactive or is in the processs of shutting down. Shutting sown occurs 
+                when call recording has been administratively disabled but is 
+                currently in the midst of an ftp transfer." 
+        ::= { crConfGroup 10 }
+
+crCounterCollectionInterval OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "The interval (in seconds) at which the relevant 
+                hardware counters will be collected and maintained. These 
+                counter values will be transferred to the host at every 
+                crXfrRecordingInterval minutes. The default setting will 
+                be the value configured for crXfrRecordingInterval in seconds.
+                
+                Valid values for this variable would range from 10 seconds
+                to crXfrRecordingInterval value in seconds. Modifying this
+                value is only applicable for the ASX 4000 platform. 
+                
+                Setting this value to greater than the crXfrRecordingInterval 
+                value in seconds implies that hardware counters will
+                only be collected every crXfrRecordingInterval minutes.
+                
+                If crAdminStatus is on and this value is changed, 
+                the change goes into effect at the next 
+                crCounterCollectionInterval." 
+        ::= { crConfGroup 11 }
+
+------------------------------------------------------------------------
+--
+-- The Callrecord Statistics Group
+-- This group contains Callrecord statistic/diagnostic information on a 
+-- switch-wide(fabric-wide) level.
+--
+
+crCallsRejected OBJECT-TYPE
+        SYNTAX  Counter32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "The number of calls rejected due to failure to 
+		allocate a callrecord."
+        ::= { crStatsGroup 1 }
+
+
+crCallsNotRecorded OBJECT-TYPE
+        SYNTAX  Counter32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "The number of calls accepted even when there was a failure to 
+		allocate a callrecord."
+        ::= { crStatsGroup 2 }
+
+crCallsOpened OBJECT-TYPE
+        SYNTAX  Counter32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "The number of calls for which a `start' callrecord was
+		successfully generated."
+        ::= { crStatsGroup 3 }
+
+crIntervalsSkipped OBJECT-TYPE
+        SYNTAX  Counter32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "The number of skipped data transfers due to preceding data
+		transfers not complete within the recording interval"
+        ::= { crStatsGroup 4 }
+
+crTermCallsLost OBJECT-TYPE
+        SYNTAX  Counter32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+                "The number of terminated callrecords lost due to 
+		failure to allocate a data transfer buffer"
+        ::= { crStatsGroup 5 }
+
+crUpTime OBJECT-TYPE
+         SYNTAX  TimeTicks
+	 MAX-ACCESS  read-only
+	 STATUS  current
+	 DESCRIPTION
+		" The time in hundredths of a second since Callrecord has been 
+		on at the primary, secondary or both sides. This value along
+		with the counters are reset when the crAdminStatus is
+		modified."
+        ::= { crStatsGroup 6 }
+
+crCurrentCallsRecorded OBJECT-TYPE
+         SYNTAX  Counter32
+	 MAX-ACCESS  read-only
+	 STATUS  current
+	 DESCRIPTION
+		" The total number of calls currently being recorded."
+        ::= { crStatsGroup 7 }
+
+------------------------------------------------------------------------
+--
+-- The Performance Group
+-- This group contains performance monitoring configuration 
+-- information on a switch-wide(fabric-wide) level.
+--
+
+perfAdminStatus OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        off(1),
+			on(2)
+                }
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+                "Specifies whether performance monitoring is On or Off.
+		By default, it is set to Off.
+		If it is changed, the change takes effect immediately. "
+        ::= { perfConfGroup 1 }
+
+
+------------------------------------------------------------------------
+--
+-- The Callrecord Filter Group
+-- 
+-- For a description of a `Callrecord' or a `Performance record' please 
+-- refer to document `Call Recording Version 2 EDD, Specification'.
+--
+
+crFilterTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF CrFilterEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		" A table of filters for which call records are 
+		to be generated."
+	::= { crFilterGroup 1 }
+
+crFilterEntry OBJECT-TYPE
+	SYNTAX  CrFilterEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		" A table entry containing a filter for applying to call 
+		recording."
+        INDEX   { crFilterPort, crFilterVpi, crFilterVci }
+	::= { crFilterTable 1 }
+
+CrFilterEntry ::=
+	SEQUENCE {
+		crFilterPort			Integer32,
+		crFilterVpi			Integer32,
+		crFilterVci			Integer32,
+		crFilterPVCSupport		INTEGER,
+		crFilterPVPSupport		INTEGER,
+		crFilterSVCSupport		INTEGER,
+		crFilterSVPSupport		INTEGER,
+		crFilterSPVCSupport		INTEGER,
+		crFilterSPVPSupport		INTEGER,
+		crFilterFailedCallSupport	INTEGER,
+		crFilterEntryStatus		EntryStatus
+	}
+
+crFilterPort OBJECT-TYPE
+	SYNTAX  Integer32 
+	MAX-ACCESS  read-only
+	STATUS  current
+	DESCRIPTION
+		" The Port index for a particular feature within the 
+		crFilterTable is to be set.A Value of 16777215 signifies 
+		ANY PORT. " 
+	::= { crFilterEntry 1 }
+
+crFilterVpi OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+	DESCRIPTION
+		" The Vpi index for a particular feature within the 
+		crFilterTable is to be set.A Value of 16777215 signifies ANY VPI. 
+		However the ANY VPI value can only be used if the port 
+		specified is ANY PORT. "
+	::= { crFilterEntry 2 }
+
+crFilterVci OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+	DESCRIPTION
+		" The Vci index for a particular feature within the 
+		crFilterTable is to be set. A Value of 16777215 signifies ANY VCI. 
+		However the value of ANY VCI  can only be used if the port 
+		specified is ANY PORT and the vpi specified is ANY VPI. " 
+	::= { crFilterEntry 3 }
+
+crFilterPVCSupport OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        on (1),
+                        off(2),
+                        unspecified(3)
+                }
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "Specifies if PVCs on this interface are to be recorded. "
+        ::= { crFilterEntry 4 }
+
+crFilterPVPSupport OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        on (1),
+                        off(2),
+                        unspecified(3)
+                }
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "Specifies if PVPs on this interface are to be recorded. "
+        ::= { crFilterEntry 5 }
+
+crFilterSVCSupport OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        on (1),
+                        off(2),
+                        unspecified(3)
+                }
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "Specifies if SVCs on this interface are to be recorded. "
+        ::= { crFilterEntry 6 }
+
+crFilterSVPSupport OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        on (1),
+                        off(2),
+                        unspecified(3)
+                }
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "Specifies if SVPs on this interface are to be recorded. "
+        ::= { crFilterEntry 7 }
+
+crFilterSPVCSupport OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        on (1),
+                        off(2),
+                        unspecified(3)
+                }
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "Specifies if SPVCs on this interface are to be recorded. "
+        ::= { crFilterEntry 8 }
+
+crFilterSPVPSupport OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        on (1),
+                        off(2),
+                        unspecified(3)
+                }
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "Specifies if SPVPs on this interface are to be recorded. "
+        ::= { crFilterEntry 9 }
+
+crFilterFailedCallSupport OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        on (1),
+                        off(2),
+                        unspecified(3)
+                }
+        MAX-ACCESS  read-create
+        STATUS  current
+        DESCRIPTION
+               "Specifies if Failed Calls on this interface are to be recorded. "
+        ::= { crFilterEntry 10 }
+
+
+crFilterEntryStatus OBJECT-TYPE
+       SYNTAX  EntryStatus
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+               "The SNMP status of this Expansion entry."
+       ::= { crFilterEntry 11 }
+
+END

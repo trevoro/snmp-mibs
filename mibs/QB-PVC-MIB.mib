@@ -1,0 +1,928 @@
+--
+--	Quantum Bridge QBPVC Management Information Base
+--	Version 1.0.0
+--	January 12, 2001
+--
+--	Quantum Bridge Corporation
+--	Two Tech Drive
+--	Andover, MA 01810
+--	(978) 983-2617
+--
+--------------------------------------------------------------------------------------
+--
+--  07/03/01 - mvaysman    	Added a new generic connection table.
+--				
+--  01/15/01 - mvaysman    	Initial version
+--
+----------------------------------------------------------------------------------------
+--
+	QB-PVC-MIB DEFINITIONS ::= BEGIN
+	IMPORTS 
+    	MODULE-IDENTITY, OBJECT-TYPE, Gauge32, Counter32, Unsigned32, Integer32, TimeTicks, IpAddress
+        	FROM SNMPv2-SMI
+    	TEXTUAL-CONVENTION, TruthValue, TimeStamp, RowStatus, DisplayString
+        	FROM SNMPv2-TC
+    	MODULE-COMPLIANCE, OBJECT-GROUP
+        	FROM SNMPv2-CONF
+    	InterfaceIndex, InterfaceIndexOrZero, ifIndex
+	    	FROM IF-MIB
+    	qbMibs
+        	FROM QUANTUMBRIDGE-REG
+	QbPvcConnKind, QbEnableStatus
+		FROM QB-DWS-MIB
+        AtmAddr, AtmConnKind, AtmConnCastType,
+        AtmServiceCategory, AtmTrafficDescrParamIndex,
+        AtmVpIdentifier, AtmVcIdentifier,
+        AtmVorXAdminStatus, AtmVorXLastChange,
+        AtmVorXOperStatus, atmNoClpNoScr
+            FROM ATM-TC-MIB
+    	;
+
+	qbPvcMIB MODULE-IDENTITY
+    	LAST-UPDATED "0107031255Z" -- July 3, 2001
+    	ORGANIZATION "Quantum Bridge Communications, Inc."
+    	CONTACT-INFO
+        	"support@quantumbridge.com"
+    	DESCRIPTION
+        	"This module defines additional objects for the provisioning and management of
+		PVC in Quantum bridge devices."
+    	::= { qbMibs 13 }
+
+	------------------------------------------------------------------------
+	-- Textual convention of the MIB
+	------------------------------------------------------------------------
+     QbConnEndptType ::= TEXTUAL-CONVENTION
+	STATUS          current
+	DESCRIPTION
+	       "A data rate in Mbits/second."
+	SYNTAX          INTEGER {
+			unknown(1),
+			esw(2),
+			iotEnet(3),
+			gige(4),
+			vlan(5)
+			}
+
+	--
+	-- Overview of Quantum Bridge PVC MIB
+	--
+	-- The Quantum Bridge PVC MIB defines the MIB objects for provisioning
+	-- and monitoring end-to-end terminated connections between IOT and
+	-- OAS Enet interfaces(i.e. Enet ports) and the ATM cloud. I
+	-- also defines MIB objects for provisioning terminated
+	-- connections between non-atm homogenous interfaces
+	-- (i.e. Enet, DS1, E1) located on either an IOT or OAS Card
+	-- (e.g. 24 Port Ethernet Module, 16 port DS1).
+	--
+ 	-- This provisioning includes configuration connections.
+	-- The monitoring presents network statistics for each of
+	-- configured connection. 
+	------------------------------------------------------------------------
+	-- Top-level organization of the MIB
+	------------------------------------------------------------------------
+
+	qbPvcObjects	    OBJECT IDENTIFIER ::= { qbPvcMIB 1 }
+	qbPvcNotifications  OBJECT IDENTIFIER ::= { qbPvcMIB 2 }
+	qbPvcConformance    OBJECT IDENTIFIER ::= { qbPvcMIB 3 }
+	--
+	--
+	-- The objects are arranged into the following groups:
+	--
+	-- (Quantum Bridge PVC MIB Groups)
+	--
+	--
+	-- All groups in this MIB are mandatory for Quantum Bridge devices.
+	--
+	-- The ATM  PVC non-native interface group (qbAtmPvcGroup).
+	--  
+	-- 	qbEnetPvcGroup		OBJECT IDENTIFIER ::= {qbPvcObjects 1 }
+	--
+	--	This group contains PVC configuration information of
+	--	IOT and OAS cards Ethernet interfaces on which ATM PVCs
+	--	are configured.
+	--	It consists of the  qbAtmPvcTable that is used to
+	--      associate IOT Ethernet interfaces with corresponding AAL5 PVCs.
+ 	--
+	--	qbCrossConnPvcGroup	OBJECT IDENTIFIER ::= { qbPvcObjects 2 }
+	--
+	-- 	The group provisions PVC connections between an IOT
+	--	or OAS Module interface and another homogenous
+	--      IOT or Module interface. A point-to-point cross-connect 
+	--	is modeled as a single entry in this table.
+	--
+	--	qbPvcConnPvcGroup	OBJECT IDENTIFIER ::= { qbPvcObjects 3 }
+	--
+	-- 	The group provisions PVC connections between an IOT
+	--	or OAS Module interface and another homogenous
+	--      IOT or Module interface. A point-to-point cross-connect 
+	--	is modeled as a single entry in this table.
+	--
+	--
+	-- The Trap/Notification group (qbPvcNotifications).
+	--
+	-- 	This group defines a group of traps related to this MIB.
+	--
+-- *****************************************************************************
+-- The qbEnetPvcGroup is used to manage connections between,
+-- Ethernet interfaces (non-native ATM interfaces) and ATM interfaces.
+-- Each entry of this table is also represented in the atmVclTable.
+--
+-- *****************************************************************************
+
+   qbEnetPvcGroup  	OBJECT IDENTIFIER ::= { qbPvcObjects 1}
+
+   qbEnetPvcNumber OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The total number of provisioned Ethernet to ATM PVCs."
+        ::= { qbEnetPvcGroup 1 }
+
+   qbEnePvcLastTimeUpdate OBJECT-TYPE
+        SYNTAX  TimeTicks
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The value of sysUpTime at the time of the last
+                  creation, deletion or modification of an entry in the qbAtmPvcTable.
+		  If the number of entries has been unchanged since the
+		  last re-initialization of the agent,
+		  then this object contains a zero value."
+        ::= { qbEnetPvcGroup 2 }
+
+   qbEnetPvcTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF QbEnetPvcEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+		"The Quantum Bridge Ethernet configuration table contains
+		connections between Ethernet interfaces (IOT and
+		Ethernet Module) and corresponding
+		VCL/AAL5 that are configured at an ATM interface. An entry in the
+		table may be created, destroyed or modified.
+ 		This table lists all Ethernet AAL5 PVCs within the System that
+		send/receive packet traffic to/from the ATM cloud."
+    	::= { qbEnetPvcGroup 3 }
+
+    qbEnetPvcEntry OBJECT-TYPE
+    	SYNTAX      QbEnetPvcEntry
+	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+            "An entry in the qbEnetPvcTable. There is one entry in the
+	     table per Ethernet interface.	     
+ 	     The creation of a row in this table causes a corresponding entry
+             in the atmVclTable of the ATM-MIB to be automatically created
+             if an atmVclEntry with qbEnetPvcVpi and qbEnetPvcVci values
+	     does not exist.
+	     This corresponding entry can be removed only if the qbEnetPvcEntry
+ 	     is removed. The qbEnetPvcIndex of this table is an ifIndex of
+	     the IOT or Module Ethernet interface from the ifTable."
+    	INDEX    { qbEnetPvcIndex  }
+    	::= { qbEnetPvcTable 1 }
+
+    QbEnetPvcEntry  ::=
+	SEQUENCE {
+		qbEnetPvcIndex		INTEGER,
+		qbEnetPvcAtmIndex	InterfaceIndex,
+		qbEnetPvcVpi   		AtmVpIdentifier,
+		qbEnetPvcVci	 	AtmVcIdentifier,
+		qbEnetPvcName            DisplayString,
+		qbEnetPvcRxTrafficDescrIndex AtmTrafficDescrParamIndex,
+		qbEnetPvcTxTrafficDescrIndex AtmTrafficDescrParamIndex,
+		qbEnetPvcAdminStatus	AtmVorXAdminStatus,
+		qbEnetPvcOperStatus	AtmVorXOperStatus,
+		qbEnetPvcLastChange	AtmVorXLastChange,
+		qbEnetPvcConnKind	QbPvcConnKind,
+		qbEnetPvcLoopback	QbEnableStatus,
+		qbEnetPvcLoopbackSide	INTEGER,	
+		qbEnetPvcRowStatus 	RowStatus
+    	}
+
+    qbEnetPvcIndex  OBJECT-TYPE
+    	SYNTAX	    INTEGER
+    	MAX-ACCESS  not-accessible
+    	STATUS	    current
+    	DESCRIPTION
+		 "The value of this object is equal to MIB II's
+		 ifIndex value of the IOT or 24-Port Enet  Port interface." 
+	::= { qbEnetPvcEntry 1 }
+
+   qbEnetPvcAtmIndex	OBJECT-TYPE
+    	SYNTAX	    InterfaceIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		 "The value of this object is equal to MIB II's
+		 ifIndex value of the ATM Port interface mapped 
+		 to an Ethernet interface." 
+	::= { qbEnetPvcEntry 2 }
+
+    qbEnetPvcVpi  OBJECT-TYPE
+    	SYNTAX	    AtmVpIdentifier
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+ 		"A VPI of the AAL5 bi-directional PVC that connects this
+		interface to the ATM cloud."
+	::= { qbEnetPvcEntry 3 }
+
+    qbEnetPvcVci  OBJECT-TYPE
+    	SYNTAX	    AtmVcIdentifier
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"A VCI of the AAL5 bi-directional PVC that connects this
+		interface to the ATM cloud."
+	::= { qbEnetPvcEntry 4 }
+
+   qbEnetPvcName  OBJECT-TYPE
+    	SYNTAX	    DisplayString(SIZE(1..20))
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The textual name of the connection(PVC) as specified by
+		a user. It provides a non-volatile handle for this
+		PVC. The supplied name in the qbAtmPvcName is associated
+                with the same PVC for as long as that PVC/conection remains."
+	::= { qbEnetPvcEntry  5 }
+
+   qbEnetPvcRxTrafficDescrIndex  OBJECT-TYPE
+    	SYNTAX	    AtmTrafficDescrParamIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		of the ATM Traffic Descriptor Table which applies
+		to the transmit direction of this VCL."
+	DEFVAL  { 3 }
+	::= {  qbEnetPvcEntry  6 }
+
+   qbEnetPvcTxTrafficDescrIndex  OBJECT-TYPE
+    	SYNTAX	    AtmTrafficDescrParamIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		in the ATM Traffic Descriptor Table which
+		applies to the receive direction of this VCL."
+	DEFVAL  { 3 }
+	::= {  qbEnetPvcEntry 7 }
+
+    qbEnetPvcAdminStatus	OBJECT-TYPE  
+	SYNTAX      AtmVorXAdminStatus
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+	  "The desired administrative status of the Ethernet connection
+           The up and down states indicate that the traffic
+           flow is enabled or disabled respectively across the ATM cloud."
+	::= { qbEnetPvcEntry 8 }
+
+    qbEnetPvcOperStatus OBJECT-TYPE
+        SYNTAX      AtmVorXOperStatus  
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		 "The current operational status of the connect."
+	::= { qbEnetPvcEntry  9 }   
+
+  qbEnetPvcLastChange OBJECT-TYPE
+        SYNTAX      AtmVorXLastChange  
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		 "The value of sysUpTime at the time this
+		 PVC  entered its current operational state."
+	::= { qbEnetPvcEntry  10 }   
+
+  qbEnetPvcConnKind OBJECT-TYPE
+	SYNTAX      QbPvcConnKind
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+	   "The connection type. Two types of connection can be
+	    provisioned on the Enet port (modEnetToAtm and iotEnetToAtm)"
+	DEFVAL   { iotEnetToAtm }
+	::= { qbEnetPvcEntry   11 }
+
+    qbEnetPvcLoopback OBJECT-TYPE
+	SYNTAX      QbEnableStatus
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This object enables loopback on the ENET or ATM  
+		enedpoint."
+    ::= { qbEnetPvcEntry   12 }
+
+    qbEnetPvcLoopbackSide OBJECT-TYPE
+	SYNTAX      INTEGER {
+		    enetEndpt(1),
+		    atmEndpt(2),
+		    none(3)
+	}
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This object enables loopback on the IOT ENET  
+		enedpoint."
+    ::= { qbEnetPvcEntry   13 }
+
+   qbEnetPvcRowStatus OBJECT-TYPE
+        SYNTAX      RowStatus
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The status column for this IOT ENET interface.
+	    This OBJECT can be set to:
+
+		createAndGo(4)
+            	destroy(6)
+
+            The following values may be read:
+            	active(1)
+
+			This object may only be set to createAndGo(4).
+
+			Setting this object to active(1) when its value
+			is already active(1) is a no-op.
+			
+			Setting this object to createAndGo(4) causes the agent
+			to attempt to create and commit the row based on
+			the contents of the objects in the row.  If all necessary
+			information is present in the row and the values are
+			acceptable to the agent, the agent will change the
+			status to active(1).  If any of the necessary objects
+			are not available, the agent will reject the creation
+			request.	
+
+			Setting this object to destroy(6) will remove the corresponding
+			entry in this table, and disable data traffic."
+        ::= { qbEnetPvcEntry 14 }
+
+-- ******************************************************************************
+-- The qbCrossConnPvcGroup - table provides bi-directional cross-connections
+-- between two homogenous(DS1 to DS1, E1 to E1, Enet to Enet)
+-- IOT or DS1/Enet module interfaces within the OAS system.
+-- ******************************************************************************
+   qbCrossConnPvcGroup  	OBJECT IDENTIFIER ::= { qbPvcObjects 2}
+
+    qbCrossConnPvcNumber OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The total number of provisioned Enet to Enet, DS1 to 
+		 DS1, E1 to E1 PVCs."
+        ::= {  qbCrossConnPvcGroup 1 }
+
+   qbCrossConnPvcLastTimeUpdate OBJECT-TYPE
+        SYNTAX  TimeTicks
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		  "The value of sysUpTime at the time of the last
+                  creation, deletion or modification of an entry in the qbAtmPvcTable.
+		  If the number of entries has been unchanged since the
+		  last re-initialization of the agent,
+		  then this object contains a zero value."
+        ::= { qbCrossConnPvcGroup 2 }
+
+    qbCrossConnPvcTable OBJECT-TYPE
+    	SYNTAX      SEQUENCE OF  QbCrossConnPvcEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+		"The Quantum Bridge Pvc cross-connection table. This table
+		defines Enet, DS1, or E1 port point-to-point cross-connections within 
+		a single OAS system. The connection can be set between two
+		Ethernet, two DS1 or two E1 ports.
+		The table has two indexes: the interface index
+		of the first end-point and the interface index of the
+		second endpoint.
+		Note: Connections that are listed in this table		
+		are not reflected in the atmVclTable. "
+    	::= { qbCrossConnPvcGroup 3 }
+
+    qbCrossConnPvcEntry OBJECT-TYPE
+    	SYNTAX      QbCrossConnPvcEntry
+	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+               "An entry in the Quantum Bridge qbCrossConnPvcTable two
+	       contains a connection between the same port type of
+	       IOTs or Modules(Enet and DS1)."
+    	INDEX    { qbCrossConnPvcLowIfIndex, qbCrossConnPvcHighIfIndex}
+    	::= { qbCrossConnPvcTable 1 }
+
+    QbCrossConnPvcEntry ::=
+	SEQUENCE {
+		qbCrossConnPvcLowIfIndex		InterfaceIndex,
+		qbCrossConnPvcHighIfIndex		InterfaceIndex,
+		qbCrossConnPvcAdminStatus		AtmVorXAdminStatus,
+		qbCrossConnPvcOperStatus		AtmVorXOperStatus,		
+		qbCrossConnPvcLastChange 		AtmVorXLastChange,	
+		qbCrossConnPvcRxTrafficDescrIndex	AtmTrafficDescrParamIndex,
+		qbCrossConnPvcTxTrafficDescrIndex	AtmTrafficDescrParamIndex,
+		qbCrossConnPvcName			DisplayString,
+		qbCrossConnPvcConnKind			QbPvcConnKind,
+		qbCrossConnPvcLoopback			QbEnableStatus,
+		qbCrossConnPvcLoopbackSide		INTEGER,
+		qbCrossConnPvcRowStatus			RowStatus
+	}
+
+    qbCrossConnPvcLowIfIndex	OBJECT-TYPE
+    	SYNTAX	    InterfaceIndex
+    	MAX-ACCESS  not-accessible
+    	STATUS	    current
+    	DESCRIPTION
+		"The ifIndex of the first interface(lower index) for the configured PVC
+		cross-connect."
+	::= { qbCrossConnPvcEntry  1 }
+
+    qbCrossConnPvcHighIfIndex  OBJECT-TYPE
+    	SYNTAX	    InterfaceIndex
+    	MAX-ACCESS  not-accessible
+    	STATUS	    current
+    	DESCRIPTION
+		"The ifIndex of the second interface(higher index) for the configured PVC
+		cross-connect."
+	::= { qbCrossConnPvcEntry  2 }
+
+    qbCrossConnPvcAdminStatus  OBJECT-TYPE
+    	SYNTAX	    AtmVorXAdminStatus
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		in the ATM Traffic Descriptor Table which
+		applies to the receive direction of this VCL."
+	::= { qbCrossConnPvcEntry 3 }
+
+   qbCrossConnPvcOperStatus OBJECT-TYPE
+        SYNTAX      AtmVorXOperStatus  
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		 "The current operational status of the connection."
+	::= { qbCrossConnPvcEntry 4 }   
+
+    qbCrossConnPvcLastChange OBJECT-TYPE
+        SYNTAX      AtmVorXLastChange  
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		 "The value of sysUpTime at the time this connection
+		  entered its current operational state."
+	::= { qbCrossConnPvcEntry 5 }  
+
+   qbCrossConnPvcRxTrafficDescrIndex  OBJECT-TYPE
+    	SYNTAX	    AtmTrafficDescrParamIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		of the ATM Traffic Descriptor Table which applies
+		to the transmit direction of this connection."
+	::= { qbCrossConnPvcEntry 6 }
+
+   qbCrossConnPvcTxTrafficDescrIndex  OBJECT-TYPE
+    	SYNTAX	    AtmTrafficDescrParamIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		in the ATM Traffic Descriptor Table which
+		applies to the receive direction of this connection."
+	DEFVAL  { 3 }
+	::= { qbCrossConnPvcEntry 7 }
+
+    qbCrossConnPvcName  OBJECT-TYPE
+    	SYNTAX	    DisplayString (SIZE (0..20))
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The textual name of the connection as specified by
+		a user. It provides a non-volatile handle for this
+		connection. The supplied name in the qbIotPortConnName is associated
+                with the same connection for as long as that conection remains."
+	::= { qbCrossConnPvcEntry 8 }
+
+    qbCrossConnPvcConnKind OBJECT-TYPE
+	SYNTAX      QbPvcConnKind
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+	   "The connection type. The following connection types can be
+	    provisioned on the Enet port iotDs1ToIotDs11,
+	    iotE1ToIotE1, iotEnetToIotEnet, iotEnetToModEnet,
+	    modE1ToModE1, modDs1ToModDs1,iotEnetToModEnet,
+	    iotE1ToModE1, iotDs1ToModDs1." 
+	DEFVAL   { iotEnetToIotEnet }
+	::= { qbCrossConnPvcEntry   9 }
+
+   qbCrossConnPvcLoopback OBJECT-TYPE
+	SYNTAX      QbEnableStatus
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This object enables loopback on this IOT to IOT port  
+		enedpoint. The endpoint on which loopback is enabled
+		is defined by qbIotPortCrossConnLoopbackEndpt."
+	DEFVAL  { disable }
+    ::= { qbCrossConnPvcEntry   10 }
+
+   qbCrossConnPvcLoopbackSide OBJECT-TYPE
+	SYNTAX      INTEGER {
+		    lowIfIndexSide(1),
+		    highIfIndexSide(2),
+		    none(3)
+	}
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This object defines loopback on the selected endpoint."
+	DEFVAL  {  lowIfIndexSide }
+    ::= { qbCrossConnPvcEntry   11 }
+ 
+    qbCrossConnPvcRowStatus OBJECT-TYPE
+    	SYNTAX	    RowStatus
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The status of the port connect entry. Changing the value of this
+		 object from 'active' to 'destroy' will remove this entry from the
+		 database. It will disrupt traffic between two IOT packet interfaces."
+	::= { qbCrossConnPvcEntry  12 }
+
+-- -------------------------------------------------------------
+-- The QBPVC Generic Connection Configuration Group. Defines 
+-- SNMP objects to configure any types of Enet connections
+-- -------------------------------------------------------------
+
+    qbPvcConnGroup  	OBJECT IDENTIFIER ::= { qbPvcObjects 3}
+
+    qbPvcConnNum OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The total number of provisioned Enet to Enet, DS1 to 
+		 DS1, E1 to E1 PVCs."
+        ::= {  qbPvcConnGroup  1 }
+
+   qbPvcConnTableLastTimeUpdate OBJECT-TYPE
+        SYNTAX  TimeTicks
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		  "The value of sysUpTime at the time of the last
+                  creation, deletion or modification of an entry in the qbPvcConnTable.
+		  If the number of entries has been unchanged since the
+		  last re-initialization of the agent,
+		  then this object contains a zero value."
+        ::= { qbPvcConnGroup  2 }
+
+   qbPvcNextConnId OBJECT-TYPE      
+	SYNTAX      INTEGER
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"This object returns the lowest unused connection Id."
+   	 ::= { qbPvcConnGroup 3 }
+
+
+    qbPvcConnTable OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbPvcConnEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This table contains the generic data pertaining to connections.
+		For R3.0 this is limited to ethernet, VLAN, GigE and
+		IOT Enet cross connects."
+	::= { qbPvcConnGroup 4 }
+
+    qbPvcConnEntry OBJECT-TYPE
+	SYNTAX      QbPvcConnEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"Each row provides data for a single connection."
+	INDEX       { qbPvcConnId}
+	::= { qbPvcConnTable 1 }
+
+   QbPvcConnEntry ::=
+    	SEQUENCE {
+          	qbPvcConnId			Unsigned32,
+		qbPvcConnName			DisplayString,
+		qbPvcConnAdminStatus		AtmVorXAdminStatus,
+		qbPvcConnOperStatus		AtmVorXOperStatus,
+		qbPvcConnTxTd			INTEGER,
+		qbPvcConnRxTd			INTEGER,
+		qbPvcConnEndpt1			OBJECT IDENTIFIER,
+		qbPvcConnEndpt2			OBJECT IDENTIFIER,
+		qbPvcConnEndpt1Type		QbConnEndptType,
+		qbPvcConnEndpt2Type		QbConnEndptType,
+		qbPvcConnEndpt1Loop		INTEGER,
+		qbPvcConnEndpt2Loop		INTEGER,
+		qbPvcConnType			QbPvcConnKind,
+		qbPvcConnRowStatus		RowStatus
+      }
+   
+    qbPvcConnId OBJECT-TYPE      
+	SYNTAX      Unsigned32
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is a unique identifier for this connection."
+   	 ::= { qbPvcConnEntry  1 }
+
+    qbPvcConnName OBJECT-TYPE      
+	SYNTAX      DisplayString
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the connection name."
+   	 ::= { qbPvcConnEntry  2 }
+
+    qbPvcConnAdminStatus OBJECT-TYPE      
+	SYNTAX      AtmVorXAdminStatus
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the connection admin status."
+	DEFVAL {up}
+   	::= { qbPvcConnEntry  3 }
+
+    qbPvcConnOperStatus OBJECT-TYPE      
+	SYNTAX      AtmVorXOperStatus
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"This is the connection oper status."
+   	 ::= { qbPvcConnEntry  4 }
+
+    qbPvcConnTxTd OBJECT-TYPE      
+	SYNTAX      INTEGER 
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the traffic descriptor for traffic going from
+		endpoint 1 to endpoint 2."
+   	 ::= { qbPvcConnEntry  5 }
+
+    qbPvcConnRxTd OBJECT-TYPE      
+	SYNTAX      INTEGER 
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the traffic descriptor for traffic going from
+		endpoint 2 to endpoint 1."
+   	 ::= { qbPvcConnEntry  6 }
+
+    qbPvcConnEndpt1 OBJECT-TYPE      
+	SYNTAX      OBJECT IDENTIFIER
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is connection endpoint 1. The following are
+		examples of using this object:
+		ATM endpoint    200.33.43  (ATM interface index of 200, VPI 33, VCI 43)
+		Ethernet endpoint 5002	   (Ifindex of ethernet port)
+		Vlan endpoint	23.2	   (vlanindex of 23 and vlan port 2)
+		GigE endpoint	201.25	   (GigE ifindex of 201 and vlanid 25) "
+   	 ::= { qbPvcConnEntry  7 }
+
+    qbPvcConnEndpt2 OBJECT-TYPE      
+	SYNTAX      OBJECT IDENTIFIER 
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is connection endpoint 2( See examples in qbPvcEndpt1)."
+   	 ::= { qbPvcConnEntry  8  }
+
+    qbPvcConnEndpt1Type OBJECT-TYPE      
+	SYNTAX      QbConnEndptType
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the type for endpoint 1."
+   	 ::= { qbPvcConnEntry  9 }
+
+    qbPvcConnEndpt2Type OBJECT-TYPE      
+	SYNTAX      QbConnEndptType
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the type for endpoint 2."
+   	 ::= { qbPvcConnEntry  10 }
+
+    qbPvcConnEndpt1Loop OBJECT-TYPE      
+	SYNTAX      INTEGER {
+		enable (1),
+		disable (2)
+		} 
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This controls PVC loopbacks on endpoint 1."
+	DEFVAL {disable}
+   	 ::= { qbPvcConnEntry   11}
+
+    qbPvcConnEndpt2Loop OBJECT-TYPE      
+	SYNTAX      INTEGER {
+		enable (1),
+		disable (2)
+		} 
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This controls PVC loopbacks on endpoint 2."
+	DEFVAL {disable}
+   	 ::= { qbPvcConnEntry   12}
+
+    qbPvcConnType   OBJECT-TYPE      
+	SYNTAX      QbPvcConnKind
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the connection type."
+   	 ::= { qbPvcConnEntry   13}
+
+    qbPvcConnRowStatus OBJECT-TYPE      
+	SYNTAX      RowStatus
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"The row status column for this Vlan.
+	   	 This OBJECT can be set to:
+
+		createAndGo(4)
+            		destroy(6)
+
+            		The following values may be read:
+            		active(1)
+	
+		Setting this object to createAndGo(4) causes the agent
+		to attempt to create and commit the row based on
+		the contents of the objects in the row.  If all necessary
+		information is present in the row and the values are
+		acceptable to the agent, the agent will change the
+		status to active(1).  If any of the necessary objects
+		are not available, the agent will reject the creation
+		request.
+
+		When a row is created in this table, there will also be 2 corresponding
+		rows created in the table qbPvcMappingTable.
+
+		Setting this object to destroy(6) will remove the corresponding
+		entry in this table, and disable data traffic. When this row is deleted
+		the 2 corresponding rows in the qbPvcMappingTable will also be
+		deleted."
+   ::= { qbPvcConnEntry  14 }
+
+
+-- This table is used for to identify the connection index starting
+-- from the first index of the connection endpoint. Each time a new
+-- connection is created, 2 rows will automatically be created in the
+-- qbPVCMappingTable. This will be used to identify all the
+-- connections associated with a given endpoint.
+
+   qbPvcConnMappingTable OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbPvcConnMappingEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This table contains the data to map from the first index of
+		the connection endpoint to connection ID."
+	::= { qbPvcConnGroup 5 }
+
+    qbPvcConnMappingEntry OBJECT-TYPE
+	SYNTAX      QbPvcConnMappingEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"Each row maps from an specific endpoint to a specific connection."
+	INDEX       {qbPvcConnMappingType, qbPvcConnMappingIndex, qbPvcConnMappingId}
+	::= { qbPvcConnMappingTable 1 }
+
+   QbPvcConnMappingEntry ::=
+    	SEQUENCE {
+	qbPvcConnMappingType		QbConnEndptType,
+	qbPvcConnMappingIndex	Unsigned32,
+	qbPvcConnMappingId		Unsigned32,
+	qbPvcConnMappingName            DisplayString
+      }
+                        
+    qbPvcConnMappingType OBJECT-TYPE      
+	SYNTAX      QbConnEndptType
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This is the type of endpoint that the next index refers to."
+   	 ::= { qbPvcConnMappingEntry 1 }
+
+    qbPvcConnMappingIndex OBJECT-TYPE      
+	SYNTAX      Unsigned32
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This is the first index for the connection endpoint. For
+		most connection endpoint this will be the ifIndex, however
+		for VLAN endpoints, this will be the VLAN index."
+   	 ::= { qbPvcConnMappingEntry 2 }
+
+   qbPvcConnMappingId OBJECT-TYPE      
+	SYNTAX      Unsigned32
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This is the connection Id for the connection this entry pertains to."
+   	 ::= { qbPvcConnMappingEntry 3 }
+
+    qbPvcConnMappingName OBJECT-TYPE      
+	SYNTAX      DisplayString
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"This is the connection name."
+   	 ::= { qbPvcConnMappingEntry 4 }   
+ 
+-- ****************************************************************
+-- QB PVC Notifications - defines a group of traps for use by this MIB.
+--
+-- ****************************************************************
+
+    qbPvcNotificationPrefix OBJECT IDENTIFIER ::= { qbPvcNotifications  0 }    
+
+-- ****************************************************************
+-- Conformance Information
+-- ****************************************************************
+
+    qbPvcCompliances OBJECT IDENTIFIER ::= { qbPvcConformance 1 }
+    qbPvcGroups      OBJECT IDENTIFIER ::= { qbPvcConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+    qbPvcCompliance MODULE-COMPLIANCE
+	STATUS      current
+        DESCRIPTION
+       	 	"The compliance statement for all agents that support this
+          	MIB. A compliant agent implements all objects defined in this
+        	MIB."
+   	 MODULE  -- this module
+		MANDATORY-GROUPS {
+        	qbEnetPvcGroupInfo,
+        	qbCrossConnPvcGroupInfo
+    	}
+    	::= { qbPvcCompliances 1 }
+
+
+--
+-- All Object Groups
+--
+    qbEnetPvcGroupInfo OBJECT-GROUP
+		OBJECTS {
+		qbEnetPvcAtmIndex,
+		qbEnetPvcVpi,
+		qbEnetPvcVci,
+		qbEnetPvcName,
+		qbEnetPvcRxTrafficDescrIndex,
+		qbEnetPvcTxTrafficDescrIndex,
+		qbEnetPvcAdminStatus,
+		qbEnetPvcOperStatus,
+		qbEnetPvcLastChange,
+		qbEnetPvcConnKind,
+		qbEnetPvcLoopback,
+		qbEnetPvcLoopbackSide,
+		qbEnetPvcRowStatus
+ 		}
+	    STATUS      current
+    	DESCRIPTION
+        	"The set of all accessible objects in the ATM PVC Network Group of this MIB."
+    	::= { qbPvcGroups 1 }     
+    	
+    	qbCrossConnPvcGroupInfo OBJECT-GROUP
+		OBJECTS {
+		qbCrossConnPvcConnKind,
+		qbCrossConnPvcAdminStatus,
+		qbCrossConnPvcOperStatus,
+		qbCrossConnPvcLastChange,
+		qbCrossConnPvcRxTrafficDescrIndex,
+		qbCrossConnPvcTxTrafficDescrIndex,
+		qbCrossConnPvcName,
+		qbCrossConnPvcConnKind,
+		qbCrossConnPvcLoopback,
+		qbCrossConnPvcLoopbackSide,
+		qbCrossConnPvcRowStatus
+ 		}
+	    STATUS      current
+    	DESCRIPTION
+        	"The set of all accessible objects in the
+		Cross-Connect PVC Group of this MIB."
+    	::= { qbPvcGroups 2 }
+
+END

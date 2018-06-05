@@ -1,0 +1,372 @@
+PDN-CROSSCONNECT-MIB DEFINITIONS ::= BEGIN
+-- ===============================================================
+-- 
+-- The Paradyne Cross Connect Extentions MIB .
+-- 
+-- History:
+--	
+-- 	02/23/2000- jstrain - Added CrossConnect Table Clear Scalar
+-- 	03/15/2000- jstrain - Added CrossConnect devCrossConTableLastChange 
+--
+
+IMPORTS
+	OBJECT-TYPE
+		FROM RFC-1212
+
+	TimeTicks
+		FROM RFC1155-SMI
+
+	crossConnect
+		FROM PDN-HEADER-MIB;
+
+-- ===============================================================
+-- 
+-- The Paradyne Channel Configuration group.
+-- Release: 0.0.2 (6/27/96) DRAFT
+-- 
+
+-- Implementation of the Channel Configuration group is mandatory
+-- for all Paradyne products capable of cross connecting between
+-- multiple interfaces.  These objects allow the SNMP management
+-- system to 1) display the DS0 channel assignment for the network or
+-- DSX-1 Drop/Insert (if available) T1 interfaces, 2) allocate DS0
+-- channels on the DSX-1 Drop/Insert interface to the network interface,
+-- 3) allocate DS0 channels on the network or DSX-1 Drop/Insert T1
+-- interfaces to particular synchronous data or voice ports, and
+-- 4) assign a synchronous data port to another synchronous data port.
+--
+-- This group consists of two tables:
+--
+--    (1)  DS1 Fractional Table
+--         (provides DS0 channel viewing and assignment between
+--          T1 interfaces, and to synchronous data or voice ports)
+--    (2)  Synchronous Data Port Assignment Table
+--         (provides data port to data port assignment and viewing)
+
+-- The Paradyne DS1 Fractional Table.
+
+-- The DS1 Fractional Group in the DS1/E1 MIB (RFC 1406) only
+-- allowed specification of an entire interface to a particular
+-- time slot on another interface (i.e., a time slot on one
+-- interface could not be mapped to a time slot on another
+-- interface).  This caused the convention of mapping time
+-- slots between channelized T1 interfaces to occur in 
+-- ascending order.
+
+-- This table allows the complete mapping of time slots on the
+-- DSX-1 Drop/Insert T1 interface to time slots on the network
+-- T1 interface.  In addition, time slots on either the DSX-1
+-- or network T1 interface can be mapped to a synchronous data port
+-- or to a voice port using this table.
+
+-- It is important to note that when requesting a new connection,
+-- all the necessary information used to specify a valid connection
+-- must be included in the same SET PDU (i.e., multiple bindings
+-- may be necessary).
+--
+-- In the case of assigning a DS0 channel between T1 interfaces,
+-- two variable bindings are required in the SET PDU in order to
+-- specify the entire valid connection (i.e., one binding to set
+-- devDs1FracIfIndex, and one to set devDs1FracIfFracNumber).
+--
+-- However, in the case of assigning a DS0 channel to a synchronous
+-- data port (or a voice port), only one binding is necessary (i.e.,
+-- setting devDs1FracIfFracNumber is not manatory).
+-- In addition, the allocation method (devSyncDataPortConfigAllocMethod)
+-- must be set previously or included in the same SET PDU for this
+-- assignment if the user wishes to use a value other than what is
+-- currently set for the data port.  The same is true for the data 
+-- port rate (devSyncDataPortConfigRate) in the case of assignment by
+-- block, or ACAMI.
+
+-- When the user specifies a valid connection, the unit completes
+-- the connection for both directions simultaneously.  For example,
+-- the SET PDU contains the information for connecting time slot 2 of
+-- the DSX-1 interface to time slot 5 of the network T1 interface.  The
+-- unit automatically sets up the connection for the 1) DSX-1 to network,
+-- and 2) network to DSX-1 directions.
+
+devDs1FracTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF DevDs1FracEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "The Paradyne DS1 Fractional Table."
+    ::= { crossConnect 1 }
+
+devDs1FracEntry OBJECT-TYPE
+    SYNTAX  DevDs1FracEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "An entry in the Paradyne DS1 Fractional Table."
+    INDEX   { devDs1FracIndex, devDs1FracNumber }
+    ::= { devDs1FracTable 1 }
+
+-- Layout of one entry in devDs1FracTable.
+
+DevDs1FracEntry ::=
+    SEQUENCE {
+        devDs1FracIndex		INTEGER,
+        devDs1FracNumber	INTEGER,
+        devDs1FracIfIndex	INTEGER,
+        devDs1FracIfFracNumber	INTEGER
+    }
+
+devDs1FracIndex OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The index value which uniquely identifies the
+        DS1 interface to which this entry is applicable.
+        The interface identified by a particular value
+        of this index is the same interface as
+        identified by the same value of ifIndex from 
+        the Interfaces table of MIB II (RFC 1213)."
+    ::= { devDs1FracEntry 1 }
+
+devDs1FracNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The channel number associated with the interface
+        identified by devDs1FracIndex for this entry.  If
+        devDs1FracIfIndex indicates that the channel 
+        assignment is to a synchronous data port or to a voice
+	port, then the interpretation of this object's meaning
+	is dependent on the value of the allocation method,
+	devSyncDataPortConfigAllocMethod, for the data port.
+	If the allocation method is block, or ACAMI, then this
+	object specifies the starting DS0 channel for the assignment.
+	The number of channels assigned is dependent on the value of
+	devSyncDataPortConfigRate.  If the allocation method is
+	channel, then this object specifies the individual DS0
+	channel to be allocated to the data port."
+    ::= { devDs1FracEntry 2 }
+
+devDs1FracIfIndex OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "An index value that uniquely identifies the interface to
+        which this entry is mapped.  The interface identified by
+        a particular value of this index is the same interface as
+        identified by the same value of an ifIndex object instance
+        in the Interfaces table of MIB II (RFC 1213). If no interface
+        is currently using the channel identified by
+        devDs1FracNumber, then this value should be zero.  If a
+        single interface occupies more than one time slot, then its
+        ifIndex value is found in multiple time slots (i.e., there are
+        multiple entries in table with the same devDs1FracIfIndex
+        value)."
+    ::= { devDs1FracEntry 3 }
+
+devDs1FracIfFracNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "The channel number associated with the interface
+        identified by devDs1FracIfIndex for this entry.
+        If the interface is a synchronous data port or a
+	voice port, then the value is ignored for set,
+	and undefined when read."
+    ::= { devDs1FracEntry 4 }
+
+-- The Paradyne Synchronous Data Port Assignment Table.
+
+-- This table is used to assign a synchronous data port to another
+-- synchronous data port.  Assigning a synchronous data port to
+-- another synchronous data port allows the feature of a backup port.
+-- The user can attach an external backup device to the port and
+-- manually assign the selected port to the backup port (i.e.,
+-- route data from the selected port to the backup port).
+
+-- It is important to note that when requesting a new connection,
+-- all the necessary information used to specify a valid connection
+-- must be included in the same SET PDU (i.e., multiple bindings
+-- may be necessary).
+-- During the assignment, both synchronous data ports must be at the same
+-- port rate.  If the rate is not already the same for both ports,
+-- it must be included in the SET PDU (i.e., one binding to set
+-- devSyncDataPortAssignRate, and one to set
+-- devSyncDataPortAssignIfIndex).
+
+-- When the user specifies a valid assignment, the unit completes
+-- the connection for both directions simultaneously.  For example,
+-- the SET PDU contains the information for connecting synchronous
+-- data port 1 to synchronous data port 3.  The unit automatically
+-- assigns 1) synchronous data port 1 to sunchronous data port 3,
+-- and 2) synchronous data port 3 to synchronous data port 1.
+
+-- When connecting a synchronous data port to another synchronous
+-- data port, the ports must have compatible base data rates in
+-- order for the assignment to be accepted.  If the embedded data
+-- link (EDL) is enabled for either port, the functionality associated
+-- with the EDL feature is ignored.
+
+devSyncDataPortAssignTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF DevSyncDataPortAssignEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "The Paradyne Synchronous Data Port Assignment Table."
+    ::= { crossConnect 2 }
+
+devSyncDataPortAssignEntry OBJECT-TYPE
+    SYNTAX  DevSyncDataPortAssignEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "An entry in the Paradyne Synchronous Data Port
+        Assignment Table."
+    INDEX   { devSyncDataPortAssignIndex }
+    ::= { devSyncDataPortAssignTable 1 }
+
+-- Layout of one entry in devSyncDataPortAssignTable.
+
+DevSyncDataPortAssignEntry ::=
+    SEQUENCE {
+        devSyncDataPortAssignIndex	INTEGER,
+        devSyncDataPortAssignRate	INTEGER,
+        devSyncDataPortAssignIfIndex	INTEGER
+    }
+
+devSyncDataPortAssignIndex OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The index value which uniquely identifies the synchronous
+        data port interface to which this entry is applicable.
+        The interface identified by a particular value of
+        this index is the same interface as identified
+        by the same value of ifIndex from the Interfaces
+        table of MIB II (RFC 1213)."
+    ::= { devSyncDataPortAssignEntry 1 }
+
+devSyncDataPortAssignRate OBJECT-TYPE
+    SYNTAX  INTEGER {
+                rate56or64(1),         --     56 Kbps  or   64 Kbps
+                rate112or128(2),       --    112           128
+                rate168or192(3),       --    168           192
+                rate224or256(4),       --    224           256
+                rate280or320(5),       --    280           320
+                rate336or384(6),       --    336           384
+                rate392or448(7),       --    392           448
+                rate448or512(8),       --    448           512
+                rate504or576(9),       --    504           576
+                rate560or640(10),      --    560           640
+                rate616or704(11),      --    616           704
+                rate672or768(12),      --    672           768
+                rate728or832(13),      --    728           832
+                rate784or896(14),      --    784           896
+                rate840or960(15),      --    840           960
+                rate896or1024(16),     --    896          1024
+                rate952or1088(17),     --    952          1088
+                rate1008or1152(18),    --   1008          1152
+                rate1064or1216(19),    --   1064          1216
+                rate1120or1280(20),    --   1120          1280
+                rate1176or1344(21),    --   1176          1344
+                rate1232or1408(22),    --   1232          1408
+                rate1288or1472(23),    --   1288          1472
+                rate1344or1536(24)     --   1344          1536
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "The synchronous data port rate expressed in Kbps for both data
+	ports of the synchronous data port-to-synchronous data port
+	assignment represented by this entry.  The actual rate for
+	the ports is obtained by reading the value of ifSpeed from
+	the Interfaces table of MIB II (RFC 1213).  The possible data
+	rates depend on the current base rate configured for the data
+	ports of this assignment.  For example, rate280or320(5)
+	represents a rate of 280 Kbps or 320 Kbps for a base rate
+	of 56 Kbps or 64 Kbps, respectively.
+        WARNING:  changing this object's value, causes the DS0
+                  channels assigned to the data port based on the
+                  previous rate to be deallocated.
+        NOTE:  this variable cannot be used independently to alter
+               the value of the rate associated with a particular
+               data port."
+    ::= { devSyncDataPortAssignEntry 2 }
+
+devSyncDataPortAssignIfIndex OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "An index value that uniquely identifies the interface
+        to which this synchronous data port is assigned.  The interface
+        identified by a particular value of this index is the
+        same interface as identified by the same value of an
+        ifIndex object instance in the Interfaces table of MIB
+        II (RFC 1213). If no interface is currently connected
+        to this data port, then this value should be zero.
+        The value used to set this object must be the ifIndex
+        value of another synchronous data port interface only (i.e.,
+	synchronous data port to DS0 channel assignment is allowed
+	only in the DS1 Fractional Table, devDs1FracTable)."
+    ::= { devSyncDataPortAssignEntry 3 }
+
+-- ==========================================================
+--  Paradyne CrossConnect Table Utilities Group
+
+--	Release 0.1	02/23/2000
+--
+--  This group could be used to perform various operations on
+--  all types of cross connect tables.
+--  
+--
+-- ============================================================
+
+
+devCrossConUtility OBJECT IDENTIFIER ::= { crossConnect 4 }
+
+--
+--  
+-- NOTE: These Objects are SLE compliant because just like the ATM-MIB
+--	 where there is ONLY one cross connect table per SLE, there are
+--	 also only one group of devCrossConUtility objects per SLE.
+--
+
+devCrossConClear  OBJECT-TYPE
+
+	SYNTAX      INTEGER {
+
+   			idle(1),		-- read-only
+			inprogress(2),		-- read-only
+			clear(3)		-- read-write
+
+			}
+	ACCESS  read-write
+	STATUS      mandatory
+	DESCRIPTION
+     "This object is used to delete all the entries
+     in the Cross Connect table where bulk deletion is needed.
+     This field can only be set to 'clear'. While the management
+     entity within the agent deletes all the cross connects , this
+     field will read 'inprogress'.When the 'clear' operation has
+     completed , or no operation is being performed at all the 
+     default state will be 'idle'."
+   	::= { devCrossConUtility 1 }
+
+devCrossConTableLastChange  OBJECT-TYPE
+
+	SYNTAX  TimeTicks
+	ACCESS  read-only
+	STATUS      mandatory
+	DESCRIPTION
+	"The value of sysUpTime at the time configuration or
+	status of the Cross Connect Table has last changed. Changes 
+	in the Cross Connect table can be anything such as 
+	configuration addition/deletions or Cross Connect 
+	status changes."
+   	::= { devCrossConUtility 2 }
+
+END
+

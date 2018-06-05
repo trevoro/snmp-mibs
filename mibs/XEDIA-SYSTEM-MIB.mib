@@ -1,0 +1,2815 @@
+XEDIA-SYSTEM-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS 
+    MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, Integer32, 
+    IpAddress, Gauge32, Counter32 -- Unsigned32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION,  DisplayString, RowStatus, 
+    TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    xediaMibs
+        FROM XEDIA-REG
+    InterfaceIndex, InterfaceIndexOrZero
+        FROM IF-MIB
+    ;
+
+xediaSystemMIB MODULE-IDENTITY
+    LAST-UPDATED "9704022155Z" -- April 2, 1997
+    ORGANIZATION "Xedia Corp."
+    CONTACT-INFO
+        "support@xedia.com"
+    DESCRIPTION
+        "This module defines objects for management of Xedia devices."
+    ::= { xediaMibs 1 }
+
+-- Top-level organization of the MIB
+
+xsysObjects          OBJECT IDENTIFIER ::= { xediaSystemMIB 1 }
+xsysNotifications    OBJECT IDENTIFIER ::= { xediaSystemMIB 2 }
+xsysConformance      OBJECT IDENTIFIER ::= { xediaSystemMIB 3 }
+
+-- ****************************************************************
+-- Textual Conventions
+-- ****************************************************************
+
+-- Hack for pre-1902 compiler:
+Unsigned32 ::= Gauge32
+
+DateAndTimeForm ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A Date/Time string  in the format:
+
+                 'mm/dd/yyyy hh:mm:ss:tt'
+  
+         where mm - month, dd - day, yyyy - year,
+               hh - hour, mm - minutes, ss - seconds,
+               tt - ticks."
+    SYNTAX    DisplayString (SIZE (0..22))
+
+XStorageType ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A storage location for the 'file' being transfered. Note that
+        the type 'network(1)' generally indicates that the Trivial
+        File Transfer Protocol (TFTP) will be used to execute the
+        transfer (though, in the future, other types of transfer
+        protocols may be supported). Also, the 'nvram(4)' value may be
+        used to indicate some other type of non-volatile storage
+        (e.g., a hard disk)."
+    SYNTAX      INTEGER {
+                    network(1),
+                    bootflash(2),
+                    flash(3),
+                    ram(4),
+                    nvram(5)
+                }
+
+XFileType ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A number representing the type of file being referenced."
+    SYNTAX      INTEGER {
+                    image(1),
+                    config(2),
+                    dump(3),
+                    eventLog(4),
+		    diags(5),
+		    bootPass1(6),
+		    bootPass2(7),
+		    tclScript(8)
+                }
+
+XTransferStatus ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The status of a particular file transfer."
+    SYNTAX      INTEGER {
+                    fileNotFound(1),
+                    accessViolation(2),
+                    notEnoughSpace(3),
+                    illegalOperation(4),
+                    unknownTransferID(5),
+                    fileAlreadyExists(6),
+                    noUser(7),
+                    generalError(8),
+                    incompatibleFile(9),
+                    noResponseFromServer(10),
+                    checksumError(11),
+                    aborted(12),
+                    statusUnknown(13),
+                    success(14),
+                    inProgress(15),
+                    alreadyRunning(16),
+		    noBootImageRecord(17),
+		    incompatibleSecurityParams(18),
+		    invalidAuthenticationHash(19),
+		    invalidDecryptionResult(20)
+                }
+                    
+                    
+-- ****************************************************************
+-- The general system group
+-- ****************************************************************
+
+xsysGeneral         OBJECT IDENTIFIER ::= { xsysObjects 1 }
+
+xsysDateTime OBJECT-TYPE
+    SYNTAX      DateAndTimeForm
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The current date and time of the system. Note that this can
+        also be used to set the current date and time as well as read
+        it."
+    DEFVAL      { "" }
+    ::= { xsysGeneral 1 }
+
+xsysOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    unknown(1),
+                    running(2),
+                    warning(3),
+                    testing(4),
+                    down(5)
+                }
+    MAX-ACCESS  read-only    
+    STATUS      current
+    DESCRIPTION
+        "The current operational status of the system as a whole. A
+        value 'unknown(1)' indicates that the current state of the
+        system could not be determined.  The value 'running(2)'
+        indicates that the system is up and running and that no
+        unusual error conditions are known.  The 'warning(3)' state
+        indicates that agent has been informed of an unusual error
+        condition by the operational software (e.g., a device driver)
+        but that the system is still 'operational'. (The
+        xsysBootDiagsCode object may provide more information.)  A
+        value of 'testing(4)', indicates that the system is not
+        available for use because it is in the testing state.  The
+        state of 'down(5)' is used only when the agent has been
+        informed that the system is not available for any use. (How it
+        can tell you it's down is an interesting question.)"
+    ::= { xsysGeneral 2 }
+
+-- The following objects are for boot management:
+
+xsysResetControl OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ready(1),
+                    reset(2),
+                    resetToDefaults(3)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This is the 'software reset button' of the agent. When read,
+        this object always returns the value 'ready(1)'. When set to
+        'reset(2)', the system will reset and reload its configuration
+        from NVRAM. When set to 'resetToDefaults(3)', the system will
+        delete its configuration parameters and then reset, which will
+        cause it to come up with its default configuration."
+    DEFVAL      { ready }
+    ::= { xsysGeneral 3 }
+
+xsysNextBootDiagsLevel OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(1),
+                    normal(2),
+                    full(3)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The level of diagnostic tests to run the next time the system
+        is reset. Setting the value 'none(1)' skips all diagnostic
+        tests (and therefore makes the system boot faster). The value
+        'normal(2)' (the default) runs the basic set of diagnostic
+        teams. The value 'full(3)' runs a greater-than-normal set of
+        tests that may be useful to diagnose unusual hardware
+        failures."
+    DEFVAL      { normal }
+    ::= { xsysGeneral 4 }
+
+xsysBootDiagsCode OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An error code giving more detail about a boot diagnostics
+        failure indicated by xsysOperStatus 'warning(3)' or
+        'down(5)'. The value 0 indicates no failure detected or an
+        unknown failure type. See the product user's guide for
+        interpretation of the error code."
+    ::= { xsysGeneral 5 }
+
+xsysLastBootType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    unknown(1),
+                    warmBoot(2),
+                    coldBoot(3)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An indication of type of the last system boot. The value
+        'warmBoot(2)' indicates the system was reset by software
+        (e.g., via the xsysResetControl object). The value
+        'coldBoot(3)' indicates the system was reset via a hardware
+        reset button or power cycle."
+    ::= { xsysGeneral 6 }
+
+xsysNumResets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A count of the number of times the system has been reset
+        either via a hardware switch, via the software
+        xsysResetControl object, or via any other means (cable seeking
+        backhoe, software spasm, etc.) Note that a manager can use
+        this object to determine if it has missed any warmStart or
+        coldStart traps and to detect counter discontinuities."
+    ::= { xsysGeneral 7 }
+
+-- This object is for the user interface:
+
+xsysDisableLoginPrompt OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Setting this object to the value 'true(1)' will disable the
+        login prompt so that users of the Command Line Interface (CLI)
+        automatically get admin permissions."
+    DEFVAL      { false }
+    ::= { xsysGeneral 8 }
+
+-- ****************************************************************
+-- Information pertaining to 'files' in the system.
+-- ****************************************************************
+
+xsysFile         OBJECT IDENTIFIER ::= { xsysGeneral 9 }
+
+--
+-- Globals, showing running image info
+--
+xsysCompactFlash OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ready(1),           
+                    compact(2),
+                    compactInProgress(3),
+                    flashNotAvailable(4)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This is the command to compact Flash memory to regain space.
+         To begin a compact, set the object to 'compact'.  When read, 
+	 this object will return the appropriate status.  The status
+	 'ready' is returned when a compact is possible,  'compactInProgress' 
+	 is returned when there is an unfinished compact still running, 
+	 and 'flashNotAvailable' is returned  if another system is currently 
+	 manipulating the flash."
+    DEFVAL      { ready }
+    ::= { xsysFile 1 }
+ 
+xsysRunningImageInfo           OBJECT IDENTIFIER ::= { xsysFile 2 }
+ 
+xsysRunningImageName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The software name for the currently running
+        software image."
+    ::= { xsysRunningImageInfo 1 }
+ 
+xsysRunningImageVersion OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The running image version."
+    ::= { xsysRunningImageInfo 2 }
+ 
+xsysRunningImageBuildDate OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The running image build date."
+    ::= { xsysRunningImageInfo 3 }
+ 
+--
+-- File Boot Table
+--
+
+xsysBootImageTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysBootImageEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of 'boot files' (either real or virtual) that can be used."
+    ::= { xsysFile 3 }
+
+xsysBootImageEntry OBJECT-TYPE
+    SYNTAX      XsysBootImageEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a single  Boot Image"
+    INDEX       { xsysBootImageIndex }
+    ::= { xsysBootImageTable 1 }
+
+XsysBootImageEntry ::= SEQUENCE {
+    xsysBootImageIndex              INTEGER,
+    xsysBootImageBootPriority       Unsigned32,
+    xsysBootImageSrc                XStorageType,     --   (network or flash only)
+    xsysBootImageSrcName            DisplayString,
+    xsysBootImageSrcType            XFileType,
+    xsysBootImageDestName           DisplayString,
+    xsysBootImageServerAddr         IpAddress,
+    xsysBootImageLocalAddr          IpAddress,
+    xsysBootImageMask               IpAddress,
+    xsysBootImageDefaultRouter      IpAddress,
+    xsysBootImageSlot               Unsigned32,
+    xsysBootImagePort               Unsigned32,
+    xsysBootImageOperStatus         XTransferStatus,
+    xsysBootImageRowStatus          RowStatus
+}
+
+xsysBootImageIndex OBJECT-TYPE
+    SYNTAX      INTEGER (1..10)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The index of the table."
+    ::= { xsysBootImageEntry 1 }
+
+xsysBootImageBootPriority OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..10)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The boot priority for a given entry.  Lowest is highest 
+        priority."
+    DEFVAL      { 0 }
+    ::= { xsysBootImageEntry 2 }
+
+xsysBootImageSrc OBJECT-TYPE
+    SYNTAX      XStorageType  -- network or flash only
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The source of the file to transfer. The only valid
+         selection is Network or Flash."
+    DEFVAL      { network }
+    ::= { xsysBootImageEntry 3 }
+
+xsysBootImageSrcName OBJECT-TYPE
+    SYNTAX      DisplayString  (SIZE (0..127))
+    MAX-ACCESS  read-create   
+    STATUS      current
+    DESCRIPTION
+        "The name of the source file to be transfered."
+    DEFVAL      { ''h }
+    ::= { xsysBootImageEntry 4 }
+
+xsysBootImageSrcType OBJECT-TYPE
+    SYNTAX      XFileType 
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The type of file represented by the file source name."
+    ::= { xsysBootImageEntry 5 }
+
+xsysBootImageDestName OBJECT-TYPE
+    SYNTAX      DisplayString  (SIZE (0..127))
+    MAX-ACCESS  read-create   
+    STATUS      current
+    DESCRIPTION
+        "The local name of the destination file."
+    DEFVAL      { ''h }
+    ::= { xsysBootImageEntry 6 }
+
+xsysBootImageServerAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the remote TFTP server."
+    DEFVAL      { 0 }
+    ::= { xsysBootImageEntry 7 }
+
+xsysBootImageLocalAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The local IP address used during a boot TFTP."
+    DEFVAL      { 0 }
+    ::= { xsysBootImageEntry 8 }
+
+xsysBootImageMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address mask used during a boot TFTP."
+    DEFVAL      { 0 }
+    ::= { xsysBootImageEntry 9 }
+
+xsysBootImageDefaultRouter OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address for the default router used during a boot TFTP."
+    DEFVAL      { 0 }
+    ::= { xsysBootImageEntry 10 }
+
+xsysBootImageSlot OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..256)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The internal slot (slot/port)  used during a boot TFTP."
+    DEFVAL      { 1 }
+    ::= { xsysBootImageEntry 11 }
+
+xsysBootImagePort OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..256)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The internal port (slot/port) used during a boot TFTP."
+    DEFVAL      { 1 }
+    ::= { xsysBootImageEntry 12 }
+
+xsysBootImageOperStatus OBJECT-TYPE
+    SYNTAX      XTransferStatus
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The status of the last boot image transfer."
+    DEFVAL      { statusUnknown }
+    ::= { xsysBootImageEntry 13 }
+
+xsysBootImageRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to add and remove entries from the
+        table."
+    REFERENCE
+        "RFC1903: Textual Conventions for Version 2 of the Simple
+        Network Management Protocol (SNMPv2)."
+    ::= { xsysBootImageEntry 14 }
+
+--
+-- File Transfer Table
+--
+
+xsysTransferTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysTransferEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of 'files' (either real or virtual) that can be
+        transfered."
+    ::= { xsysFile 4 }
+
+xsysTransferEntry OBJECT-TYPE
+    SYNTAX      XsysTransferEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a single 'file' that can be transfered. The
+        file may be in an actual file system or it may be a virtual
+        file that exists only in memory, perhaps in a different format
+        than it will have once it is transfered. For example, the
+        eventLog may be stored as a linked list of data structures in
+        RAM on the local system but uploaded in human-readable ASCII
+        to the remote system.
+
+        This table will be initialized to contain entries for the
+        types of files it allows transfer of, though these entries
+        will return the value 'notReady(3)' for their
+        xsysTransferRowStatus column until the user provides values
+        for any required columns. The agent may also not allow these
+        entries to be deleted from the table. (Therefore, for agents
+        that only support transfer of a fixed number of 'files', this
+        can be implemented as a fixed length table.)
+
+ 
+	Legal Transfers Matrix:
+					SRC
+			    network     flash       nvram   ram
+	D       network     N           Y (1)       Y (1)   Y (2)
+	E       flash       Y (3)       N           Y (4)   N
+	S       nvram       Y (5)       Y (6)       N       N
+	T       ram         Y (7)       Y (7)       N       N
+	 
+	(1) this is how you back up config files to the network
+	(2) done by dumper automatically when crash occurs
+	(3) this is how you upgrade software from network
+	(4) this is how you backup config locally
+	(5) this is how you restore config from network
+	(6) this is how you restore config locally
+	(7) done by loader automatically during boot "
+    INDEX       { xsysTransferIndex }
+    ::= { xsysTransferTable 1 }
+
+XsysTransferEntry ::= SEQUENCE {
+    xsysTransferIndex           Unsigned32,
+    xsysTransferSrc             XStorageType,
+    xsysTransferSrcName         DisplayString,
+    xsysTransferDest            XStorageType,
+    xsysTransferDestName        DisplayString,
+    xsysTransferServerAddr      IpAddress,
+    xsysTransferOperStatus      XTransferStatus,
+    xsysTransferOperProgress    INTEGER,
+    xsysTransferAction          INTEGER,
+    xsysTransferRowStatus       RowStatus,
+    xsysTransferEncryptPassword DisplayString
+}
+
+xsysTransferIndex OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..10)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Indicates the row entry number within the table."
+    ::= { xsysTransferEntry 1 }
+
+xsysTransferSrc OBJECT-TYPE
+    SYNTAX      XStorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The source of the file to transfer."
+    DEFVAL { flash }
+    ::= { xsysTransferEntry 2 }
+
+xsysTransferSrcName OBJECT-TYPE
+    SYNTAX      DisplayString  (SIZE (0..127))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The file name of the source file."
+    DEFVAL      { ''h }
+    ::= { xsysTransferEntry 3 }
+
+xsysTransferDest OBJECT-TYPE
+    SYNTAX      XStorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The destination for the file to transfer."
+    DEFVAL { ram }
+    ::= { xsysTransferEntry 4 }
+
+xsysTransferDestName OBJECT-TYPE
+    SYNTAX      DisplayString  (SIZE (0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The file name of the destination file."
+    DEFVAL      { ''h }
+    ::= { xsysTransferEntry 5 }
+
+xsysTransferServerAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the the  TFTP server."
+    DEFVAL      { 0 }
+    ::= { xsysTransferEntry 6 }
+
+xsysTransferOperStatus OBJECT-TYPE
+    SYNTAX      XTransferStatus
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The status of the last transfer procedure, if any.  This
+        object will have a value of 'statusUnknown(2)' if no transfer
+        process has been performed. The 'incompatibleFile(6)' may
+        result, for example, if the file is a software image that is
+        not compatible with this hardware, or, as another example, if
+        the file contains configuration parameters for a newer
+        revision of software than is currently running on the
+        system. The other values should be self-explanatory."
+    ::= { xsysTransferEntry 7 }
+
+xsysTransferOperProgress OBJECT-TYPE
+    SYNTAX     INTEGER (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "A percent value updated periodically to represent the 
+	progress of a TFTP session."
+    ::= { xsysTransferEntry 8 }
+
+xsysTransferAction OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ready(1),
+                    execute(2),
+                    executeAndCreateBootRecord(3),
+                    abort(4),
+		    secureTransfer(5)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The object is used to initiate the transfer manually. When
+        read, it always returns the value 'ready(1)'. Setting the
+        object to 'execute(2)' initiates the transfer as long as the
+        xsysTransferRowStatus is 'active(1)' and another transfer is
+        not currently in progress. The 'executeAndCreateBootRecord(3)'
+	additionally creates a BootImageEntry if the transfer is of an
+	OS image into flash.  If the BootImageTable is full, the file
+	transfer will fail.  The newly created BootImageEntry will be
+	initialized with the lowest priority and RowStatus of notInService.
+	The value 'abort(3)' attempts to abort the transfer and will
+        return a inconsistentValue SNMP error when set if the
+        xsysTransferOperStatus is not currently 'inProgress(1)'.
+	
+	The action 'secureTransfer' is similar to the 'execute' action
+	except it can only be used for configuration files when the source 
+	or destination is nvram.  SecureTransfer uses authentication and
+	encryption to protect the configuration file from modification,
+	and from interception."
+    DEFVAL      { ready }
+    ::= { xsysTransferEntry 9 }
+
+xsysTransferRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to add and remove entries from the
+        table."
+    REFERENCE
+        "RFC1903: Textual Conventions for Version 2 of the Simple
+        Network Management Protocol (SNMPv2)."
+    ::= { xsysTransferEntry 10 }
+
+xsysTransferEncryptPassword OBJECT-TYPE
+    SYNTAX      DisplayString  (SIZE (0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The password used for en/decryption."
+    DEFVAL      { "" }
+    ::= { xsysTransferEntry 11 }
+
+-- 
+-- The storage table
+-- 
+xsysStorageTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysStorageEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of storage devices. Note that this table parallels
+        the one in the Host Resources MIB."
+    ::= { xsysFile 5 }
+
+xsysStorageEntry OBJECT-TYPE
+    SYNTAX      XsysStorageEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about the capacity and utilization of a storage
+        device.
+
+        The Xedia Velociraptor 1.0.0 product will have entries of type
+        ram, nvram, and flash."
+    INDEX       { xsysStorageArea }
+    ::= { xsysStorageTable 1 }
+
+XsysStorageEntry ::= SEQUENCE {
+    xsysStorageArea                  XStorageType,
+    xsysStorageDescr                 DisplayString,
+    xsysStorageAllocationUnits       Unsigned32,
+    xsysStorageSize                  Unsigned32,
+    xsysStorageUsed                  Unsigned32,
+    xsysStorageAllocationFailures    Counter32,
+    xsysStorageBytesTotal            Unsigned32,
+    xsysStorageBytesUsed             Unsigned32,
+    xsysStorageBytesAvailable        Unsigned32
+}
+
+xsysStorageArea OBJECT-TYPE
+    SYNTAX      XStorageType
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The type of storage represented by this entry. Note that the
+        value 'network(1)' cannot be used in this context."
+    ::= { xsysStorageEntry 2 }
+
+xsysStorageDescr OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A textual description of this storage device."
+    ::= { xsysStorageEntry 3 }
+
+xsysStorageAllocationUnits OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "bytes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The size, in bytes, that xsysStorageSize and xsysStorageUsed
+        is measured in."
+    ::= { xsysStorageEntry 4 }
+
+xsysStorageSize OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The size of the storage device in the units identified by
+        xsysStorageAllocationUnits."
+    ::= { xsysStorageEntry 5 }
+
+xsysStorageUsed OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The amount of the storage represented by this entry that is
+        allocated, in units of hrStorageAllocationUnits."
+    ::= { xsysStorageEntry 6 }
+
+xsysStorageAllocationFailures OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of requests for storage represented by this entry
+        that could not be honored due to not enough storage.  It
+        should be noted that as this object has a SYNTAX of Counter32,
+        that it does not have a defined initial value.  However, it is
+        recommended that this object be initialized to zero."
+    ::= { xsysStorageEntry 7 }
+
+xsysStorageBytesTotal OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The size of the storage device in bytes."
+    ::= { xsysStorageEntry 8 }
+
+xsysStorageBytesUsed OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The amount of the storage represented by this entry that is
+        allocated, in bytes."
+    ::= { xsysStorageEntry 9 }
+
+xsysStorageBytesAvailable OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The amount of the storage represented by this entry that is
+        not allocated, in bytes."
+    ::= { xsysStorageEntry 10 }
+
+-- 
+-- The FileList table
+-- 
+xsysFileListTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysFileListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of File List entries."
+    ::= { xsysFile 6 }
+
+xsysFileListEntry OBJECT-TYPE
+    SYNTAX      XsysFileListEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about the files on the system."
+    INDEX       { xsysStorageArea, xsysFileName }
+    ::= { xsysFileListTable 1 }
+
+XsysFileListEntry ::= SEQUENCE {
+    xsysFileName                    DisplayString,
+    xsysFileType                    XFileType,
+    xsysFileBuildName               DisplayString,
+    xsysFileBuildDate               DisplayString,
+    xsysFileBuildVersion            DisplayString,
+    xsysFileSrcName                 DisplayString,
+    xsysFileSrc                     XStorageType,
+    xsysFileHost                    IpAddress,
+    xsysFileDate                    DisplayString,
+    xsysFileSize                    Unsigned32,
+    xsysFileIsActive                TruthValue,
+    xsysFileRowStatus               RowStatus
+}
+
+xsysFileName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A textual name of the file."
+    ::= { xsysFileListEntry 1 }
+
+xsysFileType OBJECT-TYPE
+    SYNTAX      XFileType 
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The type of file represented by the file name."
+    ::= { xsysFileListEntry 2 }
+
+xsysFileBuildName OBJECT-TYPE
+    SYNTAX      DisplayString  (SIZE (0..127))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A textual Build name of the file."
+    ::= { xsysFileListEntry 3 }
+
+xsysFileBuildDate OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A textual Build date of the file."
+    ::= { xsysFileListEntry 4 }
+
+xsysFileBuildVersion OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A textual Version of the file."
+    ::= { xsysFileListEntry 5 }
+
+xsysFileSrcName OBJECT-TYPE
+    SYNTAX      DisplayString  (SIZE (0..127))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The original source file name of the originating file."
+    ::= { xsysFileListEntry 6 }
+
+xsysFileSrc OBJECT-TYPE
+    SYNTAX      XStorageType 
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The source type of the original file."
+    ::= { xsysFileListEntry 7 }
+
+xsysFileHost OBJECT-TYPE
+    SYNTAX      IpAddress    
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The IP Address of the TFTP host that was used to copy the
+	 original source file.  Or 0.0.0.0 if not applicable."
+    ::= { xsysFileListEntry 8 }
+
+xsysFileDate OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The date associated with the file."
+    ::= { xsysFileListEntry 9 }
+
+xsysFileSize OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The size of the file in the units identified by
+        xsysStorageAllocationUnits."
+    ::= { xsysFileListEntry 10 }
+
+xsysFileIsActive OBJECT-TYPE
+    SYNTAX      TruthValue   
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The active flag associated with the file."
+    ::= { xsysFileListEntry 11 }
+
+xsysFileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to remove entries from the table."
+    REFERENCE
+        "RFC1903: Textual Conventions for Version 2 of the Simple
+        Network Management Protocol (SNMPv2)."
+    ::= { xsysFileListEntry 12 }
+
+xsysWatchdogUpdate OBJECT-TYPE
+    SYNTAX      INTEGER (0 | 20..30)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of seconds between the watchdog timer  
+         updates.  A watch dog reset will occur if the timer
+         is not updated within three (3) cycles.  A value of
+         0 disables the watchdog timout.  The valid range
+         of a functioning update is 20-30 seconds.
+
+         note: a node boot is required for changes to 
+         take affect." 
+    DEFVAL      { 20 }
+    ::= { xsysGeneral 10 }
+    
+xsysDateTimeEpochSeconds OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The current Date and Time represented by the number of
+	    seconds since January 1, 1970"
+    ::= { xsysGeneral 11 }
+    
+-- 
+-- The SNMP Error Log
+-- 
+xsysSnmpErrorLog OBJECT IDENTIFIER ::= { xsysGeneral 12 }
+
+xsysSnmpErrorLast OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The error information logged from the last SNMP request."
+    ::= { xsysSnmpErrorLog 1 }
+
+xsysSnmpErrorTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysSnmpErrorEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of File List entries."
+    ::= { xsysSnmpErrorLog 2}
+
+xsysSnmpErrorEntry OBJECT-TYPE
+    SYNTAX      XsysSnmpErrorEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about the files on the system."
+    INDEX       { xsysSnmpErrorIpAddress, xsysSnmpErrorReqID}
+    ::= { xsysSnmpErrorTable 1 }
+
+XsysSnmpErrorEntry ::= SEQUENCE {
+    xsysSnmpErrorIpAddress          IpAddress,
+    xsysSnmpErrorReqID              Unsigned32,
+    xsysSnmpErrorMessage            DisplayString
+}
+
+xsysSnmpErrorIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The IP Address of the errored request."
+    ::= { xsysSnmpErrorEntry 1 }
+
+xsysSnmpErrorReqID OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The PDU Request ID of the errored request."
+    ::= { xsysSnmpErrorEntry 2 }
+
+xsysSnmpErrorMessage OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The textual message of the errored request."
+    ::= { xsysSnmpErrorEntry 3 }
+
+xsysDebugMode OBJECT-TYPE
+    SYNTAX      INTEGER { enabled(1), disabled(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The Administrative mode to control destructive debug commands."
+    DEFVAL      { disabled }
+    ::= { xsysGeneral 13 }
+
+xsysCreateSubInterface OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The name of the layer interface for which a new sub-interface
+         is to be created on. The layer interface must be the aggregate
+         for that layer. For example, a value of ipsec.1 creates
+         a sub-interface ipsec.1.1."
+    DEFVAL      { ''h }
+    ::= { xsysGeneral 14 }
+    
+xsysPreLoginBanner OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The text string displayed prior to logging into the system from
+	 either the directly connect consol, or telnet.  The standard 
+	 control characters can be used to customize the output."
+    DEFVAL      { ''h }
+    ::= { xsysGeneral 15 }
+    
+xsysMotherBoardSerialNumber OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The text string representing the serial number of the system's
+	 mother board"
+    ::= { xsysGeneral 16 }
+    
+-- ****************************************************************
+-- The configuration parameters group
+-- ****************************************************************
+
+xsysConfigParams    OBJECT IDENTIFIER ::= { xsysObjects 2 }
+
+xsysConfigLastWriteDateTime OBJECT-TYPE
+    SYNTAX      DateAndTimeForm
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of xsysDateTime the last time any configuration
+        parameter value was written to non-volatile memory. A
+        zero-length value indicates that no changes have been made and
+        that the system is running using all defaults. Note that this
+        parameter must be saved in non-volatile memory across
+        re-initializations of the system."
+    ::= { xsysConfigParams 1 }
+
+xsysConfigLastWriteSource OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The source address of the entity that made the last
+        configuration change to the system. The value 127.0.0.1 (the
+        loopback address) indicates the local console. This value must
+        also be saved in non-volatile memory across re-initializations
+        of the system."
+    ::= { xsysConfigParams 2 }
+
+--
+-- The Subsystem Table
+--
+
+xsysSubsystemTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysSubsystemEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table allows subsystems to be reset on an individual
+        basis (as opposed to as a group using the xsysResetControl
+        object)."
+    ::= { xsysConfigParams 3 }
+
+xsysSubsystemEntry OBJECT-TYPE
+    SYNTAX      XsysSubsystemEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A subsystem that's currently running."
+    INDEX       { xsysSubsystemName }
+    ::= { xsysSubsystemTable 1 }
+
+XsysSubsystemEntry ::= SEQUENCE {
+    xsysSubsystemName           DisplayString,
+    xsysSubsystemResetControl   INTEGER
+}
+
+xsysSubsystemName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..4))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name that uniquely identifies the subsystem."
+    ::= { xsysSubsystemEntry 1 }
+
+xsysSubsystemResetControl OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ready(1), 
+                    defaultConfig(2), 
+                    reset(3), 
+                    resetToDefaults(4),
+                    purgeRecords(5) 
+                }      
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Setting this object causes individual subsystems to take
+        action, as defined below.  Not all subsystems support all
+        of the actions available.  Valid actions for each subsystem
+        can be set without errors.  If an action is invalid for a 
+        subsystem, then an error PDU of 'BadValue' is returned.
+
+        o ready           - NoOp.  No action is taken  by the subsystem.
+
+        o defaultConfig   - All configuration records associated with the
+                   particular subsystem are deleted.  The subsystem
+                   will restore to default configuration if possible,
+                   or it continues to run using its runtime values.  
+                   On the next node boot, default records will be written
+                   to the configuration memory.
+
+        o reset           - The subsystem will be restarted using its
+                   existing configuration memory.
+
+        o resetToDefaults - All configuration records associated with
+                   the particular subsystem are deleted.  The subsystem
+                   is then restarted, causing default records to
+                   be written to configuration memory.
+
+        o purgeRecords    - All old configuration records associated
+                   with the particular subsystem are deleted. Some
+                   subsystems maintain old configuration records.
+                   This allows you to downgrade without losing configuration
+                   information.  These old configuration records consume
+                   configuration memory.  Purging old configuration
+                   records frees the associated configuration memory for
+                   current use.
+
+        When read, the value of the object is always 'ready(1)'."
+    DEFVAL      { ready }
+    ::= { xsysSubsystemEntry 2 }
+
+-- These are for debugging the current implementation of config storage and
+-- aren't necessarily useful for end users:
+
+xsysConfigFileStart OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION    
+        "The address of the start of the virtual config file."
+    ::= { xsysConfigParams 4 }
+
+xsysConfigEndOfFile OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION    
+        "The address of the end of the virtual config file."
+    ::= { xsysConfigParams 5 }
+
+xsysConfigEndOfData OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION    
+        "The address where data ends in the config file."
+    ::= { xsysConfigParams 6 }
+
+xsysConfigDataSize OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION    
+        "The sum of all data blocks in the config file."
+    ::= { xsysConfigParams 7 }
+
+xsysConfigFreeBlocksTotalBytes OBJECT-TYPE 
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION    
+        "The sum of all free blocks in the config file."
+    ::= { xsysConfigParams 8 }
+
+xsysConfigNumberConfigRecs OBJECT-TYPE 
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION    
+        "The number records in file counter."
+    ::= { xsysConfigParams 9 }
+
+xsysConfigPercentFull OBJECT-TYPE
+    SYNTAX      Gauge32 (0..100)
+    UNITS       "%"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The percentage of NVRAM that is full."
+    ::= { xsysConfigParams 10 }
+
+xsysConfigCompression OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    active(1),
+                    inactive(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Displays whether configuration file compression is
+         currently active or not.  The operational effects of compression
+         are transparent to the user."
+    DEFVAL      { inactive }
+    ::= { xsysConfigParams 11 }
+
+
+-- ****************************************************************
+-- The system events group
+-- ****************************************************************
+
+xsysEvents          OBJECT IDENTIFIER ::= { xsysObjects 4 }
+
+--
+-- The Event Table
+--
+
+xsysEventTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysEventEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of events in the order that they were generated. An
+        event may or may not be added to this (conceptual) table based
+        on whether it passes all of the input filter criteria
+        identified below. Also, when the table is retrieved via SNMP
+        operations, it may or may not include a specific event based
+        on the current output filter criteria."
+    ::= { xsysEvents 1 }
+
+xsysEventEntry OBJECT-TYPE
+    SYNTAX      XsysEventEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a single event."
+    INDEX       { xsysEventIndex }
+    ::= { xsysEventTable 1 }
+
+XsysEventEntry ::= SEQUENCE {
+    xsysEventIndex      Unsigned32,
+    xsysEventDateTime   DateAndTimeForm,
+    xsysEventSubsystem  DisplayString,
+    xsysEventLevel      INTEGER,
+    xsysEventId         Unsigned32,
+    xsysEventMsg        DisplayString
+}
+
+xsysEventIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Indicates the number of the event. Events are numbered
+        sequentially from 1 - n. A management station can keep track
+        of the last event it uploaded and periodically GET-NEXT from
+        there to determine if there have been any new events. This
+        means that, as events are removed from the table their indices
+        are not reused until the next reset to default configuration
+        (which loses all stored events). Also, the agent must store
+        the 'next available event number' value across
+        re-initializations of the system, resetting it to 1 only when
+        the configuration is reset to defaults."
+    ::= { xsysEventEntry 1 }
+
+xsysEventDateTime OBJECT-TYPE
+    SYNTAX      DateAndTimeForm
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The date and time when this event was generated."
+    ::= { xsysEventEntry 2 }
+
+xsysEventSubsystem OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..6))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The subsystem this event was generated by."
+    ::= { xsysEventEntry 3 }
+
+xsysEventLevel OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    debug(1),
+                    trace(2),
+                    info(3),
+                    warning(4),
+                    fatal(5)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The level of the event."
+    ::= { xsysEventEntry 4 }
+
+xsysEventId OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..255)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The identifier of the event. This id is unique within a
+        subsystem."
+    ::= { xsysEventEntry 5 }
+
+xsysEventMsg OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Textual message associated with the event."
+    ::= { xsysEventEntry 6 }
+
+xsysEventMaxTableSize OBJECT-TYPE
+    SYNTAX      Integer32 (200..5000)
+    UNITS       "number of events"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of events in the event log table. When
+        the number of events exceeds this value, newer events 
+        continue to be added and the oldest events are discarded.
+        Changing this object takes affect on the next system boot.
+
+        Note that the last 20 warning and fatal level events are
+        also stored to non-volatile memory and are relogged into 
+        event log upon the next system boot."
+    DEFVAL      { 200 }
+    ::= { xsysEvents 2 }
+
+-- 
+-- Filter information
+-- 
+
+xsysEventInFilterLevel OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    debug(0),
+                    trace(1),
+                    info(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The current event input filter level. The user can choose to
+        not log events of the lower levels, but they cannot filter out
+        warning and fatal events. By default, debug and trace events
+        are filtered on input."
+--    DEFVAL      { { debug, trace } }
+    ::= { xsysEvents 3 }
+
+xsysEventOutFilterLevel OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    debug(0),
+                    trace(1),
+                    info(2),
+                    warning(3),
+                    fatal(4)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The current event output filter level. The output filter
+        effects which entries are returned when the table is dumped
+        (e.g., via a GET-NEXT sweep). By default, no events are
+        filtered on output."
+--    DEFVAL      { { } } 
+    ::= { xsysEvents 4 }
+
+xsysEventOutFilterDateTime OBJECT-TYPE
+    SYNTAX      DateAndTimeForm
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The current event output filter level based on
+        date/time. Only events with xsysEventDateTime at or after this
+        date are returned. By default, events from all date/times are
+        returned."
+    DEFVAL      { "00/00/0000 00:00:00:00" }
+    ::= { xsysEvents 5 }
+
+--
+-- The Subsystem Filter Table
+--
+
+xsysEventSubsystemFilterTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysEventSubsystemFilterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of filter information by subsystem."
+    ::= { xsysEvents 6 }
+
+xsysEventSubsystemFilterEntry OBJECT-TYPE
+    SYNTAX      XsysEventSubsystemFilterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Filter information for a particular subsystem."
+    INDEX       { xsysEventSubsystemFilterSubsystem }
+    ::= { xsysEventSubsystemFilterTable 1 }
+
+XsysEventSubsystemFilterEntry ::= SEQUENCE {
+    xsysEventSubsystemFilterSubsystem   DisplayString,
+    xsysEventSubsystemFilterDirection   INTEGER
+}
+
+xsysEventSubsystemFilterSubsystem OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..4))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The subsystem this filter applies to."
+    ::= { xsysEventSubsystemFilterEntry 1 }
+
+xsysEventSubsystemFilterDirection OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(1),
+                    input(2),
+                    output(3),
+                    inputOutput(4)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The direction(s) to filter events from this subsystem, if
+        any. By default, events from a subsystem are not filtered in
+        either direction."
+    DEFVAL      { none }
+    ::= { xsysEventSubsystemFilterEntry 2 }
+
+--
+-- The Event Id Filter Table
+--
+
+xsysEventIdFilterTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysEventIdFilterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of filter information for each subsystem/id
+        combination."
+    ::= { xsysEvents 7 }
+
+xsysEventIdFilterEntry OBJECT-TYPE
+    SYNTAX      XsysEventIdFilterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information for a particular subsystem/id combination."
+    INDEX       { xsysEventSubsystemFilterSubsystem, xsysEventIdFilterId }
+    ::= { xsysEventIdFilterTable 1 } 
+
+XsysEventIdFilterEntry ::= SEQUENCE {
+    xsysEventIdFilterId         Unsigned32,
+    xsysEventIdFilterName       DisplayString,
+    xsysEventIdFilterMessage    DisplayString,
+    xsysEventIdFilterDirection  INTEGER
+}
+
+xsysEventIdFilterId OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..255)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The identifier of the event this filter information is for."
+    ::= { xsysEventIdFilterEntry 1 }
+    
+xsysEventIdFilterName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..16))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The textual name of the event."
+    ::= { xsysEventIdFilterEntry 2 }
+ 
+xsysEventIdFilterMessage OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..32))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The descriptive message of the event"
+    ::= { xsysEventIdFilterEntry 3 }
+ 
+xsysEventIdFilterDirection OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    none(1),
+                    input(2),
+                    output(3),
+                    inputOutput(4)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The direction(s) in which to filter this event id. Note that
+        the filter information per event id is only looked at if the
+        subsystem as a whole is not being filtered. By default,
+        individual event ids are not filtered."
+    DEFVAL      { none }
+    ::= { xsysEventIdFilterEntry 4 }
+    
+xsysEventsClearAllControl OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ready(1),
+                    execute(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Setting this object to 'execute(2)' removes all entries from
+        the xsysEventTable. When read, this object always returns the
+        value 'ready(1)'."
+    DEFVAL      { ready }
+    ::= { xsysEvents 8 }
+
+xsysEventsAsTraps OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object is used to control whether Xedia system events
+        are sent as SNMP traps. Generally, it is not appropriate to
+        send all events as traps since this would consume a fairly
+        large amount of network bandwidth. However, in the case where
+        the events may be useful for debugging purposes, this object
+        can be changed to 'true(1)'."
+    DEFVAL      { false }
+    ::= { xsysEvents 9 }
+
+xsysEventDisplay OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Normally, all events that pass the input filter criteria are
+        both logged and written out to the system console. This can be
+        a problem if the console is being used interactively, for
+        example to configure the system. Therefore, this object can be
+        set to 'false(2)' to disable printing of the events as they
+        occur to the display. Instead, the user can display the event
+        log using explicit commands."
+    DEFVAL      { true }
+    ::= { xsysEvents 10 } 
+
+xsysEventsAsSyslogMessages OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object is used to control whether Xedia system events are
+        sent as UNIX syslog messages. Generally, it is not appropriate 
+        to send all events as syslog messages since this would consume 
+        a fairly large amount of network bandwidth and system resources,
+        such as CPU processing. However, in the case where it is desirable
+        to archive system events to a host with a hard drive, or tools
+        that can manipulate the log output, this object can be changed
+        to 'true(1)'."
+    DEFVAL      { false }
+    ::= { xsysEvents 11 } 
+
+xsysEventSyslogRemoteServer OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..255))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+    " PTS FIX THIS - NEEDS DESCRIPTION HERE
+      The address(es) of the remote host where a syslogd syslog daemon is 
+      running and awaits messages from this AccessPoint. Maximum number of
+      remote servers is limited to 5.
+    "
+--    DEFVAL      { { debug, trace } }
+    ::= { xsysEvents 13 }
+
+xsysEventNvRamMaxTableSize OBJECT-TYPE
+    SYNTAX      Integer32 (20..1000)
+    UNITS       "number of events"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of warning and fatal level events
+        could be stored to non-volatile memory and are relogged into 
+        event log upon the next system boot.
+
+        When the number of events exceeds this value, newer events 
+        continue to be added and the oldest events are discarded.
+        Changing this object takes affect on the next system boot."
+    DEFVAL      { 50 }
+    ::= { xsysEvents 14 }
+
+
+-- ****************************************************************
+-- The hardware configuration group
+-- ****************************************************************
+
+xsysHardware        OBJECT IDENTIFIER ::= { xsysObjects 5 }
+
+xsysProcessorDescr OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A textual description of the (main) processor for the
+        system. This should include the manufacturer and the
+        revision/clock speed."
+    ::= { xsysHardware 1 }
+
+xsysPowerSupplyType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    internal(1),
+                    external(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The type of the power supply."
+    ::= { xsysHardware 2 }
+
+xsysCpuUtilization OBJECT-TYPE
+    SYNTAX      Gauge32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The average, over some implementation-defined sampling
+        period, of the percentage of time that the system's (main)
+        processor was not idle."
+    ::= { xsysHardware 3 }
+
+--
+-- The PCI Device Table
+--
+
+xsysPciTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysPciEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of PCI devices in the system."
+    ::= { xsysHardware 4 }
+
+xsysPciEntry OBJECT-TYPE
+    SYNTAX      XsysPciEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a single PCI device in the system."
+    INDEX       { xsysPciDeviceIndex }
+    ::= { xsysPciTable 1 }
+
+XsysPciEntry ::= SEQUENCE {
+    xsysPciDeviceIndex      Unsigned32,
+    xsysPciVendorId         Unsigned32,
+    xsysPciDeviceId         Unsigned32,
+    xsysPciRevisionId       Unsigned32,
+    xsysPciBaseClass        INTEGER,
+    xsysPciSubClass         Unsigned32,
+    xsysPciStatus           BIT STRING,
+    xsysPciIfIndex          InterfaceIndexOrZero,
+    xsysPciFatalBusErrors   Counter32,
+    xsysPciMasterAborts     Counter32,
+    xsysPciParityErrors     Counter32,
+    xsysPciTargetAborts     Counter32
+}
+
+xsysPciDeviceIndex OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..65535)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A arbitrary unique number to identify the PCI device in the
+        system."
+    ::= { xsysPciEntry 1 }
+    
+xsysPciVendorId OBJECT-TYPE  
+    SYNTAX      Unsigned32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The vendor (manufacturer) of the device. Values that are
+        relevent to the Xedia Velociraptor include:
+
+            4113 (0x1011) - DEC
+            0000 (0x0000) - Darkroom Technology ??
+            0000 (0x0000) - SDL ??
+            4523 (0x11ab) - Galileo Technology"
+    REFERENCE
+        "PCI Local Bus Specification, Revision 2.1, Section
+        6.2.1. Device Identification, and
+        http://www.pcisig.com/siginfo/vendors.html"
+    ::= { xsysPciEntry 2 } 
+
+xsysPciDeviceId OBJECT-TYPE  
+    SYNTAX      Unsigned32 (0..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A vendor-defined identifier for the particular device."
+    REFERENCE
+        "PCI Local Bus Specification, Revision 2.1, Section
+        6.2.1. Device Identification"
+    ::= { xsysPciEntry 3 }
+
+xsysPciRevisionId OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..256)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "A revision number of the device, assigned by the vendor."
+    REFERENCE
+        "PCI Local Bus Specification, Revision 2.1, Section
+        6.2.1. Device Identification"
+    ::= { xsysPciEntry 4 }
+
+xsysPciBaseClass OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    preRev2Device(0),
+                    massStorageController(1),
+                    networkController(2),
+                    displayController(3),
+                    multimediaDevice(4),
+                    memoryController(5),
+                    bridgeDevice(6),
+                    simpleCommController(7),
+                    baseSystemPeripheral(8),
+                    inputDevice(9),
+                    dockingStation(10),
+                    processor(11),
+                    serialBusController(12),
+                    otherDevice(255)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The type (class) of PCI device."
+    REFERENCE
+        "PCI Local Bus Specification, Revision 2.1, Section
+        6.2.1. Device Identification"
+    ::= { xsysPciEntry 5 }
+
+xsysPciSubClass OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..256)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The sub-type (or sub-class) of the PCI device. This value can
+        only be interpreted relative to the xsysPciBaseClass
+        value. Interesting device sub-classes relevent to Xedia's
+        Velociraptor:
+
+        Class networkController:
+            ethernetController(0),
+            tokenRingController(1),
+            fddiController(2),
+            atmController(3),
+            otherNetworkController(4)
+
+        Class bridgeDevice:
+            hostPciBridge(0),
+            pciIsaBridge(1),
+            pciEisaBridge(2),
+            pciMicroChannelBridge(3),
+            pciPciBridge(4),
+            pciPcmciaBridge(5),
+            pciNuBusBridge(6),
+            pciCardBusBridge(7),
+            otherBridgeDevice(128)"
+    REFERENCE
+        "PCI Local Bus Specification, Revision 2.1, Appendix D Class
+        Codes."
+    ::= { xsysPciEntry 6 }
+
+xsysPciStatus OBJECT-TYPE  
+    SYNTAX      BIT STRING {
+                    reserved0(0),
+                    reserved1(1),
+                    reserved2(2),
+                    reserved3(3),
+                    reserved4(4),
+                    mhz66Capable(5),
+                    udfSupported(6),
+                    fastBackToBackCapable(7),
+                    dataParityErrorDetected(8),
+                    devselTiming1(9),
+                    devselTiming2(10),
+                    signaledTargetAbort(11),
+                    receivedTargetAbort(12),
+                    receivedMasterAbort(13),
+                    signaledSystemError(14),
+                    detectedParityError(15)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This is the PCI status register. Most of these bits are
+        totally uninteresting to the end-user but are included for
+        debugging purposes. For more detail see Table 6-3 'Status
+        Register Bits' in the reference below."
+    REFERENCE 
+        "PCI Local Bus Specification, Revision 2.1, Section
+        6.2.3. Device Status"
+    ::= { xsysPciEntry 7 }
+
+xsysPciIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the associated interface or 0 if the PCI
+        device is not interface-related."
+    ::= { xsysPciEntry 8 }
+
+xsysPciFatalBusErrors OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of fatal bus errors that were detected by
+        this device. This will be a sum of xsysPciMasterAborts,
+        xsysPciParityErrors, and xsysPciTargetAborts"
+    ::= { xsysPciEntry 9 }
+    
+xsysPciMasterAborts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number master abort errors that were detected by
+        this device."
+    ::= { xsysPciEntry 10 }
+
+xsysPciParityErrors OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of parity errors that were detected by this
+        device."
+    ::= { xsysPciEntry 11 }
+
+xsysPciTargetAborts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of target abort errors that were detected by
+        this device."
+    ::= { xsysPciEntry 12 }
+
+-- ****************************************************************
+-- The serial port configuration group
+-- ****************************************************************
+
+xsysSerial          OBJECT IDENTIFIER ::= { xsysObjects 6 }
+
+--
+-- The Serial Port Table
+--
+
+xsysSerialConfigTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysSerialConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains configuration information for the serial
+        ports of the system."
+    ::= { xsysSerial 1 }
+
+xsysSerialConfigEntry OBJECT-TYPE
+    SYNTAX      XsysSerialConfigEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Configuration information for one of the system's serial
+        ports."
+    INDEX       { xsysSerialPortNumber }
+    ::= { xsysSerialConfigTable 1 }
+
+XsysSerialConfigEntry ::= SEQUENCE {
+    xsysSerialPortNumber    Unsigned32,
+    xsysSerialBaudRate      INTEGER,
+    xsysSerialDataBits      Unsigned32,
+    xsysSerialParity        INTEGER,
+    xsysSerialStopBits      INTEGER,
+    xsysSerialFlowControl   INTEGER,
+    xsysSerialTimeout       Unsigned32
+}
+
+xsysSerialPortNumber OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..256)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The physical port number of the serial port."
+    ::= { xsysSerialConfigEntry 1 }
+
+xsysSerialBaudRate OBJECT-TYPE      
+    SYNTAX      INTEGER {
+                    bps110(110),
+                    bps300(300),
+                    bps1200(1200),
+                    bps2400(2400),
+                    bps4800(4800),
+                    bps9600(9600),
+                    bps19200(19200)
+--                    bps38400(38400),
+--                    bps57600(57600),
+--                    bps115200(115200),
+--                    bps230400(230400),
+--                    bps460800(460800),
+--                    bps921600(921600)
+                }
+    UNITS       "bits per second"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The baud rate in bits per second for this serial port."
+    DEFVAL      { bps9600 }
+    ::= { xsysSerialConfigEntry 2 }
+
+xsysSerialDataBits OBJECT-TYPE
+    SYNTAX      Unsigned32 (4..8)
+    UNITS       "bits"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of data bits for this serial port."
+    DEFVAL      { 8 }
+    ::= { xsysSerialConfigEntry 3 }
+
+xsysSerialParity OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    even(1),
+                    odd(2),
+                    none(3),
+                    mark(4),
+                    space(5)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The type of parity supported on this serial port."
+    DEFVAL      { none }
+    ::= { xsysSerialConfigEntry 4 }
+
+xsysSerialStopBits OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    one(1),
+                    two(2),
+                    onePointFive(3)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of stop bits on this serial port."
+    DEFVAL      { one }
+    ::= { xsysSerialConfigEntry 5 }
+
+xsysSerialFlowControl OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    xonXoff(1),
+                    hardware(2),
+                    none(3)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The type of flow control used on this serial port."
+    DEFVAL      { none }
+    ::= { xsysSerialConfigEntry 6 }
+
+xsysSerialTimeout OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..3600)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of seconds of inactivity to allow before timing
+        out the session using the serial port. The value 0 means no
+        timeout."
+    DEFVAL      { 600 } -- ten minutes
+    ::= { xsysSerialConfigEntry 7 }
+    
+-- ****************************************************************
+-- The interfaces group
+-- ****************************************************************
+
+xsysInterfaces      OBJECT IDENTIFIER ::= { xsysObjects 7 }
+
+--
+-- The Interface Name to Index Mapping Table
+--
+
+xsysIfNameIndexTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysIfNameIndexEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of ifName to ifIndex mappings. This table makes it
+        easier for the manager to get the ifIndex using the textual
+        name that the user interfaces uses to identify the interface
+        (e.g., eth.1, fr.1)"
+    ::= { xsysInterfaces 1 }
+
+xsysIfNameIndexEntry OBJECT-TYPE
+    SYNTAX      XsysIfNameIndexEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A single ifName to ifIndex mapping."
+    INDEX       { xsysIfName }
+    ::= { xsysIfNameIndexTable 1 }
+
+XsysIfNameIndexEntry ::= SEQUENCE {
+    xsysIfName      DisplayString,
+    xsysIfIndex     InterfaceIndex
+}
+
+xsysIfName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The value of ifName for the ifEntry with the same ifIndex as
+        xsysIfIndex."
+    ::= { xsysIfNameIndexEntry 1 }
+
+xsysIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of ifIndex for the interface this entry is
+        associated with."
+    ::= { xsysIfNameIndexEntry 2 }
+
+--
+-- The Interface Stack Display Table
+--
+
+xsysIfStackDisplayTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysIfStackDisplayEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains a read-only display of the interface
+        stack in indented format. The first row will correspond to one
+        of the system's physical interfaces. The following rows will
+        be in order of which interfaces are stacked on top of which
+        with blank space at the beginning of the
+        xsysIfStackDisplayString values to show the hierarchy. (Note
+        that several rows may be indented to the same level if they
+        are stacked on top of the same lower-layer interface.) When
+        the top of one stack is reached, the next physical interface
+        will start at the left again."
+    ::= { xsysInterfaces 2 }
+
+xsysIfStackDisplayEntry OBJECT-TYPE
+    SYNTAX      XsysIfStackDisplayEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about one entry in the interface stack."
+    INDEX       { xsysIfStackDisplayIndex }
+    ::= { xsysIfStackDisplayTable 1 }
+
+XsysIfStackDisplayEntry ::= SEQUENCE {
+    xsysIfStackDisplayIndex     Integer32,
+    xsysIfStackDisplayString    DisplayString
+}
+
+xsysIfStackDisplayIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The row number in the table."
+    ::= { xsysIfStackDisplayEntry 1 }
+
+xsysIfStackDisplayString OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The descriptive string for the entry in the stack table. This
+        string will contain (at least) the ifName of the corresponding
+        interface. The string will start with blank space in order to
+        indent the text so that the resulting table presents an
+        outline view of the interface stack."
+    ::= { xsysIfStackDisplayEntry 2 }
+    
+-- ****************************************************************
+-- The HTTPD (Web server) group
+-- ****************************************************************
+
+xsysHttpd           OBJECT IDENTIFIER ::= { xsysObjects 8 }
+
+xsysHttpdAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The desired state of the web server running on the system. By
+        default, the web server is running but the manager can disable
+        it using this control in order to save memory and/or for
+        security reasons.
+ 
+        This object is implementation-dependent and may require a node
+        boot to change the value of xsysHttpdOperStatus."
+    DEFVAL      { up }
+    ::= { xsysHttpd 1 }
+
+xsysHttpdOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The actual state of the web server."
+    ::= { xsysHttpd 2 }
+
+xsysHttpdNmsWebServer OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The domain name or IP address of the web server that will be
+        referenced in the pages generated by the embedded HTTPD for
+        images, documentation, and other space-consuming data."
+    DEFVAL      { "www.xedia.com" }
+    ::= { xsysHttpd 3 }
+
+xsysHttpdNmsWebServerPort OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The TCP port being used by the web server identified by
+        xsysHttpdNmsWebServer."
+    DEFVAL      { 80 }
+    ::= { xsysHttpd 4 }
+
+-- ****************************************************************
+-- The Telnet server group
+-- ****************************************************************
+
+xsysTelnetd         OBJECT IDENTIFIER ::= { xsysObjects 9 }
+
+xsysTelnetdAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The desired state of the Telnet server running on the
+        system. By default, the Telnet server is running but the
+        manager can disable it using this control in order to save
+        memory and/or for security reasons.
+ 
+        This object is implementation-dependent and may require a node
+        boot to change the value of xsysTelnetOperStatus."
+    DEFVAL      { up }
+    ::= { xsysTelnetd 1 }
+
+xsysTelnetdOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The actual state of the Telnet server."
+    ::= { xsysTelnetd 2 }
+
+-- ****************************************************************
+-- The Domain Name Service (DNS) Stub Resolver Group
+-- ****************************************************************
+
+xsysDns         OBJECT IDENTIFIER ::= { xsysObjects 10 }
+
+xsysDnsDomain OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The domain name suffix used when fully qualified domain
+        names are not specified.
+
+        When no domain suffix is specified, you must use fully
+        qualified domain names. When a domain suffix is specified
+        you may use the host or node name portion of the domain
+        name when referring to domain names within the domain 
+        sub-tree (suffix) specified by this object.
+ 
+        For example, setting this object to `xedia.com' allows
+        you to refer to the node `barbados.xedia.com' as
+        `barbados'.
+
+        For those familiar with the UNIX operating system, this
+        object is equivalent to the `domain' keyword in the
+        /etc/resolv.conf file. For example, setting this object
+        to `xedia.com' has the same affect as specifying `domain
+        xedia.com' in your /etc/resolv.conf file.
+
+        Values of this object must adhere to the rules for
+        domain names specified in RFC 1034 and RFC 1035."
+    DEFVAL      { "" }
+    ::= { xsysDns 1 }
+
+xsysDnsAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The desired state of the DNS resolver. The DNS resolver
+        is operational by default, but is unable to resolve names 
+        or addresses until at least one name server is defined.
+
+        The DNS resolver can therefore be removed from operation
+        by removing all configured name servers, or by setting this
+        object to `down'."
+    DEFVAL      { up }
+    ::= { xsysDns 2 }
+
+xsysDnsOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2),
+                    noNameServersDefined(3)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The actual state of the DNS resolver. `up' indicates that
+        the resolver is able to resolve names and addresses. `down'
+        indicates that the resolver is administratively disabled
+        from resolving names. `noNameServerDefined' indicates that
+        the resolver is up, but is unable to resolve names or 
+        addresses because no name servers have been configured."
+    ::= { xsysDns 3 }
+
+
+--
+-- DNS Resolver Counters.  Although these counters are supported in the
+-- standard DNS Resolver MIB (RFC 1612) they are duplicated here
+-- so as to be easier to access.
+--
+
+xsysDnsQueries OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of queries sent by the resolver."
+    ::= { xsysDns 4 }
+
+xsysDnsResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of responses returned by name servers."
+    ::= { xsysDns 5 }
+
+
+xsysDnsNoErrorResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of responses returned by name servers which
+        contained response codes indicating no error."
+    ::= { xsysDns 6 }
+
+xsysDnsFormattedIllegallyResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of responses returned by name servers which
+        contained response codes indicating that the question
+        was formatted illegally."
+    ::= { xsysDns 7 }
+
+xsysDnsServerFailedResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of responses returned by name servers which
+        contained response codes indicating that the server 
+        failed to respond."
+    ::= { xsysDns 8 }
+
+xsysDnsNameDoesNotExistResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of responses returned by name servers which
+        contained response codes indicating that the requested
+        name does not exist."
+    ::= { xsysDns 9 }
+
+xsysDnsServerDoesNotSupportResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of responses returned by name servers which
+        contained response codes indicating that the nameserver
+        does not support the requested operation."
+    ::= { xsysDns 10 }
+
+xsysDnsServerRefusedToAnswerResponses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of responses returned by name servers which
+        contained response codes indicating that the name server
+        refused to answer."
+    ::= { xsysDns 11 }
+
+
+--
+-- DNS Resolver Name Server Table
+-- This table differs from the standard DNS Resolver MIB's Safety Belt
+-- Table in that it's instanced more simply, making it easier to use.
+--
+
+xsysDnsNameServerTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysDnsNameServerEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table of safety belt information used by the resolver
+        when it hasn't got any better idea of where to send a
+        query, such as when the resolver is booting or is a stub
+        resolver.
+
+        Entries created in or deleted from the standard Resolver 
+        MIB (RFC 1612) dnsResConfigSbeltTable are also created in 
+        or deteted from this table. When creating entries in the
+        dnsResConfigSbeltTable, default values are used for the
+        columns which do not exist in this table. Similarly, 
+        modifications to this table are also reflected in the 
+        dnsResConfigSbeltTable.
+
+        The table below shows the relationships between the two
+        tables.
+
+        dnsResConfigSbeltTable         xsysDnsNameServerTable
+        ==========================     ========================== 
+        INDEX                          INDEX  
+          dnsResConfigSbeltAddr          xsysDnsNameServerAddr
+          dnsResConfigSbeltSubTree
+          dnsResConfigSbeltClass
+        dnsResConfigSbeltAddr          xsysDnsNameServerAddr
+        dnsResConfigSbeltName          DEF_VAL ''
+        dnsResConfigSbeltRecursion     DEF_VAL recursive(2)
+        dnsResConfigSbeltPref          xsysDnsNameServerPref 
+        dnsResConfigSbeltSubTree       DEF_VAL ''
+        dnsResConfigSbeltClass         DEF_VAL 1 (IN - Internet)
+        dnsResConfigSbeltStatus        xsysDnsNameServerStatus
+        "
+    ::= { xsysDns 12 }
+
+xsysDnsNameServerEntry OBJECT-TYPE
+    SYNTAX      XsysDnsNameServerEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An entry in the resolver's Sbelt table.
+        Rows may be created or deleted at any time by the DNS
+        resolver and by SNMP SET requests.  Whether the values
+        changed via SNMP are saved in stable storage across
+        `reset' operations is implementation-specific."
+    INDEX       { xsysDnsNameServerAddr }
+    ::= { xsysDnsNameServerTable 1 }
+
+XsysDnsNameServerEntry ::=
+    SEQUENCE {
+        xsysDnsNameServerAddr
+            IpAddress,
+        xsysDnsNameServerPref
+            INTEGER,
+        xsysDnsNameServerStatus
+            RowStatus
+    }
+
+xsysDnsNameServerAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the Sbelt name server identified by
+        this row of the table."
+    ::= { xsysDnsNameServerEntry 1 }
+
+xsysDnsNameServerPref OBJECT-TYPE
+    SYNTAX      INTEGER (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This value identifies the preference for the name server
+        identified in this row of the table.  The lower the
+        value, the more desirable the resolver considers this
+        server."
+    DEFVAL      { 0 }
+    ::= { xsysDnsNameServerEntry 2 }
+
+xsysDnsNameServerStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Row status column for this row of the Name Server table."
+    ::= { xsysDnsNameServerEntry 3 }
+
+
+--
+-- Resolver Cache Table
+-- This table differs from the standard DNS Resolver MIB's Cache Table
+-- in that it's instanced more simply, making it easier to use. In 
+-- addition, the data is formatted as a DisplayString rather than an
+-- OCTET STRING, making is easier to interpret.
+--
+
+xsysDnsCacheTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsysDnsCacheEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains information about all the resource
+        records currently in the resolver's cache.
+
+        Entries created in or deleted from the standard Resolver 
+        MIB (RFC 1612) dnsResCacheRRTable are also created in 
+        or deteted from this table."
+    ::= { xsysDns 13 }
+
+xsysDnsCacheEntry OBJECT-TYPE
+    SYNTAX      XsysDnsCacheEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An entry in the resolvers's cache.  Rows may be created
+        only by the resolver.  SNMP SET requests may be used to
+        delete rows."
+    INDEX     { xsysDnsCacheName,
+                xsysDnsCacheClass,
+                xsysDnsCacheType,
+                xsysDnsCacheIndex }
+    ::= { xsysDnsCacheTable 1 }
+
+XsysDnsCacheEntry ::=
+    SEQUENCE {
+        xsysDnsCacheName
+            DisplayString,
+        xsysDnsCacheClass
+            INTEGER,
+        xsysDnsCacheType
+            INTEGER,
+        xsysDnsCacheIndex
+            Integer32,
+        xsysDnsCacheTTL
+            DisplayString,
+        xsysDnsCacheElapsedTTL
+            DisplayString,
+        xsysDnsCacheSource
+            IpAddress,
+        xsysDnsCacheData
+            DisplayString,
+        xsysDnsCacheStatus
+            RowStatus
+    }
+
+xsysDnsCacheName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Owner name of the Resource Record in the cache which is
+        identified in this row of the table.  As described in
+        RFC-1034, the owner of the record is the domain name
+        were the RR is found."
+    REFERENCE
+       "RFC-1034 section 3.6."
+    ::= { xsysDnsCacheEntry 1 }
+
+xsysDnsCacheClass OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    internet(1)
+                }
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "DNS class of the Resource Record in the cache which is
+        identified in this row of the table. Only class `internet' 
+        is supported at this time."
+    ::= { xsysDnsCacheEntry 2 }
+
+xsysDnsCacheType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ipV4(1),    -- IP Version 4 address
+                    cname(5),   -- Cononical name.
+                    ipV6(28)    -- IP Version 6 address
+                }
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "DNS type of the Resource Record in the cache which is
+        identified in this row of the table."
+    ::= { xsysDnsCacheEntry 3 }
+
+xsysDnsCacheIndex OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A value which makes entries in the table unique when the
+        other index values (xsysDnsCacheName,
+        xsysDnsCacheClass, and xsysDnsCacheType) do not
+        provide a unique index."
+    ::= { xsysDnsCacheEntry 4 }
+
+xsysDnsCacheTTL OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "Time-To-Live of RR in DNS cache.  This is the initial
+       TTL value which was received with the RR when it was
+       originally received, subject to the maximum limit value
+       specified in dnsResCacheMaxTTL."
+    ::= { xsysDnsCacheEntry 5 }
+
+xsysDnsCacheElapsedTTL OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Elapsed seconds since RR was received."
+    ::= { xsysDnsCacheEntry 6 }
+
+xsysDnsCacheSource OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Host from which RR was received, 0.0.0.0 if unknown."
+    ::= { xsysDnsCacheEntry 7 }
+
+xsysDnsCacheData OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "RDATA portion of a cached RR.  The value is in the
+        format defined for the particular DNS class and type of
+        the resource record."
+    ::= { xsysDnsCacheEntry 8 }
+
+xsysDnsCacheStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+       "Status column for the resolver cache table.  Since only
+       the agent (DNS resolver) creates rows in this table, the
+       only values that a manager may write to this variable
+       are active(1) and destroy(6)."
+    ::= { xsysDnsCacheEntry 9 }
+
+
+-- ****************************************************************
+-- Notifications
+-- ****************************************************************
+
+xsysNotificationPrefix OBJECT IDENTIFIER ::= { xsysNotifications 0 }
+
+xsysSystemEvent NOTIFICATION-TYPE
+    OBJECTS {
+        xsysEventDateTime,
+        xsysEventSubsystem,
+        xsysEventLevel,
+        xsysEventId,
+        xsysEventMsg
+    }
+    STATUS      current
+    DESCRIPTION
+        "An SNMP trap definition for carrying Xedia system
+        events. Some events have specific SNMP traps, such as linkUp
+        or linkDown traps. (These are generally events with levels of
+        info(3), warning(4), or fatal(5).) The events which do not
+        have specific SNMP traps defined for them will be sent using
+        this NOTIFICATION-TYPE if xsysEventsAsTraps is set to
+        'true(1)'."
+    ::= { xsysNotificationPrefix 1 }
+    
+-- ****************************************************************
+-- Conformance Information
+-- ****************************************************************
+
+xsysCompliances OBJECT IDENTIFIER ::= { xsysConformance 1 }
+xsysGroups      OBJECT IDENTIFIER ::= { xsysConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+xsysCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for all agents that support this
+        MIB. A compliant agent implements all objects defined in this
+        MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS {
+        xsysAllGroup
+    }
+    ::= { xsysCompliances 1 }
+
+--
+-- Object Groups
+--
+
+xsysAllGroup OBJECT-GROUP
+    OBJECTS {
+        xsysDateTime,
+        xsysOperStatus,
+        xsysResetControl,
+        xsysNextBootDiagsLevel,
+        xsysBootDiagsCode,
+        xsysLastBootType,
+        xsysNumResets,
+        xsysDisableLoginPrompt,
+        xsysCompactFlash,
+        xsysRunningImageName,
+        xsysRunningImageVersion,
+        xsysRunningImageBuildDate,
+        xsysBootImageBootPriority,
+        xsysBootImageSrc,
+        xsysBootImageSrcName,
+        xsysBootImageSrcType,
+        xsysBootImageDestName,
+        xsysBootImageServerAddr,
+        xsysBootImageLocalAddr,
+        xsysBootImageMask,
+        xsysBootImageDefaultRouter,
+        xsysBootImageSlot,
+        xsysBootImagePort,
+        xsysBootImageOperStatus,
+        xsysBootImageRowStatus,
+        xsysTransferSrc,
+        xsysTransferSrcName,
+        xsysTransferDest,
+        xsysTransferDestName,
+        xsysTransferServerAddr,
+        xsysTransferOperStatus,
+        xsysTransferOperProgress,
+        xsysTransferAction,
+        xsysTransferRowStatus,
+        xsysStorageDescr,
+        xsysStorageAllocationUnits,
+        xsysStorageSize,
+        xsysStorageUsed,
+        xsysStorageAllocationFailures,
+        xsysStorageBytesTotal,
+        xsysStorageBytesUsed,
+        xsysStorageBytesAvailable,
+        xsysFileName,
+        xsysFileType,
+        xsysFileBuildName,
+        xsysFileBuildDate,
+        xsysFileBuildVersion,
+        xsysFileSrcName,
+        xsysFileSrc,
+        xsysFileHost,
+        xsysFileDate,
+        xsysFileSize,
+        xsysFileIsActive,
+        xsysFileRowStatus,
+        xsysWatchdogUpdate,
+        xsysDateTimeEpochSeconds,
+        xsysConfigLastWriteDateTime,
+        xsysConfigLastWriteSource,
+        xsysSubsystemResetControl,
+        xsysConfigFileStart,
+        xsysConfigEndOfFile,
+        xsysConfigEndOfData,
+        xsysConfigDataSize,
+        xsysConfigFreeBlocksTotalBytes, 
+        xsysConfigNumberConfigRecs, 
+        xsysConfigPercentFull,
+        xsysConfigCompression,
+        xsysEventDateTime,
+        xsysEventSubsystem,
+        xsysEventLevel,
+        xsysEventId,
+        xsysEventMsg,
+        xsysEventMaxTableSize,
+        xsysEventInFilterLevel,
+        xsysEventOutFilterLevel,
+        xsysEventOutFilterDateTime,
+        xsysEventSubsystemFilterDirection,
+        xsysEventIdFilterName,
+        xsysEventIdFilterMessage,
+        xsysEventIdFilterDirection,
+        xsysEventsClearAllControl,
+        xsysEventsAsTraps,
+        xsysEventDisplay,
+        xsysEventsAsSyslogMessages,
+        xsysEventSyslogRemoteServer,
+        xsysEventNvRamMaxTableSize,
+        xsysProcessorDescr,
+        xsysPowerSupplyType,
+        xsysCpuUtilization,
+        xsysPciVendorId,  
+        xsysPciDeviceId,  
+        xsysPciRevisionId,
+        xsysPciBaseClass,
+        xsysPciSubClass,
+        xsysPciStatus,  
+        xsysPciIfIndex,
+        xsysPciFatalBusErrors,
+        xsysPciMasterAborts,
+        xsysPciParityErrors,
+        xsysPciTargetAborts,
+        xsysSerialBaudRate,      
+        xsysSerialDataBits,
+        xsysSerialParity,
+        xsysSerialStopBits,
+        xsysSerialFlowControl,
+        xsysSerialTimeout,
+        xsysIfIndex,
+        xsysIfStackDisplayString,
+        xsysHttpdAdminStatus,
+        xsysHttpdOperStatus,
+        xsysHttpdNmsWebServer,
+        xsysHttpdNmsWebServerPort,
+        xsysTelnetdAdminStatus,
+        xsysTelnetdOperStatus,
+        xsysDnsDomain,
+        xsysDnsAdminStatus,
+        xsysDnsOperStatus,
+        xsysDnsQueries,
+        xsysDnsResponses,
+        xsysDnsNoErrorResponses,
+        xsysDnsFormattedIllegallyResponses,
+        xsysDnsServerFailedResponses,
+        xsysDnsNameDoesNotExistResponses,
+        xsysDnsServerDoesNotSupportResponses,
+        xsysDnsServerRefusedToAnswerResponses,
+        xsysDnsNameServerPref,
+        xsysDnsNameServerStatus,
+        xsysDnsCacheTTL,
+        xsysDnsCacheElapsedTTL,
+        xsysDnsCacheSource,
+        xsysDnsCacheData,
+        xsysDnsCacheStatus,
+        xsysSnmpErrorLast,
+        xsysSnmpErrorMessage,
+	xsysDebugMode,
+	xsysPreLoginBanner
+    }
+    STATUS      current
+    DESCRIPTION
+        "The set of all accessible objects in this MIB."
+    ::= { xsysGroups 1 }
+
+END

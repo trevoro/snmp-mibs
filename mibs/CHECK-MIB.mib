@@ -1,0 +1,1028 @@
+-- extracted from draft-nunzi-check-mib-00.txt
+-- at Tue Dec 23 06:16:17 2003
+
+   CHECK-MIB DEFINITIONS ::= BEGIN
+
+   IMPORTS
+       MODULE-IDENTITY, OBJECT-TYPE,
+       NOTIFICATION-TYPE, mib-2,
+       Unsigned32, TimeTicks, zeroDotZero
+           FROM SNMPv2-SMI                  -- RFC2578
+
+       StorageType, RowStatus,
+       TimeInterval, TimeStamp,
+       TEXTUAL-CONVENTION
+           FROM SNMPv2-TC                   -- RFC2579
+
+       MODULE-COMPLIANCE, OBJECT-GROUP
+           FROM SNMPv2-CONF                 -- RFC2580
+
+       SnmpAdminString
+           FROM SNMP-FRAMEWORK-MIB;         -- RFC3411
+
+   checkMIB MODULE-IDENTITY
+       LAST-UPDATED "200312191313Z"  -- December 19, 2003
+       ORGANIZATION "IETF Distributed Management man Working Group"
+       CONTACT-INFO
+          "Editor:
+             Giorgio Nunzi
+             NEC Europe Ltd.
+             Network Laboratories
+             Kurfuersten-Anlage 36
+             69221 Heidelberg
+             Germany
+             Tel: +49 6221 90511-39
+             Email: nunzi@netlab.nec.de"
+       DESCRIPTION
+           "This MIB module defines a set of objects that allow
+            to define a health check procedure on a managed node.
+            The health check procedure is performed through a sequence
+            of simple comparison operations on some managed objects
+            against a control value.  The result of the health check
+            is accumulated into a single managed object that can be
+            read by a manager to discover the status of the whole
+            set of managed objects instead of retrieving all the single
+            values controlled during the health check procedure.
+
+            The main purpose of the CHECK-MIB is increasing scalability
+            of network management applications by moving check
+            operations from the management station to managed nodes.
+
+            There are five groups of managed objects defined
+            by this MIB module:
+              - objects describing capabilities
+                of the CHECK-MIB implementation;
+              - objects controlling the operational
+                status of the health check procedure;
+              - objects defining the checks in
+                the checkResultTable;
+              - objects defining the operations for each of
+                the configured checks in the checkRuleTable;
+              - objects providing information about
+                failed checks."
+       REVISION    "200312191313Z"  -- December 19, 2003
+       DESCRIPTION "Initial version"
+       ::= { mib-2 7777 }
+   -- 7777 to be assigned by IANA.
+
+   RuleValue ::= TEXTUAL-CONVENTION
+       DISPLAY-HINT "1x"
+       STATUS      current
+       DESCRIPTION
+           "The control value compared with the value of a monitored
+            object.  This value encodes all the object types
+            defined by the SMIv2, except the Opaque, with the
+            following rules:
+            - INTEGER, Integer32, Unsigned32, TimeTicks, Counter32,
+              Gauge32: the integer value is encoded with 4 octets in
+              network-byte order;
+            - Counter64: the integer value is encoded with 8 octets
+              in network-byte order;
+            - IpAddress: the address value is encoded with a 4 in
+              network-byte order;
+            - OBJECT IDENTIFIER: each sub-identifier is encoded with
+              4 octets in network-order and the whole OID is encoded
+              as a sequence of sub-identifiers starting from the
+              top-level;
+            - BITS: all the named bits in the bitstring, commencing
+              with the first bit and proceeding to the last bit, are
+              placed in bits 8 (high order bit) to 1 (low order bit)
+              of the first octet, followed by bits 8 to 1 of each
+              subsequent octet in turn, followed by as many bits as
+              are needed of the final subsequent octet, commencing
+              with bit 8.  Remaining bits, if any, of the final octet
+              are set to zero on generation and ignored while
+              performing a check;
+            - OCTET STRING: the string is encoded as it is."
+       SYNTAX OCTET STRING
+
+   SeverityConfigured ::= TEXTUAL-CONVENTION
+       STATUS      current
+       DESCRIPTION
+           "The severity value measures the gravity of a failure of a
+            rule or a result. A low value indicates a minor failure,
+            while a high value indicates a sever failure. The scale of
+            the severity is arbitrary chosen by the manager
+            application.
+            This textual convention represents the value of a severity
+            which is configured by the manager."
+       SYNTAX Unsigned32 (0..4294967293)
+
+   SeverityReturned ::= TEXTUAL-CONVENTION
+       STATUS      current
+       DESCRIPTION
+           "The severity value measures the gravity of a failure of a
+            rule or a result. A low value indicates a minor failure,
+            while a high value indicates a sever failure. The scale of
+            the severity is arbitrary chosen by the manager
+            application.
+            This textual convention represents the value of a severity
+            which is set by the device after the performance of a rule.
+            If the rule has been correctly performed, the value is
+            equal to the severity configured for the rule.  If the rule
+            has not been performed because the monitored object
+            couldn't be accessed, then this values is set to
+            4294967295.  If the rule has not been performed due to a
+            lack of resources, then this value is set to 4294967294."
+       SYNTAX Unsigned32
+
+   --
+   -- main components of this MIB module
+   --
+
+   checkObjects       OBJECT IDENTIFIER ::= { checkMIB 1 }
+   checkNotifications OBJECT IDENTIFIER ::= { checkMIB 2 }
+   checkConformance   OBJECT IDENTIFIER ::= { checkMIB 3 }
+
+   --
+   -- Capabilities group
+   --
+   -- The capabilities group contains a set of managed
+   -- objects describing the capabilities of the CHECK-MIB
+   -- implementation.
+   --
+
+   checkCapabilities        OBJECT IDENTIFIER ::= { checkObjects 1 }
+
+   checkCapabMinCheckInterval OBJECT-TYPE
+       SYNTAX      TimeTicks
+       UNITS       "centi-seconds"
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The minimum interval that can be scheduled between two
+            performances of the same check defined in the
+            checkResultTable using the object checkResultInterval.
+
+            This value is the minimum value allowed for the object
+            checkResultInterval of the checkResultTable."
+       ::= { checkCapabilities 1 }
+
+   checkCapabMaxResults OBJECT-TYPE
+       SYNTAX      Unsigned32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The maximum number of entries supported in the
+            checkResultTable.  A value of 0 indicates that
+            there is no fixed limitation.
+
+            Creating a new row in the checkResultTable with the
+            object checkResultRowStatus after the maximum number
+            of entries supported, leads to a resourceUnavailable
+            error."
+       ::= { checkCapabilities 2 }
+
+   checkCapabMaxRules OBJECT-TYPE
+       SYNTAX      Unsigned32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The maximum number of entries supported in the
+           checkRuleTable.  A value of 0 indicates that there
+           is no fixed limitation.
+
+           Creating a new row in the checkRuleTable with the
+           object checkRuleRowStatus after the maximum number
+           of entries supported, leads to a resourceUnavailable
+           error."
+       ::= { checkCapabilities 3 }
+
+   --
+   -- Control group
+   --
+   -- The control group contains managed objects controlling
+   -- the operational status of the check MIB implementation.
+   --
+
+   checkControl       OBJECT IDENTIFIER ::= { checkObjects 2 }
+
+   checkCtrlAdminStatus OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   up(1),       -- performing checks
+                   silent(2),   -- no notifications sent
+                   down(3)      -- all checks disabled
+               }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+          "The desidered state of the checking engine of the
+           Check MIB implementation.  Setting this object to up(1)
+           indicates a request for performing all checks as defined
+           in the checkResultTable and the checkRuleTable performed.
+           Setting this object to silent(2) indicates that all the
+           checks defined in checkResultTable must be performed, but
+           no notification must be sent by the Check MIB
+           implementation.  Setting this object to down(3) indicates
+           a request for performing o more tests.
+
+           When retrieved, the object returns the last value written
+           to it, except after system boot when it returns the value
+           up(1)."
+           DEFVAL { up }
+       ::= { checkControl 1 }
+
+   checkCtrlOperStatus OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   up(1),       -- performing checks
+                   silent(2),   -- no notifications sent
+                   down(3),     -- all checks disabled
+                   flushing(4)  -- finishing checks already started
+               }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+          "The current operational state of the Check MIB
+           implementation. The up(1) state indicates that all checks
+           defined in the checkResultTable and the checkRuleTable are
+           performed.  The silent(2) state indicates that all checks
+           are performed as defined in the checkResultTable and the
+           checkRuleTable, but no notification is sent by the Check
+           MIB implementation.  The down(3) state indicates that no
+           check is performed.  The flushing(4) state indicates that
+           the checkCtrlAdminStatus has been set to down(3) and the
+           managed node is completing the performance of checks that
+           were scheduled before checkCtrlAdminStatus was set to
+           down(3).  If the value of checkCtrlAdminStatus does not
+           change again before these checks are completed, then the
+           value of checkCtrlOperStatus will change to down(3) after
+           the checks are completed.
+
+           After a system re-initialization, the Check MIB
+           implementation starts up with this object set to up(1)."
+       ::= { checkControl 2 }
+
+   --
+   -- Result group
+   --
+   -- The Result group contains the objects to define the checks
+   -- performed on the managed node.  The checks are organized
+   -- in the checkResultTable.
+   --
+
+   checkResultTable OBJECT-TYPE
+       SYNTAX      SEQUENCE OF CheckResultEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table contains the definitions of the checks
+            to be performed by the Check MIB implementation.
+
+            Each row defines one check and contains the
+            parameters controlling the performance of the check
+            as well as the result of the check.
+
+            The operations performed by each check are defined as
+            rules in the checkRuleTable."
+       ::= { checkObjects 3 }
+
+   checkResultEntry OBJECT-TYPE
+       SYNTAX      CheckResultEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An entry defining a check.  Each entry is indexed by
+           the string checkResultName, which represents the name
+           of the check.  An entry can be created with the object
+           checkResultRowStatus only with the createAndWait operation.
+           A check is never performed if its entry is in the
+           notInService status.   Objects in an entry marked as
+           read-create can be modified only when the entry is in
+           notInService status."
+       INDEX { checkResultName }
+       ::= { checkResultTable 1 }
+
+   CheckResultEntry ::= SEQUENCE {
+       checkResultName                 SnmpAdminString,
+       checkResultSeverity             SeverityReturned,
+       checkResultSize                 Unsigned32,
+       checkResultTime                 TimeStamp,
+       checkResultInterval             TimeInterval,
+       checkResultSeverityThreshold    SeverityConfigured,
+       checkResultStorageType          StorageType,
+       checkResultRowStatus            RowStatus
+   }
+
+   checkResultName OBJECT-TYPE
+       SYNTAX      SnmpAdminString (SIZE (0..32))
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "A name describing the check.  Since the name serves as
+            table index, it must be unique for each row in the table.
+            The name of a check is chosen arbitrary by the manager
+            creating the row in the checkResultTable, but some
+            suggestions are given to offer a common semantic
+            among different managers.
+
+            The name should give a brief description of the check
+            defined in the row.  In particular it is recommended
+            that the name indicates:
+              - the name of the manager who defined the row.
+              - a label describing the check."
+       ::= { checkResultEntry 1 }
+
+   checkResultSeverity OBJECT-TYPE
+       SYNTAX      SeverityReturned
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "Each time the check defined by this entry (and the
+            corresponding entries of the checkRuleTable) is performed,
+            this object is set to to the maximum value of all
+            checkRuleSeverity objects in corresponding entries of the
+            checkRuleTable for which the check failed.  If the check
+            passes for all corresponding rules, then the value of
+            object checkResultSeverity is 0.
+
+            If the object checkResultInterval contains the value 0,
+            then the check is performed when the value of
+            checkResultSeverity is retrieved by a manager.  If the
+            object checkResultInterval contains a value greater than 0,
+            then the check is performed automatically by the managed
+            node and a read access by a manager just returns the value
+            computed at the last scheduled check.
+
+            Each time object checkResultSeverity is set, the value of
+            object checkResultTime in the corresponding entry is
+            set to the current time, and the value of object
+            checkResultSize is set to the number of corresponding
+            entries in the checkRuleTable for which the check failed.
+
+            If no check has been performed so far, then the value
+            of this object is 0."
+       ::= { checkResultEntry 2 }
+
+   checkResultSize OBJECT-TYPE
+       SYNTAX      Unsigned32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The number of rules defined in corresponding entries of the
+            checkFailureTable for which the check failed when it was
+            performed last.
+
+            If no check has been performed so far, then the value
+            of this object is 0."
+       ::= { checkResultEntry 3 }
+
+   checkResultTime OBJECT-TYPE
+       SYNTAX      TimeStamp
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "A timestamp indicating the time when the last performance
+            of the check defined in this row was completed.
+
+            If no check has been performed so far, then the value of
+            this object is 0.  Note that 0 is a valid timestamp."
+       ::= { checkResultEntry 4 }
+
+   checkResultInterval OBJECT-TYPE
+       SYNTAX      TimeInterval
+       UNITS       "centi-seconds"
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The interval between two performances of the check
+            defined in this row.
+
+            When this object is set to a value greater than 0,
+            then the check is performed regularly with the number
+            of centi-seconds indicated by this object between two
+            performances.  When this object is successfully set
+            to a value greater than 0, then the check is not
+            performed immediately. The first check is performed
+            after the number of centi-seconds specified by the
+            new value of the object.  If a performance is scheduled
+            to start before the previous one  has been completed,
+            then the previous check will be completed and the
+            scheduled check will be skipped.
+
+            If the number of this object is 0, then the check is
+            performed only on request when the value of the object
+            checkResultSeverity is retrieved by a manager.
+
+            A set operation on this object may lead to an
+            inconsistentValue error in two cases:
+            - if the vale passed is greater than 0 but less
+              than the value of checkCapabMinCheckInterval;
+            - if the value passed is greater than 0 and the
+              check defined in this row includes rules with
+              delta operations."
+       DEFVAL { 0 }
+       ::= { checkResultEntry 5 }
+
+   checkResultSeverityThreshold OBJECT-TYPE
+       SYNTAX      SeverityConfigured
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "This object serves for sending notifications in
+            case of failures occurred in the check defined
+            in this row.
+
+            If the value of this object is set to 0, then no
+            notification is sent to the manager even if some
+            rule defined for the check fails.
+            Otherwise, if the performance of a check leads to
+            a value of the object checkResultSeverity that is
+            equal to or greater than the value of the object
+            checkResultSeverityThreshold, then a notification
+            is sent.  The notification is an instance of
+            checkResultFailed."
+       DEFVAL { 0 }
+       ::= { checkResultEntry 6 }
+
+   checkResultStorageType OBJECT-TYPE
+       SYNTAX      StorageType
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The value of this object indicates the storage type
+            of this entry in the checkResultTable and of all
+            corresponding entries in the checkRuleTable.  The value
+            of this object indicates whether the entries are stored
+            in volatile memory and lost upon reboot or if they
+            are backed up by non-volatile or permanent storage.
+
+            If checkResultStorageType has the value permanent(4),
+            then all objects whose MAX-ACCESS value is read-write
+            can be modified, but the row cannot be deleted.  All the
+            objects in corresponding entries of the checkRuleTable
+            whose MAX-ACCESS is read-create are instead read-only with
+            the exception of the checkRuleRowStatus.
+            Attempts to set this object to permanent(4) will always
+            fail with an inconsistentValue error."
+       DEFVAL { volatile }
+       ::= { checkResultEntry 7 }
+
+   checkResultRowStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "This object allows to create and delete rows in the
+            table. The value createAndGo(4) is not allowed and an
+            wrongValue error is returned when attempting to set it.
+
+            Objects of the same row can be modified only when
+            checkResultRowStatus has the notInService(2) value and
+            set operations on objects of a row in active(1) status
+            result to inconsistentValue.  A change of the value of the
+            checkResultRowStatus object is propagated to the
+            checkRuleRowStatus of all the related entries in the
+            checkRuleTable (those indexed by the same checkResultName);
+            if the change of the value of a checkRuleRowStatus object
+            results in an inconsistentValue error, then this error is
+            returned to the manager while setting the value of this
+            checkResultRowStatus.
+
+            An attempt to set the value of this object to active(1),
+            causes the following actions:
+            - all the related entries in the checkRuleTable become
+              active; if an attempt to activate an entry results in
+              an inconsistentValue error, then this error is returned
+              to the manager and further action is taken;
+            - all the objects of this row become read-only, with the
+              exception of checkResultRowStatus;
+            - if the value of checkResultInterval is greater than 0,
+              then the timer to schedule the performances of the
+              check starts immediately, but the first check will be
+              performed only but after the time specified by
+              checkResultInterval; for rules defining delta operations
+              the values of managed objects to be checked are read
+              immediately, so that delta operations can be computed at
+              the first scheduled check.
+            - if the value of checkResultInterval is equal to 0, then
+              retrieving the value of checkResultSeverity forces the
+              performance of the check.
+            When a row is put in the notInService status, then the
+            following actions are taken:
+            - all the objects of the row marked as read-create can be
+              modified;
+            - all the related entries in the checkRuleTable become
+              notInService;
+            - all scheduled future checks are canceled.
+            - retrieving the value of checkResultSeverity returns
+              always the value computed at the last check.
+            When a row is deleted, then if an alarm was configured, it
+            is removed, and all the related entries in checkRuleTable
+            are deleted (eventually freeing the resources allocated
+            for delta operations defined by those rules).
+
+            Creating a new row when the table reached the maximum
+            number of entries defined in checkCapabMaxResults
+            results in a resourceUnavailable error."
+       ::= { checkResultEntry 8 }
+   --
+   -- Check Rule group
+   --
+   -- The Rule group contains the objects to define the operations
+   -- performed for each check.  The operations are organized
+   -- in the checkRuleTable.
+   --
+
+   checkRuleTable OBJECT-TYPE
+       SYNTAX      SEQUENCE OF CheckRuleEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table contains the definitions of the operations
+            performed for checks defined in the checkResultTable.
+
+            Each row defines an operation on the value of a managed
+            object.  The operation consists in a comparison of the
+            value of the managed object with a control value specified
+            in checkRuleValue.  The relationship expected between the
+            two values is indicated by checkRuleOperation.
+            It is possible to reference in a single rule either a
+            single instances object or all the instance of a columnar
+            object of a table.
+
+            For each operation, a severity is set which indicates
+            the gravity of the failure of the comparison operation.
+
+            The storage type of entries in this table is determined
+            by the value of object checkResultStorageType in the
+            corresponding entry of the checkResultTable."
+       ::= { checkObjects 4 }
+
+   checkRuleEntry OBJECT-TYPE
+       SYNTAX      CheckRuleEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An entry defining a rule for a check defined
+            in the checkResultTable.  Each entry is indexed by:
+            1. the checkResultName of the check which includes
+               the operation defined by the entry;
+            2. the string checkRuleName, which represents the
+               name of the operation.
+            An entry can be created with the object
+            checkResultRowStatus only with the createAndWait operation.
+            A rule is never considered in the performance of the
+            check defined in the related checkResultEntry, if its
+            entry is in the notInService status.   Objects in an entry
+            can be modified only when the entry is in
+            notInService status."
+       INDEX { checkResultName, checkRuleName }
+       ::= { checkRuleTable 1 }
+
+   CheckRuleEntry ::= SEQUENCE {
+       checkRuleName              SnmpAdminString,
+       checkRuleOid               OBJECT IDENTIFIER,
+       checkRuleValue             RuleValue,
+       checkRuleOperation         INTEGER,
+       checkRuleSeverity          SeverityConfigured,
+       checkRuleRowStatus         RowStatus
+   }
+
+   checkRuleName OBJECT-TYPE
+       SYNTAX      SnmpAdminString (SIZE (0..32))
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "A name describing the rule.  Since the name serves as
+            table index coupled with the value of checkResultName,
+            it must be unique per each row in the table
+            inside the scope of checkResultName.
+            The name of a rule is chosen by the manager creating
+            the row, but some suggestions are given to offer a
+            common semantic between different managers.
+
+            The name should give a brief description of the rule
+            defined in the row.  In particular it is recommended
+            that the name indicates the name of the managed object
+            controlled by the rule."
+       ::= { checkRuleEntry 2 }
+
+   checkRuleOid OBJECT-TYPE
+       SYNTAX      OBJECT IDENTIFIER
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The OID indicating the managed object to be checked.
+            The OID must be:
+            - the OID of an instance object: in this case the
+              rule is applied to that object;
+            - the OID of a columnar object (missing of the instance
+              sub-identifier): in this case the rule is applied to all
+              the instances of the columnar object.
+
+            The validity of the OID is verified when the manager tries
+            to activate the row, following these actions:
+            - the agent should try to read the value of the object
+              referenced by the OID (like a snmp get operation); if the
+              value is read, the OID refers to a valid instance object
+              and the type of the object should be registered inside
+              the agent;
+            - if the object is not available, then the agent should try
+              to read the next object in the lexicographical order (like
+              a snmp get next operation); if the OID returned is a child
+              node of the checkRuleOid, then the latter is assumed to be
+              a columnar object and the type of the object read is
+              stored inside the agent;
+            - if no object could be found or the OID returned is not a
+              leaf of checkRuleOid, then an inconsistentValue error is
+              return to the attempt of activating the row.
+            When setting the OID of a columnar object, at least one
+            instance object must exist at the moment of the activation
+            of the row, so that the validity test of OID passes and the
+            row is activated.
+
+            If the OID references an instance object that is removed or
+            become inaccessible after the row has been activated, then
+            rule automatically fails with a severity equal to
+            4294967295.  If the OID value references a columnar object
+            and no instance exists after the first performance, then
+            the rule doesn't fail."
+       DEFVAL { zeroDotZero }
+       ::= { checkRuleEntry 3 }
+
+   checkRuleValue OBJECT-TYPE
+       SYNTAX      RuleValue
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The control value compared to the value of the managed
+            object indicated by checkRuleOid.
+
+            The control value encoded in this object must be consistent
+            with the type of the object referenced by the checkRuleOid.
+            The control value is considered inconsistent if:
+            - the object type is INTEGER, Unsigned32, TimeTicks,
+              Gauge32, Counter32, IpAddress and the size of the
+              checkRuleValue is different from 4;
+            - the object type is Counter64 and the size of the
+              checkRuleValue is different from 8;
+            - the object type is OBJECT IDENTIFIER and the size of the
+              checkRuleValue is not a multiple of 4.
+
+            The consistency between the control value and the object
+            type is verified when the rule is activated; if the
+            consistency test fails, the attempt to active the row
+            results in an inconsistentValue error."
+       DEFVAL { "" }
+       ::= { checkRuleEntry 4 }
+
+   checkRuleOperation OBJECT-TYPE
+       SYNTAX      INTEGER {
+                       noOperation(0),
+                       unequal(1), equal(2),
+                       less(3), lessOrEqual(4),
+                       greater(5), greaterOrEqual(6),
+                       delta(7)
+                   }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+           "The value of this object specifies the comparison
+            operation to be performed between the value of the
+            managed object indicated by checkRuleOid and the
+            value indicated by checkRuleValue.  Some operations
+            cannot be applied to all the types of object. If
+            the value of the checkRuleOperation is inconsistent
+            with the type of the object indicated by checkRuleOid,
+            then an attempt to activate the row results in an
+            inconsistentValue error.
+
+            The value 0 can be configured for all the object
+            types and means that no operation is performed and
+            the rule never fails.
+
+            When the type of the object indicated by checkRuleOid
+            is IpAddress, BITS, OBJECT IDENTIFIER then only the value
+            equal(2) can be configured.  For the IpAddress, the value
+            of the object indicated by checkRuleOid is compared byte
+            by byte with the value of checkRuleValue and the rule
+            doesn't fail if all the bytes are matched.  For the
+            OBJECT IDENTIFIER, the rule doesn't fail if checkRuleValue
+            encodes an OID of the same dimension of the value of the
+            object indicated by checkRuleOid and the two OIDs are
+            equal.  For the BITS, the rule doesn't fail if the
+            checkRuleValue encodes a bitstring long at least as the
+            number of the named bits and all the named bits are
+            matched with that bitstring.
+
+            When the type of the object indicated by checkRuleOid
+            is INTEGER, Integer32, Unsigned32, Counter32, Counter64,
+            TimeTicks, Gauge32, all the values from 1 to 6 can be
+            configured.  These values define simple mathematical
+            operations: the rule doesn't fail if the the value
+            of the object indicated by checkRuleOid is, respectively,
+            !=, =, <, <=, >, >= than the value of checkRuleValue.
+
+            A value of of delta(7) can be configured only for
+            Counter32, Counter64, Gauge32; moreover it is permitted
+            only if the check including the rule is performed
+            automatically and thus its value of checkResultInterval
+            greater than 0, otherwise an inconsistentValue error is
+            returned.  For a delta operation, each time the rule is
+            performed, the difference between the actual value of the
+            managed object and its value at the last performance is
+            considered and the rule doesn't fail if the difference is
+            <= than the value of the checkRuleValue.  If the actual
+            value is less than the previous one, then the difference is
+            augmented with the value 4294967295, like as the managed
+            object reached its maximum value and it has been resetted.
+
+            Each time the new value of the managed object must be
+            stored by the device in an internal buffer.  The buffer
+            must be handled so that when a new managed object is
+            controlled, a new entry is allocated for it.  If no more
+            entries are available, then the rule fails with severity
+            4294967294.
+            If a managed object for which an entry was previously
+            allocated, doesn't exist when a new execution of the delta
+            operation is performed, its entry should be removed.
+            When a new entry is allocated for a new managed object,
+            its value is stored in the entry, but the operation is not
+            computed and the rule doesn't fail; the delta operation
+            is normally computed only from the second time."
+       DEFVAL { noOperation }
+       ::= { checkRuleEntry 5 }
+
+   checkRuleSeverity OBJECT-TYPE
+       SYNTAX      SeverityConfigured
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The severity of a failure of the operation specified by
+            the row for the whole check.
+
+            A severity of 0 indicates that a failure of the
+            operation is irrelevant."
+       DEFVAL { 1 }
+       ::= { checkRuleEntry 6 }
+
+   checkRuleRowStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The control to create and delete rows.  It is possible
+            to create new rules only for a check which is already
+            defined in the CHECK-MIB.  Creating a new row indexed
+            by a value of checkResultName which doesn't exist
+            already in any row of the checkResultTable results in a
+            inconsistentName error.  The value createAndGo(4) is not
+            allowed and an wrongValue error is returned when attempting
+            to set it.
+
+            Objects of the same row can be modified only when
+            checkRuleRowStatus has the notInService(2) value and
+            set operations on objects of a row in active(1) status
+            result to inconsistentValue.
+            A row in the notInService status is not considered in the
+            performance of the check defined by the related entry in
+            the checkResultTable (the one indexed by the same
+            checkResultName).
+
+            An attempt to set the value of this object to active(1),
+            causes the following actions:
+            - the validity of the value of checkRuleOid is verified;
+              if it fails, then an inconsistentValue error is returned;
+            - the consistency between the type of the object referenced
+              by checkRuleOid and the value of checkRuleOperation is
+              verified; if it fails, then an inconsistentValue error is
+              returned;
+            - the consistency between the type of the object referenced
+              by checkRuleOid and the value of checkRuleValue is
+              verified; if it fails, then an inconsistentValue error is
+              returned;
+            - if all the tests pass, the row is activated.
+
+            An attempt to create a new row when the table has reached
+            the maximum number of entries defined in checkCapabMaxRules
+            results in a resourceUnavailable error.
+            An attempt to create a new row in the table with the
+            corresponding entry in the checkResultTable having the
+            storage type permanent(4) results in an inconsistentValue
+            error."
+       ::= { checkRuleEntry 7 }
+
+   --
+   -- Failure group
+   --
+   -- The Failure group contains the object describing the failures
+   -- of a check.  The failures are organized in the checkFailureTable.
+   --
+   checkFailureTable OBJECT-TYPE
+       SYNTAX      SEQUENCE OF CheckFailureEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table lists all the rules defined in the
+            checkRuleTable, which failed at the last
+            time the check including them has been performed.
+
+            Entries only describe objects for which the last check
+            failed. Failures in checks before the last one are not
+            indicated."
+       ::= { checkObjects 5 }
+
+   checkFailureEntry OBJECT-TYPE
+       SYNTAX      CheckFailureEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An entry referencing a failed rule.
+
+            Each entry is indexed by:
+            1. the checkResultName of the check including
+               the rule failed;
+            2. the severity of the rule failed;
+            3. The checkRuleName of the rule failed.
+
+            The manager, after having read a value of
+            checkResultSeverity of a check different from 0, can
+            directly read the rule failed with the maximum severity by
+            retrieving the checkFailureOid with a get_next command
+            without specifying the checkRuleName."
+       INDEX { checkResultName, checkFailureSeverity, checkRuleName }
+       ::= { checkFailureTable 1 }
+
+   CheckFailureEntry ::= SEQUENCE {
+       checkFailureSeverity   SeverityReturned,
+       checkFailureOid        OBJECT IDENTIFIER
+   }
+
+   checkFailureSeverity OBJECT-TYPE
+       SYNTAX      SeverityReturned
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "The severity with which the rule failed."
+       ::= { checkFailureEntry 1}
+
+   checkFailureOid OBJECT-TYPE
+       SYNTAX      OBJECT IDENTIFIER
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The OID of the managed object for which a rule
+            failed.
+
+            This value contains the value of checkRuleOid
+            of the rule failed."
+       ::= { checkFailureEntry 2 }
+
+   --
+   -- Notifications. The definition of checkEvent makes notification
+   -- registrations reversible (see STD 58, RFC 2578, Section 8.5).
+   --
+
+   checkEvent OBJECT IDENTIFIER ::= { checkNotifications 0 }
+
+   checkFailed NOTIFICATION-TYPE
+       OBJECTS     { checkResultSeverity }
+       STATUS      current
+       DESCRIPTION
+           "This notification can be generated to report
+            that a check failed.  The notification is generated each
+            time, the value of checkSeverityThreshold is greater than
+            0 and the performance of a check results in a value of
+            checkResultSeverity that is greater than or equal to the
+            value of checkSeverityThreshold.
+
+            The notification contains the checkResultSeverity of
+            the check failed."
+       ::= { checkEvent 1 }
+
+   --
+   -- Conformance information
+   --
+
+   checkCompliances OBJECT IDENTIFIER ::= { checkConformance 1 }
+   checkGroups      OBJECT IDENTIFIER ::= { checkConformance 2 }
+
+   --
+   -- Compliance statements
+   --
+   -- This is the CHECK-MIB compliance definition.
+   --
+
+   checkCompliance MODULE-COMPLIANCE
+       STATUS      current
+       DESCRIPTION
+           "The compliance statement for SNMP entities that
+            implement the CHECK-MIB."
+
+       MODULE      -- this module
+       MANDATORY-GROUPS {
+               checkCapabilitiesGroup,
+               checkControlGroup,
+               checkResultGroup,
+               checkRuleGroup,
+               checkFailureGroup,
+               checkNotificationsGroup
+       }
+       ::= { checkCompliances 1 }
+
+   --
+   -- Groups statements
+   --
+   -- This is the definition of the objects group of the CHECK-MIB.
+   --
+
+   checkCapabilitiesGroup OBJECT-GROUP
+       OBJECTS {
+           checkCapabMinCheckInterval,
+           checkCapabMaxResults,
+           checkCapabMaxRules
+       }
+       STATUS      current
+       DESCRIPTION
+           "A collection of objects providing information about
+            the capabilities of the CHECK-MIB implementation."
+       ::= { checkGroups 1 }
+
+   checkControlGroup OBJECT-GROUP
+       OBJECTS {
+           checkCtrlAdminStatus,
+           checkCtrlOperStatus
+       }
+       STATUS      current
+       DESCRIPTION
+           "A collection of objects controlling the state of the
+            CHECK-MIB."
+       ::= { checkGroups 2 }
+
+   checkResultGroup OBJECT-GROUP
+       OBJECTS {
+           checkResultSeverity,
+           checkResultSize,
+           checkResultTime,
+           checkResultInterval,
+           checkResultSeverityThreshold,
+           checkResultStorageType,
+           checkResultRowStatus
+       }
+       STATUS      current
+       DESCRIPTION
+           "A collection of objects defining a check."
+       ::= { checkGroups 3 }
+
+   checkRuleGroup OBJECT-GROUP
+       OBJECTS {
+           checkRuleOid,
+           checkRuleValue,
+           checkRuleOperation,
+           checkRuleSeverity,
+           checkRuleRowStatus
+        }
+        STATUS      current
+        DESCRIPTION
+            "A collection of objects defining the operations
+             computed for each check."
+        ::= { checkGroups 4 }
+
+   checkFailureGroup OBJECT-GROUP
+       OBJECTS {
+           checkFailureOid
+        }
+        STATUS      current
+        DESCRIPTION
+            "A collection of objects indicating managed objects
+             for which a check operation failed."
+        ::= { checkGroups 5 }
+
+   checkNotificationsGroup OBJECT-GROUP
+        OBJECTS {
+            checkFailed
+        }
+        STATUS    current
+        DESCRIPTION
+            "The notifications emitted by the CHECK-MIB."
+        ::= { checkGroups 6 }
+
+   END
+
+-- 
+--    Copyright (C) The Internet Society (2003). All Rights Reserved.
+-- 
+--    This document and translations of it may be copied and furnished to
+--    others, and derivative works that comment on or otherwise explain it
+--    or assist in its implmentation may be prepared, copied, published and
+--    distributed, in whole or in part, without restriction of any kind,
+--    provided that the above copyright notice and this paragraph are
+--    included on all such copies and derivative works.  However, this
+--    document itself may not be modified in any way, such as by removing
+--    the copyright notice or references to the Internet Society or other
+--    Internet organizations, except as needed for the  purpose of
+--    developing Internet standards in which case the procedures for
+--    copyrights defined in the Internet Standards process must be
+--    followed, or as required to translate it into languages other than
+--    English.
+-- 
+--    The limited permissions granted above are perpetual and will not be
+--    revoked by the Internet Society or its successors or assigns.
+-- 
+--    This document and the information contained herein is provided on an
+--    "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING
+--    TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+--    BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION
+--    HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF
+--    MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+

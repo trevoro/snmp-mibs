@@ -1,0 +1,904 @@
+XEDIA-PKI-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS 
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, Gauge32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION,  DisplayString, RowStatus, TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    xediaMibs, LongDisplayString
+        FROM XEDIA-REG
+    ;
+
+xediaPkiMIB MODULE-IDENTITY
+    LAST-UPDATED "9809162155Z" -- March 18, 1998
+    ORGANIZATION "Xedia Corp."
+    CONTACT-INFO
+        "support@xedia.com"
+    DESCRIPTION
+        "This module defines objects for management of Xedia's 
+        Public Key Infrastructure subsystem."
+    ::= { xediaMibs 24 }
+
+
+-- ****************************************************************
+-- Top-level organization of the MIB
+-- ****************************************************************
+
+pkiObjects          OBJECT IDENTIFIER ::= { xediaPkiMIB 1 }
+pkiConformance      OBJECT IDENTIFIER ::= { xediaPkiMIB 2 }
+
+
+-- ****************************************************************
+-- Textual Conventions (datatypes)
+-- ****************************************************************
+
+PemString ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "An Privacy Enhanced Message formatted string."
+    SYNTAX      DisplayString
+
+PkiAlgorithm ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A public key algorithm."
+    SYNTAX      INTEGER {
+                    rsa(1), -- RSA Labs public key algorithm
+                    dsa(2)  -- FIPS 186 Digital Signature Algorithm
+                }
+
+PkiSigAlgorithm ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A public key signature algorithm."
+    SYNTAX      INTEGER {
+                    md5WithRSAEncryption(1),
+                    sha1WithRSAEncryption(2),
+                    sha1WithDSAId(3)
+                }
+   
+PkiKeyPairName ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "An administrative name for a key pair."
+    SYNTAX      DisplayString (SIZE (1..32))
+
+PkiCertType ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A type of certificate."
+    SYNTAX      INTEGER {
+                        x509-v1(1),
+                        x509-v2(2),
+                        x509-v3(3)
+                }
+   
+
+-- ****************************************************************
+-- Object Definitions
+-- ****************************************************************
+
+-- The following tables are used to manage Public Key Infrastructure
+-- Keys (PKI) keys and certificates.
+
+
+-- ================================================================
+-- The PKI Subsystem Group
+-- ================================================================
+
+pkiSubsystemGroup OBJECT IDENTIFIER ::= { pkiObjects 1 }
+
+pkiSubjNameFormat OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    distNameFromRtrAddr(0)
+                 -- following are not yet supported 
+                 -- distNameFromLDAP(1),
+                 -- incIpAddrExt(2),
+                 -- incFQDomainNameExt(3)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION        
+        "This object is used to specify the format of the 
+        subject name(s) for this system in PKI certificates
+        and requests.
+
+        There are multiple options for forming the subject's
+        distinguished name. distNameFromLDAP(0) will use the 
+        system's LDAP directory name. distNameFromRtrAddr(1)
+        will use the system's router IP address. If both
+        options are disabled, then the pkiSubjDistName
+        is set explicitly by the administrator. Default is 
+        distNameFromRtrAddr(1).
+ 
+        The incIpAddrExt(3) option specifies that the system's
+        router IP address (if configured) should be included 
+        as a subject alternate name extension in certificate 
+        requests. By default, this option is enabled.
+
+        The incFQDomainNameExt(4) option specifies that the 
+        system's fully qualified domain name (if configured) 
+        should be included as a subject alternate name extension 
+        in certificate requests. By default, this option is 
+        enabled."
+    ::= { pkiSubsystemGroup 1 }
+
+pkiSubjDistName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..128)) 
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The X500 distinguished name for this system. This name
+        corresponds to the subject name in this gateway's
+        certificates and requests. For example: 
+
+             'C=US, O=Xedia Corp, CN=198.202.232.217'
+
+        This object can be set explicitly or may reflect the
+        system's LDAP or router address as specified by 
+        pkiSubjNameFormat."
+    ::= { pkiSubsystemGroup 2 }
+
+pkiLdapServer OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..128)) 
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The name of the LDAP Server used as the default Certificate
+        and CRL repository. This may be in the form of a DNS or
+        IP address with an optional port number specified after a 
+        colon. For example:
+
+        'ldap.xedia.com'
+        '198.202.232.121'
+        'ldap.xedia.com:389'
+        '198.202.232.121:389'
+
+        When this object is set to a valid server, LDAP is automatically
+        enabled as a PKI certificate and CRL retrieval mechanism. If
+        cleared, LDAP is disabled for PKI purposes."
+    ::= { pkiSubsystemGroup 3 }
+        
+
+-- ================================================================
+-- The PKI KeyPair Table
+-- ================================================================
+
+pkiKeyPairTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF PkiKeyPairEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The PKI key pair table is used to administer 
+        public/private key pairs for this system."
+    ::= { pkiObjects 2 }
+    
+pkiKeyPairEntry OBJECT-TYPE
+    SYNTAX      PkiKeyPairEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The attributes of a single PKI Key Pair. Note that a 
+        PkiKeyPairEntry cannot be modified if referenced by a 
+        PkiCertRqstEntry."
+    INDEX       { pkiKeyPairName }
+    ::= { pkiKeyPairTable 1 }
+
+PkiKeyPairEntry ::= SEQUENCE {
+    pkiKeyPairName              PkiKeyPairName,
+    pkiKeyPairAlgorithm         PkiAlgorithm,
+    pkiKeyPairLength            Integer32,
+    pkiKeyPairRowStatus         RowStatus
+}
+
+pkiKeyPairName OBJECT-TYPE
+    SYNTAX      PkiKeyPairName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The administrative name given to the key pair."
+    ::= { pkiKeyPairEntry 1 }
+
+pkiKeyPairAlgorithm OBJECT-TYPE
+    SYNTAX      PkiAlgorithm
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The algorithm used to generate the key pair."
+    ::= { pkiKeyPairEntry 2 }
+
+pkiKeyPairLength OBJECT-TYPE
+    SYNTAX      Integer32 (512..2048)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The length of the public key in bits.
+
+        For RSA keys, the valid range is 512 to 2048, 
+        and the default is 1024.
+
+        For DSS keys, the valid range is 512 to 1024, 
+        and the default is 1024."
+    DEFVAL      { 1024 }
+    ::= { pkiKeyPairEntry 3 }
+
+pkiKeyPairRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to create and delete entries in this
+        table."
+    REFERENCE 
+        "RFC1904, Textual Conventions for Version 2 of the Simple
+        Network Management Protocol (SNMPv2)"
+    ::= { pkiKeyPairEntry 4 }
+
+
+-- ================================================================
+-- PKCS #10 Certificate Requests
+-- ================================================================
+
+--
+-- The PKI PKCS#10 Certificate Request Table contains Certificate 
+-- Requests for this system. Certificates Requests are sent to a 
+-- Certificate Authority either manually via a cut and paste of 
+-- the PEM request or by a certificate management protocol such as 
+-- CMP or CEP.
+--
+-- Certificate requests include the subject's distinguished name
+-- (pkiSubjDistName) and a public key corresponding to a 
+-- pkiKeyPairEntry. The system automatically generates a certificate 
+-- request entry when a pkiKeyPairEntry is created.
+--
+
+pkiCertRqstTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF PkiCertRqstEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The PKI key pair table is used to administer PKCS #10
+        certificate requests for this system."
+    ::= { pkiObjects 3 }
+    
+pkiCertRqstEntry OBJECT-TYPE
+    SYNTAX      PkiCertRqstEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The attributes of a single PKCS #10 certificate request."
+    INDEX       { pkiCertRqstPublicKey }
+    ::= { pkiCertRqstTable 1 }
+
+PkiCertRqstEntry ::= SEQUENCE {
+    pkiCertRqstPublicKey          PkiKeyPairName,
+    pkiCertRqstSigAlgorithm       PkiSigAlgorithm,
+    pkiCertRqstSignature          OCTET STRING,
+    pkiCertRqstPem                PemString
+}
+
+pkiCertRqstPublicKey OBJECT-TYPE
+    SYNTAX      PkiKeyPairName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The system's public key included in this certificate 
+        request. This object references an entry in the 
+        pkiKeyPairTable."
+    ::= { pkiCertRqstEntry 1 }
+
+pkiCertRqstSigAlgorithm OBJECT-TYPE
+    SYNTAX      PkiSigAlgorithm
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The signature algorithm used to sign the public key
+        information in this certificate request. For both RSA 
+        and DSA key pairs, the hash will default to SHA-1."
+    ::= { pkiCertRqstEntry 2 }
+
+pkiCertRqstSignature OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The signature of the certificate request. After the 
+        certificate request is tranported to the CA, many
+        CAs display the certificate request signature and
+        suggest that it is checked against the signature
+        on the generating system."
+    ::= { pkiCertRqstEntry 3 }
+
+pkiCertRqstPem OBJECT-TYPE
+    SYNTAX      PemString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The full ANS.1 DER encoded PKCS #10 certificate request 
+        in PEM/base64 format. This object may be manually cut and
+        pasted over to the certificate authority for X.509
+        certificate generation."
+    ::= { pkiCertRqstEntry 4 }
+
+
+-- ================================================================
+-- X509 Certificates
+-- ================================================================
+
+pkiNewCert OBJECT-TYPE
+    SYNTAX      PemString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "X.509 Certificate generated by a Certificate Authority 
+        based on the pkiPublicKeyCertRequest information in 
+        base64/PEM format.
+
+        This object provides a manual mechanism for the 
+        administrator to load static certificates into the 
+        pkiCertTable. When this object is written, the system 
+        parses the certificate and loads it into the local
+        certificate database as a static entry."
+    ::= { pkiObjects 4 }
+
+pkiCertTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF PkiCertEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION 
+        "This table contains the certificates in the system's local
+        database including static certificates loaded via network
+        management and dynamic certificates retrieved from 
+        certificate operational protocols such as LDAP."
+    ::= { pkiObjects 5 }
+
+pkiCertEntry OBJECT-TYPE
+    SYNTAX      PkiCertEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The attributes that make up a single certificate."
+    INDEX       { pkiCertIndex }
+    ::= { pkiCertTable 1 }
+
+PkiCertEntry ::= SEQUENCE {
+    pkiCertIndex                Integer32,
+    pkiCertSubjNames            DisplayString,
+    pkiCertIssuerNames          DisplayString,
+    pkiCertKeyPair              PkiKeyPairName,       
+    pkiCertType                 PkiCertType,
+    pkiCertSerialNum            DisplayString,
+    pkiCertValidNotBefore       DisplayString,
+    pkiCertValidNotAfter        DisplayString,
+    pkiCertCreation             INTEGER,
+    pkiCertCertAuthority        TruthValue,
+    pkiCertCrlIssuer            TruthValue,
+    pkiCertTrustStatus          BIT STRING,
+    pkiCertForceTrusted         TruthValue,
+    pkiCertSubjPubKeyAlgorithm  DisplayString,
+    pkiCertSignatureAlgorithm   DisplayString,
+    pkiCertSignature            OCTET STRING,
+    pkiCertRemove               INTEGER
+}
+
+pkiCertIndex    OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The unique index for this certificate."
+    ::= { pkiCertEntry 1 }
+
+pkiCertSubjNames OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The subject name(s) of the network entity or
+        user being certified. The certificate's subject name 
+        can consist of multiple names including distinguished name 
+        fields, IP Address, domain name, etc. This object 
+        concatenates all these names into one string."
+    ::= { pkiCertEntry 2 }
+
+pkiCertIssuerNames OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The name(s) of the certificate authority which issued 
+        this certificate. The certificate's issuer name can consist
+        of multiple names including distinguished name fields, IP 
+        Address, domain name, etc. This object concatenates all these 
+        names into one string."
+    ::= { pkiCertEntry 3 }
+
+pkiCertKeyPair OBJECT-TYPE
+    SYNTAX      PkiKeyPairName
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This system's public/private keypair associated with 
+        this certificate. If the certificate is not for this
+        gateway, the object will be a zero length string."
+    ::= { pkiCertEntry 4 }
+
+pkiCertType     OBJECT-TYPE
+    SYNTAX      PkiCertType
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The type of certificate."
+    ::= { pkiCertEntry 5 }
+
+pkiCertSerialNum OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The serial number for this certificate."
+    ::= { pkiCertEntry 6 }
+
+pkiCertValidNotBefore OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The start of the validity period for this certificate."
+    ::= { pkiCertEntry 7 }
+
+pkiCertValidNotAfter OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The end of the validity period for this certificate."
+    ::= { pkiCertEntry 8 }
+
+pkiCertCreation OBJECT-TYPE
+    SYNTAX      INTEGER {
+                        static(1),      -- net mgt
+                        dynamic(2)      -- IKE, LDAP, CMP
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Specifies how the certificate was obtained. If a 
+        dynamic certificate is modified via network management, 
+        it becomes 'static'."
+    ::= { pkiCertEntry 9 }
+
+pkiCertCertAuthority OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Indicates whether or not this certificate is for a 
+        Certificate Authority."
+    ::= { pkiCertEntry 10 }
+
+pkiCertCrlIssuer OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Certificate Authorities periodically issue Certificate Revocation 
+        Lists (CRLs) for certificates which have been revoked. Certificates
+        issued by a CA need to be checked against a current CRL issued by
+        the CA, otherwise they cannot be trusted. 
+
+        By default, all CA's are considered CRL issuers. Disabling this
+        object disables CRL checking when computing trust for subordinate 
+        certificates."
+    ::= { pkiCertEntry 11 }
+
+pkiCertTrustStatus OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                        trusted(0),             -- everything checks out
+                        computing(1),           -- in process of being computed
+                        noIssuer(2),            -- no issuer certificate
+                        issuerUntrusted(3),     -- issuer's certificate 
+                                                   -- not trusted
+                        noIssuerCRL(4),         -- no recent CRL from issuer
+                                                   -- who does issue CRLs
+                        revoked(5),             -- certificate revoked
+                        pathLengthExceeded(6),  -- certificate exceeded path
+                                                   -- length of a parent CA
+                        validityPeriod(7),      -- certificate validity period 
+                                                   -- invalid
+                        signatureCheck(8),      -- issuer signature not valid
+                        untrustedRoot(9)        -- self signed root must be 
+                                                   -- set trusted
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The certificate's current trust status. If the trust 
+        computation succeeds, it will be 'trusted(0)' otherwise
+        this object will give the set of errors detected
+        while computing the trust status for this certificate. 
+
+        To be trusted(0), all issuer certificates in the chain must be 
+        trusted. Note that when a self signed root certificate is 
+        added, the trustStatus remains 'untrustedRoot(7)' until it is 
+        manually set trusted via pkiCertForceTrusted. This gives the 
+        administrator the opportunity to view and verify a root 
+        certificate before it is used to verify subordinate certificates."
+    ::= { pkiCertEntry 12 }
+
+pkiCertForceTrusted OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "A mechanism whereby the administrator can set any certificate 
+        trusted. Enabling 'forceTrusted' will set the certificate 
+        trusted for it's entire validity period and if it's a CA 
+        certificate may result in subordinate certificates becoming
+        trusted. Note that 'forceTrusted' must be set enabled for
+        root certificates."
+    ::= { pkiCertEntry 13 }
+
+pkiCertSubjPubKeyAlgorithm OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+                "The subject's public key algorithm."
+    ::= { pkiCertEntry 14 }
+
+pkiCertSignatureAlgorithm OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+                "The algorithm used to sign the certificate."
+    ::= { pkiCertEntry 15 }
+
+pkiCertSignature OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+                "The certificate's digital signature. After loading
+                a CA certificate, it is recommended that this
+                value be checked against the CA certificate 
+                signature to verify that the certificate was not
+                compromised in transit."
+    ::= { pkiCertEntry 16 }
+
+pkiCertRemove   OBJECT-TYPE
+    SYNTAX      INTEGER {
+                        ready(1),
+                        execute(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object is used to delete certificates."
+    ::= { pkiCertEntry 17 }
+
+
+-- ================================================================
+-- X509 Certificate Revocation Lists (CRLS)
+-- ================================================================
+
+pkiNewCrl OBJECT-TYPE
+    SYNTAX      PemString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "X.509 Certificate Revocation list generated by a 
+        Certificate Authority in base64/PEM format.
+
+        This object provides a manual mechanism for the 
+        administrator to load static CRLS into the pkiCrlTable. 
+        When this object is written, the system parses the CRL 
+        and loads it into the local CRL database as a static entry."
+    ::= { pkiObjects 6 }
+
+pkiCrlTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF PkiCrlEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION 
+        "This table contains the CRLs in the system's local
+        database including static CRLs loaded via network
+        management and dynamic CRLs retrieved from 
+        operational protocols such as LDAP."
+    ::= { pkiObjects 7 }
+
+pkiCrlEntry OBJECT-TYPE
+    SYNTAX      PkiCrlEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The attributes that make up a single CRL."
+    INDEX       { pkiCrlIndex }
+    ::= { pkiCrlTable 1 }
+
+PkiCrlEntry ::= SEQUENCE {
+    pkiCrlIndex                 Integer32,
+    pkiCrlIssuerNames           DisplayString,
+    pkiCrlNumber                DisplayString,
+    pkiCrlType                  PkiCertType,
+    pkiCrlUpdateTime            DisplayString,
+    pkiCrlNextUpdateTime        DisplayString,
+    pkiCrlTrustStatus           BIT STRING,
+    pkiCrlCreation              INTEGER,
+    pkiCrlRevokedCerts          Gauge32,
+    pkiCrlRemove                INTEGER
+}
+
+pkiCrlIndex     OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The unique index for this CRL."
+    ::= { pkiCrlEntry 1 }
+
+pkiCrlIssuerNames OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The name(s) of the certificate authority which issued 
+        this CRL. The CRL's issuer name can consist of multiple names 
+        including distinguished name fields, IP Address, domain name, 
+        etc. This object concatenates all these names into one string."
+    ::= { pkiCrlEntry 2 }
+
+pkiCrlNumber    OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The CRL number which is unique for all CRLs issued by a
+        particular CA."
+    ::= { pkiCrlEntry 3 }
+
+pkiCrlType      OBJECT-TYPE
+    SYNTAX      PkiCertType
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The type of certificates in the CRL."
+    ::= { pkiCrlEntry 4 }
+
+pkiCrlUpdateTime OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The time when this CRL was updated."
+    ::= { pkiCrlEntry 5 }
+
+pkiCrlNextUpdateTime OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The time when this CRL will be updated next."
+    ::= { pkiCrlEntry 6 }
+
+pkiCrlTrustStatus OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                        trusted(0),             -- everything checks out
+                        noIssuer(1),            -- no issuer certificate
+                        issuerUntrusted(2),     -- issuer's certificate 
+                                                   -- not trusted
+                        validityPeriod(3),      -- validity period invalid
+                        updateDue(4),           -- next crl update due
+                        signatureCheck(5)       -- issuer signature not valid
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The CRL's current trust status. If the trust computation 
+        succeeds, it will be 'trusted(0)' otherwise this object will 
+        give the set of errors detected while computing the trust 
+        status for this CRL. To be trusted, all issuer certificates 
+        in the chain must be trusted."
+    ::= { pkiCrlEntry 7 }
+
+pkiCrlCreation OBJECT-TYPE
+    SYNTAX      INTEGER {
+                        static(1),      -- net mgt
+                        dynamic(2)      -- IKE, LDAP, CMP
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Specifies how the CRL was obtained. If a dynamic 
+        CRL is modified via network management, it becomes 
+        'static'."
+    ::= { pkiCrlEntry 8 }
+
+pkiCrlRevokedCerts OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of revoked certificates in this CRL."
+    ::= { pkiCrlEntry 9 }
+
+pkiCrlRemove OBJECT-TYPE
+    SYNTAX      INTEGER {
+                        ready(1),
+                        execute(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object is used to delete CRLs."
+    ::= { pkiCrlEntry 10 }
+
+
+pkiCrlCertTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF PkiCrlCertEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION 
+        "This table contains the list of revoked certificates from
+        CRLs in the pkiCrlTable."
+    ::= { pkiObjects 8 }
+
+pkiCrlCertEntry OBJECT-TYPE
+    SYNTAX      PkiCrlCertEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A revoked certificate entry from a CRL."
+    INDEX       { pkiCrlIndex, pkiCrlCertIndex }
+    ::= { pkiCrlCertTable 1 }
+
+PkiCrlCertEntry ::= SEQUENCE {
+    pkiCrlCertIndex             Integer32,
+    pkiCrlCertSerialNumber      DisplayString,
+    pkiCrlCertRevokedDate       DisplayString,
+    pkiCrlCertInvalidDate       DisplayString,
+    pkiCrlCertIssuerNames       DisplayString
+}
+
+pkiCrlCertIndex OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The unique index for this CRL certificate."
+    ::= { pkiCrlCertEntry 1 }
+
+pkiCrlCertSerialNumber OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The serial number for the revoked certificate."
+    ::= { pkiCrlCertEntry 2 }
+
+pkiCrlCertRevokedDate OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The date and time at which the certificate was revoked."
+    ::= { pkiCrlCertEntry 3 }
+
+pkiCrlCertInvalidDate OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The date and time at which the certificate becomes invalid."
+    ::= { pkiCrlCertEntry 4 }
+
+pkiCrlCertIssuerNames OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+        "The name(s) of the certificate authority which revoked 
+        the certificate. The certificate's issuer name can consist
+        of multiple names including distinguished name fields, IP 
+        Address, domain name, etc. This object concatenates all these 
+        names into one string."
+    ::= { pkiCrlCertEntry 5 }
+
+
+-- ================================================================
+-- Conformance Statements
+-- ================================================================
+
+pkiCompliances OBJECT IDENTIFIER ::= { pkiConformance 1 }
+pkiGroups      OBJECT IDENTIFIER ::= { pkiConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+pkiCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for all agents that support this
+        MIB. A compliant agent implements all objects defined in this
+        MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS {
+        pkiAllGroup
+    }
+    ::= { pkiCompliances 1 }
+
+--
+-- Object Groups
+--
+
+pkiAllGroup OBJECT-GROUP
+    OBJECTS {
+        --pkiSubsystemGroup,
+        pkiSubjNameFormat,
+        pkiSubjDistName,
+        pkiLdapServer,
+        --
+        --pkiKeyPairName,
+        pkiKeyPairAlgorithm,
+        pkiKeyPairLength,
+        pkiKeyPairRowStatus,
+        --
+        --pkiCertRqstPublicKey,
+        pkiCertRqstSigAlgorithm,
+        pkiCertRqstSignature,
+        pkiCertRqstPem,
+        --
+        pkiNewCert,
+        pkiCertIndex,
+        pkiCertSubjNames,
+        pkiCertIssuerNames,
+        pkiCertKeyPair,
+        pkiCertType,
+        pkiCertSerialNum,
+        pkiCertValidNotBefore,
+        pkiCertValidNotAfter,
+        pkiCertCreation,
+        pkiCertCertAuthority,
+        pkiCertCrlIssuer,
+        pkiCertTrustStatus,
+        pkiCertForceTrusted,
+        pkiCertSubjPubKeyAlgorithm,
+        pkiCertSignatureAlgorithm,
+        pkiCertSignature,
+        pkiCertRemove,
+        --
+        pkiNewCrl,
+        pkiCrlIndex,
+        pkiCrlIssuerNames,
+        pkiCrlNumber,
+        pkiCrlType,
+        pkiCrlUpdateTime,
+        pkiCrlNextUpdateTime,
+        pkiCrlTrustStatus,
+        pkiCrlCreation,
+        pkiCrlRevokedCerts,
+        pkiCrlRemove,
+        --
+        pkiCrlCertIndex,
+        pkiCrlCertSerialNumber,
+        pkiCrlCertRevokedDate,
+        pkiCrlCertInvalidDate,
+        pkiCrlCertIssuerNames
+    }
+    STATUS      current
+    DESCRIPTION
+        "The set of all accessible objects in this MIB."
+    ::= { pkiGroups 1 }
+
+END
+
+
+
+
+
+
+

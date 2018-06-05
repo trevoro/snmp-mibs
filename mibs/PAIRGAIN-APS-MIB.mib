@@ -1,0 +1,574 @@
+PAIRGAIN-APS-MIB
+
+-- PairGain APS MIB Release 1.0
+-- Revision Date:  1/18/2000
+--
+-- Copyright 1999 PairGain Technologies, Inc.  All Rights
+-- Reserved.  Reproduction of this document is authorized on
+-- condition that the foregoing copyright notice is included.
+-- This PairGain SNMP Management Information Base Specification
+-- (Specification) embodies PairGain's confidential and
+-- proprietary intellectual property.  PairGain retains all
+-- title and ownership in the Specification, including any
+-- revisions.
+--
+-- It is PairGain's intent to encourage the widespread use of
+-- this Specification in connection with the management of
+-- PairGain products. PairGain grants vendors, end-users,
+-- and other interested parties a non-exclusive license to
+-- use this Specification in connection with the management
+-- of PairGain products.
+--
+-- This Specification is supplied "AS IS," and PairGain makes
+-- no warranty, either expressed or implied, as to the use,
+-- operation, condition, or performance of the Specification.
+--
+-- Revision History
+--------------------------------------------------------------
+-- Date            Ver     Programmer  Description
+--------------------------------------------------------------
+-- 10/11/1999      0.1     R. Wada     Initial Version
+-- 11/08/1999	   0.2 	   R. Wada	   Added objects for status
+-- 11/10/1999      0.3	   R. Wada	   Updated after design review
+-- 11/11/1999	   0.4     R. Wada	   Separated trap APS and Trap enable
+-- 11/12/1999      0.5     R. Wada     Changes after MIB Manager Review
+-- 01/18/2000      1.0     R. Wada     Incorporate text changes from document services
+--  NOTE:  This is a linear APS 1+1 MIB, thus it assumes that the APS group
+--  consists of two channels (the working channel and the protection channel).
+--  It does not support the 1:n protection scheme.
+--  A standard IETF MIB did not exist at the time of writing this MIB, so we generated
+--  this proprietary MIB.
+--
+--
+--  Some object definitions were taken from an early draft of the IETF MIB
+--  standard to allow for future migration to the standard when it does get accepted.
+
+DEFINITIONS ::= BEGIN
+
+-- SECTION 1: Top Level Definitions
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, Integer32, TimeTicks, Counter32
+        FROM SNMPv2-SMI
+    OBJECT-TYPE
+        FROM RFC-1212
+    pgApsMIB
+        FROM PAIRGAIN-COMMON-HD-MIB
+	ifIndex
+        FROM RFC1213-MIB
+	TimeSeconds
+	    FROM PAIRGAIN-DSLAM-CHASSIS-MIB
+    TEXTUAL-CONVENTION,DisplayString, RowStatus, TruthValue
+		FROM SNMPv2-TC;
+
+
+
+-- Module Identity pgAPS (required for SNMP v2)
+pgAps MODULE-IDENTITY
+    LAST-UPDATED    "9910110000Z"
+    ORGANIZATION    "PairGain Technologies, Inc."
+        CONTACT-INFO    "
+                    14402 Franklin Avenue
+                    Tustin, CA  92780
+                    "
+    DESCRIPTION "The module defines the PairGain Proprietary linear APS1+1 MIB
+				used in the Avidia System "
+    ::= {pgApsMIB 1}
+
+pgApsMIBNotifications	OBJECT IDENTIFIER ::= { pgAps 0 }
+pgApsMibObjects        	OBJECT IDENTIFIER ::= { pgAps 1 }
+
+-- Define a one byte integer
+    Byte ::= INTEGER (0..255)
+
+-- Define the K1, K2 SONET overhead APS bytes
+   PgApsK1K2 ::= TEXTUAL-CONVENTION
+       STATUS current
+       DESCRIPTION
+       "This Textual Convention describes the K1K2 overhead
+	   bytes in the SONET frame that controls APS.
+
+	   K1 is located in the low order byte, K2 is located in
+       the higher order second byte.
+
+       Bits 1-4 of the K1 byte indicate a request.
+
+       1111  Lockout of Protection
+       1110  Forced Switch
+       1101  SF - High Priority
+       1100  SF - Low Priority
+       1011  SD - High Priority
+       1010  SD - Low Priority
+       1001  not used
+       1000  Manual Switch
+
+       0111  not used
+       0110  Wait-to-Restore
+       0101  not used
+       0100  Exercise
+       0011  not used
+       0010  Reverse Request
+       0001  Do Not Revert
+       0000  No Request
+
+       Bits 5-8 of the K1 byte indicate the channel associated with the
+       request defined in bits 1-4.
+
+       0000 is the Null channel
+
+       1-14 are working channels.
+       15   is the extra traffic channel
+
+       Bits 1-4 of the K2 byte indicate a channel. The channel is
+       defined with the same syntax as K1 Bits 5-8.
+
+       Bit 5 of the K2 byte indicates the type of
+       architecture.
+
+       0 means the architecture is 1+1
+       1 means the architecture is 1:n
+
+       Bits 6-8 of the K2 byte indicates the
+       mode.
+
+       000 - 011 are reserved for future use
+
+       100  indicates the mode is unidirectional
+       101  indicates the mode is bidirectional
+
+       110  RDI-L
+
+      111  AIS-L
+       "
+      SYNTAX Integer32
+
+
+    ----------------------------------------------------
+    -- pgAps Configuration Table
+    ----------------------------------------------------
+    pgApsConfigTable  OBJECT-TYPE
+        SYNTAX      SEQUENCE OF PgApsConfigEntry
+        MAX-ACCESS  not-accessible
+        STATUS      current
+        DESCRIPTION
+            "This table provides the Automatic Protection Switch
+			Mode Configuration for Linear 1+1 mode APS"
+        ::= {pgApsMibObjects 1}
+
+    pgApsConfigEntry  OBJECT-TYPE
+        SYNTAX      PgApsConfigEntry
+        MAX-ACCESS  not-accessible
+        STATUS      current
+        DESCRIPTION
+            "Entries in the pgApsConfigTable table.  "
+		INDEX       {pgApsIndex}
+        ::= {pgApsConfigTable 1}
+
+    PgApsConfigEntry ::= SEQUENCE {
+		pgApsIndex
+				INTEGER,
+		pgApsEnable
+				INTEGER,
+		pgApsTrapEnable
+				INTEGER,
+		pgApsWorkChanIfIndex
+				Integer32,
+		pgApsProtChanIfIndex
+				Integer32,
+		pgApsConfigMode
+                INTEGER,
+        pgApsConfigSigDegradeThresh
+                INTEGER,
+        pgApsConfigWaitToRevert
+				INTEGER,
+		pgApsSwitchCommand
+				Integer32
+		}
+
+
+    pgApsIndex  OBJECT-TYPE
+        SYNTAX      INTEGER (0..255)
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			APS entries are slot based.
+			The index uses the slot number of the card.
+			pgApsIndex (slot number) identifies the APS 1+1 entry that
+			represents the two APS 1+1 channels.
+            "
+        ::= {pgApsConfigEntry 1}
+
+    pgApsEnable  OBJECT-TYPE
+        SYNTAX      INTEGER{
+							enable (1),
+							disable (2)
+							}
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            "
+			Enable (1) or disables (2) the APS feature.  The default is
+			disabled (2).
+		   "
+		DEFVAL { disable }
+		::= {pgApsConfigEntry 2}
+
+    pgApsTrapEnable  OBJECT-TYPE
+        SYNTAX      INTEGER{
+							enable (1),
+							disable(2)
+							}
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            "
+			Enables (1) or disables (2) the sending of the trap whenever an
+			APS switch occurs.  The default is disabled (2).
+		   "
+		DEFVAL { disable }
+        ::= {pgApsConfigEntry 3}
+
+    pgApsWorkChanIfIndex  OBJECT-TYPE
+        SYNTAX      Integer32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "The ifIndex of the 1+1 APS configuration working channel.
+            "
+        ::= {pgApsConfigEntry 4}
+
+    pgApsProtChanIfIndex  OBJECT-TYPE
+        SYNTAX      Integer32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "The ifIndex of the 1+1 APS configuration protection channel.
+            "
+        ::= {pgApsConfigEntry 5}
+
+
+    pgApsConfigMode  OBJECT-TYPE
+        SYNTAX      INTEGER{
+							nonRevertive(1),
+							nonRevertiveAuto(2),
+							revertive(3)
+						}
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            "
+			nonRevertive(1)    	: Default.  non-Revertive mode as defined in
+			                      GR-253
+			nonRevertiveAuto(2)	: PairGain proprietary mode that switches from
+			                      the working channel to the protection
+								  channel upon a signal failure (SF) or signal
+								  degradation (SD) condition.  After the
+								  proprietary PairGain wait to switch time has
+								  elapsed, the channel can switch from the
+								  protection channel to the working channel
+								  upon an SF or SD condition.  Thus the name
+								  'non-revertive, auto switching'
+			revertive(3)       	: Revertive switching mode as defined in GR-253
+		   "
+		DEFVAL { nonRevertive }
+        ::= {pgApsConfigEntry 6}
+
+    pgApsConfigSigDegradeThresh OBJECT-TYPE
+        SYNTAX      INTEGER (3..9)
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "The Bit Error Rate threshold at which the APS declares that the
+			currently selected signal has degraded.
+			The value is the minus power of 10.  For example, a value of 7
+			represents 10e-7."
+        ::= {pgApsConfigEntry 7}
+
+
+    pgApsConfigWaitToRevert OBJECT-TYPE
+        SYNTAX      INTEGER (300..720)
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            "
+			This object is only used during 'revertive' switching mode:
+			If the switch has occurred and the error condition has disappeared,
+			then number of seconds specified in this MIB object must elapse
+			before the APS will switch back to the normal mode.
+			The valid range is 300 to 720 seconds (5-12 minutes).
+			The default is 300 seconds (5 minutes).
+			"
+		DEFVAL { 300 }
+        ::= {pgApsConfigEntry 8}
+
+
+    pgApsSwitchCommand OBJECT-TYPE
+        SYNTAX      Integer32
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            "Sends a local switch command.  For example,
+			a command could be Manual switch from normal to protection, or
+			Forced switch from normal to protection.
+			The command format is defined as follows:
+			The pgApsSwitchCommand consists of two 16-bit portions.
+			The high order word contains the command.
+			The low order word contains the destination channel
+			(either working or protection.)
+
+			The commands contained in the high order word are as follows:
+			Value  Command
+			=====  =======
+			0      Clear all switch commands for the specified channel.
+			1      Lockout the working channel from switching to the protection
+			       channel.
+			2      Force switch from the working channel to the protection
+			       channel.
+			3      Force switch from the protection channel to the working
+			       channel.
+			4      Manual switch from the working to the protection.  This
+			       will not work if SD or SF is in effect on the protection
+				   channel.
+			5      Manual switch from the protection to the working channel.
+			       This will not work if SD or SF is active on the working
+				   channel.
+			"
+        ::= {pgApsConfigEntry 9}
+
+
+--	pgApsConfigSigFailThresh OBJECT-TYPE
+--        SYNTAX      Integer32
+--        MAX-ACCESS  read-write
+--        STATUS      current
+--        DESCRIPTION
+--            "Sets the Bit Error Rate threshold at which the APS declares
+--			that the currently selected signal has failed.
+--			The value is the minus power of 10.  For example, a value of 7
+--			represents 10e-7."
+--        ::= {pgApsConfigEntry X}
+
+
+    ----------------------------------------------------
+    -- pgAps Status Table
+    ----------------------------------------------------
+    pgApsStatusTable  OBJECT-TYPE
+        SYNTAX      SEQUENCE OF PgApsStatusEntry
+        MAX-ACCESS  not-accessible
+        STATUS      current
+        DESCRIPTION
+            "This table provides the status for each 1+1 APS entry.  "
+        ::= {pgApsMibObjects 2}
+
+    pgApsStatusEntry  OBJECT-TYPE
+        SYNTAX      PgApsStatusEntry
+        MAX-ACCESS  not-accessible
+        STATUS      current
+        DESCRIPTION
+            "Status entry for each 1+1 APS."
+        INDEX	{pgApsIndex}
+        ::= {pgApsStatusTable 1}
+
+    PgApsStatusEntry ::= SEQUENCE {
+        pgApsStatusK1K2Rx
+				Integer32,
+        pgApsStatusK1K2Tx
+                Integer32,
+		pgApsStatusCurrent
+				Byte,
+		pgApsWorkChanStatus
+				BITS,
+		pgApsWorkChanLastSwitch
+				TimeTicks,
+		pgApsWorkChanSDs
+				Counter32,
+		pgApsWorkChanSFs
+				Counter32,
+		pgApsWorkNumSwitchOvers
+				Counter32,
+		pgApsProtChanStatus
+				BITS,
+		pgApsProtChanLastSwitch
+				TimeTicks,
+		pgApsProtChanSDs
+				Counter32,
+		pgApsProtChanSFs
+				Counter32,
+		pgApsProtNumSwitchOvers
+				Counter32
+		}
+
+    pgApsStatusK1K2Rx	OBJECT-TYPE
+        SYNTAX      PgApsK1K2
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "The value of the K1 K2 SONET overhead bytes received.
+            "
+        ::= {pgApsStatusEntry 1}
+
+    pgApsStatusK1K2Tx	OBJECT-TYPE
+        SYNTAX      PgApsK1K2
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "The value of the K1 K2 SONET overhead bytes transmitted.
+			"
+        ::= {pgApsStatusEntry 2}
+
+    pgApsStatusCurrent	OBJECT-TYPE
+        SYNTAX      Byte
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "The current switch status.
+			0 means the working channel selected
+			1 means protection channel selected
+			The default is the working channel (0).
+			"
+        ::= {pgApsStatusEntry 3}
+
+    pgApsWorkChanStatus	OBJECT-TYPE
+        SYNTAX      BITS{
+					lockedOut(0),
+					sd(1),
+					sf(2)
+					}
+
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			Bit 0 set means that this channel is locked out and will not be switched.
+			Bit 1 set means that the SD state is in effect on this channel
+			Bit 2 set means that the SF state is in effect on this channel
+			"
+        ::= {pgApsStatusEntry 4}
+
+    pgApsWorkChanLastSwitch	OBJECT-TYPE
+        SYNTAX      TimeTicks
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			Time stamp of the last time the working channel switched
+			to the protection channel.
+			"
+        ::= {pgApsStatusEntry 5}
+
+	pgApsWorkChanSDs	OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			Running count of the number of SD conditions for the working
+			channel that the driver detected.
+			"
+        ::= {pgApsStatusEntry 6}
+
+	pgApsWorkChanSFs	OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			Running count of the number of SF conditions for the working
+			channel that the driver detected.
+			"
+        ::= {pgApsStatusEntry 7}
+
+	pgApsWorkNumSwitchOvers	OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			The number of times the working channel has switched to the protection channel.
+			"
+        ::= {pgApsStatusEntry 8}
+
+    pgApsProtChanStatus	OBJECT-TYPE
+        SYNTAX      BITS{
+					lockedOut(0),
+					sd(1),
+					sf(2)
+					}
+
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			The protection channel status:
+			Bit 0 set means that the protection channel is locked out and
+			      will not be switched.
+			Bit 1 set means that the SD state is in effect on the protection
+			      channel.
+			Bit 2 set means that the SF state is in effect on the protection
+			      channel.
+			"
+        ::= {pgApsStatusEntry 9}
+
+	pgApsProtChanLastSwitch	OBJECT-TYPE
+        SYNTAX      TimeTicks
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			Time stamp of the last time the Protection channel switched
+			to the working channel.
+			"
+        ::= {pgApsStatusEntry 10}
+
+	pgApsProtChanSDs	OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			Running count of the number of SD conditions for the protection
+			channel that the driver detected.
+			"
+        ::= {pgApsStatusEntry 11}
+
+	pgApsProtChanSFs	OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			Running count of the number of SF conditions for the protection
+			channel that the driver detected.
+			"
+        ::= {pgApsStatusEntry 12}
+
+	pgApsProtNumSwitchOvers	OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+			The number of times the protection channel switched to the
+			working channel.
+			"
+        ::= {pgApsStatusEntry 13}
+
+
+
+--------------------------------------
+--	APS TRAPS
+--------------------------------------
+pgApsTrapSwitchOver	NOTIFICATION-TYPE
+	OBJECTS	{ pgApsStatusEntry }
+	STATUS	current
+	DESCRIPTION
+		"If pgApsTrapEnable is enabled, then pgApsTrapSwitchOver is sent when
+		the APS switches from the working channel to the protection channel or
+		from the protection channel to the working channel.  This occurs when
+		the value of pgApsWorkingNumSwitchOvers or pgApsProtNumSwitchOvers
+		increments.
+		"
+		::= {pgApsMIBNotifications 1}
+
+END
+

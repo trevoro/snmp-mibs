@@ -1,0 +1,1096 @@
+--
+-- Harris & Jeffries, Inc.
+-- Soft-ATM(TM) Proprietary PNNI MIB
+--
+--
+--         This MIB defines those objects supported by Harris and
+--      Jeffries' PNNI Routing Subsystem IN ADDITION to those
+--      objects defined by the ATM Forum.
+--
+--
+HJ-PNNI-MIB DEFINITIONS ::= BEGIN
+--
+--      IMPORTS
+--              MODULE-IDENTITY
+--                      FROM SNMPv2-SMI
+--              OBJECT-TYPE
+--                      FROM SNMPv2-SMI
+--              Counter32
+--                      FROM SNMPv2-SMI
+--              Integer32
+--                      FROM SNMPv2-SMI
+--              enterprises
+--                      FROM SNMPv2-SMI
+--              TEXTUAL-CONVENTION
+--                      FROM SNMPv2-TC
+--              DisplayString
+--                      FROM SNMPv2-TC
+--              TruthValue
+--                      FROM SNMPv2-TC
+--              ifIndex
+--                      FROM IF-MIB
+--              Unsigned32
+--                      FROM PNNI-MIB
+--              PnniPortId
+--                      FROM PNNI-MIB
+--              pnniNodeEntry
+--                      FROM PNNI-MIB
+--              pnniIfEntry
+--                      FROM PNNI-MIB
+--              pnniNbrPeerEntry
+--                      FROM PNNI-MIB
+--              pnniLinkEntry
+--                      FROM PNNI-MIB;
+--
+--      hjPnniMIB MODULE-IDENTITY
+--      LAST-UPDATED    "9804150000Z"
+--      ORGANIZATION    "Harris and Jeffries, Inc."
+--      CONTACT-INFO
+--          "Harris and Jeffries, Inc.
+--           888 Washington St.
+--           Dedham, MA  02026  USA
+--           Phone: +1 617-329-3200
+--           Fax:   +1 617-329-4148
+--           tech-supp@hjinc.com"
+--      DESCRIPTION
+--          "Extension MIB for managing ATM Forum PNNI routing
+--           with Soft-ATM(TM) PNNI Routing.  This MIB module
+--           supplements the objects described by the ATM
+--           Forum's PNNI MIB."
+--      ::= {        enterprises (603) harrisjeffries(603) hjStdExtensions(2)
+--                              hjTransmission(10) hjAtm(2) hjAtmPnni(7) 1 }
+
+
+   IMPORTS
+      mgmt, NetworkAddress, IpAddress, Counter, Gauge, TimeTicks
+            FROM RFC1155-SMI
+      ifIndex
+            FROM RFC1213-MIB
+      OBJECT-TYPE
+            FROM RFC-1212
+      pnniNodeIndex, pnniNbrPeerRemoteNodeId, pnniLinkPortId
+            FROM PNNI-MIB;
+
+    DisplayString             ::= OCTET STRING
+    Counter32                 ::= Counter
+    Integer32                 ::= INTEGER
+    TruthValue                ::= INTEGER { true(1), false(2) }
+    Unsigned32                ::= Gauge
+    PnniPortId                ::= Unsigned32
+
+        org             OBJECT IDENTIFIER ::= { iso 3 }
+        dod             OBJECT IDENTIFIER ::= { org 6 }
+        internet        OBJECT IDENTIFIER ::= { dod 1 }
+        private         OBJECT IDENTIFIER ::= { internet 4 }
+        enterprises     OBJECT IDENTIFIER ::= { private 1 }
+
+
+--
+-- H&J private tree space.
+--
+        harrisjeffries  OBJECT IDENTIFIER ::= { enterprises 603 }
+        hjStdExtensions OBJECT IDENTIFIER ::= { harrisjeffries 2 }
+        hjTransmission  OBJECT IDENTIFIER ::= { hjStdExtensions 10 }
+        hjAtm           OBJECT IDENTIFIER ::= { hjTransmission 2 }
+        hjAtmPnni       OBJECT IDENTIFIER ::= { hjAtm 7 }
+
+
+HjPnniIfResourceIndex ::= INTEGER (0..5)
+
+-- HjPnniIfResourceIndex ::= TEXTUAL-CONVENTION
+--        STATUS        current
+--        DESCRIPTION
+--            "The value of this object identifies a set of resource
+--             availability characteristics for a port within the
+--             hjPnniIfResourceTable.  Up to five different sets can be
+--             defined per IfIndex.  The value zero is invalid as an index
+--             value in hjPnniIfResourceTable.  The value zero, when used,
+--             indicates that the specified ATM service class is not allowed
+--             on the entity being configured."
+--        SYNTAX       INTEGER (0..5)
+
+--
+-- the HJ-PNNI base group
+--
+        hjPnniBaseGroup OBJECT IDENTIFIER ::= { hjAtmPnni 2 }
+
+
+        hjPnniLoggingFile OBJECT-TYPE
+        SYNTAX    DisplayString
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The name of the debug logging file for diagnostic
+             messages.  This must be set to a non-null string
+             in order for diagnostic messages to be produced."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { "" }
+        ::= { hjPnniBaseGroup 1 }
+
+        hjPnniLoggingMask OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "A bit-mask indicating which classes of debug
+             diagnostics are to be printed.  The bit mask 
+             positions are defined by symbols HJ_PNNI_LC_*
+             in the Harris and Jeffries External Specification for
+             PNNI."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { 0 }
+        ::= { hjPnniBaseGroup 2 }
+
+        hjPnniAddressRoundRobin OBJECT-TYPE
+        SYNTAX    TruthValue
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "A flag which (when set to TRUE) enables Round Robin
+             Address Selection for multi-homed ATM Addresses.
+             Using this feature, when multiple PNNI nodes advertise
+             the best-match ATM Address prefix for a given ATM
+             Address destination, the HJ-PNNI node will choose
+             node destinations in a round-robin manner (among those
+             best advertisers).  When this flag is disabled (set to
+             FALSE), the node selected will be the first one
+             found."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { false }
+        ::= { hjPnniBaseGroup 3 }
+
+        hjPnniRoundRobinNbrPortUse OBJECT-TYPE
+        SYNTAX    TruthValue
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "A flag which (when set to true) enables Round Robin
+             Selection of ports for PNNI database (PTSE) exchanges
+             with neighbors.  This flag only has effect when multiple
+             port connections to a neighbor exist and are in 2-Way Inside
+             (hello) state.
+             When this attribute is set to true, then database exchanges
+             with a neighbor will use all available RCCs, in a round-robin
+             manner for transmission.  When this attribute is set to false,
+             then only a single RCC (usually the first one which became
+                        active) will be used."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { true }
+        ::= { hjPnniBaseGroup 4 }
+
+        hjPnniCacheTimerFreq OBJECT-TYPE
+        SYNTAX    Integer32 (1..300)
+--      UNITS     "seconds"
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The frequency of the Cache Timer.  The cache timer is used
+             to age out and, possibly, recalculate cached paths, when 
+             this feature is enabled in the switching system."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { 15 }
+        ::= { hjPnniBaseGroup 5 }
+
+        hjPnniCacheAge OBJECT-TYPE
+        SYNTAX    Integer32 (1..300)
+--      UNITS     "seconds"
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The age of a set of cached routes to a destination when the
+             cache is considered old.  When a destination cache is
+             discovered to be old, the cache timer will flush the cache
+             of paths to that destination, and may choose to recalculate
+             a new cache, depending on whether the cache has been
+             used recently."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { 30 }
+        ::= { hjPnniBaseGroup 6 }
+
+        hjPnniCacheRecentInt OBJECT-TYPE
+        SYNTAX    Integer32 (1..300)
+--      UNITS     "seconds"
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The maximum interval of time since a cache of paths to
+             a destination node was referenced (by a route calculation)
+             which is considered a recent reference to the cache.
+             When a set of cached paths is flushed by the cache timer,
+             the cache to that destination will be automatically
+             recalculated if the cache was referenced recently."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { 30 }
+        ::= { hjPnniBaseGroup 7 }
+
+        hjPnniCacheNumEntries OBJECT-TYPE
+        SYNTAX    INTEGER(1..2147483647)
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "The current number of cached paths being maintained
+             by the path-caching logic of the switching system."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        ::= { hjPnniBaseGroup 8 }
+
+        hjPnniCacheMaxPaths OBJECT-TYPE
+        SYNTAX    INTEGER (1..31)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The maximum of paths per destination node which will
+             be calculated to each node destination, when path-caching
+             is enabled."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { 20 }
+        ::= { hjPnniBaseGroup 9 }
+
+        hjPnniCacheMaxEntries OBJECT-TYPE
+        SYNTAX    INTEGER (1..63)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The maximum of nodal destinations which can contain cached
+             paths, when this feature is enabled.  If a cache is needed
+             to a new destination, and there are already this number of
+             cached destinations present, the least-recently referenced
+             cache will be flushed to make room for the new cache."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { 20 }
+        ::= { hjPnniBaseGroup 10 }
+
+        hjPnniCacheEnable OBJECT-TYPE
+        SYNTAX    TruthValue
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "Enables path-caching for this switch system.  The feature
+             must also be enabled by compile-time switches to allow 
+             enabling path-caching."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { false }
+        ::= { hjPnniBaseGroup 11 }
+
+        hjPnniAllowLGNPathLoops OBJECT-TYPE
+        SYNTAX    TruthValue
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "Modifies the Dijkstra (path-calculation) algorithm in
+             this switch system to allow or disallow loops of
+             paths when computing paths through Logical Group Nodes.
+             When loops are disallowed (this parameter set to false), 
+             no path will be considered which enters the same Logical
+             Group Node twice.  This considerably lessens the time
+             needed to compute the paths in complicated networks.  
+             However, under some crankback situations, this might
+             fail to find a viable path to the desired nodal destination.
+             Note that loops between lowest-level nodes (nodes within
+             the local node's lowest-level peer group members) are
+             always disallowed, regardless of the setting of this 
+             parameter."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        DEFVAL { false }
+        ::= { hjPnniBaseGroup 12 }
+
+--
+-- Extensions to the pnni Node table
+--
+        hjPnniNodeTable OBJECT-TYPE
+        SYNTAX    SEQUENCE OF HjPnniNodeEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "H&J supplemental information for a PNNI node in
+             this switching system."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        ::= { hjAtmPnni 3 }
+
+        hjPnniNodeEntry OBJECT-TYPE
+        SYNTAX    HjPnniNodeEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "An entry in the table, supplemental information
+             of a PNNI logical node in this switching system."
+        INDEX  { pnniNodeIndex }
+--      AUGMENTS      { pnniNodeEntry }
+        ::= { hjPnniNodeTable 1 }
+
+        HjPnniNodeEntry ::=
+        SEQUENCE        {
+                        hjPnniNodeLoggingMask        Unsigned32,
+                        hjPnniNodeMinDynamicPortId   PnniPortId,
+                        hjPnniNodeMaxDynamicPortId   PnniPortId,
+                        hjPnniNodeSvccCellTransferDelay  INTEGER,
+                        hjPnniNodeSvccCellDelayVariation INTEGER,
+                        hjPnniNodeSvccCellLossRatio      INTEGER,
+                        hjPnniNodeSvccAbrInitialCellRate INTEGER,
+                        hjPnniNodeSvccAbrTransientBufferExposure INTEGER,
+                        hjPnniNodeSvccAbrRateIncreaseFactor INTEGER,
+                        hjPnniNodeSvccAbrRateDecreaseFactor INTEGER
+                        }
+
+
+        hjPnniNodeLoggingMask OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "A bit-mask indicating which classes of debug
+                        diagnostics are to be printed for this node. 
+                        This mask is logically ANDed with the global mask
+                        hjPnniLoggingMask before bit positions are checked.
+                        The bit mask positions are defined by symbols HJ_PNNI_LC_*
+                        in the Harris and Jeffries External Specification for
+                        PNNI."
+                DEFVAL { 0 }
+        ::= { hjPnniNodeEntry 1 }
+
+        hjPnniNodeMinDynamicPortId OBJECT-TYPE
+        SYNTAX    PnniPortId
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "The minimum value this node will assign to 
+                         dynamically created port IDs, based on receipt
+                         of information over SVCC-based RCCs.  
+                         For lowest-level nodes, the range defined by
+                         this parameter and hjPnniNodeMaxDynamicPortId
+                         must not intersect with Port IDs assigned to 
+                         PVC-based ports.
+                         The default value of this parameter may be
+                         changed by modifying a symbol in the customer
+                         modifiable file, pnni_def.h."
+                DEFVAL { 2147483648 }
+        ::= { hjPnniNodeEntry 2 }
+
+        hjPnniNodeMaxDynamicPortId OBJECT-TYPE
+        SYNTAX    PnniPortId
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "The maximum value this node will assign to 
+                         dynamically created port IDs, based on receipt
+                         of information over SVCC-based RCCs.  
+                         For lowest-level nodes, the range defined by
+                         this parameter and hjPnniNodeMinDynamicPortId
+                         must not intersect with Port IDs assigned to 
+                         PVC-based ports.
+                         The default value of this parameter may be
+                         changed by modifying a symbol in the customer
+                         modifiable file, pnni_def.h."
+                DEFVAL { 4294967294 }
+        ::= { hjPnniNodeEntry 3 }
+
+        hjPnniNodeSvccCellTransferDelay OBJECT-TYPE
+        SYNTAX    INTEGER(1..2147483647)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "Defines the maximum acceptible Cell Transfer
+                         Delay for SVCC-based RCCs initiated by this node
+                         as the calling party.  Used only when initiating
+                         an SVCC-based RCC, and CTD is an acceptible
+                         call metric for the ATM service class of the VCC.
+                         The distinguished value zero means that there is
+                         no Cell Transfer Delay restriction for SVCC-based
+                         RCCs."
+                DEFVAL { 0 }
+        ::= { hjPnniNodeEntry 4 }
+
+        hjPnniNodeSvccCellDelayVariation OBJECT-TYPE
+        SYNTAX    INTEGER(1..2147483647)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "Defines the maximum acceptible Cell Delay
+                         Variation for SVCC-based RCCs initiated by this node
+                         as the calling party.  Used only when initiating
+                         an SVCC-based RCC, and EQOS is an acceptible
+                         call metric for the ATM service class of the VCC.
+                         The distinguished value zero for this parameter
+                         and hjPnniNodeSvccCellLossRatio means that there is
+                         no EQOS restriction for SVCC-based RCCs."
+                DEFVAL { 0 }
+        ::= { hjPnniNodeEntry 5 }
+
+        hjPnniNodeSvccCellLossRatio OBJECT-TYPE
+        SYNTAX    INTEGER(1..2147483647)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "Defines the maximum acceptible Cell Loss Ratio
+                         for SVCC-based RCCs initiated by this node
+                         as the calling party.  Used only when initiating
+                         an SVCC-based RCC, and EQOS is an acceptible
+                         call metric for the ATM service class of the VCC.
+                         The distinguished value zero for this parameter
+                         and hjPnniNodeSvccCellDelayVariation means that 
+                         there is no EQOS restriction for SVCC-based RCCs."
+                DEFVAL { 0 }
+        ::= { hjPnniNodeEntry 6 }
+
+        hjPnniNodeSvccAbrInitialCellRate OBJECT-TYPE
+        SYNTAX    INTEGER (0..16777215)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "Defines the Initial Cell Rate subfield for inclusion
+                         in the ABR Setup Parameters information element
+                         within Setup messages when initiating an ABR
+                         SVCC-based RCC.  This parameter is only used when
+                         using ABR service for establishing SVCC-based RCCs,
+                         and is ignored otherwise.  The value of this parameter
+                         specifies the requested initial cell rate, in cells
+                         per second."
+                DEFVAL { 0 }
+        ::= { hjPnniNodeEntry 7 }
+
+        hjPnniNodeSvccAbrTransientBufferExposure OBJECT-TYPE
+        SYNTAX    INTEGER (1..16777215)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "Defines the Transient Buffer Exposure subfield for
+                         inclusion in the ABR Setup Parameters information
+                         element within Setup messages when initiating an ABR
+                         SVCC-based RCC.  This parameter is only used when
+                         using ABR service for establishing SVCC-based RCCs,
+                         and is ignored otherwise.  The value of this parameter
+                         specifies the requested transient buffer exposure, in
+                         cells."
+                DEFVAL { 16777215 }
+        ::= { hjPnniNodeEntry 8 }
+
+        hjPnniNodeSvccAbrRateIncreaseFactor OBJECT-TYPE
+        SYNTAX    INTEGER (0..15)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "Defines the Rate Increase Factor subfield for
+                         inclusion in the ABR Setup Parameters information
+                         element within Setup messages when initiating an ABR
+                         SVCC-based RCC.  This parameter is only used when
+                         using ABR service for establishing SVCC-based RCCs,
+                         and is ignored otherwise.  The value of this parameter
+                         specifies the requested rate increase factor, as
+                         calculated by log2(32768 * RIF)."
+                DEFVAL { 11 }
+        ::= { hjPnniNodeEntry 9 }
+
+        hjPnniNodeSvccAbrRateDecreaseFactor OBJECT-TYPE
+        SYNTAX    INTEGER (0..15)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+                        "Defines the Rate Decrease Factor subfield for
+                         inclusion in the ABR Setup Parameters information
+                         element within Setup messages when initiating an ABR
+                         SVCC-based RCC.  This parameter is only used when
+                         using ABR service for establishing SVCC-based RCCs,
+                         and is ignored otherwise.  The value of this parameter
+                         specifies the requested rate decrease factor, as
+                         calculated by log2(32768 * RDF)."
+                DEFVAL { 11 }
+        ::= { hjPnniNodeEntry 10 }
+
+--
+-- Extensions to the pnni Interface table
+--
+        hjPnniIfTable OBJECT-TYPE
+        SYNTAX    SEQUENCE OF HjPnniIfEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "H&J supplemental information for a PNNI interface in
+             this switching system."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        ::= { hjAtmPnni 4 }
+
+        hjPnniIfEntry OBJECT-TYPE
+        SYNTAX    HjPnniIfEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "An entry in the table, supplemental information
+             of a PNNI interface in this switching system."
+        INDEX  { ifIndex }
+--      AUGMENTS      { pnniIfEntry }
+        ::= { hjPnniIfTable 1 }
+
+        HjPnniIfEntry ::=
+        SEQUENCE        {
+                        hjPnniIfLoggingMask        Unsigned32,
+                        hjPnniIfMaxRccPacketSize   Unsigned32,
+                        hjPnniIfCbrResourceIndex   HjPnniIfResourceIndex,
+                        hjPnniIfRtVbrResourceIndex   HjPnniIfResourceIndex,
+                        hjPnniIfNrtVbrResourceIndex   HjPnniIfResourceIndex,
+                        hjPnniIfAbrResourceIndex   HjPnniIfResourceIndex,
+                        hjPnniIfUbrResourceIndex   HjPnniIfResourceIndex
+                        }
+
+
+        hjPnniIfLoggingMask OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "A bit-mask indicating which classes of debug
+             diagnostics are to be printed for this interface. 
+             This mask is logically ANDed with the global mask
+             hjPnniLoggingMask before bit positions are checked.
+             The bit mask positions are defined by symbols 
+             HJ_PNNI_LC_* in the Harris and Jeffries External
+             Specification for PNNI."
+        DEFVAL { 0 }
+        ::= { hjPnniIfEntry 1 }
+
+        hjPnniIfMaxRccPacketSize OBJECT-TYPE
+--      SYNTAX    Unsigned32 (512..8192)
+        SYNTAX    INTEGER(512..8192)
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The maximum size, in bytes, of PNNI packets transmitted
+             on this interface."
+        DEFVAL { 8192 }
+        ::= { hjPnniIfEntry 2 }
+
+        hjPnniIfCbrResourceIndex OBJECT-TYPE
+        SYNTAX    HjPnniIfResourceIndex
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "If non-zero, this specifies the second index in the
+             hjPnniIfResourceTable, which defines a set of resource 
+             availability characteristics to define the availability of
+             this interface to carry CBR traffic.  The value zero 
+             specifies that this interface is incapable of carrying
+             CBR traffic.
+             The default value to be used for this object (when the 
+             lowest-level Hello instance is created) is defined at compile
+             time, via a user-defined symbol in file pnni_def.h."
+        ::= { hjPnniIfEntry 3 }
+
+        hjPnniIfRtVbrResourceIndex OBJECT-TYPE
+        SYNTAX    HjPnniIfResourceIndex
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "If non-zero, this specifies the second index in the
+             hjPnniIfResourceTable, which defines a set of resource 
+             availability characteristics to define the availability of
+             this interface to carry rt-VBR traffic.  The value zero 
+             specifies that this interface is incapable of carrying
+             rt-VBR traffic.
+             The default value to be used for this object (when the 
+             lowest-level Hello instance is created) is defined at compile
+             time, via a user-defined symbol in file pnni_def.h."
+        ::= { hjPnniIfEntry 4 }
+
+        hjPnniIfNrtVbrResourceIndex OBJECT-TYPE
+        SYNTAX    HjPnniIfResourceIndex
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "If non-zero, this specifies the second index in the
+             hjPnniIfResourceTable, which defines a set of resource 
+             availability characteristics to define the availability of
+             this interface to carry nrt-VBR traffic.  The value zero 
+             specifies that this interface is incapable of carrying
+             nrt-VBR traffic.
+             The default value to be used for this object (when the 
+             lowest-level Hello instance is created) is defined at compile
+             time, via a user-defined symbol in file pnni_def.h."
+        ::= { hjPnniIfEntry 5 }
+
+        hjPnniIfAbrResourceIndex OBJECT-TYPE
+        SYNTAX    HjPnniIfResourceIndex
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "If non-zero, this specifies the second index in the
+             hjPnniIfResourceTable, which defines a set of resource 
+             availability characteristics to define the availability of
+             this interface to carry ABR traffic.  The value zero 
+             specifies that this interface is incapable of carrying
+             ABR traffic.
+             The default value to be used for this object (when the 
+             lowest-level Hello instance is created) is defined at compile
+             time, via a user-defined symbol in file pnni_def.h."
+        ::= { hjPnniIfEntry 6 }
+
+        hjPnniIfUbrResourceIndex OBJECT-TYPE
+        SYNTAX    HjPnniIfResourceIndex
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "If non-zero, this specifies the second index in the
+             hjPnniIfResourceTable, which defines a set of resource 
+             availability characteristics to define the availability of
+             this interface to carry UBR traffic.  The value zero 
+             specifies that this interface is incapable of carrying
+             UBR traffic.
+             The default value to be used for this object (when the 
+             lowest-level Hello instance is created) is defined at compile
+             time, via a user-defined symbol in file pnni_def.h."
+        ::= { hjPnniIfEntry 7 }
+
+--
+-- The pnni InterfaceResource Table
+--
+        hjPnniIfResourceTable OBJECT-TYPE
+        SYNTAX    SEQUENCE OF HjPnniIfResourceEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "This table contains Resource Availability parameters
+             which can be used to describe the ability of an
+             interface to accept user traffic, on a per-service-class
+             basis.
+
+             This table is accessed by an ifIndex defining a valid
+             PNNI interface in the pnniIfTable, and a Resource Index
+             value in the range 1-5, which is used to distinguish
+             among up to five different sets of Resource characteristics,
+             (if necessary) for this interface.  Several
+             service classes can share the same Resource Index, if this
+             is acceptable to the switching system."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        ::= { hjAtmPnni 7 }
+
+        hjPnniIfResourceEntry OBJECT-TYPE
+        SYNTAX    HjPnniIfResourceEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "An entry in the table, containing resource availability
+             information for interfaces in this switching system."
+        INDEX           { ifIndex,
+                          hjPnniIfResourceIndex
+                        }
+        ::= { hjPnniIfResourceTable 1 }
+
+        HjPnniIfResourceEntry ::=
+        SEQUENCE        {
+                        hjPnniIfResourceIndex             HjPnniIfResourceIndex,
+                        hjPnniIfResourceGCACCLPAttribute  TruthValue,
+                        hjPnniIfResourceAdmWeight         Unsigned32,
+                        hjPnniIfResourceMaximumCellRate   Unsigned32,
+                        hjPnniIfResourceAvailableCellRate Unsigned32,
+                        hjPnniIfResourceCellTransferDelay Unsigned32,
+                        hjPnniIfResourceCellDelayVariation Unsigned32,
+                        hjPnniIfResourceCellLossRatioCLP0 Unsigned32,
+                        hjPnniIfResourceCellLossRatioCLP01 Unsigned32,
+                        hjPnniIfResourceUseOptionalGCAC   TruthValue,
+                        hjPnniIfResourceCellRateMargin    Unsigned32,
+                        hjPnniIfResourceVarianceFactor    Unsigned32
+                        }
+
+
+        hjPnniIfResourceIndex OBJECT-TYPE
+        SYNTAX    HjPnniIfResourceIndex
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "Identifies a set of Resource Availability
+             characteristics which can be used to define availability
+             of one or more ATM service classes on the specified 
+             interface."
+        ::= { hjPnniIfResourceEntry 1 }
+
+        hjPnniIfResourceGCACCLPAttribute OBJECT-TYPE
+        SYNTAX    TruthValue
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "Indicates if the GCAC CLP Attribute should be set for
+             the service classes assigned to this table entry.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.1 and Table 5-23."
+        DEFVAL { false }
+        ::= { hjPnniIfResourceEntry 2 }
+
+        hjPnniIfResourceAdmWeight OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The Administrative Weight of this interface for
+             the service classes assigned to this table entry.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.4"
+        DEFVAL { 5040 }
+        ::= { hjPnniIfResourceEntry 3 }
+
+        hjPnniIfResourceMaximumCellRate OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The Maximum Cell Rate (in cells per second) 
+             of this interface for the service classes assigned 
+             to this table entry.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.7"
+        ::= { hjPnniIfResourceEntry 4 }
+
+        hjPnniIfResourceAvailableCellRate OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The Available Cell Rate (in cells per second) 
+             of this interface for the service classes assigned 
+             to this table entry.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.8"
+        ::= { hjPnniIfResourceEntry 5 }
+
+        hjPnniIfResourceCellTransferDelay OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The maximum Cell Transfer Delay (in microseconds) 
+             of this interface for the service classes assigned 
+             to this table entry.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.3"
+        ::= { hjPnniIfResourceEntry 6 }
+
+        hjPnniIfResourceCellDelayVariation OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The peak-to-peak Cell Delay Variation (in microseconds) 
+             of this interface for the service classes assigned 
+             to this table entry.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.2"
+        ::= { hjPnniIfResourceEntry 7 }
+
+        hjPnniIfResourceCellLossRatioCLP0 OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The maximum cell loss ratio (CLR) objective for
+             CLP=0 traffic of this interface for the service 
+             classes assigned to this table entry.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.5"
+        ::= { hjPnniIfResourceEntry 8 }
+
+        hjPnniIfResourceCellLossRatioCLP01 OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "The maximum cell loss ratio (CLR) objective for
+             CLP=0+1 traffic of this interface for the service 
+             classes assigned to this table entry.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.6"
+        ::= { hjPnniIfResourceEntry 9 }
+
+        hjPnniIfResourceUseOptionalGCAC OBJECT-TYPE
+        SYNTAX    TruthValue
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "Specifies whether the service classes assigned to 
+             this table entry should use the optional GCAC parameters,
+             Cell Rate Margin and Variance Factor to describe their
+             availability. A value of 'true' specifies that these
+             optional parameters are used for GCAC purposes.  A value
+             of 'false' specifies that the normal GCAC procedures are
+             to be followed.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Sections 5.8.1.1.3.9 and 5.8.1.1.3.10,
+             and Table 5-22."
+        ::= { hjPnniIfResourceEntry 10 }
+
+        hjPnniIfResourceCellRateMargin OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "This parameter is only applicable if the value of
+             hjPnniIfResourceUseOptionalGCAC is set to 'true'.
+             Cell Rate Margin is a measure of the difference between
+             the effective bandwidth allocation and the allocation for
+             sustainable cell rate in cells per second.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.9"
+        ::= { hjPnniIfResourceEntry 11 }
+
+        hjPnniIfResourceVarianceFactor OBJECT-TYPE
+        SYNTAX    Unsigned32
+        ACCESS    read-write
+        STATUS    mandatory
+        DESCRIPTION
+            "This parameter is only applicable if the value of
+             hjPnniIfResourceUseOptionalGCAC is set to 'true'.
+             Variance Factor is a realtive measure of the square
+             of the cell rate margin normalized by the variance of the
+             sum of the cell rates of all existing connections.
+             The default value for this object (created when the
+             interface is created) is defined by compile-time
+             symbols in file pnni_def.h."
+	REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.1.1.3.10"
+        ::= { hjPnniIfResourceEntry 12 }
+
+--
+-- Extensions to the pnni neighboring peer table
+--
+        hjPnniNbrPeerTable OBJECT-TYPE
+        SYNTAX    SEQUENCE OF HjPnniNbrPeerEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "H&J supplemental information for a PNNI neighbor in
+             this switching system."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        ::= { hjAtmPnni 5 }
+
+        hjPnniNbrPeerEntry OBJECT-TYPE
+        SYNTAX    HjPnniNbrPeerEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "An entry in the table, supplemental information
+             of a PNNI neighbor in this switching system."
+        INDEX  {  pnniNodeIndex,
+                  pnniNbrPeerRemoteNodeId }
+--      AUGMENTS      { pnniNbrPeerEntry }
+        ::= { hjPnniNbrPeerTable 1 }
+
+        HjPnniNbrPeerEntry ::=
+        SEQUENCE        {
+                        hjPnniNbrPeerRcvPtses                Counter32,
+                        hjPnniNbrPeerXmtPtses                Counter32,
+                        hjPnniNbrPeerRcvPtseErrs        Counter32,
+                        hjPnniNbrPeerRcvDbSummErrs        Counter32,
+                        hjPnniNbrPeerRcvPtspErrs        Counter32,
+                        hjPnniNbrPeerRcvPtseReqErrs        Counter32,
+                        hjPnniNbrPeerRcvPtseAckErrs        Counter32,
+                        hjPnniNbrPeerDSMismatches        Counter32,
+                        hjPnniNbrPeerBadPtseReqs        Counter32
+                        }
+
+
+        hjPnniNbrPeerRcvPtses OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of PTSEs received from the 
+             neighboring peer.  Includes PTSEs received within PTSPs
+             as well as expired PTSE headers received during the database
+             exchange phase of processing."
+        ::= { hjPnniNbrPeerEntry 1 }
+
+        hjPnniNbrPeerXmtPtses OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of PTSEs transmitted to the 
+             neighboring peer."
+        ::= { hjPnniNbrPeerEntry 2 }
+
+        hjPnniNbrPeerRcvPtseErrs OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of PTSEs received from the 
+             neighboring peer which had bad PTSE Header Checksums."
+        ::= { hjPnniNbrPeerEntry 3 }
+
+        hjPnniNbrPeerRcvDbSummErrs OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of Database Summary packets received
+             from the neighboring peer which had syntax errors."
+        ::= { hjPnniNbrPeerEntry 4 }
+
+        hjPnniNbrPeerRcvPtspErrs OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of PTSPs received
+             from the neighboring peer which had syntax errors."
+        ::= { hjPnniNbrPeerEntry 5 }
+
+        hjPnniNbrPeerRcvPtseReqErrs OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of PTSE Request packets received
+             from the neighboring peer which had syntax errors."
+        ::= { hjPnniNbrPeerEntry 6 }
+
+        hjPnniNbrPeerRcvPtseAckErrs OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of PTSE Ack packets received
+             from the neighboring peer which had syntax errors."
+        ::= { hjPnniNbrPeerEntry 7 }
+
+        hjPnniNbrPeerDSMismatches OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of Database Summary packets received
+             from the neighboring peer which caused a Database Summary
+             Mismatch condition.  This condition is caused by an error in
+             the sequence numbers detected by this node, while exchanging
+             Database Summaries with the neighboring peer."
+        ::= { hjPnniNbrPeerEntry 8 }
+
+        hjPnniNbrPeerBadPtseReqs OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "A count of the number of times this node received a
+             PTSE Request from the neighboring peer which this node
+             did not advertise.  This condition (occurring during the
+             Database Exchange phase) indicates an error in the 
+             neighboring peer Database Exchange protocol."
+        ::= { hjPnniNbrPeerEntry 9 }
+--
+-- Extensions to the pnni Link table
+--
+        hjPnniLinkTable OBJECT-TYPE
+        SYNTAX    SEQUENCE OF HjPnniLinkEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "H&J supplemental information for a PNNI interface in
+             this switching system."
+        REFERENCE
+            "Harris & Jeffries PNNI Routing External Specification"
+        ::= { hjAtmPnni 6 }
+
+        hjPnniLinkEntry OBJECT-TYPE
+        SYNTAX    HjPnniLinkEntry
+        ACCESS    not-accessible
+        STATUS    mandatory
+        DESCRIPTION
+            "An entry in the table, supplemental information
+             of a PNNI link in this switching system."
+        INDEX  {  pnniNodeIndex,
+                  pnniLinkPortId  }
+--      AUGMENTS      { pnniLinkEntry }
+        ::= { hjPnniLinkTable 1 }
+
+        HjPnniLinkEntry ::=
+        SEQUENCE        {
+                        hjPnniLinkRcvUnknownPkts        Counter32,
+                        hjPnniLinkRcvHelloMismatches        Counter32,
+                        hjPnniLinkRcvHelloErrors        Counter32
+                        }
+
+
+        hjPnniLinkRcvUnknownPkts OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "This attribute contains a count of the number of received
+                packets on the specified link which were unrecognized as
+                any of the known PNNI packet types: Hello, PTSP, PTSE Ack,
+                DB Summary, or PTSE Request."
+        ::= { hjPnniLinkEntry 1 }
+
+        hjPnniLinkRcvHelloMismatches OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "This attribute contains a count of the number of received
+             Hello packets on the specified link which were detected as
+             having a Hello Mismatch error.
+
+             A Hello mismatch occurs when a Hello has been received from the
+             neighbor in which one of the Version, originating Node ID, peer
+             group ID, and port ID is different from the corresponding
+             information in the local hello data structure.  Alternatively,
+             a Hello has been received in which the remote node ID, and/or
+             remote port ID are different from this node's own node ID or
+             this node's port ID for the receiving link, respectively, and
+             are not both set to zero."
+        ::= { hjPnniLinkEntry 2 }
+
+        hjPnniLinkRcvHelloErrors OBJECT-TYPE
+        SYNTAX    Counter32
+        ACCESS    read-only
+        STATUS    mandatory
+        DESCRIPTION
+            "This attribute contains a count of the number of received
+             Hello packets on the specified link which were detected as
+             being malformed in some way.  Examples are runt packets or
+             packets missing required fields."
+        ::= { hjPnniLinkEntry 3 }
+
+END
+

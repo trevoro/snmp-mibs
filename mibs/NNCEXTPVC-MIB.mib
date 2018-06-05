@@ -1,0 +1,1399 @@
+-- file: NncExtPVC.mib
+--
+-- description:
+--   This file contains the PVC MIB implementation for Alcatel CID 
+--   (Carrier Internetworking Division) equipment. 
+--
+--
+-- history:
+-- $Log: 2.NncExtPVC.mib,v $
+-- Revision 1.1.1.3  2001/02/01 22:58:02  wmcconno
+-- P.331882,P.335657: P.331882: added new creator object. P.335657: removednecessary Endpoint Info Tables
+--
+-- Revision 1.1.1.2  2000/10/03 14:37:24  sbasinsk
+-- 31A1564: Merge from cr_kan_pm_43 to ctl (new file)
+--
+-- Revision 1.1.1.1.1.2  2000/08/31 14:03:15  atsang
+-- 31A1407: Added new MIB for SNMP PVC feature
+--
+-- %%history-start%%
+--  31A1407  / 2000.05.29 / gyu      / creation
+--  31A1407  / 2000.05.30 / ipandher / add the PVPC and PVCC tables.
+--  31A1407  / 2000.06.08 / ipandher / added support for OAM Alarm Surveliance
+--                                     configuration.
+--  31A1407  / 2000.06.19 / ipandher / added endpoint tables and VPTTP table.
+--  31A1407  / 2000.07.10 / ipandher / removed endpoint tables and VPTTP table.
+--  31A1407  / 2000.07.13 / ipandher / removed Pdu Counter
+--  31A1407  / 2000.07.21 / ipandher / updated after review
+--  P.331882 / 2000.01.16 / wmcconno / added new creator object in
+--                                     nncCrPvpcTable and nncCrPvccTable.
+--  P.335657 / 2000.01.26 / wmcconno / removed nncCrPvpcEndpointInfoTable and
+--                                     NncCrPvccEndpointInfoTable. 
+-- %%history-end%%
+--
+-- Copyright 2001 Alcatel Networks Corporation.  All Rights Reserved
+--------------------------------------------------------------------------------
+
+NNCEXTPVC-MIB DEFINITIONS ::= BEGIN
+
+   IMPORTS
+       MODULE-IDENTITY, OBJECT-TYPE,
+       NOTIFICATION-TYPE                        FROM SNMPv2-SMI
+       TEXTUAL-CONVENTION,
+       RowStatus                                FROM SNMPv2-TC
+       InterfaceIndex				FROM IF-MIB
+       MODULE-COMPLIANCE, OBJECT-GROUP          FROM SNMPv2-CONF
+       nncExtensions                            FROM NNCGNI0001-SMI;
+
+   nncExtPvc MODULE-IDENTITY
+     LAST-UPDATED    "200101261907Z"
+     ORGANIZATION    "Alcatel Networks Corporation"
+     CONTACT-INFO
+                       "Alcatel CID
+                        Postal: 600 March Road
+                        Kanata, Ontario
+                        Canada K2K 2E6
+ 
+                        Phone:  +1 613 591 3600
+                        Fax:    +1 613 591 3680"
+
+
+     DESCRIPTION     
+       "This module contains Alcatel's proprietary MIB definition for 
+       managing point-to-point and point-to-multipoint Permanent Virtual
+       Connections (PVCs).
+
+       The MIB supports the creation, modification, query and deletion of PVCs
+       (Permanent Virtual Connections) on Cell Relay endpoints, 
+       both Permanent Virtual Path Connection (PVPC) and Permanent Virtual
+       Channel Connection (PVCC) are supported. PVPCs are defined by
+       nncCrPvpcTable and PVCCs are defined by nncCrPvccTable.
+
+       PVPCs or PVCC's connecting different endpoint types, CR to FR,
+       FR to CR, CR to CE, CE to CR, CE to FR or FR to CE are not suppported
+       at this point. Resource connections such as Signalling, PNNI, ILMI and
+       CPSS are also not supported.
+
+       PVCs can be created by one of two ways: using rowStats as 
+       'createAndGo' or using rowStatus as 'createAndWait'+'active'.
+       
+       In some cases, to create a PVC via this table requires two SET-REQs, 
+       because one SET-REQ PDU cannot fit all required objects. In these cases, 
+       the rowStatus is set to createAndWait(5) for the first 1 SET-REQ 
+       and set to active(1) for the last SET-REQ. 
+       
+       In some cases, all required MIB objects can fit in one SET-REQ PDU. 
+       In these cases the rowStatus should be set to createAndGo(4)
+
+       To delete a PVC, the SNMP manager should set rowStatus of the PVC
+       instance to 'destroy'.
+
+       Each PVC is modeled as set of entries in the PVC table. A point-
+       to-point PVC is modeled as one entry; a point-to-multipoint (N leafs)
+       is modeled as N entries in this table. The N entries of a point-to-
+       multipoint PVC shares the same source end point.
+
+      Some abreviations:
+
+        abr/ABR/Abr: Available Bit Rate          
+        Bwd: Backward. For traffice descriptors from destination end point to source end point
+        cbr/CBR/Cbr: Constant Bit Rate         
+        Dst: Dstination end point
+        Fwd: Forward. For traffic descriptors from source end point to destination end point
+        nt-vbr/ntvbr/NT-VBR: Non-Real-Time Variable Bit Rate 
+        p2p: Point-to-Point
+        p2mp: Point-to-Multipoint
+        Src: Source end point
+        Targ: Target. For the destination end point info in source end point table
+        ubr/UBR/Ubr: Unspecified Bit Rate
+        VCI/Vci/vci: Virtual channel identifier
+        VCL/Vcl/vcl: Virtual channel link
+        VPI/Vpi/vpi: Virtual path identifier
+        VPL/Vpl/Vpl: Virtual path link
+
+      "
+                        
+       ::= { nncExtensions 79 }
+ 
+   nncExtPvcObjects OBJECT IDENTIFIER       ::=    { nncExtPvc 1 }
+   -- nncExtPvcTraps   OBJECT IDENTIFIER    ::=    { nncExtPvc 2 }
+   nncExtPvcGroups OBJECT IDENTIFIER        ::=    { nncExtPvc 3 }
+   nncExtPvcCompliances OBJECT IDENTIFIER   ::=    { nncExtPvc 4 }
+
+   ---------------------------------------------------------------------------
+   -- Table Definition
+   --
+   -- nncCrPvpcTable (Cell Relay PVPC Table)
+   --
+   -- This table contains all information used to manage Cell Relay PVPCs 
+   -- (Permanent Virtual Path Connections), which can be point-to-point
+   -- or point-to-multipoint PVPCs.
+   --
+   ---------------------------------------------------------------------------
+ 
+   nncCrPvpcTable   OBJECT-TYPE
+     SYNTAX        SEQUENCE OF NncCrPvpcTableEntry
+     MAX-ACCESS    not-accessible
+     STATUS        current
+     DESCRIPTION   "nncCrPvpcTable contains all the objects sent to a source
+                    endpoint that are used to create, modify, delete
+                    and query PVC connections." 
+     ::= { nncExtPvcObjects 1 }
+ 
+   nncCrPvpcTableEntry OBJECT-TYPE
+     SYNTAX        NncCrPvpcTableEntry
+     MAX-ACCESS    not-accessible
+     STATUS        current
+     DESCRIPTION   
+                      "An entry of nncCrPvpcTable"
+     INDEX         {nncCrPvpcSrcIfIndex, nncCrPvpcSrcVpi,
+                    nncCrPvpcDstIfIndex, nncCrPvpcDstVpi} 
+     ::= { nncCrPvpcTable 1 }
+ 
+   NncCrPvpcTableEntry ::= SEQUENCE{
+     nncCrPvpcSrcIfIndex               InterfaceIndex,
+     nncCrPvpcSrcVpi                   INTEGER,
+     nncCrPvpcDstIfIndex               InterfaceIndex,
+     nncCrPvpcDstVpi                   INTEGER,
+     nncCrPvpcCastType                 INTEGER,
+     nncCrPvpcFwdServiceCategory       INTEGER,
+     nncCrPvpcBwdServiceCategory       INTEGER,
+     nncCrPvpcFwdAbrDynTrfcIcr         INTEGER,
+     nncCrPvpcFwdAbrDynTrfcRif         INTEGER,
+     nncCrPvpcFwdAbrDynTrfcRdf         INTEGER,
+     nncCrPvpcBwdAbrDynTrfcIcr         INTEGER,
+     nncCrPvpcBwdAbrDynTrfcRif         INTEGER,
+     nncCrPvpcBwdAbrDynTrfcRdf         INTEGER,
+     nncCrPvpcSrcBillingFlag           INTEGER,
+     nncCrPvpcDstBillingFlag           INTEGER,
+     nncCrPvpcFwdTmTrafficDescriptor   INTEGER,
+     nncCrPvpcFwdTmPolicingOption      INTEGER,
+     nncCrPvpcFwdTmBucketOneRate       INTEGER,
+     nncCrPvpcFwdTmBucketOneCdvt       INTEGER,
+     nncCrPvpcFwdTmBucketTwoRate       INTEGER,
+     nncCrPvpcFwdTmBucketTwoMbs        INTEGER,
+     nncCrPvpcFwdTmCdv                 INTEGER,
+     nncCrPvpcFwdTmClr                 INTEGER,
+     nncCrPvpcBwdTmTrafficDescriptor   INTEGER,
+     nncCrPvpcBwdTmPolicingOption      INTEGER,
+     nncCrPvpcBwdTmBucketOneRate       INTEGER,
+     nncCrPvpcBwdTmBucketOneCdvt       INTEGER,
+     nncCrPvpcBwdTmBucketTwoRate       INTEGER,
+     nncCrPvpcBwdTmBucketTwoMbs        INTEGER,
+     nncCrPvpcBwdTmCdv                 INTEGER,
+     nncCrPvpcBwdTmClr                 INTEGER,
+     nncCrPvpcSrcAlsConfig             INTEGER,
+     nncCrPvpcDstAlsConfig             INTEGER,
+     nncCrPvpcCreator                  INTEGER,
+     nncCrPvpcRowStatus                RowStatus
+   }
+
+   nncCrPvpcSrcIfIndex OBJECT-TYPE
+     SYNTAX     InterfaceIndex
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the ifIndex value for the 
+        source endpoint"
+  
+     ::= { nncCrPvpcTableEntry 1 }
+
+   nncCrPvpcSrcVpi OBJECT-TYPE
+     SYNTAX     INTEGER (0..4095)
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the VPI value for the 
+        source endpoint."
+  
+     ::= { nncCrPvpcTableEntry 2 }
+
+   nncCrPvpcDstIfIndex OBJECT-TYPE
+     SYNTAX     InterfaceIndex
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the ifIndex value for the 
+        destination endpoint"
+  
+     ::= { nncCrPvpcTableEntry 3 }
+
+   nncCrPvpcDstVpi OBJECT-TYPE
+     SYNTAX     INTEGER (0..4095)
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the VPI value for the 
+        destination endpoint."
+  
+     ::= { nncCrPvpcTableEntry 4 }
+
+   nncCrPvpcCastType OBJECT-TYPE
+     SYNTAX     INTEGER { p2p(1), -- point-to-point PVPC
+                          p2mp(2) -- point-to-multipoint PVPC
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to indicate whether the PVPC is point-to-point
+           or point-to-multipoint"
+     DEFVAL { p2p }
+
+     ::= { nncCrPvpcTableEntry 5 }
+
+   nncCrPvpcFwdServiceCategory OBJECT-TYPE
+     SYNTAX     INTEGER { cbr(1),
+                          nrtvbr(2),
+                          abr(3),
+                          ubr(4),
+                          rtvbr(6)
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to set the traffic service category
+           from source endpoint to destination endpoint.
+           This object is dependent on the value specified in 
+           nncCrPvpcFwdTmTrafficDescripton object "
+     DEFVAL { nrtvbr }
+
+     ::= { nncCrPvpcTableEntry 6 }
+
+   nncCrPvpcBwdServiceCategory OBJECT-TYPE
+     SYNTAX     INTEGER { cbr(1),
+                          nrtvbr(2),
+                          abr(3),
+                          ubr(4),
+                          rtvbr(6)
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to set the traffic service category
+           from destination endpoint to source endpoint.
+           This object is dependent on the value specified in 
+           nncCrPvpcBwdTmTrafficDescripton object "
+     DEFVAL { nrtvbr }
+
+     ::= { nncCrPvpcTableEntry 7 }
+
+   nncCrPvpcFwdAbrDynTrfcIcr OBJECT-TYPE
+     SYNTAX    INTEGER  (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR dynamic traffic descriptor's Initial Cell Rate for the
+                   forward direction.
+                   Range:  0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+
+     ::= { nncCrPvpcTableEntry 8 }
+
+   nncCrPvpcFwdAbrDynTrfcRif   OBJECT-TYPE
+     SYNTAX    INTEGER (0..9)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR traffic Rate Increase Factor for the forward direction.
+                   Value is expressed as the -power of 2.
+                   Range: 0 - 9"
+     DEFVAL { 9 }
+       
+     ::= { nncCrPvpcTableEntry 9 }
+
+   nncCrPvpcFwdAbrDynTrfcRdf   OBJECT-TYPE
+     SYNTAX    INTEGER (0..9)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR traffic Rate Decrease Factor descriptor for the forward direction.
+                   Value is expressed as the -power of 2
+                   Range: 0 - 9"
+     DEFVAL { 9 }
+       
+     ::= { nncCrPvpcTableEntry 10 }
+
+   nncCrPvpcBwdAbrDynTrfcIcr   OBJECT-TYPE
+     SYNTAX    INTEGER  (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR dynamic traffic descriptor's Initial Cell Rate for the destination
+                   endpoint.
+                   Range:  0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+       
+    ::= { nncCrPvpcTableEntry 11 }
+
+   nncCrPvpcBwdAbrDynTrfcRif   OBJECT-TYPE
+     SYNTAX    INTEGER (0..9)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR traffic Rate Increase Factor for the destination endpoint.
+                   Value is expressed as the -power of 2.
+                   Range: 0 - 9"
+     DEFVAL { 9 }
+
+     ::= { nncCrPvpcTableEntry 12 }
+
+   nncCrPvpcBwdAbrDynTrfcRdf   OBJECT-TYPE
+     SYNTAX    INTEGER (0..9)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR traffic Rate Decrease Factor descriptor for the destination endpoint.
+                   Value is expressed as the -power of 2
+                   Range: 0 - 9"
+
+     DEFVAL { 9 }
+
+     ::= { nncCrPvpcTableEntry 13 }
+     
+   nncCrPvpcSrcBillingFlag    OBJECT-TYPE          
+     SYNTAX     INTEGER { disabled(0), enabled(1) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION  "Billing Configuration for the source endpoint."     
+     DEFVAL { disabled }
+         
+     ::= { nncCrPvpcTableEntry 14 }
+
+   nncCrPvpcDstBillingFlag    OBJECT-TYPE          
+     SYNTAX     INTEGER { disabled(0), enabled(1) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION  "Billing Configuration for the destination endpoint."     
+     DEFVAL { disabled }
+         
+     ::= { nncCrPvpcTableEntry 15 }
+
+   -- source end-point traffic descriptors
+   nncCrPvpcFwdTmTrafficDescriptor  OBJECT-TYPE
+     SYNTAX     INTEGER { none(0),
+                          tagAll(1),
+                          p0Plus1(2),
+                          p0Plus1SlashS0Plus1(3),
+                          p0Plus1SlashS0(4),
+                          p0Plus1SlashM0Plus1(5)
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION 
+           "This object contains the traffic descriptor for the SPVC.
+            None           (0) (Not applicable,the case of a P2MP leaf)
+            Tag All        (1) (UBR using 2k/12k fabric only)
+            P_0+1          (2) (CBR only)
+            P_0+1/S_0+1    (3) (NRT/RT-VBR only)
+            P_0+1/S_0      (4) (NRT/RT-VBR only)
+            P_0+1/M_0+1    (5) (ABR and UBR only)"
+     
+     DEFVAL { p0Plus1SlashS0Plus1 }
+
+     ::= { nncCrPvpcTableEntry 16 }
+
+   nncCrPvpcFwdTmPolicingOption OBJECT-TYPE
+     SYNTAX     INTEGER { none(0), disabled(1), tag(2), discard(3) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "Policing Option for a PVPC. The tag option is supported
+            only on rt-VBR/nrt-VBR connections that use the P_0_1/S_0
+            traffic descriptor "
+     DEFVAL { disabled }
+     
+     ::= { nncCrPvpcTableEntry 17 }
+
+   nncCrPvpcFwdTmBucketOneRate OBJECT-TYPE
+     SYNTAX     INTEGER (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is used for peak cell rate (PCR), the
+            cell rate which the source may never exceed.  It is used
+            to determine which cells are 'excess'.  
+            Measured in Kb/s.
+            Range: 0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+     
+     ::= { nncCrPvpcTableEntry 18 }
+
+   nncCrPvpcFwdTmBucketOneCdvt OBJECT-TYPE
+     SYNTAX     INTEGER (1..190000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is used to set cell delay variation tolerance (CDVT) for
+            one end point, measured in microseconds.  
+            Range: 1 - 190,000 microseconds"
+     DEFVAL { 250 }
+     
+     ::= { nncCrPvpcTableEntry 19 }
+
+   nncCrPvpcFwdTmBucketTwoRate OBJECT-TYPE
+     SYNTAX     INTEGER (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "SIR_0p, SIR_0+1p or MIR_0+1p.  This parameter holds 
+            the sustained information rate for for VBR traffic, and
+            the minimum information rate for ABR/UBR traffic.
+            Range: 0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+
+     ::= { nncCrPvpcTableEntry 20 }
+
+   nncCrPvpcFwdTmBucketTwoMbs OBJECT-TYPE
+     SYNTAX     INTEGER (1..10000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION 
+           "This object is for the maximum burst size, in cells,
+            for SIR_0p or SIR_0+1p (nrt-VBR and rt-VBR only). 
+            Range: 1 - 10000 cells"
+     DEFVAL { 32 }
+     
+     ::= { nncCrPvpcTableEntry 21 }
+
+   nncCrPvpcFwdTmCdv OBJECT-TYPE
+     SYNTAX     INTEGER (250..10000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This value is to set the cell delay variation (CDV) between two 
+            PVC endpoints when using the rt-VBR service category..
+            Range: 250-10000 microseconds"
+     DEFVAL { 10000 }
+     
+     ::= { nncCrPvpcTableEntry 22 }
+
+   nncCrPvpcFwdTmClr OBJECT-TYPE
+     SYNTAX     INTEGER (1..7)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "The object is to set the cell loss ratio (CLR) between two PVC 
+            endpoints when using the nrt-VBR service category.
+            Value set as 1.0e-#"
+     DEFVAL { 7 }
+
+     ::= { nncCrPvpcTableEntry 23 }
+  
+    -- Destination end point traffic descriptor     
+
+   nncCrPvpcBwdTmTrafficDescriptor OBJECT-TYPE
+     SYNTAX     INTEGER { none(0),
+                          tagAll(1),
+                          p0Plus1(2),
+                          p0Plus1SlashS0Plus1(3),
+                          p0Plus1SlashS0(4),
+                          p0Plus1SlashM0Plus1(5)
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION 
+           "This object contains the traffic descriptor for the PVC.
+            None           (0) (Not applicable,the case of a P2MP leaf)
+            Tag All        (1) (UBR using 2k/12k fabric only)
+            P_0+1          (2) (CBR only)
+            P_0+1/S_0+1    (3) (NRT/RT-VBR only)
+            P_0+1/S_0      (4) (NRT/RT-VBR only)
+            P_0+1/M_0+1    (5) (ABR and UBR only)"
+     
+     DEFVAL { p0Plus1SlashS0Plus1 }
+
+     ::= { nncCrPvpcTableEntry 24 }
+
+   nncCrPvpcBwdTmPolicingOption OBJECT-TYPE
+     SYNTAX     INTEGER { none(0), disabled(1), tag(2), discard(3) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "Policing Option for a PVPC. The tag option is supported
+            only on rt-VBR/nrt-VBR connections that use the P_0_1/S_0
+            traffic descriptor "
+     DEFVAL { disabled }
+     
+     ::= { nncCrPvpcTableEntry 25 }
+
+   nncCrPvpcBwdTmBucketOneRate OBJECT-TYPE
+     SYNTAX     INTEGER (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is used for peak cell rate (PCR), the
+            cell rate which the source may never exceed.  It is used
+            to determine which cells are 'excess'.  
+            Measured in Kb/s.
+            Range: 0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+     
+     ::= { nncCrPvpcTableEntry 26 }
+
+   nncCrPvpcBwdTmBucketOneCdvt OBJECT-TYPE
+     SYNTAX     INTEGER (1..190000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is used to set cell delay variation tolerance (CDVT) for
+            one end point, measured in microseconds.  
+            Range: 1 - 190,000 microseconds"
+     DEFVAL { 250 }
+     
+     ::= { nncCrPvpcTableEntry 27 }
+
+   nncCrPvpcBwdTmBucketTwoRate OBJECT-TYPE
+     SYNTAX     INTEGER (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "SIR_0p, SIR_0+1p or MIR_0+1p.  This parameter holds 
+            the sustained information rate for for VBR traffic, and
+            the minimum information rate for ABR/UBR traffic.
+            Range: 0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+
+     ::= { nncCrPvpcTableEntry 28 }
+
+   nncCrPvpcBwdTmBucketTwoMbs OBJECT-TYPE
+     SYNTAX     INTEGER (1..10000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION 
+           "This object is to set the maximum burst size, in cells,
+            for SIR_0p or SIR_0+1p.  Used for burst traffic. 
+            Range: 1 - 10000 cells"
+     DEFVAL { 32 }
+     
+     ::= { nncCrPvpcTableEntry 29 }
+
+   nncCrPvpcBwdTmCdv OBJECT-TYPE
+     SYNTAX     INTEGER (250..10000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This value is to set the cell delay variation (CDV) between two 
+            PVC endpoints when using the rt-VBR service category.
+            Range: 250-10000 microseconds"
+     DEFVAL { 10000 }
+     
+     ::= { nncCrPvpcTableEntry 30 }
+
+   nncCrPvpcBwdTmClr OBJECT-TYPE
+     SYNTAX     INTEGER (1..7)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "The object is to set the cell loss ratio (CLR) between two PVC 
+            endpoints when using the nrt-VBR service category.
+            Value set as 1.0e-#
+            Range: 1 - 7"
+     DEFVAL { 7 }
+
+     ::= { nncCrPvpcTableEntry 31 }
+
+   nncCrPvpcSrcAlsConfig OBJECT-TYPE
+     SYNTAX     INTEGER { disabled(0), -- Do not report F4-level (VP level) alarms.
+                          enabled(1)   -- Report F4-level (VP level) alarms.
+                            }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to set OAM Alarm Surveillance configuration
+           for the source endpoint."
+     DEFVAL { disabled }
+
+     ::= { nncCrPvpcTableEntry 32 }
+
+   nncCrPvpcDstAlsConfig OBJECT-TYPE
+     SYNTAX     INTEGER { disabled(0), -- Do not report F4-level (VP level) alarms.
+                          enabled(1)   -- Report F4-level (VP level) alarms.
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to set OAM Alarm Surveillance configuration
+           for the destination endpoint."
+     DEFVAL { disabled }
+
+     ::= { nncCrPvpcTableEntry 33 }
+   
+   nncCrPvpcCreator OBJECT-TYPE
+     SYNTAX     INTEGER { unknown(0), -- Creator is unknown
+                          nmti(1), -- Creator is NMTI
+                          nm5620(2), -- Creator is 5620
+                          snmp(9)  -- Creator is SNMP
+                        }
+     MAX-ACCESS read-only
+     STATUS     current
+     DESCRIPTION
+           "The object retrieves the creator of a PVC connection."
+
+     ::= { nncCrPvpcTableEntry 34 }
+     
+   nncCrPvpcRowStatus OBJECT-TYPE
+     SYNTAX     RowStatus
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is to control a row creation of a CR PVPC. When
+            RowStatus is createAndWait, information for a row is cached in memory;  
+            when RowStatus is set to createAndGo or active, it indicates that 
+            all information is to be written to permanent storage, and the
+            PVPC to be enabled.
+ 
+            When querying the object, 'active' indicates the PVPC is physically
+            connected and data traffic can flow. The Rowstatus of 'notInService'
+            indicates the PVPC is physically connected but data cannot flow.
+            If the RowStatus value of 'notReady' is returned, it indicates either
+            the PVPC is not physically connected (ie. configured only) or the SNMP
+            agent is awaiting further information before setting up the connection.
+            When deleting a connection, use this object with the value 'destroy'"
+
+     ::= {nncCrPvpcTableEntry 35 }
+
+   ---------------------------------------------------------------------------
+   -- Table Definition
+   --
+   -- nncCrPvccTable (Cell Relay PVCC Table)
+   --
+   -- This table contains all information used to manage Cell Relay PVCCs 
+   -- (Permanent Virtual Channel Connections), which can be point-to-point
+   -- or point-to-multipoint PVCCs.
+   --
+   ---------------------------------------------------------------------------
+ 
+   nncCrPvccTable   OBJECT-TYPE
+     SYNTAX        SEQUENCE OF NncCrPvccTableEntry
+     MAX-ACCESS    not-accessible
+     STATUS        current
+     DESCRIPTION   "nncCrPvccTable contains all the objects sent to a source
+                    endpoint that are used to create, modify, delete
+                    and query Cell Relay PVC connections." 
+     ::= { nncExtPvcObjects 2 }
+ 
+   nncCrPvccTableEntry OBJECT-TYPE
+     SYNTAX        NncCrPvccTableEntry
+     MAX-ACCESS    not-accessible
+     STATUS        current
+     DESCRIPTION   "An entry of nncCrPvccTable. It contains the objects required
+                    to manage CR PVCs."
+     INDEX         {nncCrPvccSrcIfIndex, 
+                    nncCrPvccSrcVpi, 
+                    nncCrPvccSrcVci, 
+                    nncCrPvccDstIfIndex, 
+                    nncCrPvccDstVpi, 
+                    nncCrPvccDstVci}
+     ::= { nncCrPvccTable 1 }
+ 
+   NncCrPvccTableEntry ::= SEQUENCE{
+     nncCrPvccSrcIfIndex               InterfaceIndex,
+     nncCrPvccSrcVpi                   INTEGER,
+     nncCrPvccSrcVci                   INTEGER,
+     nncCrPvccDstIfIndex               InterfaceIndex,
+     nncCrPvccDstVpi                   INTEGER,
+     nncCrPvccDstVci                   INTEGER,
+     nncCrPvccCastType                 INTEGER,
+     nncCrPvccFwdServiceCategory       INTEGER,
+     nncCrPvccBwdServiceCategory       INTEGER,
+     nncCrPvccFwdAbrDynTrfcIcr         INTEGER,
+     nncCrPvccFwdAbrDynTrfcRif         INTEGER,
+     nncCrPvccFwdAbrDynTrfcRdf         INTEGER,
+     nncCrPvccBwdAbrDynTrfcIcr         INTEGER,
+     nncCrPvccBwdAbrDynTrfcRif         INTEGER,
+     nncCrPvccBwdAbrDynTrfcRdf         INTEGER,
+     nncCrPvccSrcBillingFlag           INTEGER,
+     nncCrPvccDstBillingFlag           INTEGER,
+     nncCrPvccFwdTmTrafficDescriptor   INTEGER,
+     nncCrPvccFwdTmPolicingOption      INTEGER,
+     nncCrPvccFwdTmBucketOneRate       INTEGER,
+     nncCrPvccFwdTmBucketOneCdvt       INTEGER,
+     nncCrPvccFwdTmBucketTwoRate       INTEGER,
+     nncCrPvccFwdTmBucketTwoMbs        INTEGER,
+     nncCrPvccFwdTmCdv                 INTEGER,
+     nncCrPvccFwdTmClr                 INTEGER,
+     nncCrPvccFwdTmFrameDiscard        INTEGER,
+     nncCrPvccBwdTmTrafficDescriptor   INTEGER,
+     nncCrPvccBwdTmPolicingOption      INTEGER,
+     nncCrPvccBwdTmBucketOneRate       INTEGER,
+     nncCrPvccBwdTmBucketOneCdvt       INTEGER,
+     nncCrPvccBwdTmBucketTwoRate       INTEGER,
+     nncCrPvccBwdTmBucketTwoMbs        INTEGER,
+     nncCrPvccBwdTmCdv                 INTEGER,
+     nncCrPvccBwdTmClr                 INTEGER,
+     nncCrPvccBwdTmFrameDiscard        INTEGER,
+     nncCrPvccSrcAlsConfig             INTEGER,
+     nncCrPvccDstAlsConfig             INTEGER,
+     nncCrPvccCreator                  INTEGER,
+     nncCrPvccRowStatus                RowStatus
+
+   }
+
+   nncCrPvccSrcIfIndex OBJECT-TYPE
+     SYNTAX     InterfaceIndex
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the ifIndex value for the 
+        source endpoint."
+  
+     ::= { nncCrPvccTableEntry 1 }
+
+   nncCrPvccSrcVpi OBJECT-TYPE
+     SYNTAX     INTEGER (0..4095)
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the VPI value for the 
+        source endpoint."
+  
+     ::= { nncCrPvccTableEntry 2 }
+
+   nncCrPvccSrcVci OBJECT-TYPE
+     SYNTAX     INTEGER (0..65535)
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the VCI value for the 
+        source endpoint."
+
+     ::= { nncCrPvccTableEntry 3 }
+  
+   nncCrPvccDstIfIndex OBJECT-TYPE
+     SYNTAX     InterfaceIndex
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the ifIndex value for the 
+        destination endpoint."
+  
+     ::= { nncCrPvccTableEntry 4 }
+
+   nncCrPvccDstVpi OBJECT-TYPE
+     SYNTAX     INTEGER (0..4095)
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the VPI value for the 
+        destination endpoint."
+  
+     ::= { nncCrPvccTableEntry 5 }
+
+   nncCrPvccDstVci OBJECT-TYPE
+     SYNTAX     INTEGER (0..65535)
+     MAX-ACCESS not-accessible
+     STATUS     current
+     DESCRIPTION
+       "This object contains the VCI value for the 
+        destination endpoint."
+  
+     ::= { nncCrPvccTableEntry 6 }
+
+   nncCrPvccCastType OBJECT-TYPE
+     SYNTAX     INTEGER { p2p(1), -- point-to-point PVCC
+                          p2mp(2) -- point-to-multipoint PVCC
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to indicate whether the PVCC is point-to-point
+           or point-to-multipoint"
+      DEFVAL { p2p }
+
+     ::= { nncCrPvccTableEntry 7 }
+
+   nncCrPvccFwdServiceCategory OBJECT-TYPE
+     SYNTAX     INTEGER { cbr(1),
+                          nrtvbr(2),
+                          abr(3),
+                          ubr(4),
+                          rtvbr(6)
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to set the traffic service category
+           from source endpoint to destination endpoint.
+           This object is dependent on the value specified in 
+           nncCrPvccFwdTmTrafficDescripton object "
+     DEFVAL { nrtvbr }
+
+     ::= { nncCrPvccTableEntry 8 }
+
+   nncCrPvccBwdServiceCategory OBJECT-TYPE
+     SYNTAX     INTEGER { cbr(1),
+                          nrtvbr(2),
+                          abr(3),
+                          ubr(4),
+                          rtvbr(6)
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to set the traffic service category
+           from destination end point to source endpoint.
+           This object is dependent on the value specified in 
+           nncCrPvccBwdTmTrafficDescripton object "
+     DEFVAL { nrtvbr }
+
+     ::= { nncCrPvccTableEntry 9 }
+
+   nncCrPvccFwdAbrDynTrfcIcr OBJECT-TYPE
+     SYNTAX    INTEGER  (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR dynamic traffic descriptor's Initial Cell Rate for the
+                   forward direction.
+                   Range:  0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+
+     ::= { nncCrPvccTableEntry 10 }
+
+   nncCrPvccFwdAbrDynTrfcRif   OBJECT-TYPE
+     SYNTAX    INTEGER (0..9)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR traffic Rate Increase Factor for the forward direction.
+                   Value is expressed as the -power of 2.
+                   Range: 0 - 9"
+     DEFVAL { 9 }
+       
+     ::= { nncCrPvccTableEntry 11 }
+
+   nncCrPvccFwdAbrDynTrfcRdf   OBJECT-TYPE
+     SYNTAX    INTEGER (0..9)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR traffic Rate Decrease Factor descriptor for the forward direction.
+                   Value is expressed as the -power of 2
+                   Range: 0 - 9"
+     DEFVAL { 9 }
+       
+     ::= { nncCrPvccTableEntry 12 }
+
+   nncCrPvccBwdAbrDynTrfcIcr   OBJECT-TYPE
+     SYNTAX    INTEGER  (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR dynamic traffic descriptor's Initial Cell Rate for the destination
+                   endpoint.
+                   Range:  0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+       
+     ::= { nncCrPvccTableEntry 13 }
+
+   nncCrPvccBwdAbrDynTrfcRif   OBJECT-TYPE
+     SYNTAX    INTEGER (0..9)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR traffic Rate Increase Factor for the destination endpoint.
+                   Value is expressed as the -power of 2.
+                   Range: 0 - 9"
+     DEFVAL { 9 }
+
+     ::= { nncCrPvccTableEntry 14 }
+
+   nncCrPvccBwdAbrDynTrfcRdf   OBJECT-TYPE
+     SYNTAX    INTEGER (0..9)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+                  "ABR traffic Rate Decrease Factor descriptor for the destination endpoint.
+                   Value is expressed as the -power of 2
+                   Range: 0 - 9"
+
+     DEFVAL { 9 }
+
+     ::= { nncCrPvccTableEntry 15 }
+     
+   nncCrPvccSrcBillingFlag    OBJECT-TYPE          
+     SYNTAX     INTEGER { disabled(0), enabled(1) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION  "Billing Configuration for the source endpoint."     
+     DEFVAL { disabled }
+         
+     ::= { nncCrPvccTableEntry 16 }
+
+   nncCrPvccDstBillingFlag    OBJECT-TYPE          
+     SYNTAX     INTEGER { disabled(0), enabled(1) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION  "Billing Configuration for the destination endpoint."     
+     DEFVAL { disabled }
+         
+     ::= { nncCrPvccTableEntry 17 }
+
+   -- source end-point traffic descriptors
+   nncCrPvccFwdTmTrafficDescriptor  OBJECT-TYPE
+     SYNTAX     INTEGER { none(0),
+                          tagAll(1),
+                          p0Plus1(2),
+                          p0Plus1SlashS0Plus1(3),
+                          p0Plus1SlashS0(4),
+                          p0Plus1SlashM0Plus1(5)
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION 
+           "This object contains the traffic descriptor for the PVC.
+            None           (0) (Not applicable,the case of a P2MP leaf)
+            Tag All        (1) (UBR using 2k/12k fabric only)
+            P_0+1          (2) (CBR only)
+            P_0+1/S_0+1    (3) (NRT/RT-VBR only)
+            P_0+1/S_0      (4) (NRT/RT-VBR only)
+            P_0+1/M_0+1    (5) (ABR and UBR only)"
+     
+     DEFVAL { p0Plus1SlashS0Plus1 }
+
+      ::= { nncCrPvccTableEntry 18 }
+
+   nncCrPvccFwdTmPolicingOption OBJECT-TYPE
+     SYNTAX     INTEGER { none(0), disabled(1), tag(2), discard(3) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "Policing Option for a PVcC. The tag option is supported
+            only on rt-VBR/nrt-VBR connections that use the P_0_1/S_0
+            traffic descriptor "
+     DEFVAL { disabled }
+     
+      ::= { nncCrPvccTableEntry 19 }
+
+   nncCrPvccFwdTmBucketOneRate OBJECT-TYPE
+     SYNTAX     INTEGER (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is used for peak cell rate (PCR), the
+            cell rate which the source may never exceed.  It is used
+            to determine which cells are 'excess'.  
+            Measured in Kb/s.
+            Range: 0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+     
+      ::= { nncCrPvccTableEntry 20 }
+
+   nncCrPvccFwdTmBucketOneCdvt OBJECT-TYPE
+     SYNTAX     INTEGER (1..190000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is used to set cell delay variation tolerance (CDVT) for
+            one end point, measured in microseconds.  
+            Range: 1 - 190,000 microseconds"
+     DEFVAL { 250 }
+     
+      ::= { nncCrPvccTableEntry 21 }
+
+   nncCrPvccFwdTmBucketTwoRate OBJECT-TYPE
+     SYNTAX     INTEGER (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "SIR_0p, SIR_0+1p or MIR_0+1p.  This parameter holds 
+            the sustained information rate for for VBR traffic, and
+            the minimum information rate for ABR/UBR traffic.
+            Range: 0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+
+      ::= { nncCrPvccTableEntry 22 }
+
+   nncCrPvccFwdTmBucketTwoMbs OBJECT-TYPE
+     SYNTAX     INTEGER (1..10000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION 
+           "This object is for the maximum burst size, in cells,
+            for SIR_0p or SIR_0+1p (nrt-VBR and rt-VBR only). 
+            Range: 1 - 10000 cells"
+     DEFVAL { 32 }
+     
+     ::= { nncCrPvccTableEntry 23 }
+
+   nncCrPvccFwdTmCdv OBJECT-TYPE
+     SYNTAX     INTEGER (250..10000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This value is to set the cell delay variation (CDV) between two 
+            PVC endpoints when using the rt-VBR service category.
+            Range: 250-10000 microseconds"
+     DEFVAL { 10000 }
+     
+     ::= { nncCrPvccTableEntry 24 }
+
+   nncCrPvccFwdTmClr OBJECT-TYPE
+     SYNTAX     INTEGER (1..7)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "The object is to set the cell loss ratio (CLR) between two PVC 
+            endpoints when using the nrt-VBR service category.
+            Value set as 1.0e-#"
+     DEFVAL { 7 }
+
+     ::= { nncCrPvccTableEntry 25 }
+
+   nncCrPvccFwdTmFrameDiscard OBJECT-TYPE
+     SYNTAX     INTEGER { disabled(0), enabled(1) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "The Frame (AAL protocol data unit) Discard option.  When enabled,
+	    cells are discarded at the frame level by examining the SDU-type
+	    in the payload type field of the ATM cell header."
+     DEFVAL { disabled }
+
+     ::= { nncCrPvccTableEntry 26 }
+  
+    -- Destination end point traffic descriptor     
+
+   nncCrPvccBwdTmTrafficDescriptor OBJECT-TYPE
+     SYNTAX     INTEGER { none(0),
+                          tagAll(1),
+                          p0Plus1(2),
+                          p0Plus1SlashS0Plus1(3),
+                          p0Plus1SlashS0(4),
+                          p0Plus1SlashM0Plus1(5)
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION 
+           "This object contains the traffic descriptor for the SPVC.
+            None           (0) (Not applicable,the case of a P2MP leaf)
+            Tag All        (1) (UBR using 2k/12k fabric only)
+            P_0+1          (2) (CBR only)
+            P_0+1/S_0+1    (3) (NRT/RT-VBR only)
+            P_0+1/S_0      (4) (NRT/RT-VBR only)
+            P_0+1/M_0+1    (5) (ABR and UBR only)"
+     
+     DEFVAL { p0Plus1SlashS0Plus1 }
+
+     ::= { nncCrPvccTableEntry 27 }
+
+   nncCrPvccBwdTmPolicingOption OBJECT-TYPE
+     SYNTAX     INTEGER { none(0), disabled(1), tag(2), discard(3) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "Policing Option for an PVCC. The tag option is supported
+            only on rt-VBR/nrt-VBR connections that use the P_0_1/S_0
+            traffic descriptor "
+
+     DEFVAL { disabled }
+     
+     ::= { nncCrPvccTableEntry 28 }
+
+   nncCrPvccBwdTmBucketOneRate OBJECT-TYPE
+     SYNTAX     INTEGER (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is used for peak cell rate (PCR), the
+            cell rate which the source may never exceed.  It is used
+            to determine which cells are 'excess'.  
+            Measured in Kb/s.
+            Range: 0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+     
+     ::= { nncCrPvccTableEntry 29 }
+
+   nncCrPvccBwdTmBucketOneCdvt OBJECT-TYPE
+     SYNTAX     INTEGER (1..190000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is used to set cell delay variation tolerance (CDVT) for
+            one end point, measured in microseconds.  
+            Range: 1 - 190,000 microseconds"
+     DEFVAL { 250 }
+     
+     ::= { nncCrPvccTableEntry 30 }
+
+   nncCrPvccBwdTmBucketTwoRate OBJECT-TYPE
+     SYNTAX     INTEGER (0..2488320)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "SIR_0p, SIR_0+1p or MIR_0+1p.  This parameter holds 
+            the sustained information rate for for VBR traffic, and
+            the minimum information rate for ABR/UBR traffic.
+            Range: 0 - 2488320 Kb/s"
+     DEFVAL { 1000 }
+
+     ::= { nncCrPvccTableEntry 31 }
+
+   nncCrPvccBwdTmBucketTwoMbs OBJECT-TYPE
+     SYNTAX     INTEGER (1..10000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION 
+           "This object is for the maximum burst size, in cells,
+            for SIR_0p or SIR_0+1p (nrt-VBR and rt-VBR only). 
+            Range: 1 - 10000 cells"
+     DEFVAL { 32 }
+     
+     ::= { nncCrPvccTableEntry 32 }
+
+   nncCrPvccBwdTmCdv OBJECT-TYPE
+     SYNTAX     INTEGER (250..10000)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This value is to set the cell delay variation (CDV) between two 
+            PVC endpoints when using the rt-VBR service category.
+            Range: 250-10000 microseconds"
+     DEFVAL { 10000 }
+     
+     ::= { nncCrPvccTableEntry 33 }
+
+   nncCrPvccBwdTmClr OBJECT-TYPE
+     SYNTAX     INTEGER (1..7)
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "The object is to set the cell loss ratio (CLR) between two PVC 
+            endpoints when using the nrt-VBR service category.
+            Value set as 1.0e-#
+            Range: 0 - 7"
+     DEFVAL { 7 }
+
+     ::= { nncCrPvccTableEntry 34 }
+ 
+   nncCrPvccBwdTmFrameDiscard OBJECT-TYPE
+     SYNTAX     INTEGER { disabled(0), enabled(1) }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "The Frame (AAL protocol data unit) Discard option.  When enabled,
+	    cells are discarded at the frame level by examining the SDU-type
+	    in the payload type field of the ATM cell header."          
+     DEFVAL { disabled }
+
+     ::= { nncCrPvccTableEntry 35 }
+
+   nncCrPvccSrcAlsConfig OBJECT-TYPE
+     SYNTAX     INTEGER { disabled(0), -- Do not report F5-level (VC level) alarms.
+                          enabled(1)   -- Report F5-level (VC level) alarms.
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to set OAM Alarm Surveillance configuration
+           for the source endpoint."
+     DEFVAL { disabled }
+
+     ::= { nncCrPvccTableEntry 36 }
+
+   nncCrPvccDstAlsConfig OBJECT-TYPE
+     SYNTAX     INTEGER { disabled(0), -- Do not report F5-level (VC level) alarms.
+                          enabled(1)   -- Report F5-level (VC level) alarms.
+                        }
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+          "This object is used to set OAM Alarm Surveillance configuration
+           for the destination endpoint."
+     DEFVAL { disabled }
+
+     ::= { nncCrPvccTableEntry 37 }
+
+   nncCrPvccCreator OBJECT-TYPE
+     SYNTAX     INTEGER { unknown(0), -- Creator is unknown
+                          nmti(1), -- Creator is NMTI
+                          nm5620(2), -- Creator is 5620
+                          snmp(9)  -- Creator is SNMP
+                        }
+     MAX-ACCESS read-only
+     STATUS     current
+     DESCRIPTION
+           "The object retrieves the creator of a PVC connection."
+
+     ::= { nncCrPvccTableEntry 38 }
+     
+   nncCrPvccRowStatus OBJECT-TYPE
+     SYNTAX     RowStatus
+     MAX-ACCESS read-create
+     STATUS     current
+     DESCRIPTION
+           "This object is to control a row creation of a CR PVCC. When
+            RowStatus is createAndWait, information for a row is cached in memory;  
+            when RowStatus is set to createAndGo or active, it indicates that 
+            all information is to be written to permanent storage, and the
+            PVCC to be enabled.
+
+            When querying the object, 'active' indicates the PVCC is physically
+            connected and data traffic can flow. The Rowstatus of 'notInService'
+            indicates the PVCC is physically connected but data cannot flow.
+            If the RowStatus value of 'notReady' is returned, it indicates either
+            the PVCC is not physically connected (ie. configured only) or the SNMP
+            agent is awaiting further information before setting up the connection.
+
+            When deleting a connection, use this object with the value 'destroy'"
+
+     ::= {nncCrPvccTableEntry 39 }
+
+   -------------------------------------------------------------------
+   -- Conformance Group Definitions            
+   -------------------------------------------------------------------
+   nncCrPvpcGroup OBJECT-GROUP
+     OBJECTS {
+       nncCrPvpcSrcIfIndex,
+       nncCrPvpcSrcVpi,
+       nncCrPvpcDstIfIndex,
+       nncCrPvpcDstVpi,
+       nncCrPvpcCastType,
+       nncCrPvpcFwdServiceCategory,
+       nncCrPvpcBwdServiceCategory,
+       nncCrPvpcFwdAbrDynTrfcIcr,
+       nncCrPvpcFwdAbrDynTrfcRif,
+       nncCrPvpcFwdAbrDynTrfcRdf,
+       nncCrPvpcBwdAbrDynTrfcIcr,
+       nncCrPvpcBwdAbrDynTrfcRif,
+       nncCrPvpcBwdAbrDynTrfcRdf,
+       nncCrPvpcSrcBillingFlag,
+       nncCrPvpcDstBillingFlag,
+       nncCrPvpcFwdTmTrafficDescriptor,
+       nncCrPvpcFwdTmPolicingOption,
+       nncCrPvpcFwdTmBucketOneRate,
+       nncCrPvpcFwdTmBucketOneCdvt,
+       nncCrPvpcFwdTmBucketTwoRate,
+       nncCrPvpcFwdTmBucketTwoMbs,
+       nncCrPvpcFwdTmCdv,
+       nncCrPvpcFwdTmClr,
+       nncCrPvpcBwdTmTrafficDescriptor,
+       nncCrPvpcBwdTmPolicingOption,
+       nncCrPvpcBwdTmBucketOneRate,
+       nncCrPvpcBwdTmBucketOneCdvt,
+       nncCrPvpcBwdTmBucketTwoRate,
+       nncCrPvpcBwdTmBucketTwoMbs,
+       nncCrPvpcBwdTmCdv,
+       nncCrPvpcBwdTmClr,
+       nncCrPvpcSrcAlsConfig,
+       nncCrPvpcDstAlsConfig,
+       nncCrPvpcCreator,
+       nncCrPvpcRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+         "Common MIB objects for configuring a CR PVPC on Alcatel CID 
+          equipment"
+     ::= { nncExtPvcGroups 1 }
+
+   nncCrPvccGroup OBJECT-GROUP
+     OBJECTS {
+       nncCrPvccSrcIfIndex,
+       nncCrPvccSrcVpi,
+       nncCrPvccSrcVci,
+       nncCrPvccDstIfIndex,
+       nncCrPvccDstVpi,
+       nncCrPvccDstVci,
+       nncCrPvccCastType,
+       nncCrPvccFwdServiceCategory,
+       nncCrPvccBwdServiceCategory,
+       nncCrPvccFwdAbrDynTrfcIcr,
+       nncCrPvccFwdAbrDynTrfcRif,
+       nncCrPvccFwdAbrDynTrfcRdf,
+       nncCrPvccBwdAbrDynTrfcIcr,
+       nncCrPvccBwdAbrDynTrfcRif,
+       nncCrPvccBwdAbrDynTrfcRdf,
+       nncCrPvccSrcBillingFlag,
+       nncCrPvccDstBillingFlag,
+       nncCrPvccFwdTmTrafficDescriptor,
+       nncCrPvccFwdTmPolicingOption,
+       nncCrPvccFwdTmBucketOneRate,
+       nncCrPvccFwdTmBucketOneCdvt,
+       nncCrPvccFwdTmBucketTwoRate,
+       nncCrPvccFwdTmBucketTwoMbs,
+       nncCrPvccFwdTmCdv,
+       nncCrPvccFwdTmClr,
+       nncCrPvccFwdTmFrameDiscard,
+       nncCrPvccBwdTmTrafficDescriptor,
+       nncCrPvccBwdTmPolicingOption,
+       nncCrPvccBwdTmBucketOneRate,
+       nncCrPvccBwdTmBucketOneCdvt,
+       nncCrPvccBwdTmBucketTwoRate,
+       nncCrPvccBwdTmBucketTwoMbs,
+       nncCrPvccBwdTmCdv,
+       nncCrPvccBwdTmClr,
+       nncCrPvccBwdTmFrameDiscard,
+       nncCrPvccSrcAlsConfig,
+       nncCrPvccDstAlsConfig,
+       nncCrPvccCreator,
+       nncCrPvccRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+         "Common MIB objects for configuring a CR PVCC on Alcatel CID 
+          equipment"
+     ::= { nncExtPvcGroups 2 }
+
+   ------------------------------------------------------------------
+   -- Compliance Statements
+   ------------------------------------------------------------------
+   nncPvcCompliance     MODULE-COMPLIANCE
+     STATUS     current
+     DESCRIPTION 
+           "The compliance statement for Alcatel CID PVC MIB implementation."
+     MODULE
+       MANDATORY-GROUPS {
+         nncCrPvpcGroup,
+         nncCrPvccGroup
+       }
+     ::= { nncExtPvcCompliances 1 }
+
+END -- DEFINITION OF NNCEXTPVC-MIB
+--
+-------------------------------------------------------------------------------
+--      Review Minutes
+-------------------------------------------------------------------------------
+--
+--------------------------------------------------------------------------------
+--      MINUTES-BEGIN
+--              REVIEW-DATE  "2000.07.19"
+--              BODY  "
+--
+--      
+--      TO:     Chris Anastasiadis, Bruce Brown, Navdeep Dhillon*
+--              Andrew Duggan*, Kendall Harvey, Shawn Lips*
+--              David Maxwell, Derek Puddicombe, Jack Sinclair*
+--              Bruce Slack, John Sullivan*, Greg Winklemaier*
+--              George Yu*, Iqbal Pandher*
+-- 
+--      FROM:   George Yu*
+--
+--
+--      A meeting was held on 2000.07.19 to review NncExtPVC.mib.
+--      Attendees are marked with * in the TO and CC lists above.
+--
+--      Outcome
+--
+--      It was the consensus of the review team that this file is 
+--      acceptable with the indicated modifications
+--
+--      Actions:
+--              A1 - Iqbal Pandher to update NncExtPVC.mib as described in Decision D1.
+--
+--                   Response              Status               Closed
+--                   2000.07.20        Updated NncExtPVC.mib according to D1.
+--
+--      Decisions:
+--      D1 -    NncExtPVC.mib shall be updated as follows:
+--              a. Line 5 - Correct typos
+--              b. Add default value (nrtvbr) for the Service Category objects
+--                 in both nncCrPvpcTable and nncCrPvccTable.
+--              c. In Service Category Object description fields, add reference to valid
+--                 Traffic Descriptors in both nncCrPvpcTable and nncCrPvccTable.
+--              d. Add default value (disabled) for the ALS Configuration Objects
+--                 in both nncCrPvpcTable and nncCrPvccTable.
+--              e. Add interpertation of Row Status Object as applied to this MIB.
+--
+--      "
+--
+--      END-MINUTES

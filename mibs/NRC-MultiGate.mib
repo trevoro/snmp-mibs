@@ -1,0 +1,1721 @@
+NRC-MultiGate	DEFINITIONS ::= BEGIN
+
+IMPORTS
+		TimeTicks, Gauge, Counter, mgmt, experimental FROM RFC1155-SMI
+		DisplayString		FROM RFC1213-MIB
+		OBJECT-TYPE		FROM RFC-1212;
+
+mib-2           OBJECT IDENTIFIER ::= { mgmt 1 }       
+enterprises	OBJECT IDENTIFIER ::= { 1 3 6 1 4 1 }
+nrc		OBJECT IDENTIFIER ::= { enterprises 315 }
+hub1		OBJECT IDENTIFIER ::= { nrc 1 }
+snmpDot3RptrMgt OBJECT IDENTIFIER ::= { experimental 29 }
+dot1dBridge     OBJECT IDENTIFIER ::= { mib-2 17 }
+
+   -- All representations of MAC addresses in this MIB Module use,
+   -- as a textual convention (i.e., this convention does not affects not affect
+   -- their encoding), the data type:
+				  
+   MacAddress ::= OCTET STRING (SIZE (6))    -- a 6 octet address in
+
+   -- defined by IEEE 802.1a, i.e., as if it were transmitted least
+   -- significant bit first, even though 802.5 (in contrast to other
+   -- 802.x protocols) requires MAC addresses to be transmitted most
+   -- significant bit first.
+   --
+   -- 16-bit addresses, if needed, are represented by setting their
+   -- upper 4 octets to all 0's, i.e., AAFF would be represented
+   -- as 00000000AAFF.
+
+
+   -- Similarly, all representations of Bridge-Id in this MIB Module
+   -- use, as a textual convention (i.e. this convention does not affect
+   -- their encoding), the data type:
+
+   BridgeId ::= OCTET STRING (SIZE (8))   -- the Bridge-Identifier as
+                                          -- used in the Spanning Tree
+   -- Protocol to uniquely identify a bridge.  Its first two octets
+   -- (in network byte order) contain a priority value and its last
+   -- 6 octets contain the MAC address used to refer to a bridge in a
+   -- unique fashion (typically, the numerically smallest MAC address
+   -- of all ports on the bridge).
+   -- Several objects in this MIB module represent values of timers
+   -- used by the Spanning Tree Protocol.  In this MIB, these timers
+   -- have values in units of hundreths of a second (i.e. 1/100 secs).
+   -- These timers, when stored in a Spanning Tree Protocol's BPDU,
+   -- are in units of 1/256 seconds.  Note, however, that 802.1d/D9
+   -- specifies a settable granularity of no more than 1 second for
+   -- these timers.  To avoid ambiguity, a data type is defined here
+   -- as a textual convention and all representation of these timers
+   -- in this MIB module are defined using this data type.  An algorithm
+   -- is also defined for converting between the different units, to
+   -- ensure a timer's value is not distorted by multiple conversions.
+   -- The data type is:
+
+   Timeout ::= INTEGER      -- a STP timer in units of 1/100 seconds
+
+   -- To convert a Timeout value into a value in units of
+   -- 1/256 seconds, the following algorithm should be used:
+   --
+   --      b  = floor( (n * 256) / 100)
+   --
+   -- where:
+   --      floor   =  quotient [ignore remainder]
+   --      n is the value in 1/100 second units
+   --      b is the value in 1/256 second units
+   --
+   -- To convert the value from 1/256 second units back to
+   -- 1/100 seconds, the following algorithm should be used:
+   --
+   --      n = ceiling( (b * 100) / 256)
+   --
+   -- where:
+   --      ceiling =  quotient [if remainder is 0], or
+   --                 quotient + 1 [if remainder is non-zero]
+   --      n is the value in 1/100 second units
+   --      b is the value in 1/256 second units
+   --
+   -- Note: it is important that the arithmetic operations are done
+   -- in the order specified (i.e., multiply first, divide second).
+
+
+
+
+--
+-- NRC HUB 1 Group
+--
+
+hub1AutoPartition	OBJECT-TYPE
+		SYNTAX	INTEGER { enabled(1), disabled(2) }
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"The value 'enabled' indicates that
+				the HUB should auto partition ports.
+
+				The value 'disabled' will disable
+				this feature."
+		::= { hub1 1 }
+
+hub1ReconnectOnTransmission
+				OBJECT-TYPE
+		SYNTAX	INTEGER { enabled(1), disabled(2) }
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"The value 'enabled' indicates that
+				the HUB will reconnect an auto 
+				partitioned port if the HUB receives
+				a packet from a partitioned port.
+
+				The value 'disabled' indicates that  
+				the HUB will reconnect a partitioned 
+				port if there is any traffic to or 
+				from the port."
+		::= { hub1 2 }
+
+hub1IncludeOutOfWinColl
+				OBJECT-TYPE
+		SYNTAX	INTEGER { enabled(1), disabled(2) }
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"A value of 'enabled' will cause Out Of
+				Window Collisions to be counted along
+				with In Window Collisions (as defined by
+				IEEE 802.3)  when determining if the
+				collision count has exceeded
+				hub1CollisionLimit and a port should be
+				auto partitioned.
+
+				A value of 'disabled' indicates that Out
+				Of Window Collisions should NOT be counted
+				when determining if the collision count
+				has exceeded hub1CollisionLimit and a 
+				and a port should be auto partitioned."
+
+		::= { hub1 3 }
+
+hub1LoopbackPartition
+				OBJECT-TYPE
+		SYNTAX	INTEGER { enabled(1), disabled(2) }
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"A value of 'enabled' will cause the
+				HUB to automatically partition a 
+				port where a lack of loopback from
+				the transeiver is detected.
+
+				A value of 'disabled' will disable 
+				this feature.
+
+				Note: Setting this variable will only
+				effect HUB operation when hub1PortType
+				value	equals 'thinNet-10Base2'. For all
+				other hub1PortType values, a value of
+				'enabled' will have no effect."
+		::= { hub1 4 }
+
+hub1CollisionLimit	OBJECT-TYPE
+		SYNTAX	INTEGER { low(31), high(63) }
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"If consecutive collisions exceeding the
+				value of this variable are detected on
+				a port, the port will be auto partitioned
+				31 is the IEEE 802.3 consecutive collision
+				limit."
+		::= { hub1 5 }
+
+hub1CarrierRecoverTime
+				OBJECT-TYPE
+		SYNTAX	INTEGER { short(3), long(5) }
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"Time to recover carrier.  A value 
+				of 'short' will use 3 bit times (IEEE 802.3
+				specification). A value of 'long' will use
+				5 bit times."
+		::= { hub1 6 }
+
+hub1EventCounterFlags
+				OBJECT-TYPE
+		SYNTAX	OCTET STRING (SIZE (2))
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"A bit mask indicating which error types
+				will cause an increment in the 
+				hub1PortEventCount Counter.
+
+				Each bit has the following significance 
+				where each bit is listed from most
+				significant bit of the first octet, to
+				least significant bit of the second octet.
+
+				High (first) Octet
+				  bit
+
+				  8	- not used -
+				  7	- not used -
+				  6	Out Of Window Collision Count Enable
+				  5	Receive Collision Count Enable
+				  4	Transmit Collision Count Enable
+				  3	- not used -
+				  2	- not used -
+				  1	- not used -
+
+				Low (second) Octet
+				  bit
+
+				  8	Bad Link Count Enable
+				  7	Partition Count Enable
+				  6	Receive Count Enable
+				  5	Pygmy Packet Enable
+				  4	Non SFD Enable
+				  3	Phase Lock Error Enable
+				  2	Elasticity Buffer Error Enable
+				  1	Jabber Enable
+
+				When setting the value of this variable,
+				the entire bit mask must be specified and
+				the '-not used-' bits must not be set."
+		::= { hub1 7 }
+
+hub1EventRecordFlags	OBJECT-TYPE
+		SYNTAX	OCTET STRING (SIZE (1))
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"A bit mask indicating which error types
+				will cause corresponding bits in 
+				hub1PortEventRecordValue to be set when
+				an error is detected.
+
+				Each bit has the following significance 
+				where bits are listed from most
+				significant bit to least significant bit.
+
+				  bit
+
+				  8	Bad Link Enable
+				  7	Partition Enable
+				  6	Out Of Window Collision Enable
+				  5	Pygmy Packet Enable
+				  4	Non SFD Enable
+				  3	Phase Lock Error Enable
+				  2	Elasticity Buffer Error Enable
+				  1	Jabber Enable
+
+				When a particular bit is set, all ports 
+				will start to log the specified error in 
+				the hub1PortEventRecordValue column of the
+				port's row of the hub1PortTable.
+
+				For example, if bit 1 (Jabber Enable) is
+				set, then for every port, a detected
+				Jabber Error would cause bit 1 of 
+				hub1PortEventRecordValue to be set.
+	
+				When setting the value of this variable,
+				the entire bit mask must be specified.
+				When this mask is set, hub1PortRecordValue
+				for all ports is cleared."
+		::= { hub1 8 }
+
+hub1BridgingMode	OBJECT-TYPE
+		SYNTAX	INTEGER {
+					bridging (1),
+					bypass (2)
+				}
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"Operational mode of the bridge:
+
+				    bridging	Packets are being
+							selectively forwarded 
+							according to the internal 
+							dynamically built tables.
+
+				    bypass		All packets are being 
+							repeated between the
+							backbone and the repeater
+							ports.  The bridge logic
+							is disabled.
+
+				After setting this variable the HUB 
+				must be reset for the new value to take
+				effect.
+
+				NOTE: FOIRL Hubs can only have the
+					value 'bypass' for this variable.
+					Attempts to set this variable to
+					'bridging' on FOIRL hubs will be
+					rejected."
+		::= { hub1 9 }
+
+hub1ProtocolFilterMode	
+				OBJECT-TYPE
+		SYNTAX	INTEGER {
+					off (1),
+					filter (2),
+					pass (3)
+				}
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"Filtering Mode of the Hub:
+
+					off		The protocol filtering
+							logic is disabled. 
+							
+					filter	The protocol filtering
+							logic is enabled and
+							packets with the 
+							protocol types indicated
+							in hubFilterProtocols
+							will not be forwarded by
+							the bridge.
+
+					pass		The packet filtering
+							logic is enabled and
+							packets with the 
+							protocol types indicated
+							in hubFilterProtocols
+							will be the ONLY packets
+							that the bridge will
+							forward."
+		::= { hub1 10 }
+
+hub1FilterProtocols	OBJECT-TYPE
+		SYNTAX	OCTET STRING (SIZE (0..32))			
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"Protocol types to be filtered or passed
+				by the bridging logic.  This is a variable
+				length array of between 0 and 16 2-byte
+				entries, each entry containing the 2-byte
+				protocol identifier as seen in the Ethernet
+				header.
+
+				Attempts to configure this variable with
+				an OCTET STRING of odd length will be
+				rejected."
+		::= { hub1 11 }
+
+hub1ConsoleBaudRate	OBJECT-TYPE
+		SYNTAX	INTEGER
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"The baud rate of the console port.  Legal
+				values are 9600, 4800, 2400, and 1200."
+		::= { hub1 12 }
+
+hub1Reset	OBJECT-TYPE
+		SYNTAX	INTEGER {
+					no-reset (1),
+					reset (2)
+				}
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"Setting this object to 'reset' will
+				cause the Hub1 to perform a hardware
+				reset within approximately 5 seconds.
+
+				Setting this object to 'no-reset will
+				have no effect.  The value 'no-reset
+				will be returned whenever this object
+				is retrieved.
+
+				The primary purpose for including this
+				variable in the Hub1 MIB is to allow
+				SNMP managers to modify the operational
+				mode of the Hub1.  Changing the variable
+				hub1BridgingMode has no effect on the
+				Hub until the Hub is reset."
+		::= { hub1 13 }
+
+hub1SoftwareVersion	OBJECT-TYPE
+		SYNTAX	DisplayString (SIZE (0..15))
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"The version of software running on the
+				Hub.  On versions of the Hub that support
+				dynamic download, this variable may be
+				set to cause a new version of the 
+				software to be loaded the next time
+				the Hub is reset (as in setting the 
+				variable hub1Reset or power cycling the
+				unit).  The version should be specified in
+				the following format:
+
+					'MM.mm.rr'
+
+				Where MM is the major number, mm is the
+				minor number, and rr is the revision level
+				(for example 2.0.16).
+
+				On versions of the Hub that do not support
+				dynamic download, setting this variable 
+				will result in an error."
+		::= { hub1 14 }
+
+--
+-- HUB 1 Ports Table
+--
+
+hub1PortTable		OBJECT-TYPE
+		SYNTAX	SEQUENCE OF Hub1PortEntry
+		ACCESS	not-accessible
+		STATUS	mandatory
+		DESCRIPTION	"A table of port specific information
+				for the NRC HUB 1 product.  This table
+				supplements the Repeater MIB Ports Table."
+		::= { hub1 15 }
+
+hub1PortEntry		OBJECT-TYPE
+		SYNTAX	Hub1PortEntry
+		ACCESS	not-accessible
+		STATUS	mandatory
+		DESCRIPTION	"A list of information for every port."
+		INDEX		{ hub1PortIndex }
+		::= { hub1PortTable 1 }
+
+Hub1PortEntry ::= SEQUENCE {
+		hub1PortIndex			INTEGER,
+		hub1PortForceReconnect		INTEGER,
+		hub1PortPartitionReason		INTEGER,
+		hub1PortLinkState			INTEGER,
+		hub1PortLinkEnable		INTEGER,
+		hub1PortPolarityStatus		INTEGER,
+		hub1PortName			DisplayString,
+		hub1PortEventCount		INTEGER,
+		hub1PortEventRecordValue	OCTET STRING,
+		hub1PortType			INTEGER
+}
+
+hub1PortIndex		OBJECT-TYPE
+		SYNTAX	INTEGER (1..24)
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"Port number that corresponds to the index
+				value in the Repeater MIB variable
+				rptrPortIndex."
+		::= { hub1PortEntry 1 }
+
+hub1PortForceReconnect		
+				OBJECT-TYPE
+		SYNTAX	INTEGER { idle(1), force-reconnect(2) }
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"Setting this variable to the value 'force-
+				reconnect' will cause the port to be
+				reconnected assuming that it is currently
+				in the 'Partition' state. If the port is
+				not in a 'Partition' state, setting
+				variable to the value 'force-reconnect'
+				will not have any effect. Setting this
+				variable to anything other than 'force-
+				reconnect will and an undefined effect.
+
+				When retrieving this variable, the value
+				'idle' will always be returned."
+
+		::= { hub1PortEntry 2 }
+
+hub1PortPartitionReason		
+				OBJECT-TYPE
+		SYNTAX	INTEGER {
+					not-partitioned (1),
+					other (2),
+					consecutive-collision-limit (3),
+					excessive-len-of-collision-limit (4),
+					data-loopback-failure (5),
+					process-forced-reconnection (6)
+				}
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"Reason for port being in the partitioned
+				state.  If the port is currently not
+				partitioned, this variable will have the
+				value 'not-partitioned'."
+		::= { hub1PortEntry 3 }	
+
+hub1PortLinkState	OBJECT-TYPE
+		SYNTAX	INTEGER { unknown(1), up(2), down(3) }
+		ACCESS	read-only 
+		STATUS	mandatory
+		DESCRIPTION	"This variable's meaning varies depending
+				on the type of HUB:
+
+				10Base2	Not Applicable.  A value of
+						'unknown' will always be 
+						returned.
+
+				10BaseT	Link Test is being received
+						('up') or not being received
+						('down').
+
+				Fiber		Light Monitoring (LMON) is 
+						being detected ('up') or not 
+						being detected ('down')."
+		::= { hub1PortEntry 4 }
+
+hub1PortLinkEnable	OBJECT-TYPE
+		SYNTAX	INTEGER { enabled(1), disabled(2) }
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"Enabling this variable has the following
+				effect depending on the type of HUB:
+
+				10Base2	No Effect
+
+				10BaseT	Link Test Enabled
+
+				Fiber		LMON Test Enabled"
+		::= { hub1PortEntry 5 }
+
+hub1PortPolarityStatus	
+				OBJECT-TYPE
+		SYNTAX	INTEGER { ok(1), reversed(2) }
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"Current port Polarity status. 
+
+				NOTE: a value of 'ok' will always
+					be returned for 10Base2 and FOIRL
+					HUBs"
+		::= { hub1PortEntry 6 }
+
+hub1PortName		OBJECT-TYPE
+		SYNTAX	DisplayString (SIZE (0..32))
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION	"Administrator assigned ASCII port name."
+		::= { hub1PortEntry 7 }
+
+hub1PortEventCount	OBJECT-TYPE
+		SYNTAX	INTEGER
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"Counter of all error events that were
+				detected on this port and at the same 
+				time were marked for collection in the
+				hub1EventCounterFlags variable.
+
+				This is a 16 bit wrapping counter."
+		::= { hub1PortEntry 8 }
+
+hub1PortRecordValue	OBJECT-TYPE
+		SYNTAX	OCTET STRING (SIZE (1))
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"Bit Mask that has bits set for each error
+				event that was detected on this port and at
+				the same time was marked for collection in
+				the hub1EventRecordFlags variable.
+
+				Each bit has the following meaning, where
+				the bits are listed from most significant
+				to least significant:
+
+				  bit
+
+				  8	Bad Link Count Error
+				  7	Partition Count Error
+				  6	Receive Count Error
+				  5	Pygmy Packet Error
+				  4	Non SFD Error
+				  3	Phase Lock Error
+				  2	Elasticity Buffer Error
+				  1	Jabber Error
+
+				Each read of this variable causes the
+				variable to be cleared."
+		::= { hub1PortEntry 9 }
+
+hub1PortType		OBJECT-TYPE
+		SYNTAX	INTEGER {
+					other				(1),
+					twistedPair-10BaseT	(2),
+					thinNet-10Base2		(3),
+					fiber-FOIRL			(4)
+				}
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The type of port"
+		::= { hub1PortEntry 10 }
+
+
+--
+-- HUB 1 Interfaces 
+--
+
+hub1IFTable		OBJECT-TYPE
+		SYNTAX	SEQUENCE OF Hub1IFEntry
+		ACCESS	not-accessible
+		STATUS	mandatory
+		DESCRIPTION	"A table that contains HUB 1 specific
+				supplements to the MIB-II interfaces 
+				table."
+	::= { hub1 16 }
+
+hub1IFEntry		OBJECT-TYPE
+		SYNTAX	Hub1IFEntry
+		ACCESS	not-accessible
+		STATUS	mandatory
+		DESCRIPTION	"Entries in the HUB 1 supplement table."
+		INDEX		{ hub1IFIndex }
+		::= { hub1IFTable 1 }
+
+Hub1IFEntry ::= SEQUENCE {
+		hub1IFIndex				INTEGER,
+		hub1IFInAlignmentErrors		Counter,
+		hub1IFInCrcErrors			Counter,
+		hub1IFInCollisions		Counter,
+		hub1IFInMtuExceededDiscards	Counter,
+		hub1IFInShortErrors		Counter,
+		hub1IFInOverrunDiscards		Counter,
+		hub1IFOutUnderruns		Counter,
+		hub1IFOutLostCts			Counter,
+		hub1IFOutLostCrs			Counter,
+		hub1IFOutMtuExceededDiscards	Counter,
+		hub1IFOutCollisions		Counter,
+		hub1IFChannelUtilization	OCTET STRING
+}
+
+hub1IFIndex		OBJECT-TYPE
+		SYNTAX	INTEGER
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"Interface index that corresponds to
+				ifIndex in the interfaces table from
+				MIB II."
+		::= { hub1IFEntry 1 }
+
+hub1IFInAlignmentErrors	
+				OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of alignment errors detected
+				by this interface."
+		::= { hub1IFEntry 2 }
+
+hub1IFInCrcErrors	OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of CRC errors detected by
+				this interface."
+		::= { hub1IFEntry 3 }
+
+hub1IFInCollisions	OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of collisions detected by this
+				interface."
+		::= { hub1IFEntry 4 }
+
+hub1IFInMtuExceededDiscards	
+				OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of frames discarded by this
+				interface on receive due to an excessive
+				size."
+		::= { hub1IFEntry 5 }
+
+hub1IFInShortErrors	OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of frames discarded by this
+				interface because they were less than the
+				Ethernet minumum frame size of 64 bytes."
+		::= { hub1IFEntry 6 }
+
+hub1IFInOverrunDiscards	
+				OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of frames discarded by this
+				interface due to a LAN Controller FIFO
+				overflow on receive."
+		::= { hub1IFEntry 7 }
+
+hub1IFOutUnderruns	OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of frames which had to be
+				retransmitted by this interface due to a
+				LAN Controller FIFO underrun error on
+				transmit." 
+		::= { hub1IFEntry 8 }
+
+hub1IFOutLostCts	OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of times Carrier Transmit Sense
+				(CTS) was lost on this interface during
+				frame transmission. The hub will attempt to
+				retransmit frames when transmission fails
+				due to lost CTS."
+		::= { hub1IFEntry 9 }
+
+hub1IFOutLostCrs	OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of times Carrier Receive Sense
+				(CRS) was lost on this interface during
+				frame transmission. The hub will attempt to
+				retransmit frames when transmission fails
+				due to lost CRS."
+		::= { hub1IFEntry 10 }
+
+hub1IFOutMtuExceededDiscards	
+				OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of frames discarded by this
+				interface on transmit due to an excessive
+				size."
+		::= { hub1IFEntry 11 }
+
+hub1IFOutCollisions	OBJECT-TYPE
+		SYNTAX	Counter
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The number of collisions detected by this
+				interface while attempting to transmit a
+				packet."
+		::= { hub1IFEntry 12 }
+
+hub1IFChannelUtilization
+				OBJECT-TYPE
+		SYNTAX	OCTET STRING (SIZE (90))
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"Utilization statistics for the last 60
+				seconds of operation of the bridging
+				logic associated with this interface.  The
+				OCTET STRING is a series of 45 16-bit
+				words, each word representing the
+				percentage utilization for a 1.33 second
+				sample period.  The first 16 bit word
+				in this series represents the oldest
+				sample.
+
+				Percentages are calculated by passing each
+				16 bit sample through the following
+				equation:
+
+					((Sample) * 100) / 0xffff
+
+				to yield the percent channel utilization
+				(a number ranging from 0 to 100)."
+		::= { hub1IFEntry 13 }
+
+--
+--	This is a continuation of the Hub1 Group
+--
+hub1LastFailureReason
+				OBJECT-TYPE
+		SYNTAX	INTEGER
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION	"The last error that caused a Hub failure.
+
+				A value of zero (0) indicates that there
+				has not been a Hub failure since the novram
+				was last erased.
+
+				A non-zero value indicates the reason for 
+				the last Hub failure.  A normal Hub reset 
+				or power cycle will not change the value 
+				of this variable (it will still indicate 
+				the reason for the last known failure."
+		::= { hub1 17 } 
+
+
+-- Groups from Repeater MIB
+-- The rptrBasicPackage group is mandatory.
+-- The rptrMonitorPackage and rptrAddrTrackPackage
+-- groups are optional.
+
+
+          rptrBasicPackage
+	      OBJECT IDENTIFIER ::= { snmpDot3RptrMgt 1 }
+
+          rptrMonitorPackage
+              OBJECT IDENTIFIER ::= { snmpDot3RptrMgt 2 }
+
+          rptrAddrTrackPackage
+              OBJECT IDENTIFIER ::= { snmpDot3RptrMgt 3 }
+
+
+          -- object identifiers for organizing the information
+          -- in the groups by repeater, port-group, and port
+
+          rptrRptrInfo
+              OBJECT IDENTIFIER ::= { rptrBasicPackage 1 }
+          rptrGroupInfo
+              OBJECT IDENTIFIER ::= { rptrBasicPackage 2 }
+          rptrPortInfo
+              OBJECT IDENTIFIER ::= { rptrBasicPackage 3 }
+
+          rptrMonitorRptrInfo
+              OBJECT IDENTIFIER ::= { rptrMonitorPackage 1 }
+          rptrMonitorGroupInfo
+              OBJECT IDENTIFIER ::= { rptrMonitorPackage 2 }
+          rptrMonitorPortInfo
+              OBJECT IDENTIFIER ::= { rptrMonitorPackage 3 }
+
+          rptrAddrTrackRptrInfo     -- this subtree is currently unused
+              OBJECT IDENTIFIER ::= { rptrAddrTrackPackage 1 }
+          rptrAddrTrackGroupInfo    -- this subtree is currently unused
+              OBJECT IDENTIFIER ::= { rptrAddrTrackPackage 2 }
+          rptrAddrTrackPortInfo
+              OBJECT IDENTIFIER ::= { rptrAddrTrackPackage 3 }
+
+
+          --
+          --                    The BASIC GROUP
+          --
+          -- Implementation of the Basic Group is mandatory for all
+          -- managed repeaters.
+
+          --
+          -- Basic Repeater Information
+          --
+          -- Configuration, status, and control objects for the overall
+          -- repeater
+          --
+
+          rptrGroupCapacity OBJECT-TYPE
+              SYNTAX    INTEGER (1..1024)
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "The rptrGroupCapacity is the number of groups
+                      that can be contained within the repeater.  Within
+                      each managed repeater, the groups are uniquely
+                      numbered in the range from 1 to rptrGroupCapacity.
+
+                      Some groups may not be present in the repeater, in
+                      which case the actual number of groups present
+                      will be less than rptrGroupCapacity.  The number
+                      of groups present will never be greater than
+                      rptrGroupCapacity.
+
+                      Note:  In practice, this will generally be the
+                      number of field-replaceable units (i.e., modules,
+                      cards, or boards) that can fit in the physical
+                      repeater enclosure, and the group numbers will
+                      correspond to numbers marked on the physical
+                      enclosure."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.3.2,
+                      aRepeaterGroupCapacity."
+              ::= { rptrRptrInfo 1 }
+
+          rptrOperStatus OBJECT-TYPE
+              SYNTAX  INTEGER {
+                          other(1),            -- undefined or unknown status
+                          ok(2),               -- no known failures
+                          rptrFailure(3),      -- repeater-related failure
+                          groupFailure(4),     -- group-related failure
+                          portFailure(5),      -- port-related failure
+                          generalFailure(6)    -- failure, unspecified type
+                      }
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "The rptrOperStatus object indicates the
+                      operational state of the repeater.  The
+                      rptrHealthText object may be consulted for more
+                      specific information about the state of the
+                      repeater's health.
+
+                      In the case of multiple kinds of failures (e.g.,
+                      repeater failure and port failure), the value of
+                      this attribute shall reflect the highest priority
+                      failure in the following order:
+
+                          rptrFailure(3)
+                          groupFailure(4)
+                          portFailure(5)
+                          generalFailure(6)."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.3.2,
+                      aRepeaterHealthState."
+              ::= { rptrRptrInfo 2 }
+
+          rptrHealthText OBJECT-TYPE
+              SYNTAX    DisplayString (SIZE (0..255))
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "The health text object is a text string that
+                      provides information relevant to the operational
+                      state of the repeater. Agents may use this string
+                      to provide detailed information on current
+                      failures, including how they were detected, and/or
+                      instructions for problem resolution. The contents
+                      are agent-specific."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.3.2,
+                      aRepeaterHealthText."
+              ::= { rptrRptrInfo 3 }
+
+          rptrReset OBJECT-TYPE
+
+              SYNTAX    INTEGER {
+                            noReset(1),
+                            reset(2)
+                        }
+              ACCESS    read-write
+              STATUS    mandatory
+              DESCRIPTION
+                      "Setting this object to reset(2) causes a
+                      transition to the START state of Fig 9-2 in
+                      section 9 [IEEE 802.3 Std].
+
+                      Setting this object to noReset(1) has no effect.
+                      The agent will always return the value noReset(1)
+                      when this object is read.
+
+                      This action does not reset the management counters
+                      defined in this document nor does it affect the
+                      portAdminStatus parameters.  Included in this
+                      action is the execution of a disruptive Self-Test
+                      with the following characteristics:  a) The nature
+                      of the tests is not specified.  b) The test resets
+                      the repeater but without affecting management
+                      information about the repeater.  c) The test does
+                      not inject packets onto any segment.  d) Packets
+                      received during the test may or may not be
+                      transferred.  e) The test does not interfere with
+                      management functions.
+
+                      As a result of this action a rptrResetEvent trap
+                      should be sent."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.3.3,
+                      acResetRepeater."
+              ::= { rptrRptrInfo 4 }
+
+          rptrNonDisruptTest OBJECT-TYPE
+              SYNTAX    INTEGER {
+                            noSelfTest(1),
+                            selfTest(2)
+                        }
+              ACCESS    read-write
+              STATUS    mandatory
+              DESCRIPTION
+                      "Setting this object to selfTest(2) causes the
+                      repeater to perform a agent-specific, non-
+                      disruptive self-test that has the following
+                      characteristics:  a) The nature of the tests is
+                      not specified.  b) The test does not change the
+                      state of the repeater or management information
+                      about the repeater.  c) The test does not inject
+                      packets onto any segment.  d) The test does not
+                      prevent the relay of any packets.  e) The test
+                      does not interfere with management functions.
+
+                      After performing this test the agent will update
+                      the repeater health information and send a
+                      rptrHealth trap.
+
+                      Setting this object to noSelfTest(1) has no
+                      effect.  The agent will always return the value
+                      noSelfTest(1) when this object is read."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.3.3,
+                      acExecuteNonDisruptiveSelfTest."
+              ::= { rptrRptrInfo 5 }
+
+          rptrTotalPartitionedPorts OBJECT-TYPE
+              SYNTAX    Gauge
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "This object returns the total number of ports in
+                      the repeater whose current state meets all three
+                      of the following criteria:  rptrPortOperStatus
+                      does not have the value notPresent(3),
+                      rptrPortAdminStatus is enabled(1), and
+                      rptrPortAutoPartitionState is autoPartitioned(2)."
+              ::= { rptrRptrInfo 6 }
+
+
+          --
+          -- The Basic Port Group Table
+          --
+
+          rptrGroupTable OBJECT-TYPE
+              SYNTAX    SEQUENCE OF RptrGroupEntry
+              ACCESS    not-accessible
+              STATUS    mandatory
+              DESCRIPTION
+                      "Table of descriptive and status information about
+                      the groups of ports."
+              ::= { rptrGroupInfo 1 }
+
+          rptrGroupEntry OBJECT-TYPE
+              SYNTAX    RptrGroupEntry
+              ACCESS    not-accessible
+              STATUS    mandatory
+              DESCRIPTION
+                      "An entry in the table, containing information
+                      about a single group of ports."
+              INDEX    { rptrGroupIndex }
+              ::= { rptrGroupTable 1 }
+
+          RptrGroupEntry ::=
+              SEQUENCE {
+                  rptrGroupIndex
+                      INTEGER,
+                  rptrGroupDescr
+                      DisplayString,
+                  rptrGroupObjectID
+                      OBJECT IDENTIFIER,
+                  rptrGroupOperStatus
+                      INTEGER,
+                  rptrGroupLastOperStatusChange
+                      TimeTicks,
+                  rptrGroupPortCapacity
+                      INTEGER
+              }
+
+          rptrGroupIndex OBJECT-TYPE
+              SYNTAX    INTEGER (1..1024)
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "This object identifies the group within the
+                      repeater for which this entry contains
+                      information.  This value is never greater than
+                      rptrGroupCapacity."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.5.2,
+                      aGroupID."
+              ::= { rptrGroupEntry 1 }
+
+          rptrGroupDescr OBJECT-TYPE
+              SYNTAX    DisplayString (SIZE (0..255))
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "A textual description of the group.  This value
+                      should include the full name and version
+                      identification of the group's hardware type and
+                      indicate how the group is differentiated from
+                      other groups in the repeater.  Plug-in Module, Rev
+                      A' or 'Barney Rubble 10BASE-T 4-port SIMM socket
+                      Version 2.1' are examples of valid group
+                      descriptions.
+
+                      It is mandatory that this only contain printable
+                      ASCII characters."
+              ::= { rptrGroupEntry 2 }
+
+          rptrGroupObjectID OBJECT-TYPE
+              SYNTAX    OBJECT IDENTIFIER
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "The vendor's authoritative identification of the
+                      group.  This value is allocated within the SMI
+                      enterprises subtree (1.3.6.1.4.1) and provides a
+                      straight-forward and unambiguous means for
+                      determining what kind of group is being managed.
+
+                      For example, this object could take the value
+                      1.3.6.1.4.1.4242.1.2.14 if vendor 'Flintstones,
+                      Inc.' was assigned the subtree 1.3.6.1.4.1.4242,
+                      and had assigned the identifier
+                      1.3.6.1.4.1.4242.1.2.14 to its 'Wilma Flintstone
+                      6-Port FOIRL Plug-in Module.'"
+              ::= { rptrGroupEntry 3 }
+
+          rptrGroupOperStatus OBJECT-TYPE
+              SYNTAX    INTEGER {
+                            other(1),
+                            operational(2),
+                            malfunctioning(3),
+                            notPresent(4),
+                            underTest(5),
+                            resetInProgress(6)
+                        }
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "An object that indicates the operational status
+                      of the group.
+
+                      A status of notPresent(4) indicates that the group
+                      is temporarily or permanently physically and/or
+                      logically not a part of the repeater.  It is an
+                      implementation-specific matter as to whether the
+                      agent effectively removes notPresent entries from
+                      the table.
+
+                      A status of operational(2) indicates that the
+                      group is functioning, and a status of
+                      malfunctioning(3) indicates that the group is
+                      malfunctioning in some way."
+              ::= { rptrGroupEntry 4 }
+
+          rptrGroupLastOperStatusChange OBJECT-TYPE
+              SYNTAX    TimeTicks
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "An object that contains the value of sysUpTime at
+                      the time that the value of the rptrGroupOperStatus
+                      object for this group last changed.
+
+                      A value of zero indicates that the group's oper
+                      status has not changed since the agent last
+                      restarted."
+              ::= { rptrGroupEntry 5 }
+
+          rptrGroupPortCapacity OBJECT-TYPE
+              SYNTAX    INTEGER (1..1024)
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "The rptrGroupPortCapacity is the number of ports
+                      that can be contained within the group.  Valid
+                      range is 1-1024.  Within each group, the ports are
+                      uniquely numbered in the range from 1 to
+                      rptrGroupPortCapacity.
+
+                      Note:  In practice, this will generally be the
+                      number of ports on a module, card, or board, and
+                      the port numbers will correspond to numbers marked
+                      on the physical embodiment."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.5.2,
+                      aGroupPortCapacity."
+              ::= { rptrGroupEntry 6 }
+
+          --
+          -- The Basic Port Table
+          --
+
+          rptrPortTable OBJECT-TYPE
+              SYNTAX    SEQUENCE OF RptrPortEntry
+              ACCESS    not-accessible
+              STATUS    mandatory
+              DESCRIPTION
+                      "Table of descriptive and status information about
+                      the ports."
+              ::= { rptrPortInfo 1 }
+
+          rptrPortEntry OBJECT-TYPE
+              SYNTAX    RptrPortEntry
+              ACCESS    not-accessible
+              STATUS    mandatory
+              DESCRIPTION
+                      "An entry in the table, containing information
+                      about a single port."
+              INDEX    { rptrPortGroupIndex, rptrPortIndex }
+              ::= { rptrPortTable 1 }
+
+          RptrPortEntry ::=
+              SEQUENCE {
+                  rptrPortGroupIndex
+                      INTEGER,
+                  rptrPortIndex
+                      INTEGER,
+                  rptrPortAdminStatus
+                      INTEGER,
+                  rptrPortAutoPartitionState
+                      INTEGER,
+                  rptrPortOperStatus
+                      INTEGER
+              }
+
+          rptrPortGroupIndex OBJECT-TYPE
+              SYNTAX    INTEGER (1..1024)
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "This object identifies the group containing the
+                      port for which this entry contains information."
+              ::= { rptrPortEntry 1 }
+
+          rptrPortIndex OBJECT-TYPE
+              SYNTAX    INTEGER (1..1024)
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "This object identifies the port within the group
+                      for which this entry contains information.  This
+                      value can never be greater than
+                      rptrGroupPortCapacity for the associated group."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.6.2,
+                      aPortID."
+              ::= { rptrPortEntry 2 }
+
+          rptrPortAdminStatus OBJECT-TYPE
+              SYNTAX    INTEGER {
+                            enabled(1),
+                            disabled(2)
+                        }
+              ACCESS    read-write
+              STATUS    mandatory
+              DESCRIPTION
+                      "Setting this object to disabled(2) disables the
+                      port.  A disabled port neither transmits nor
+                      receives.  Once disabled, a port must be
+                      explicitly enabled to restore operation.  A port
+                      which is disabled when power is lost or when a
+                      reset is exerted shall remain disabled when normal
+                      operation resumes.
+
+                      The admin status takes precedence over auto-
+                      partition and functionally operates between the
+                      auto-partition mechanism and the AUI/PMA.
+
+                      Setting this object to enabled(1) enables the port
+                      and exerts a BEGIN on the port's auto-partition
+                      state machine.
+
+                      (In effect, when a port is disabled, the value of
+                      rptrPortAutoPartitionState for that port is frozen
+                      until the port is next enabled.  When the port
+                      becomes enabled, the rptrPortAutoPartitionState
+                      becomes notAutoPartitioned(1), regardless of its
+                      pre-disabling state.)"
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.6.2,
+                      aPortAdminState and 19.2.6.3, acPortAdminControl."
+              ::= { rptrPortEntry 3 }
+
+          rptrPortAutoPartitionState OBJECT-TYPE
+              SYNTAX    INTEGER {
+                            notAutoPartitioned(1),
+                            autoPartitioned(2)
+                        }
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "The autoPartitionState flag indicates whether the
+                      port is currently partitioned by the repeater's
+                      auto-partition protection.
+
+                      The conditions that cause port partitioning are
+                      specified in partition state machine in Section 9
+                      [IEEE 802.3 Std].  They are not differentiated
+                      here."
+              REFERENCE
+                      "Reference IEEE 802.3 Rptr Mgt, 19.2.6.2,
+                      aAutoPartitionState."
+              ::= { rptrPortEntry 4 }
+
+          rptrPortOperStatus  OBJECT-TYPE
+              SYNTAX    INTEGER {
+                            operational(1),
+                            notOperational(2),
+                            notPresent(3)
+                        }
+              ACCESS    read-only
+              STATUS    mandatory
+              DESCRIPTION
+                      "This object indicates the port's operational
+                      status.  The notPresent(3) status indicates the
+                      port is physically removed (note this may or may
+                      not be possible depending on the type of port.)
+
+                      The operational(1) status indicates that the port
+                      is enabled (see rptrPortAdminStatus) and working,
+                      even though it might be auto-partitioned (see
+                      rptrPortAutoPartitionState).
+
+                      If this object has the value operational(1) and
+                      rptrPortAdminStatus is set to disabled(2), it is
+                      expected that this object's value will change to
+                      notOperational(2) soon after."
+              ::= { rptrPortEntry 5 }
+
+
+
+-- Groups from the Bridge MIB
+
+   dot1dBase     OBJECT IDENTIFIER ::= { dot1dBridge 1 }
+
+   -- dot1dStp      OBJECT IDENTIFIER ::= { dot1dBridge 2 }
+   -- Not Implemented
+
+   -- dot1dSr       OBJECT IDENTIFIER ::= { dot1dBridge 3 }
+   -- Not Implemented
+
+   dot1dTp       OBJECT IDENTIFIER ::= { dot1dBridge 4 }
+
+   -- dot1dStatic   OBJECT IDENTIFIER ::= { dot1dBridge 5 }
+   -- Not Implemented
+
+   
+   
+   -- the dot1dBase group
+
+   -- Implementation of the dot1dBase group is mandatory for all
+   -- bridges.
+
+   dot1dBaseBridgeAddress OBJECT-TYPE
+       SYNTAX  MacAddress
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The MAC address used by this bridge when it must
+               be referred to in a unique fashion.   It is
+               recommended that this be the numerically smallest
+               MAC address of all ports that belong to this
+               bridge.  However it is only required to be unique.
+               When concatenated with dot1dStpPriority a unique
+               BridgeIdentifier is formed which is used in the
+               Spanning Tree Protocol."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Sections 6.4.1.1.3 and 3.12.5"
+       ::= { dot1dBase 1 }
+
+   dot1dBaseNumPorts OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of ports controlled by this bridging
+               entity."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.4.1.1.3"
+       ::= { dot1dBase 2 }
+
+   dot1dBaseType OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   unknown(1),
+                   transparent-only(2),
+                   sourceroute-only(3),
+                   srt(4)
+               }
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates what type of bridging this bridge can
+               perform.  If a bridge is actually performing a
+               certain type of bridging this will be indicated by
+               entries in the port table for the given type."
+       ::= { dot1dBase 3 }
+
+   -- The Generic Bridge Port Table
+
+   dot1dBasePortTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Dot1dBasePortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table that contains generic information about
+               every port that is associated with this bridge.
+               Transparent, source-route, and srt ports are
+               included."
+       ::= { dot1dBase 4 }
+
+   dot1dBasePortEntry OBJECT-TYPE
+       SYNTAX  Dot1dBasePortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A list of information for each port of the
+               bridge."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.4.2, 6.6.1"
+       INDEX  { dot1dBasePort }
+       ::= { dot1dBasePortTable 1 }
+
+   Dot1dBasePortEntry ::=
+       SEQUENCE {
+           dot1dBasePort
+               INTEGER,
+           dot1dBasePortIfIndex
+               INTEGER,
+           dot1dBasePortCircuit
+               OBJECT IDENTIFIER,
+           dot1dBasePortDelayExceededDiscards
+               Counter,
+           dot1dBasePortMtuExceededDiscards
+               Counter
+       }
+
+   dot1dBasePort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The port number of the port for which this entry
+               contains bridge management information."
+       ::= { dot1dBasePortEntry 1 }
+
+   dot1dBasePortIfIndex OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The value of the instance of the ifIndex object,
+               defined in [4,6], for the interface corresponding
+               to this port."
+       ::= { dot1dBasePortEntry 2 }
+
+   dot1dBasePortCircuit OBJECT-TYPE
+       SYNTAX  OBJECT IDENTIFIER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "For a port which (potentially) has the same value
+               of dot1dBasePortIfIndex as another port on the
+               same bridge, this object contains the name of an
+               object instance unique to this port.  For example,
+               in the case where multiple ports correspond one-
+               to-one with multiple X.25 virtual circuits, this
+               value might identify an (e.g., the first) object
+               instance associated with the X.25 virtual circuit
+               corresponding to this port.
+
+               For a port which has a unique value of
+               dot1dBasePortIfIndex, this object can have the
+               value { 0 0 }."
+       ::= { dot1dBasePortEntry 3 }
+
+   dot1dBasePortDelayExceededDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames discarded by this port due
+               to excessive transit delay through the bridge.  It
+               is incremented by both transparent and source
+               route bridges."
+       REFERENCE
+                "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { dot1dBasePortEntry 4 }
+
+   dot1dBasePortMtuExceededDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames discarded by this port due
+               to an excessive size.  It is incremented by both
+               transparent and source route bridges."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { dot1dBasePortEntry 5 }
+
+
+   -- the dot1dTp group
+
+   -- Implementation of the dot1dTp group is optional.  It is
+   -- implemented by those bridges that support the transparent
+   -- bridging mode.  A transparent or SRT bridge will implement
+   -- this group.
+
+
+   dot1dTpLearnedEntryDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The total number of Forwarding Database entries,
+               which have been or would have been learnt, but
+               have been discarded due to a lack of space to
+               store them in the Forwarding Database.  If this
+               counter is increasing, it indicates that the
+               Forwarding Database is regularly becoming full (a
+               condition which has unpleasant performance effects
+               on the subnetwork).  If this counter has a
+               significant value but is not presently increasing,
+               it indicates that the problem has been occurring
+               but is not persistent."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.7.1.1.3"
+       ::= { dot1dTp 1 }
+
+   dot1dTpAgingTime OBJECT-TYPE
+       SYNTAX   INTEGER
+       ACCESS   read-write
+       STATUS   mandatory
+       DESCRIPTION
+               "The timeout period in seconds for aging out
+               dynamically learned forwarding information."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.7.1.1.3"
+       ::= { dot1dTp 2 }
+
+
+   --  The Forwarding Database for Transparent Bridges
+
+   dot1dTpFdbTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Dot1dTpFdbEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table that contains information about unicast
+               entries for which the bridge has forwarding and/or
+               filtering information.  This information is used
+               by the transparent bridging function in
+               determining how to propagate a received frame."
+       ::= { dot1dTp 3 }
+
+   dot1dTpFdbEntry OBJECT-TYPE
+       SYNTAX  Dot1dTpFdbEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Information about a specific unicast MAC address
+               for which the bridge has some forwarding and/or
+               filtering information."
+       INDEX   { dot1dTpFdbAddress }
+       ::= { dot1dTpFdbTable 1 }
+
+   Dot1dTpFdbEntry ::=
+       SEQUENCE {
+           dot1dTpFdbAddress
+               MacAddress,
+           dot1dTpFdbPort
+               INTEGER,
+           dot1dTpFdbStatus
+               INTEGER
+       }
+
+   dot1dTpFdbAddress OBJECT-TYPE
+       SYNTAX  MacAddress
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "A unicast MAC address for which the bridge has
+               forwarding and/or filtering information."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 3.9.1, 3.9.2"
+       ::= { dot1dTpFdbEntry 1 }
+
+   dot1dTpFdbPort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "Either the value '0', or the port number of the
+               port on which a frame having a source address
+               equal to the value of the corresponding instance
+               of dot1dTpFdbAddress has been seen.  A value of
+               '0' indicates that the port number has not been
+               learned but that the bridge does have some
+               forwarding/filtering information about this
+               address (e.g. in the dot1dStaticTable).
+               Implementors are encouraged to assign the port
+               value to this object whenever it is learned even
+               for addresses for which the corresponding value of
+               dot1dTpFdbStatus is not learned(3)."
+
+       ::= { dot1dTpFdbEntry 2 }
+
+   dot1dTpFdbStatus OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   other(1),
+                   invalid(2),
+                   learned(3),
+                   self(4),
+                   mgmt(5)
+               }
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The status of this entry.  The meanings of the
+               values are:
+
+                 other(1)   : none of the following.  This would
+                              include the case where some other
+                              MIB object (not the corresponding
+                              instance of dot1dTpFdbPort, nor an
+                              entry in the dot1dStaticTable) is
+                              being used to determine if and how
+                              frames addressed to the value of
+                              the corresponding instance of
+                              dot1dTpFdbAddress are being
+                              forwarded.
+
+                 invalid(2) : this entry is not longer valid
+                              (e.g., it was learned but has since
+                              aged-out), but has not yet been
+                              flushed from the table.
+
+                 learned(3) : the value of the corresponding
+                              instance of dot1dTpFdbPort was
+                              learned, and is being used.
+
+                 self(4)    : the value of the corresponding
+                              instance of dot1dTpFdbAddress
+                              represents one of the bridge's
+                              addresses.  The corresponding
+                              instance of dot1dTpFdbPort
+                              indicates which of the bridge's
+                              ports has this address.
+
+                 mgmt(5)    : the value of the corresponding
+                              instance of dot1dTpFdbAddress is
+                              also the value of an existing
+                              instance of dot1dStaticAddress."
+       ::= { dot1dTpFdbEntry 3 }
+
+
+   --  Port Table for Transparent Bridges
+
+   dot1dTpPortTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Dot1dTpPortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table that contains information about every
+               port that is associated with this transparent
+               bridge."
+       ::= { dot1dTp 4 }
+
+   dot1dTpPortEntry OBJECT-TYPE
+       SYNTAX  Dot1dTpPortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A list of information for each port of a
+               transparent bridge."
+       INDEX   { dot1dTpPort }
+       ::= { dot1dTpPortTable 1 }
+
+   Dot1dTpPortEntry ::=
+       SEQUENCE {
+           dot1dTpPort
+               INTEGER,
+           dot1dTpPortMaxInfo
+               INTEGER,
+           dot1dTpPortInFrames
+               Counter,
+           dot1dTpPortOutFrames
+               Counter,
+           dot1dTpPortInDiscards
+               Counter
+       }
+
+   dot1dTpPort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The port number of the port for which this entry
+               contains Transparent bridging management
+               information."
+       ::= { dot1dTpPortEntry 1 }
+
+   -- It would be nice if we could use ifMtu as the size of the
+   -- largest INFO field, but we can't because ifMtu is defined
+   -- to be the size that the (inter-)network layer can use which
+   -- can differ from the MAC layer (especially if several layers
+   -- of encapsulation are used).
+
+   dot1dTpPortMaxInfo OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum size of the INFO (non-MAC) field that
+               this port will receive or transmit."
+       ::= { dot1dTpPortEntry 2 }
+
+   dot1dTpPortInFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames that have been received by
+               this port from its segment. Note that a frame
+               received on the interface corresponding to this
+               port is only counted by this object if and only if
+               it is for a protocol being processed by the local
+               bridging function."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { dot1dTpPortEntry 3 }
+
+   dot1dTpPortOutFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames that have been transmitted
+               by this port to its segment.  Note that a frame
+               transmitted on the interface corresponding to this
+               port is only counted by this object if and only if
+               it is for a protocol being processed by the local
+               bridging function."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { dot1dTpPortEntry 4 }
+
+   dot1dTpPortInDiscards OBJECT-TYPE
+       SYNTAX   Counter
+       ACCESS   read-only
+       STATUS   mandatory
+       DESCRIPTION
+               "Count of valid frames received which were
+               discarded (i.e., filtered) by the Forwarding
+               Process."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { dot1dTpPortEntry 5 }
+
+
+
+
+
+END

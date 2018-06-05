@@ -1,0 +1,1409 @@
+--************************************************************************--
+--  Name     : SNMP MIB for Siemens HiPath 3000                           --
+--             and Hicom 150H / 150E Office PABX systems                  --
+--                                                                        --
+--  Date     : 08.06.2006                                                 --
+--                                                                        --
+--  Version  : 1.7.1                                                      --
+--                                                                        --
+--  Author   : Juergen Schwartze, ICN EN HS D 655, Siemens AG, Witten     --
+--                                                                        --
+--  Purpose  : alarm forwarding, error history, statistics, cdr,          --
+--             inventory                                                  --
+--                                                                        --
+--************************************************************************-- 
+
+
+--*HOC********************************************************************--
+--*                                                                      *--
+--*    HISTORY OF CHANGE:                   VARIANTE: HiPath 2/3/5k      *--
+--*                                                                      *--
+--************************************************************************--
+--*VERS| DATE | CHANGES                                      | KZ | VGNO *--
+--*    |ttmmjj|                                              |    |      *--
+--************************************************************************--
+--* 01 |080606| editorial update, based on HiPath3000-MIB    |rri |  N   *--
+--*    |      | umProxyGroup - elements are "read-only"      |    |      *--
+--* 02 |050707| added portLogicalPortNumber to...            |dpo |H09183*--
+--*    |      | ...h150ePortTableEntry                       |dpo |      *--
+--************************************************************************--
+
+   H150E-MIB DEFINITIONS ::= BEGIN
+ 
+   IMPORTS
+        IpAddress	
+       	   FROM RFC1155-SMI
+        MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, enterprises
+           FROM SNMPv2-SMI
+        TEXTUAL-CONVENTION
+           FROM SNMPv2-TC;
+
+
+-- Some MIB compilers require that the following 4 lines
+-- which define the path to this MIB are added.
+
+-- mgmt              OBJECT IDENTIFIER ::= { iso org(3) dod(6) internet(1)  mgmt(2) }
+-- mib               OBJECT IDENTIFIER ::= { mgmt 1 }
+-- private           OBJECT IDENTIFIER ::= { internet 4 }
+-- enterprises       OBJECT IDENTIFIER ::= { private 1 }
+
+   sni               OBJECT IDENTIFIER ::= {enterprises 231}
+   siemensUnits      OBJECT IDENTIFIER ::= {sni 7}
+   pn                OBJECT IDENTIFIER ::= {siemensUnits 2}
+
+   h150eOffice MODULE-IDENTITY
+       LAST-UPDATED  "0606080000Z" -- Jun 8, 2006
+       ORGANIZATION  "Siemens Communications"
+       CONTACT-INFO  "            Technical Support               "
+       DESCRIPTION
+       "HiPath 3000 and Hicom 150E/H MIB."
+       ::= { pn 9 }
+
+
+   h150eControlGroup             OBJECT IDENTIFIER ::= {h150eOffice 1}
+   h150eErrorHistoryGroup        OBJECT IDENTIFIER ::= {h150eOffice 2}
+   h150eSystemInfoGroup          OBJECT IDENTIFIER ::= {h150eOffice 3}
+   h150eStatisticsGroup          OBJECT IDENTIFIER ::= {h150eOffice 4}
+   h150eCdrConfigGroup           OBJECT IDENTIFIER ::= {h150eOffice 5}
+   h150eTrapSpecifications       OBJECT IDENTIFIER ::= {h150eOffice 6}
+-- h150eNetworkGroup             OBJECT IDENTIFIER ::= {h150eOffice 7}
+   umProxyGroup                  OBJECT IDENTIFIER ::= {h150eOffice 8}
+
+--************************************************************************-- 
+--******                     textual conventions                    ******--
+--************************************************************************-- 
+
+   DisplayString ::= OCTET STRING
+       -- This data type is used to model textual information taken
+       -- from the NVT ASCII character set.  By convention, objects
+       -- with this syntax are declared as having SIZE (0..255)
+
+
+   DateAndTime ::= TEXTUAL-CONVENTION
+       DISPLAY-HINT "2d-1d-1d,1d:1d:1d.1d"
+       STATUS       current
+       DESCRIPTION
+            "A date-time specification identical to rfc 1443 definition.
+
+            field  octets  contents                  range
+            -----  ------  --------                  -----
+              1      1-2   year                      0..65536
+              2       3    month                     1..12
+              3       4    day                       1..31
+              4       5    hour                      0..23
+              5       6    minutes                   0..59
+              6       7    seconds                   0..60
+                           (use 60 for leap-second)
+              7       8    deci-seconds              0..9
+
+            For example, Tuesday May 26, 2003 at 1:30:15 PM EDT would be
+            displayed as:
+                             2003-5-26,13:30:15.0"
+       SYNTAX      OCTET STRING (SIZE (8))
+
+
+    ReadWrite ::= TEXTUAL-CONVENTION
+       STATUS       current
+       DESCRIPTION
+            "A textual convention for describing objects that
+             enable or disable some sort of write access."
+       SYNTAX INTEGER {
+            readWrite(1),
+            readOnly(2)
+            }
+
+
+--********************************************************************--
+--******                    Control Group                       ******--
+--********************************************************************--
+
+   h150eSysState OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     normal(1),
+                     warning(2),
+                     minor(3),
+                     major(4),
+                     critical(5)
+                   }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "The actual error state of the device. Contains the highest 
+                    severity level of the recent error events. This object is
+                    updated automatically, but it can also be modified manually."
+       ::= { h150eControlGroup 1 }
+
+   tftpSwitchoverDateTime  OBJECT-TYPE
+       SYNTAX      DateAndTime
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "Date and time for the switchover to the new system software. The configured
+                    time will be ignored, if the upgrade is started with the
+                    downloadAndImmediateSwitchover define of the tftpDownloadAction object.
+                    octet format:
+                    field  octets  contents                  range hex            (range dez)
+                    -----  ------  --------                  ---------            ----------
+                      1      1-2   year                      00 00 - FF FF        (0 - 65536)
+                      2       3    month                     01    - 0C           (1 - 12)
+                      3       4    day                       01    - 1F           (1 - 31)
+                      4       5    hour                      00    - 17           (0 - 23)
+                      5       6    minutes                   00    - 3B           (0 - 59)
+                      6       7    seconds                   00    - 3B           (0 - 60)
+                      7       8    deci-seconds              00    - 09           (0 - 9)
+
+                      For example, to configure Wednesday June 16, 1999 at 8:30:15 AM
+                      would be configured as 07 cf 06 10 08 1E 0F 00"
+       ::= { h150eControlGroup 2 }
+
+   tftpDownloadAction  OBJECT-TYPE
+    SYNTAX     INTEGER {
+                 notDownloading(1),
+                 downloadAndImmediateSwitchover(2),
+                 downloadAndDelayedSwitchover(3),
+                 downloadWithoutSwitchover(4)
+               }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "When this object is set to downloadAndImmediateSwitchover (2), the device
+                    will download the new software from the configured host. After the
+                    download is finished, the device will automatically restart with the new
+                    software. If downloadAndDelayedSwitchover (3) is specified, the new image
+                    is copied to the device. When the tftpDateTime value is matched, the device
+                    discontinues its normal operation and does the software switchover. After
+                    an automatic reset, it starts with the new system software. Setting
+                    downloadWithoutSwitchover (4) initiates a download without switching over
+                    to the new software. When the device is not downloading, this object will
+                    have a value of notDownloading(1)."
+    ::= { h150eControlGroup 3 }
+
+   h150eResetControl  OBJECT-TYPE
+    SYNTAX     INTEGER {
+                    running(1),
+                    warmBoot(2)
+              }
+    MAX-ACCESS read-write
+    STATUS     current
+    DESCRIPTION
+        "Setting this object to warmBoot(2) causes the device to restart the application
+         software with current configuration parameters saved in non-volatile memory. When
+         the device is running normally, this variable has a value of running(1). The
+         effect of configuring this object is identical to the configuration of the
+         probeResetControl object of RFC 2021, except for the coldBoot option which is not
+         supported."
+    ::= { h150eControlGroup 4 }
+
+   h150eSwitchoverState  OBJECT-TYPE
+    SYNTAX     INTEGER {
+                    readyForSwitchover(1),
+                    notReadyForSwitchover(2),
+                    initSwitchoverNow(3),
+                    initSwitchoverDelayed(4)
+              }
+    MAX-ACCESS read-write
+    STATUS     current
+    DESCRIPTION
+        "The values readyForSwitchover (1) and notReadyForSwitchover (2) indicate whether
+         the system is ready to be switched over to the new software that was downloaded to
+         the shadow flash area, or not. If it is not passible, h150eShadowFlashState gives
+         details on the reason.
+         Setting this object to switchoverNow (3) causes the device to switchover immediately
+         to the new software which was downloaded to the shadow flash area before and restart
+         the system. initSwitchoverDelayed(4) causes a delayed switchover."
+    ::= { h150eControlGroup 5 }
+
+   h150eShadowFlashState  OBJECT-TYPE
+    SYNTAX     INTEGER {
+                    flashDeleted(1),
+                    flashNotDeleted(2),
+                    flashWriteProtected(3),
+                    flashTooSmall(4),
+                    deleteFlashNow(5)
+              }
+    MAX-ACCESS read-write
+       STATUS      current
+       DESCRIPTION
+                   "This object informs about the state of the shadow flash memory area which
+                    is used to buffer a new software image that is being downloaded to the
+                    system. A download is only possible when the state is flashDeleted (1).
+                    It is not possible to download if the state is flashNotDeleted(2), nor if
+                    it's flashWriteProtected(3) (this means it is internally locked by software
+                    because the system is not in the state of accepting new flash data). If the
+                    flash memory is smaller than 8 MB ( flashTooSmall(4) ), no transfer is
+                    possible, too. It is possible to delete an inactive software image from the
+                    shadow flash area by setting deleteFlashNow (5)."
+       ::= { h150eControlGroup 6 }
+
+   h150eLoadLevel  OBJECT-TYPE
+       SYNTAX      INTEGER (0..100)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The actual CPU load level (per cent)."
+       ::= { h150eControlGroup 7 }
+
+   h150eTrapRepetitions  OBJECT-TYPE
+       SYNTAX      INTEGER (1..5)
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "The number of trap repetitions for error events marked as very important
+                    (log-and-multiple-trap)."
+       ::= { h150eControlGroup 8 }
+
+   h150eCdrBufferState  OBJECT-TYPE
+       SYNTAX     INTEGER {
+                    accounting(1),
+                    deleteBufferNow(2),
+                    notAccounting(3)
+                  }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "Use this object to delete the CDR buffer."
+       ::= { h150eControlGroup 9 }
+
+   h150eLogBufferState  OBJECT-TYPE
+       SYNTAX     INTEGER {
+                    logging(1),
+                    deleteBufferNow(2)
+                  }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "Use this object to delete the log data."
+       ::= { h150eControlGroup 10 }
+
+--********************************************************************--
+--******                 Error History Group                    ******--
+--********************************************************************--
+
+   numberOfErrorHistoryEntries  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "Contains the number of errors to be found in the error history table.
+                    This value can be used to delete the last x entries (reduce value by x)
+                    or to delete all entries (value = 0)."
+       ::= { h150eErrorHistoryGroup 1 }
+  
+   h150eErrorHistoryTable  OBJECT-TYPE
+       SYNTAX      SEQUENCE OF H150eErrorHistoryEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "This table contains information about the errors that occured."
+       ::= { h150eErrorHistoryGroup 2 }
+
+   h150eErrorHistoryEntry  OBJECT-TYPE
+       SYNTAX      H150eErrorHistoryEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "The trap history table entries."
+       INDEX { h150eErrorIndex }
+       ::= { h150eErrorHistoryTable 1 }
+
+   H150eErrorHistoryEntry ::= SEQUENCE {
+       h150eErrorIndex         INTEGER,
+       h150eErrorDateTime      DateAndTime,
+       h150eErrorClass         INTEGER,
+       h150eErrorCode          INTEGER,
+       h150eAccessSlot         INTEGER,
+       h150eAccessPort         INTEGER,
+       h150eErrorDescription   DisplayString,
+       h150eErrorSeverity      INTEGER
+       }                 
+
+   h150eErrorIndex  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Identification of an table entry enabled by this index."
+       ::= { h150eErrorHistoryEntry 1 }
+
+   h150eErrorDateTime  OBJECT-TYPE
+       SYNTAX      DateAndTime
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Time, when the error occurred."
+       ::= { h150eErrorHistoryEntry 2 }
+
+   h150eErrorClass  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the error class number (type of trap)."
+       ::= { h150eErrorHistoryEntry 3 }
+
+   h150eErrorCode  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the error code."
+       ::= { h150eErrorHistoryEntry 4 }
+
+   h150eAccessSlot  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the access slot for the error."
+       ::= { h150eErrorHistoryEntry 5 }
+    
+   h150eAccessPort  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the local access port of the error. Local means
+                    that port numbering starts with 0 for each card."
+       ::= { h150eErrorHistoryEntry 6 }
+
+   h150eErrorDescription  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..255))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Detailed information about errors."
+       ::= { h150eErrorHistoryEntry 7 }
+
+   h150eErrorSeverity  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     normal(1),
+                     warning(2),
+                     minor(3),
+                     major(4),
+                     critical(5)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the severity of the specific error."
+       ::= { h150eErrorHistoryEntry 8 }
+       
+       
+
+--********************************************************************--
+--******                     System Info                        ******--
+--********************************************************************--
+ 
+   sysHardwareVersion  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..25))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the version string of the system hardware."
+       ::= { h150eSystemInfoGroup 1 }
+
+   sysSoftwareVersion  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..25))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the version string of the system software."
+       ::= { h150eSystemInfoGroup 2 }
+ 
+   sysCodeNumber  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..25))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the code number of the system software."
+       ::= { h150eSystemInfoGroup 3 }
+
+   sysSoftwareLocation  OBJECT-TYPE
+       SYNTAX  INTEGER {
+                    lower(1),
+                    upper(2)
+               }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains location (address space) where the system
+                    software is currently running."
+       ::= { h150eSystemInfoGroup 4 }
+
+
+--******      slot info      ******--
+
+   numberOfSlotTableEntries  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the number of entries in the slot table."
+       ::= { h150eSystemInfoGroup 5 }
+   
+   h150eSlotTable  OBJECT-TYPE
+       SYNTAX      SEQUENCE OF H150eSlotTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "This table contains information about the system slots."
+       ::= { h150eSystemInfoGroup 6 }
+ 
+   h150eSlotTableEntry  OBJECT-TYPE
+       SYNTAX      H150eSlotTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "The slot table entries."
+       INDEX { cardIndex }
+       ::= { h150eSlotTable 1 }
+
+   H150eSlotTableEntry ::= SEQUENCE {
+       cardIndex             INTEGER,
+       cardBoxNum            INTEGER,
+       cardSlotNum           INTEGER,
+       cardType              DisplayString,
+       cardDescription       DisplayString,
+       cardCodeNumber        DisplayString,
+       cardState             INTEGER
+       }
+
+   cardIndex  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Identification of an table entry enabled by this index."
+       ::= { h150eSlotTableEntry 1 }
+
+   cardBoxNum  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Index of the box where the card is placed."
+       ::= { h150eSlotTableEntry 2 }
+
+   cardSlotNum  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Index of the slot where the card is placed."
+       ::= { h150eSlotTableEntry 3 }
+ 
+   cardType  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..40))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Code for the type of the card."
+       ::= { h150eSlotTableEntry 4 }
+  
+   cardDescription  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..255))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Textual card description."
+       ::= { h150eSlotTableEntry 5 }
+
+   cardCodeNumber  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..25))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the code number of the card software."
+       ::= { h150eSlotTableEntry 6 }
+
+    cardState  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     normal(1),
+                     warning(2),
+                     minor(3),
+                     major(4),
+                     critical(5)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the state of the card."
+       ::= { h150eSlotTableEntry 7 }
+
+
+--******      port info      ******--
+
+   numberOfPortTableEntries  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the number of entries in the port table."
+       ::= { h150eSystemInfoGroup 7 }
+   
+   h150ePortTable  OBJECT-TYPE
+       SYNTAX      SEQUENCE OF H150ePortTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "This table contains information about the system ports."
+       ::= { h150eSystemInfoGroup 8 }
+
+   h150ePortTableEntry  OBJECT-TYPE
+       SYNTAX      H150ePortTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "The port table entries."
+       INDEX { portIndex }
+       ::= { h150ePortTable 1 }
+  
+   H150ePortTableEntry ::= SEQUENCE {
+       portIndex       INTEGER,
+       portCardIndex   INTEGER,
+       portType        DisplayString,
+       portState       INTEGER,
+       portLock        INTEGER,
+       portLogicalPortNumber	INTEGER       
+       }
+
+   portIndex  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Identification of an table entry enabled by this index."
+       ::= { h150ePortTableEntry 1 }
+
+   portCardIndex  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Reference to the card the port is assigned to."
+       ::= { h150ePortTableEntry 2 }
+
+   portType  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..40))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the type of the port."
+       ::= { h150ePortTableEntry 3 }
+ 
+   portState  OBJECT-TYPE
+       SYNTAX      INTEGER { 
+                     inactive(1),
+                     active (2)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the general state of the port."
+       ::= { h150ePortTableEntry 4 }
+
+   portLock  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     unlocked(1),
+                     lockedBySoftware(2),
+                     lockedByHardware(3),
+                     lockedBySoftAndHardware(4)
+                   }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "This object contains the lock state of the port. A software lock
+                    can be enabled / disabled. Possible state transitions:
+                        unlocked -> lockedBySoftware
+                        lockedByHardware -> lockedBySoftAndHardware
+                        lockedBySoftware -> unlocked
+                        lockedBySoftAndHardware -> lockedByHardware"
+       ::= { h150ePortTableEntry 5 }
+       
+       portLogicalPortNumber  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The logical port number."
+       ::= { h150ePortTableEntry 6 }       
+
+
+--******      hardware extension info      ******--
+
+   numberOfExtensionTableEntries  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the number of entries in the hardware extension table."
+       ::= { h150eSystemInfoGroup 9 }
+   
+   h150eExtensionTable  OBJECT-TYPE
+       SYNTAX      SEQUENCE OF H150eExtensionTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "This table contains information about the hardware extensions."
+       ::= { h150eSystemInfoGroup 10 }
+
+   h150eExtensionTableEntry  OBJECT-TYPE
+       SYNTAX      H150eExtensionTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "The extension table entries."
+       INDEX { extensionIndex }
+       ::= { h150eExtensionTable 1 }
+  
+   H150eExtensionTableEntry ::= SEQUENCE {
+       extensionIndex       INTEGER,
+       extensionDescription DisplayString,
+       extensionCodeNumber  DisplayString
+       }
+
+   extensionIndex  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Identification of an table entry enabled by this index."
+       ::= { h150eExtensionTableEntry 1 }
+
+
+    extensionDescription  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..40))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains a textual desription of the hardware extension."
+       ::= { h150eExtensionTableEntry 2 }
+
+
+    extensionCodeNumber  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..40))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the code number of the hardware extension."
+       ::= { h150eExtensionTableEntry 3 }
+
+
+--******      LAN connection info      ******--
+
+   numberOfLanConnTableEntries  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the number of entries in the LAN connection table."
+       ::= { h150eSystemInfoGroup 11 }
+   
+   h150eLanConnTable  OBJECT-TYPE
+       SYNTAX      SEQUENCE OF H150eLanConnTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "This table contains information about the interfaces available
+                    for LAN access of the device or its cards."
+       ::= { h150eSystemInfoGroup 12 }
+ 
+   h150eLanConnTableEntry  OBJECT-TYPE
+       SYNTAX      H150eLanConnTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "The LAN connection table entries."
+       INDEX { lanConnIndex }
+       ::= { h150eLanConnTable 1 }
+
+   H150eLanConnTableEntry ::= SEQUENCE {
+       lanConnIndex             INTEGER,
+       lanConnDescription       DisplayString,
+       lanConnIpAddress         IpAddress,
+       lanConnSubnetMask        IpAddress,
+       lanConnStatus            INTEGER
+       }
+
+   lanConnIndex  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Identification of an table entry enabled by this index."
+       ::= { h150eLanConnTableEntry 1 }
+
+   lanConnDescription  OBJECT-TYPE
+       SYNTAX  DisplayString (SIZE (0..255))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Textual desription on the LAN connection."
+       ::= { h150eLanConnTableEntry 2 }
+
+   lanConnIpAddress  OBJECT-TYPE
+       SYNTAX  IpAddress
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "IP address of the LAN connection."
+       ::= { h150eLanConnTableEntry 3 }
+
+   lanConnSubnetMask  OBJECT-TYPE
+       SYNTAX  IpAddress
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Subnet mask of the LAN connection."
+       ::= { h150eLanConnTableEntry 4 }
+
+   lanConnStatus  OBJECT-TYPE
+       SYNTAX  INTEGER {
+                 up(1),
+                 down(2),
+                 testing(3)
+               }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Status of the LAN Connection."
+       ::= { h150eLanConnTableEntry 5 }
+      
+   hiPathAllServeServerIpAddress   OBJECT-TYPE
+       SYNTAX      IpAddress
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "IP address of the HiPath AllServe (Venus) server."
+       ::= { h150eSystemInfoGroup 13 }
+       
+
+
+--*** index for port status notification trap ***--
+
+   indexOfLastPortStatusNotificationTrap  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"Index of last 'port status change' notification trap sent by the device.
+                 Note: only reset possible (0)"
+       ::= { h150eSystemInfoGroup 14 }
+
+
+--***         additional system info       ***--
+
+   sysSnmpAgentVersion  OBJECT-TYPE
+       SYNTAX  DisplayString (SIZE (0..255))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Version number of the systems SNMP agent (formatting: x.y.z.)"
+       ::= { h150eSystemInfoGroup 15 }
+
+   sysShadowSoftwareVersion  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..25))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the version string of the inactive (shadow) system
+                    software. This is the software image that has been transferred
+                    to the system without triggering the software switchover
+                    afterwards."
+       ::= { h150eSystemInfoGroup 16 }
+
+   sysHiPathSymbolSubInfo  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (0..255))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains an URL to detailed symbol information in addition to the symbol
+                   information contained in the common mib object deviceSymbolInfo."
+       ::= { h150eSystemInfoGroup 17 }
+       
+   sysHiPathBranding  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (0..255))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the branding string of the device."
+       ::= { h150eSystemInfoGroup 18 }
+
+   sysTimezoneOffset  OBJECT-TYPE
+       SYNTAX      INTEGER (-1440..1440)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Timezone offset in minutes."
+       ::= { h150eSystemInfoGroup 19 }
+
+
+--********************************************************************--
+--******                   Statistics Group                     ******--
+--********************************************************************--
+
+   numberOfFeatureStatTableEntries  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Contains the number of feature counters to be found in the table."
+       ::= { h150eStatisticsGroup 1 }
+    
+   h150eFeatureStatTable  OBJECT-TYPE
+       SYNTAX      SEQUENCE OF H150eFeatureStatEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "This table contains information about the usage of specific system
+                    features. It is designed to monitor the use of these features for
+                    a limited time only, because each counter is limited to one byte."
+       ::= { h150eStatisticsGroup 2 }
+
+   h150eFeatureStatEntry  OBJECT-TYPE
+       SYNTAX      H150eFeatureStatEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "The feature statistics table entries."
+       INDEX { featureIndex }
+       ::= { h150eFeatureStatTable 1 }
+
+   H150eFeatureStatEntry ::= SEQUENCE {
+       featureIndex        INTEGER,
+       featureDescription  DisplayString,
+       featureCounter      INTEGER
+       }
+
+   featureIndex  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Identification of an table entry enabled by this index."
+       ::= { h150eFeatureStatEntry 1 }
+
+   featureDescription  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..255))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Description of the feature."
+       ::= { h150eFeatureStatEntry 2 }
+
+   featureCounter  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "This Counter indicates how often the feature was used since
+                    last system reload"
+       ::= { h150eFeatureStatEntry 3 }
+
+   featureStatTableReset  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     counting(1),
+                     reset(2)
+                   }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "Enables reset (2) of all counters of the featureStatTable."
+       ::= { h150eStatisticsGroup 3 }
+
+
+--********************************************************************--
+--******                        CDR Group                       ******--
+--********************************************************************--
+
+                  
+--*** CDR output format only relevant over LAN ***--
+
+   h150eCdrSeparator  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     dosMode(1),
+                     unixMode(2)
+                   }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "Separator between following CDRs:
+                   DOS mode (1): CRLF
+                   UNIX mode (2): LF"
+       ::= { h150eCdrConfigGroup 1 }
+
+   h150eCdrElementSeparator  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     pipe(124),
+                     semicolon(59),
+                     blank(32)
+                   }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+                   "Separator between the different elements of one CDR:
+                   pipe (0x7c): '|'
+                   semicolon (0x3b): ';'
+                   blank (0x20): ' ' NOTE: no write access for blank"
+       ::= { h150eCdrConfigGroup 2 }
+
+--*** embedded TFTP-Server ***--
+
+   h150eCdrThresholdValue  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"CDR buffer limit (only relevant for TFTP server mode):
+                threshold value (in percent) for sending a CDR data notification trap
+                recommended values: 0 to 80"
+       ::= { h150eCdrConfigGroup 3 }
+
+--*** embedded TFTP-Client ***--
+
+   h150eCdrTftpFileCounter  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		" CDR <FileCounter> (only relevant for TFTP client mode):
+                For each transferred CDR-file a new filename is necassary
+		filename: 'GDS<IPAdr>.c<FileCounter>'"
+       ::= { h150eCdrConfigGroup 4 }
+
+   h150eCdrTftpServerDestAddress  OBJECT-TYPE
+       SYNTAX      IpAddress
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"Destination IP addresse of CDR TFTP server (only relevant for TFTP client mode)"
+       ::= { h150eCdrConfigGroup 5 }
+
+   h150eCdrTftpServerAlternateDestAddress  OBJECT-TYPE
+       SYNTAX      IpAddress
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"Alternate destination IP addresse of CDR TFTP server (only relevant for TFTP client mode):
+		is the CDR TFTP Server not reachable the switch transfers CDR data to this
+		alternative server"
+       ::= { h150eCdrConfigGroup 6 }  
+
+   h150eCdrTftpClientTimer  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"cycle time in minutes for initiating CDR output,
+		max value 1439 minutes (23hours,59minutes)
+		(only relevant for TFTP client mode)"
+       ::= { h150eCdrConfigGroup 7 }
+
+
+--*** embedded TCP-based CDR Client ***--
+
+   h150eCdrTcpServerDestAddress  OBJECT-TYPE
+       SYNTAX     IpAddress
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"Destination IP addresse of CDR TCP server (only relevant for TCP client mode)"
+       ::= { h150eCdrConfigGroup 8 }
+
+   h150eCdrTcpServerDestPort  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"Destination TCP port of CDR TCP server (only relevant for TCP client mode)"
+       ::= { h150eCdrConfigGroup 9 }
+
+
+--*** CDR Output Mode ***--
+
+   h150eCdrOutputMode  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     v24port(1),
+                     uPNport(2),
+                     pCVPLport(3),
+                     tftpClient(4),
+                     tftpServer(5),
+                     tcpClient(6),
+                     noOutput(7)
+                   }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"CDR (Call Detailed Record) output mode:
+                V24-Port    (1): the PABX is permanently connected over a V.24 connection 
+                                 to an extern application and sends each CDR immidiatly 
+                                 NOTE: no write access
+		UPN-Port    (2): the PABX is permanently connected over terminal adapter (PPM) connection 
+                                 to an extern application and sends each CDR immidiatly 
+                                 NOTE: no write access
+		PCVPL-Port  (3): the PEBX is permanently connected over a CorNet TS connection 
+                                 to an extern application (PCVPL) and sends each CDR immidiatly 
+                                 NOTE: no write access
+                TFTP-Client (4): the PABX sends the collected CDRs to the administrated TFTP-Server
+		TFTP-Server (5): an extern TFTP client can request the collected CDRs
+		TCP-Client  (6): the PABX is permanently connected to an extern TCP server and sends
+                                 each CDR immidiatly
+		NoOutput    (7): no output for CDR"
+       ::= { h150eCdrConfigGroup 10 }
+
+--*** CDR Notification Traps ***--
+
+   h150eIndexOfLastCdrNotificationTrap  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+		"Index of last CDR notification trap sent by device
+                 Note: only reset possible (0)"
+       ::= { h150eCdrConfigGroup 11 }
+
+   h150etypeOfLastCdrNotificationTrap  OBJECT-TYPE
+       SYNTAX      INTEGER (1..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+		"Type of last CDR notification trap sent by the the device:
+                 (1) : error - CDR buffer overflow 
+                 (2) : warning - CDR buffer is filled up over 80%
+                 (3) : notification - administrateable CDR buffer threshold is reached
+                       -> extern TFTP client has to get the collected CDRs
+                 (4) : warning - TCP Client couldn't reach administrated server
+                 (5) : warning - TFTP Client couldn't reach administrated server
+                 (6) : warning - TFTP Client couldn't reach administrated alternative server"
+       ::= { h150eCdrConfigGroup 12 }
+
+   h150eDescriptionOfLastCdrNotificationTrap  OBJECT-TYPE
+       SYNTAX      DisplayString (SIZE (1..255))
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+		"Textual description of last CDR notification trap sent
+                 by the device"
+       ::= { h150eCdrConfigGroup 13 }
+
+
+--********************************************************************--
+--******                 trap specifications                    ******--
+--********************************************************************--
+
+   sendAlarm  NOTIFICATION-TYPE
+       OBJECTS {
+          h150eErrorIndex,
+          h150eErrorDateTime,
+          h150eErrorClass,
+          h150eErrorCode,
+          h150eAccessSlot,
+          h150eAccessPort,
+          h150eErrorDescription,
+          h150eSysState,
+          h150eErrorSeverity
+          }
+       STATUS      current
+       DESCRIPTION
+                   "If an error occurs, there will be checked if the errorClass is configured
+                    to trigger an immediate signalling. If so, a trap will be send to the
+                    management station containing the information shown above."
+       ::= { h150eTrapSpecifications 1 }
+
+
+   sendCdrNotification  NOTIFICATION-TYPE
+       OBJECTS {
+          h150eIndexOfLastCdrNotificationTrap,
+          h150etypeOfLastCdrNotificationTrap,
+          h150eDescriptionOfLastCdrNotificationTrap
+          }
+       STATUS      current
+       DESCRIPTION
+                   "The CDR notification trap is sent to trigger further actions by the management
+                   station, for instance download of CDR data."
+       ::= { h150eTrapSpecifications 2 }
+
+
+   sendPortStatusNotification  NOTIFICATION-TYPE
+       OBJECTS {
+          indexOfLastPortStatusNotificationTrap
+          }
+       STATUS      current
+       DESCRIPTION
+                   "The 'port status change' notification trap is sent to trigger a polling of the
+                   port table by a management station. It indicates one or more changes in port
+                   states."
+       ::= { h150eTrapSpecifications 3 }
+
+   sendUmRelatedChangeNotification  NOTIFICATION-TYPE
+       OBJECTS {
+          umTrapIdentifier,
+          umTrapType,
+          umTrapLogicalPortNumber,
+          umNetworkElementKey
+       }
+       STATUS      current
+       DESCRIPTION
+                   "This trap is sent (to UM proxy), as the system detects changes."
+       ::= { h150eTrapSpecifications 4 }
+
+
+--********************************************************************--
+--******                 UM proxy information                   ******--
+--********************************************************************--
+
+
+   umNodeNumber  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The node number of the system. Unique number 
+                    identifying the PBX."
+       ::= { umProxyGroup 1 }
+
+   umSrsEnabled  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     disabled(0),
+                     enabled(1)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Indicates whether the SRS feature flag of the 
+                    machine is enabled or not.
+                    The small remote site flag is an overall flag
+                    of the system."
+       ::= { umProxyGroup 2 }
+
+   umDefaultLanguage  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     german(1),
+                     english(2),
+                     french(3)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Default language"
+       ::= { umProxyGroup 3 }
+
+   umNumberOfSubscriberEntries  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Number of entries in subscriber table."
+       ::= { umProxyGroup 4 }
+
+   umSubscriberTable  OBJECT-TYPE
+       SYNTAX      SEQUENCE OF UmSubscriberTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "This table contains information about all HFA-Clients
+                    available for UM-configuration."
+       ::= { umProxyGroup 5 }
+ 
+   umSubscriberTableEntry  OBJECT-TYPE
+       SYNTAX      UmSubscriberTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "The UM-subscriber table entries."
+       INDEX { umLogicalPortNumber }
+       ::= { umSubscriberTable 1 }
+
+   UmSubscriberTableEntry ::= SEQUENCE {
+          umLogicalPortNumber        INTEGER,
+          umInternalCallNumber       DisplayString,
+          umDIDNumber                DisplayString,
+          umE164Number               DisplayString,
+          umDisplayName              DisplayString,
+          umStationType              INTEGER,
+          umPortStatus               INTEGER,
+          umClassOfService           INTEGER,
+          umDisplayLanguage          INTEGER,
+          umCfssTarget               DisplayString
+          }
+
+   umLogicalPortNumber  OBJECT-TYPE
+       SYNTAX      INTEGER (0..9999)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The logical port number of the subscriber."
+       ::= { umSubscriberTableEntry 1 }
+
+   umInternalCallNumber  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The internal call number of the subscriber."
+       ::= { umSubscriberTableEntry 2 }
+
+   umDIDNumber  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The DID number of the subscriber."
+       ::= { umSubscriberTableEntry 3 }
+
+   umE164Number  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The E.164 call number of the subscriber."
+       ::= { umSubscriberTableEntry 4 } 
+
+   umDisplayName  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The display name of the subscriber."
+       ::= { umSubscriberTableEntry 5 } 
+
+   umStationType  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     s0(0),
+                     up0(1),
+                     hfa(2),
+                     analog(3)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The type of the station.
+                    e.g. UP0, S0, HFA, ..."
+       ::= { umSubscriberTableEntry 6 }
+
+   umPortStatus  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     inactive(0),
+                     active(1)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The status of the logical port."
+       ::= { umSubscriberTableEntry 7 }
+
+   umClassOfService  OBJECT-TYPE
+       SYNTAX      INTEGER (1..15)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Classes of service can be used to restrict
+                    external calls. The types of calls that can
+                    be made from each station are defined for
+                    this purpose."
+       ::= { umSubscriberTableEntry 8 }
+
+   umDisplayLanguage  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     german(1),
+                     english(2),
+                     french(3)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Display language"
+       ::= { umSubscriberTableEntry 9 }
+
+   umCfssTarget  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The target for Call Forwarding for Station
+                    out of Service."
+       ::= { umSubscriberTableEntry 10 } 
+
+   umNumberOfUnconfirmedTraps  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Number of entries in the umUnconfirmedTrapTable.
+                    A trap is confirmed and as result removed from the table,
+                    when its entry in the table is requested in a GetRequest
+                    for the 1st time. Traps presented in the table are retried
+                    as long as a GetRequest arrives."
+       ::= { umProxyGroup 6 }
+
+   umUnconfirmedTrapTable  OBJECT-TYPE
+       SYNTAX      SEQUENCE OF UmUnconfirmedTrapTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "This table contains information about traps sent to
+                    UM-Proxy. The contained traps have not yet been confirmed."
+       ::= { umProxyGroup 7 }
+ 
+   umUnconfirmedTrapTableEntry  OBJECT-TYPE
+       SYNTAX      UmUnconfirmedTrapTableEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+                   "The unconfirmed traps table entries."
+       INDEX { umTrapIdentifier }
+       ::= { umUnconfirmedTrapTable 1 }
+
+   UmUnconfirmedTrapTableEntry ::= SEQUENCE {
+          umTrapIdentifier           INTEGER,
+          umTrapType                 INTEGER,
+          umTrapLogicalPortNumber    INTEGER
+          }
+
+   umTrapIdentifier  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "Unique identifier of the trap. A SetRequest with value 0
+                    removes the entry from the table. A value unequal to 0
+                    is erroneous."
+       ::= { umUnconfirmedTrapTableEntry 1 }
+
+   umTrapType  OBJECT-TYPE
+       SYNTAX      INTEGER {
+                     startup(0),
+                     modifyGeneral(1),
+                     modifySubscriber(2)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "The type of trap sent. Startup traps are sent as the
+                    system resets. The 2 types of modify traps aim on
+                    distinguishing between modification that are subscriber-
+                    related and those that are global."
+       ::= { umUnconfirmedTrapTableEntry 2 }
+
+   umTrapLogicalPortNumber  OBJECT-TYPE
+       SYNTAX      INTEGER (0..2147483187)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "In case of a modifySubscriber-type trap, the logical
+                    port number that was the reason for the traps is
+                    presented here. For the other umTrapTypes, the content
+                    is undefined!"
+       ::= { umUnconfirmedTrapTableEntry 3 }
+
+   umNetworkElementKey  OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+                   "A key that uniquely identifies the node towards UM.
+                    For a HiPath 3000/5000 this would be the IP-address,
+                    A simulator should additionally provide the port."
+       ::= { umProxyGroup 8 }
+
+END

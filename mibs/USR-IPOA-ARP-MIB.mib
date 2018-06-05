@@ -1,0 +1,942 @@
+  USR-IPOA-ARP-MIB DEFINITIONS ::= BEGIN
+  IMPORTS
+      OBJECT-TYPE, NOTIFICATION-TYPE, MODULE-IDENTITY,
+      Integer32, Counter32, IpAddress
+          FROM SNMPv2-SMI
+      TEXTUAL-CONVENTION, RowStatus
+          FROM SNMPv2-TC
+      AtmConnKind, AtmAddr
+          FROM ATM-TC-MIB
+      ipNetToMediaNetAddress, ipNetToMediaIfIndex,
+      ipAdEntAddr, DisplayString
+          FROM RFC1213-MIB
+      InterfaceIndex,UsrConfigStatus, usrAtmArp, InterfaceIndexOrZero,
+      common
+          FROM USR-DEFINITIONS-MIB;
+    usrIpoa  MODULE-IDENTITY
+             LAST-UPDATED "200204061346Z"
+             ORGANIZATION "CommWorks Corporation, a 3Com Company"
+             CONTACT-INFO "Customer Support"
+             DESCRIPTION
+                   "The commWorks enterprise defined MIB objects for
+                    IP over ATM with ARP."
+--           REVISION  "200204061346Z"
+--           DESCRIPTION "Added Module-IDENTITY and corrected SNMPv2 syntax."
+   ::= { common 46 }
+  --***************************************************************
+  -- Textual Conventions
+  --***************************************************************
+  IpoaEncapsType ::= TEXTUAL-CONVENTION
+      STATUS      current
+      DESCRIPTION
+          "The encapsulation type used on a VC."
+      SYNTAX      INTEGER {
+                      llcSnap(1),
+                      vcMuxed(2),
+                      other(3)
+                  }
+  IpoaVpiInteger ::= TEXTUAL-CONVENTION
+      STATUS     current
+      DESCRIPTION
+          "An integer large enough to hold a VPI."
+      SYNTAX     Integer32 (0..255)
+  IpoaVciInteger ::= TEXTUAL-CONVENTION
+      STATUS     current
+      DESCRIPTION
+          "An integer large enough to hold a VCI."
+      SYNTAX     Integer32 (0..65535)
+  IpoaAtmAddr ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT "1x"
+     STATUS  current
+     DESCRIPTION
+       "The ATM address used by the network entity.
+        The address type can be determined by the
+        OCTET STRING size. IpoaAtmAddr can be comprised
+        of both an ATM Address and a subaddress. The
+        ATM Address portion is required and must be
+        first in the OCTET STRING.
+        An implementation must use BCD encoding to
+        represent a E.164 address as a MIB object."
+     SYNTAX   OCTET STRING (SIZE(0..40))
+  --
+  -- Top-level structure of the MIB
+  --
+  usrIpoaObjects        OBJECT IDENTIFIER ::= { usrIpoa 1 }
+  usrIpoaNotifications  OBJECT IDENTIFIER ::= { usrIpoa 2 }
+  usrIpoaConformance    OBJECT IDENTIFIER ::= { usrIpoa 3 }
+  -- ***************************************************************
+  -- MIB Objects
+  -- ***************************************************************
+  -- The Logical IP Subnet Table
+  usrIpoaLisTable OBJECT-TYPE
+      SYNTAX      SEQUENCE OF IpoaLisEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "There is one entry in this table for every Logical IP
+          Subnet (LIS) that this system is a member of."
+      ::= { usrIpoaObjects 2 }
+  usrIpoaLisEntry OBJECT-TYPE
+      SYNTAX      IpoaLisEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "Information about a single LIS that this system is a
+          member of.
+          This table is indexed by an IP subnet address.
+          Membership in a LIS is independent of the actual ATM
+          physical interfaces being used. The usrIpoaLisTable defines
+          all LISes that a system is a member of. The ipAddrTable
+          and the usrIpoaClientTable provides the mapping from local
+          IP address to ATM physical interface. The
+          ipoaLisIfMappingTable provides the mappings between
+          Logical IP Subnets and interfaces.
+          The ipoaLisTable is indexed by ipoaLisSubnetAddr.
+          An entry in the ipAddrTable should exist for each
+          ipAddrEntry that is associated with an IP over ATM
+          interface. Its ipAdEntAddr and ipAdEntNetMask when ANDed
+          should map to a ipoaLisSubnetAddr."
+      INDEX       { usrIpoaLisSubnetAddr }
+      ::= { usrIpoaLisTable 1 }
+-- Expires January 1998                                           [Page 15]
+-- Greene et al.        IP and ARP over ATM (IPOA) MIB         11 July 1997
+  IpoaLisEntry ::= SEQUENCE {
+      usrIpoaLisSubnetAddr          IpAddress,
+      usrIpoaLisDefaultMtu          Integer32,
+      usrIpoaLisDefaultEncapsType   IpoaEncapsType,
+      usrIpoaLisInactivityTimer     Integer32,
+      usrIpoaLisMinHoldingTime      Integer32,
+      usrIpoaLisQDepth              Integer32,
+      usrIpoaLisMaxCalls            Integer32,
+      usrIpoaLisCacheEntryAge       Integer32,
+      usrIpoaLisRetries             Integer32,
+      usrIpoaLisTimeout             Integer32,
+      usrIpoaLisDefaultPeakCellRate Integer32,
+      usrIpoaLisActiveVcs           Counter32,
+      usrIpoaLisRowStatus           RowStatus }
+  usrIpoaLisSubnetAddr OBJECT-TYPE
+      SYNTAX      IpAddress
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The IP subnet address associated with this LIS."
+      ::= { usrIpoaLisEntry 1 }
+  usrIpoaLisDefaultMtu OBJECT-TYPE
+      SYNTAX      Integer32 (0..65535)
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The default MTU used within this LIS. Note that the actual
+          size used for a VC between two members of the LIS may be
+          negotiated during connection setup and may be different than
+          this value. The usrIpoaVcNegotiatedMtu object indicates the
+          actual MTU in use for a particular VC."
+      DEFVAL { 9180 }
+      ::= { usrIpoaLisEntry 2 }
+  usrIpoaLisDefaultEncapsType OBJECT-TYPE
+      SYNTAX      IpoaEncapsType
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The default encapsulation to use on VCs created for this
+          LIS. Note that the actual encapsulation type may be negotiated
+          during connection setup and may be different than this
+          value. The usrIpoaVcNegotiatedEncapsType object indicates the
+          actual encapsulation in use for a particular VC."
+      DEFVAL { llcSnap }
+      ::= { usrIpoaLisEntry 3 }
+-- Expires January 1998                                           [Page 16]
+-- Greene et al.        IP and ARP over ATM (IPOA) MIB         11 July 1997
+  usrIpoaLisInactivityTimer OBJECT-TYPE
+      SYNTAX      Integer32
+      UNITS       "seconds"
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The time, in seconds, before a call established for an
+          ipNetToMediaEntry on a client will timeout due to no
+          traffic being passed on the VC. A value of 0 implies
+          no time out."
+      REFERENCE
+          "RFC1755, Sec. 3.4 VC Teardown"
+      DEFVAL      { 300 }
+      ::= { usrIpoaLisEntry 4 }
+  usrIpoaLisMinHoldingTime OBJECT-TYPE
+      SYNTAX      Integer32 (0..65535)
+      UNITS       "seconds"
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The minimum amount of time, in seconds, that a call will
+           remain open. If 0 then usrIpoaInactivityTimer will
+           completely determine when a call is terminated."
+      REFERENCE
+          "RFC1755, Sec. 3.4 VC Teardown"
+      DEFVAL      { 60 }
+      ::= { usrIpoaLisEntry 5 }
+  usrIpoaLisQDepth OBJECT-TYPE
+      SYNTAX      Integer32 (1..65535)
+      UNITS       "packets"
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The maximum number of outstanding requests that are
+           allowed while waiting for ATMARP replies and
+           In_ATMARP replies for this LIS."
+      DEFVAL      { 1 }
+      ::= { usrIpoaLisEntry 6 }
+  usrIpoaLisMaxCalls OBJECT-TYPE
+      SYNTAX      Integer32 (1..65535)
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The maximum number of SVCs that can be established
+          simultaneously."
+-- Expires January 1998                                           [Page 17]
+-- Greene et al.        IP and ARP over ATM (IPOA) MIB         11 July 1997
+      DEFVAL      { 500 }
+      ::= { usrIpoaLisEntry 7 }
+  usrIpoaLisCacheEntryAge OBJECT-TYPE
+      SYNTAX      Integer32 (60..1200)
+      UNITS       "seconds"
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The time, in seconds, before an ipNetToMediaEntry will age
+          out of the table. Note that the default value will be
+          different for a client and a server. A ATMARP server should
+          use a default of 1200 and a client should use 900."
+      DEFVAL      { 900 }
+      ::= { usrIpoaLisEntry 8 }
+  usrIpoaLisRetries OBJECT-TYPE
+      SYNTAX      Integer32 (0..10)
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The number of times the ATMARP request will be retried when
+          no response is received in the timeout interval indicated by
+          usrIpoaLisTimeout."
+      DEFVAL      { 2 }
+      ::= { usrIpoaLisEntry 9 }
+  usrIpoaLisTimeout OBJECT-TYPE
+      SYNTAX      Integer32 (1..60)
+      UNITS       "seconds"
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The time to wait, in seconds, before retransmission of an ARP
+          PDU."
+      DEFVAL      { 10 }
+      ::= { usrIpoaLisEntry 10 }
+  usrIpoaLisDefaultPeakCellRate OBJECT-TYPE
+      SYNTAX Integer32
+      MAX-ACCESS read-create
+      STATUS current
+      DESCRIPTION
+          "This object is the signalling parameter that
+           should be used when setting up all best effort
+           VCCs. This parameter applies to the forward and
+           backward direction on a per best effort VCC basis.
+           A value of zero implies that no configured default
+           exists and that local policy should be used to
+           determine the actual default to used during
+           call setup. ATM Signaling Support for IP over ATM
+           (RFC 1755) recommends 1/10th of the ATM interface's
+           speed."
+      ::= { usrIpoaLisEntry 11 }
+  usrIpoaLisActiveVcs OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "Number of active SVCs."
+      ::= { usrIpoaLisEntry 12 }
+  usrIpoaLisRowStatus OBJECT-TYPE
+      SYNTAX      RowStatus
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "This object allows entries to be created and deleted in the
+          usrIpoaLisTable.
+          When the usrIpoaLisRowStatus deleted (by setting this object to
+          destroy(6)), this has the side-effect of removing all
+          entries from the ipNetToMediaTable that are associated with
+          this LIS (in other words, it flushes the entity's ATMARP
+          cache). It also removes the usrIpoaVcTable entries that were
+          associated with those ipNetToMediaTable entries. Destroying
+          the row also removes the corresponding entries in the
+          usrIpoaArpSrvrTable, usrIpoaArpClientTable,
+          usrIpoaLisIfMappingTable and usrIpoaArpRemoteSrvrTable.
+          Entries in both the ipNetToMediaTable and the usrIpoaVcTable
+          that are associated with a usrIpoaConfigPvcEntry are not
+          effected by changes to usrIpoaLisRowStatus."
+      REFERENCE
+          "RFC 1903, 'Textual Conventions for version 2 of the Simple
+          Network Management Protocol (SNMPv2).'"
+      ::= { usrIpoaLisEntry 13 }
+  --
+  -- The ATMARP Client Table
+  --
+  usrIpoaArpClientTable OBJECT-TYPE
+      SYNTAX      SEQUENCE OF UsrIpoaArpClientEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "The ATMARP clients running on this system."
+      ::= { usrIpoaObjects 4 }
+  usrIpoaArpClientEntry OBJECT-TYPE
+      SYNTAX      UsrIpoaArpClientEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "Information about a single ATMARP Client. Clients can be
+          started and stopped by adding and removing entries from this
+          table. Note that adding and removing entries from this table
+          may have the same effect on the corresponding ipAddrTable
+          entry. An entry in the usrIpoaArpClientTable has a corresponding
+          entry in the ipAddrTable. Both are indexed by ipAdEntAddr.
+          The ifIndex and subnet mask of a client entry are the
+          ipAddrEntry's ipAdEntIfIndex and ipAdEntNetMask respectively.
+          A remote creation of an object in this table requires
+          that either the corresponding ipAddrTable entry exists or
+          that ipAdEntIfIndex and ipAdEntNetMask be specified in the
+          creation of a usrIpoaArpClientEntry at a minimum in order
+          to create the corresponding ipAddrEntry. Specification
+          of ipAdEntBcastAddr and ipAdEntReasmMaxSize to complete a
+          ipAddrEntry is implementation dependent."
+      INDEX       { ipAdEntAddr }
+      ::= { usrIpoaArpClientTable 1 }
+  UsrIpoaArpClientEntry ::= SEQUENCE {
+      usrIpoaArpClientAtmAddr             IpoaAtmAddr,
+      usrIpoaArpClientSrvrInUse           IpoaAtmAddr,
+      usrIpoaArpClientInArpReqsIn         Counter32,
+      usrIpoaArpClientInArpReqsOut        Counter32,
+      usrIpoaArpClientInArpRepliesIn      Counter32,
+      usrIpoaArpClientInArpRepliesOut     Counter32,
+      usrIpoaArpClientInArpInvalidReqsIn  Counter32,
+      usrIpoaArpClientInArpInvalidReqsOut Counter32,
+      usrIpoaArpClientArpReqsIn           Counter32,
+      usrIpoaArpClientArpReqsOut          Counter32,
+      usrIpoaArpClientArpRepliesIn        Counter32,
+      usrIpoaArpClientArpRepliesOut       Counter32,
+      usrIpoaArpClientArpNaksIn           Counter32,
+      usrIpoaArpClientArpNaksOut          Counter32,
+      usrIpoaArpClientArpOpUnknown        Counter32,
+      usrIpoaArpClientArpSrvrNoResp       Counter32,
+      usrIpoaArpClientRowStatus           RowStatus }
+  usrIpoaArpClientAtmAddr OBJECT-TYPE
+      SYNTAX      IpoaAtmAddr
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The ATM address of the client."
+	 --CONFIGURABLE
+      ::= { usrIpoaArpClientEntry 1 }
+  usrIpoaArpClientSrvrInUse OBJECT-TYPE
+      SYNTAX      IpoaAtmAddr
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The ATM address of the ATMARP Server in use by this
+           client. A value of 0 implies that communication with
+           a ATMARP Server is not in effect."
+      DEFVAL { ''H }
+      ::= { usrIpoaArpClientEntry 2 }
+  usrIpoaArpClientInArpReqsIn OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The number of InATMARP requests received by this client."
+      ::= { usrIpoaArpClientEntry 3 }
+  usrIpoaArpClientInArpReqsOut OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The number of InATMARP requests sent by this client."
+      ::= { usrIpoaArpClientEntry 4 }
+  usrIpoaArpClientInArpRepliesIn OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The number of InATMARP replies received by this client."
+      ::= { usrIpoaArpClientEntry 5 }
+  usrIpoaArpClientInArpRepliesOut OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "Total number of InATMARP replies sent by this client."
+      ::= { usrIpoaArpClientEntry 6 }
+  usrIpoaArpClientInArpInvalidReqsIn OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The number of times that this client detected an invalid
+           InATMARP request."
+      ::= { usrIpoaArpClientEntry 7 }
+  usrIpoaArpClientInArpInvalidReqsOut OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The number of times that this client did not receive
+           a InATMARP reply."
+      ::= { usrIpoaArpClientEntry 8 }
+  usrIpoaArpClientArpReqsIn OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "Total number of ATMARP requests received by this client."
+      ::= { usrIpoaArpClientEntry 9 }
+  usrIpoaArpClientArpReqsOut OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "Total number of ATMARP requests sent by this client."
+      ::= { usrIpoaArpClientEntry 10 }
+  usrIpoaArpClientArpRepliesIn OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "Total number of ATMARP replies received by this client."
+      ::= { usrIpoaArpClientEntry 11 }
+  usrIpoaArpClientArpRepliesOut OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "Total number of ATMARP replies sent by this client."
+      ::= { usrIpoaArpClientEntry 12 }
+  usrIpoaArpClientArpNaksIn OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "Total number of negative ATMARP replies
+           received by this client."
+      ::= { usrIpoaArpClientEntry 13 }
+  usrIpoaArpClientArpNaksOut OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "Total number of negative ATMARP replies
+           send by this client."
+      ::= { usrIpoaArpClientEntry 14 }
+  usrIpoaArpClientArpOpUnknown OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The number of times that this client received
+           an ATMARP message with an operation code for which it
+           is not coded to support."
+      ::= { usrIpoaArpClientEntry 15 }
+  usrIpoaArpClientArpSrvrNoResp OBJECT-TYPE
+      SYNTAX      Counter32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The number of times this client failed to receive
+           a response from a ATMARP Server within the
+           usrIpoaLisTimeout value for usrIpoaLisRetries times.
+           This may imply that the client will re-elect a
+           primary ATMARP server for this LIS from the
+           usrIpoaArpRemoteSrvrTable."
+      ::= { usrIpoaArpClientEntry 16 }
+  usrIpoaArpClientRowStatus OBJECT-TYPE
+      SYNTAX      RowStatus
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "This object allows entries to be created and deleted from the
+          usrIpoaArpClientTable."
+      REFERENCE
+          "RFC 1903, 'Textual Conventions for version 2 of the Simple
+          Network Management Protocol (SNMPv2).'"
+	 --CONFIGURABLE
+      ::= { usrIpoaArpClientEntry 17 }
+  -- The Remote ATMARP Server Table
+  usrIpoaArpRemoteSrvrTable OBJECT-TYPE
+      SYNTAX      SEQUENCE OF UsrIpoaArpRemoteSrvrEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "A table of non-local ATMARP servers associated with a LIS.
+          An entry in this table has three indexes: first the
+          usrIpoaLisSubnetAddr of the LIS that the corresponding
+          ATMARP server provides ATMARP services for, then the
+          usrIpoaArpRemoteSrvrAtmAddr, which is the ATM address of the
+          remote ATMARP server and finally the ifIndex of the
+          interface on which the VC to the ATMARP Remote Server
+          will be opened. A ifIndex value of 0 should be used
+          when a single VC is to be shared for ATMARP purposes
+          by multiple interfaces."
+      ::= { usrIpoaObjects 6 }
+  usrIpoaArpRemoteSrvrEntry OBJECT-TYPE
+      SYNTAX      UsrIpoaArpRemoteSrvrEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "Information about one non-local ATMARP server."
+      INDEX  { usrIpoaLisSubnetAddr, usrIpoaArpRemoteSrvrAtmAddr,
+               usrIpoaArpRemoteSrvrIfIndex }
+      ::= { usrIpoaArpRemoteSrvrTable 1 }
+  UsrIpoaArpRemoteSrvrEntry ::= SEQUENCE {
+      usrIpoaArpRemoteSrvrAtmAddr   IpoaAtmAddr,
+      usrIpoaArpRemoteSrvrRowStatus RowStatus,
+      usrIpoaArpRemoteSrvrIfIndex   InterfaceIndexOrZero,
+      usrIpoaArpRemoteSrvrIpAddr    IpAddress }
+  usrIpoaArpRemoteSrvrAtmAddr OBJECT-TYPE
+      SYNTAX      IpoaAtmAddr
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "The ATM address of the remote ATMARP server."
+      ::= { usrIpoaArpRemoteSrvrEntry 1 }
+  usrIpoaArpRemoteSrvrRowStatus OBJECT-TYPE
+      SYNTAX      RowStatus
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "This object allows entries to be created and deleted from the
+          usrIpoaArpRemoteSrvrTable as well as indicating the weather a
+          VC exists to the Remote ATMARP Server.
+          usrIpoaArpRemoteSrvrRowStatus states:
+          active(1)       - VC exists to Remote ATMARP Server who's IP
+                            Address is stored in
+                            usrIpoaArpRemoteSrvrIpAddr.
+                            This VC can be determined by searching the
+                            usrIpoaVcTable using usrIpoaArpRemoteSrvrIfIndex
+                            (if not 0 otherwise ignore
+                            ipNetToMediaIfIndex
+                            index) and usrIpoaArpRemoteSrvrIpAddr. A
+                            usrIpoaArpClientEntry should exist were its
+                            usrIpoaArpClientSrvrInUse object has the same
+                            value as usrIpoaArpRemoteSrvrAtmAddr.
+         notInService(2)  - Entry exists without an active VC to
+                            the Remote ATMARP Server.
+         notReady(3)      - usrIpoaArpRemoteSrvrEntry is incomplete.
+         createAndGo(4)   - Value used to remotely create an entry
+                            and then active it.
+         createAndWait(5) - Value used to remotely create an entry and
+                            leave entry inactive with either
+                            notInService or notReady state.
+         destroy(6)       - When usrIpoaArpRemoteSrvrRowStatus is set with
+                            this value the corresponding table entry is
+                            deleted."
+      REFERENCE
+          "RFC 1903, 'Textual Conventions for version 2 of the Simple
+          Network Management Protocol (SNMPv2).'"
+	 --CONFIGURABLE
+      ::= { usrIpoaArpRemoteSrvrEntry 2 }
+  usrIpoaArpRemoteSrvrIfIndex OBJECT-TYPE
+      SYNTAX      InterfaceIndexOrZero
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "The ifIndex of the interface that the VC to the
+           Remote ATMARP Server is associated with."
+      ::= { usrIpoaArpRemoteSrvrEntry 3 }
+  usrIpoaArpRemoteSrvrIpAddr OBJECT-TYPE
+      SYNTAX      IpAddress
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The IP Address of the Remote ATMARP Server. A value of
+           0 implies that this address isn't known."
+      DEFVAL { 0 }
+      ::= { usrIpoaArpRemoteSrvrEntry 4 }
+  --
+  -- The VC Table
+  --
+  usrIpoaVcTable OBJECT-TYPE
+      SYNTAX      SEQUENCE OF UsrIpoaVcEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "A system that support IP over ATM is an IP system and
+          therefore must support all of the appropriate tables from
+          RFC1213, MIB-II. This includes the ipNetToMediaTable (the ARP
+          cache). This usrIpoaVcTable keeps a set of VCs for each entry in
+          the ARP cache that was put there by this IP over ATM system
+          acting as either a host or server."
+      ::= { usrIpoaObjects 7 }
+  usrIpoaVcEntry OBJECT-TYPE
+      SYNTAX      UsrIpoaVcEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "A VC (permanent or switched) that this host or server has
+          opened with another member of a LIS. Additional information
+          can be determined about the VC from RFC1695, the AToM MIB.
+          In an SVC environment, entries can not be created in
+          this table by a management application. Entries are
+          automatically
+          added by the system as the result of ATMARP processing.
+          In a PVC environment, an entry is automatically added to
+          this table when an entry is created in the usrIpoaConfigPvcTable
+          and the IP Address at the end of the PVC is discovered using
+          In_ATMARP. An entry also is added to the ipNetToMediaTable."
+      INDEX       { ipNetToMediaIfIndex,
+                    ipNetToMediaNetAddress,
+                    usrIpoaVcVpi,
+                    usrIpoaVcVci
+                  }
+      ::= { usrIpoaVcTable 1 }
+  UsrIpoaVcEntry ::= SEQUENCE {
+      usrIpoaVcVpi                  IpoaVpiInteger,
+      usrIpoaVcVci                  IpoaVciInteger,
+      usrIpoaVcType                 AtmConnKind,
+      usrIpoaVcNegotiatedMtu        Integer32,
+      usrIpoaVcNegotiatedEncapsType IpoaEncapsType }
+  usrIpoaVcVpi OBJECT-TYPE
+      SYNTAX      IpoaVpiInteger
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The VPI value for the Virtual Circuit."
+      ::= { usrIpoaVcEntry 1 }
+  usrIpoaVcVci OBJECT-TYPE
+      SYNTAX      IpoaVciInteger
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The VCI value for the Virtual Circuit."
+      ::= { usrIpoaVcEntry 2 }
+  usrIpoaVcType OBJECT-TYPE
+      SYNTAX      AtmConnKind
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The type of the Virtual Circuit."
+      ::= { usrIpoaVcEntry 3 }
+  usrIpoaVcNegotiatedEncapsType OBJECT-TYPE
+      SYNTAX      IpoaEncapsType
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The encapsulation type used when communicating over this
+          circuit."
+      ::= { usrIpoaVcEntry 4 }
+  usrIpoaVcNegotiatedMtu OBJECT-TYPE
+      SYNTAX      Integer32 (0..65535)
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+          "The MTU used when communicating over this circuit."
+      ::= { usrIpoaVcEntry 5 }
+  usrIpoaConfigPvcTable OBJECT-TYPE
+      SYNTAX      SEQUENCE OF UsrIpoaConfigPvcEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "This table must be supported when PVCs are intended to
+          be supported in order to enable the setup of PVCs for use
+          by IP."
+      ::= { usrIpoaObjects 8 }
+  usrIpoaConfigPvcEntry OBJECT-TYPE
+      SYNTAX      UsrIpoaConfigPvcEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "Defines a single PVC that exists at this host for use by
+          IP. "
+      INDEX       { usrIpoaConfigPvcIfIndex,
+                    usrIpoaConfigPvcVpi,
+                    usrIpoaConfigPvcVci
+                  }
+      ::= { usrIpoaConfigPvcTable 1 }
+  UsrIpoaConfigPvcEntry ::= SEQUENCE {
+      usrIpoaConfigPvcIfIndex              InterfaceIndex,
+      usrIpoaConfigPvcVpi                  IpoaVpiInteger,
+      usrIpoaConfigPvcVci                  IpoaVciInteger,
+      usrIpoaConfigPvcDefaultMtu           Integer32,
+      usrIpoaConfigPvcRowStatus            RowStatus}
+  usrIpoaConfigPvcIfIndex OBJECT-TYPE
+      SYNTAX      InterfaceIndex
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "The ifIndex of the ATM AAL Interface that this PVC
+           is associated with."
+	 --CONFIGURABLE
+      ::= { usrIpoaConfigPvcEntry 1 }
+  usrIpoaConfigPvcVpi OBJECT-TYPE
+      SYNTAX      IpoaVpiInteger
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "The VPI value for the Virtual Circuit."
+	 --CONFIGURABLE
+      ::= { usrIpoaConfigPvcEntry 2 }
+  usrIpoaConfigPvcVci OBJECT-TYPE
+      SYNTAX      IpoaVciInteger
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "The VCI value for the Virtual Circuit."
+      ::= { usrIpoaConfigPvcEntry 3 }
+  usrIpoaConfigPvcDefaultMtu OBJECT-TYPE
+      SYNTAX      Integer32 (0..65535)
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+         "Classic2 allows use of other MTU values for PVCs
+         but considers the how a value other than 9180 could
+         be selected to be out of scope. usrIpoaConfigPvcDefaultMtu
+         can be used to configure the MTU to be used for the PVC.
+         Both ends must have the same value configured."
+      DEFVAL { 9180 }
+	 --CONFIGURABLE
+      ::= { usrIpoaConfigPvcEntry 4 }
+  usrIpoaConfigPvcRowStatus OBJECT-TYPE
+      SYNTAX      RowStatus
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+         "This object allows rows to be created and deleted in the
+          usrIpoaConfigPvcTable. Creation of a entry in this table
+          should eventually result in the creation of a
+          ipNetToMediaEntry
+          and a corresponding usrIpoaVcEntry after InATMARP has
+          determined the destination address of system that the
+          PVC is connected to. Setting this object to destroy(6)
+          should remove the corresponding ipNetToMediaTable and
+          usrIpoaVcTable entries.  In this implementation, setting
+          this object to destroy also removes the corresponding 
+          entry in the AtmArpPvcTable."
+     REFERENCE
+         "RFC 1903, 'Textual Conventions for version 2 of the Simple
+         Network Management Protocol (SNMPv2).'"
+	 --CONFIGURABLE
+     ::= { usrIpoaConfigPvcEntry 5 }
+  usrAtmArpPvcTable OBJECT-TYPE
+      SYNTAX      SEQUENCE OF UsrAtmArpPvcEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "This table must be supported when PVCs are intended to
+          be supported in order to enable the setup of PVCs for use
+          by IP.  This table contains additional implementation
+          specific information required for RFC 1577 PVCs. This table
+          is mainly used to translate the IP Over ATM PVC name to the
+          corresponding Ifindex, VPI and VCI values used to identify
+          this PVC in the ConfigPvc table."
+      ::= { usrAtmArp 1 }
+  usrAtmArpPvcEntry OBJECT-TYPE
+      SYNTAX      UsrAtmArpPvcEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "Defines a single PVC that exists at this host for use by
+          IP. Entries in this table must be created at the same time
+          entries are created in the IpoaConfigPvc table. "
+      INDEX       { usrAtmArpPvcName }
+      ::= { usrAtmArpPvcTable 1 }
+  UsrAtmArpPvcEntry ::= SEQUENCE {
+      usrAtmArpPvcName                     DisplayString,
+      usrAtmArpPvcIfIndex                  InterfaceIndex,
+      usrAtmArpPvcVpi                      IpoaVpiInteger,
+      usrAtmArpPvcVci                      IpoaVciInteger,
+	 usrAtmArpPvcNetworkName              DisplayString,
+	 usrAtmArpPvcInterfaceName            DisplayString,
+      usrAtmArpPvcNetIfIndex               InterfaceIndex,
+	 usrAtmArpPvcEnabledFlag              INTEGER}
+  usrAtmArpPvcName OBJECT-TYPE
+      SYNTAX DisplayString (SIZE(0..32))
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+         "A string containing the name of the RFC1577 PVC."
+      ::= { usrAtmArpPvcEntry 1 }
+  usrAtmArpPvcIfIndex OBJECT-TYPE
+      SYNTAX      InterfaceIndex
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The ifIndex of the ATM AAL Interface that this PVC
+           is associated with."
+      --CONFIGURABLE
+      ::= { usrAtmArpPvcEntry 2 }
+  usrAtmArpPvcVpi OBJECT-TYPE
+      SYNTAX      IpoaVpiInteger
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The VPI value for the Virtual Circuit."
+      --CONFIGURABLE
+      ::= { usrAtmArpPvcEntry 3 }
+  usrAtmArpPvcVci OBJECT-TYPE
+      SYNTAX      IpoaVciInteger
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The VCI value for the Virtual Circuit."
+      --CONFIGURABLE
+      ::= { usrAtmArpPvcEntry 4 }
+  usrAtmArpPvcNetworkName OBJECT-TYPE
+      SYNTAX DisplayString (SIZE(0..32))
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+         "A string containing the name of the network of this RFC1577 PVC."
+      --CONFIGURABLE
+      ::= { usrAtmArpPvcEntry 5 }
+  usrAtmArpPvcInterfaceName OBJECT-TYPE
+      SYNTAX DisplayString (SIZE(0..32))
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+         "A string containing the name of the ATMAAL interface where this RFC1577 PVC is established."
+      ::= { usrAtmArpPvcEntry 6 }
+  usrAtmArpPvcNetIfIndex OBJECT-TYPE
+      SYNTAX      InterfaceIndex
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "The ifIndex of the ATM Net Interface that this PVC
+           is associated with."
+      --CONFIGURABLE
+      ::= { usrAtmArpPvcEntry 7 }
+  usrAtmArpPvcEnabledFlag OBJECT-TYPE
+      SYNTAX      INTEGER {
+			enabled(1),
+			disabled(2)
+			}
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+          "This flag indicates if this ATM 1577 PVC is enabled or disabled."
+      ::= { usrAtmArpPvcEntry 8 }
+	usrAtmArpConfigFileName OBJECT-TYPE
+		SYNTAX      DisplayString
+		MAX-ACCESS  read-only
+          STATUS      current
+		DESCRIPTION		
+		  "The name of a ConfigFile to read/write permanent
+		   database records. If the value of this object is an
+             empty string, then ATM ARP uses the default
+             name `@file://Atmarp.cfg'. "
+     ::= { usrAtmArp 2 }
+	usrAtmArpCFMStatusFlag  OBJECT-TYPE
+	 	SYNTAX	  UsrConfigStatus
+		MAX-ACCESS  read-write
+	     STATUS      current
+		DESCRIPTION
+		  "Setting the value of this object to `save' causes the values
+		   of the ATM ARP MIB objects to be written out to the
+             current config file, which is stored in the 
+             usrIpoaArpConfigFileName object. While the new
+             ConfigFile is being written, ATM ARP
+		   will set the value of this flag to `saving''. Any
+		   attempts to set the value while it is not `normal'
+		   (i.e. the file is currently being written to the
+		   ConfigFile) while result in a badValue error being
+		   returned. Setting the value to `normal' will result in no
+		   action."
+     ::= { usrAtmArp 3 }
+  usrAtmArpServerNameTable OBJECT-TYPE
+      SYNTAX      SEQUENCE OF UsrAtmArpServerNameEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+           "atm arp remote server name config table."
+      ::= { usrAtmArp 4 }
+  usrAtmArpServerNameEntry OBJECT-TYPE
+      SYNTAX      UsrAtmArpServerNameEntry
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+          "entry in the atm arp server name table"
+      INDEX       { usrAtmArpServerName }
+      ::= { usrAtmArpServerNameTable 1 }
+  UsrAtmArpServerNameEntry ::= SEQUENCE {
+      usrAtmArpServerName                  DisplayString,
+      usrAtmArpLISSubnetAddress	           IpAddress, 
+      usrAtmArpRemoteServerAtmAddr	   AtmAddr, 
+      usrAtmArpRemoteServerIfIndex	   Integer32, 
+      usrAtmArpRemoteServerIfName	   DisplayString, 
+      usrAtmArpServerRowStatus             Integer32
+  }
+  usrAtmArpServerName OBJECT-TYPE
+      SYNTAX DisplayString (SIZE(0..32))
+      MAX-ACCESS  not-accessible
+      STATUS      current
+      DESCRIPTION
+         "A string containing the name of the atm arp server."
+      ::= { usrAtmArpServerNameEntry 1 }
+  usrAtmArpLISSubnetAddress OBJECT-TYPE
+      SYNTAX  IpAddress
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+         "LIS subnet address."
+	 --CONFIGURABLE
+      ::= { usrAtmArpServerNameEntry 2}
+  usrAtmArpRemoteServerAtmAddr OBJECT-TYPE
+      SYNTAX  AtmAddr
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+         "Remote arp server atm address."
+	 --CONFIGURABLE
+      ::= { usrAtmArpServerNameEntry 3 }
+  usrAtmArpRemoteServerIfIndex OBJECT-TYPE
+      SYNTAX Integer32
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+         "Interface index"
+	 --CONFIGURABLE
+      ::= { usrAtmArpServerNameEntry 4 }
+  usrAtmArpServerRowStatus OBJECT-TYPE
+      SYNTAX Integer32
+      MAX-ACCESS  read-only
+      STATUS      current
+      DESCRIPTION
+         "server name index. dummy object, used to figure out
+          server name in the list."
+      ::= { usrAtmArpServerNameEntry 5 }
+  usrAtmArpRemoteServerIfName OBJECT-TYPE
+      SYNTAX DisplayString
+      MAX-ACCESS  read-create
+      STATUS      current
+      DESCRIPTION
+         "Interface index"
+      ::= { usrAtmArpServerNameEntry 6 }
+  -- ***************************************************************
+  -- Notifications
+  -- ***************************************************************
+  usrIpoaMtuExceeded NOTIFICATION-TYPE
+    OBJECTS {
+          ipNetToMediaIfIndex,
+          ipNetToMediaNetAddress,
+          usrIpoaVcVpi,
+          usrIpoaVcVci
+     }
+      STATUS  current
+      DESCRIPTION
+          "A frame was received that exceeds the negotiated MTU size."
+      --#TYPE    "IPOA Frame Error"
+      --#SUMMARY  "Received Frame on interface %d, path %d, circuit %d too big"
+      --#ARGUMENTS { 0 2 3 }
+      --#SEVERITY MAJOR
+      --#STATE    OPERATIONAL
+      --#PROBABLECAUSE "dataCorruptionOrConfigError"
+      ::= { usrIpoaNotifications 1 }
+  END -- End of USR-IPOA-ARP-MIB DEFINITIONS
+-- ************************************************************************
+--
+--	usr_atm_cc.mib - MIB defined for supporting CLI commands for
+--                       VC Cross Connect. In addition to rfc1695-atmnet.mib
+--
+-- Author:         
+--

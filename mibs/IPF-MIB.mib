@@ -1,0 +1,360 @@
+IPF-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	OBJECT-TYPE, enterprises
+		FROM SNMPv2-SMI
+	DisplayString
+		FROM SNMPv2-TC
+;
+
+----------------------------------------------------------------------
+--                      SBE PRIVATE BRANCH 
+----------------------------------------------------------------------
+sbe      OBJECT IDENTIFIER ::= { enterprises 1055 }
+----------------------------------------------------------------------
+--                      sbe.ipf  BRANCH 
+----------------------------------------------------------------------
+ipf OBJECT IDENTIFIER ::= { sbe 5 }
+
+
+ipfMIBVersion OBJECT-TYPE
+        SYNTAX  INTEGER 
+	     --%{ return ipf_snmp_MIBVersion(snmpi); %}
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Version number of the IPF MIB. This number will be
+		 bumped up whenever there is a change in this MIB.
+		 Backward compatibility is a must.
+		 The current value = 1"
+        ::= { ipf 1 }
+
+ipfVersion OBJECT-TYPE
+        SYNTAX  INTEGER 
+	     --%{ return ipf_snmp_Version(snmpi); %}
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Version number of the IPF. This number will be
+		 bumped up whenever there is a new release of IPF.
+		 Especially important if the FDL syntax changes or
+		 when keywords are added. (Deletion not recommended
+		 unless backward compatibility is not an issue.)
+		 The current value = 1"
+        ::= { ipf 2 }
+
+ipfState OBJECT-TYPE
+        SYNTAX  INTEGER { inactive(1), active(2) }
+	     --%{ return ipf_snmp_State(snmpi); %}
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Whether IP-Filtering is active or not. The factory
+		 default is INACTIVE."
+        ::= { ipf 3 }
+
+ipfCommand OBJECT-TYPE
+        SYNTAX  INTEGER { update(1), disable(2), enable(3),delete(4),clear(5) }
+	     --%{ return ipf_snmp_Command(snmpi); %}
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "UPDATE - the rule set is updated. Use the new rules.
+			  If there are any parse errors, the UPDATE
+			  operation would fail.
+			  If there are no parse errors, the parse
+			  buffer is emptied. ie. parserRules (see below)
+			  will be an empty table.
+		 DISABLE - disable all IP-Filter & NAT activities
+		 ENABLE - enable IP-Filter & NAT activities with the current
+			  set of rules.
+		 DELETE - discard the set of rules from the parse buffer.
+			  ie. parserRules (see below) will be an empty 
+			  table.
+		 CLEAR  - discard the loaded rules. ie. the ipfCurrRules and
+			  natCurrRules (see below) will be empty tables.
+
+		NOTE: A get or get next operation is meaningless on 
+		this variable and hence the value returned is always 42."
+        ::= { ipf 4 }
+
+ipfDefAction OBJECT-TYPE
+        SYNTAX  INTEGER { block(1),pass(2) }
+	     --%{ return ipf_snmp_DefAction(snmpi); %}
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The default action of IP-Filter when a packet does not
+		 match any rules. The factory default is to block."
+        ::= { ipf 5 }
+
+ipfParseTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF IpfParseEntryType
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Parse buffer. Rules are accumulated here before
+		 being applied using an ipfCommand - UPDATE"
+        ::= { ipf 6}
+
+ipfParseEntry OBJECT-TYPE
+        SYNTAX  IpfParseEntryType
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "An IP-Filter or NAT ParseEntry"
+	INDEX {ipfParseEntryNumber }
+        ::= { ipfParseTable 2}
+
+	IpfParseEntryType ::=
+		SEQUENCE {
+			ipfParseEntryStatus	INTEGER,
+			ipfParseEntryNumber	INTEGER,
+			ipfParseEntryText	DisplayString,
+			ipfParseEntryError	DisplayString
+			}
+
+ipfParseEntryStatus	OBJECT-TYPE
+        SYNTAX  INTEGER {
+                                                valid(1),
+                                                create-request(2),
+                                                under-creation(3),
+                                                invalid(4)
+                                                }
+	     --%{ return ipf_snmp_ParseEntryStatus(snmpi); %}
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "Indication of whether or not a valid entry.
+
+	         NOTE: A row cannot be modified. You can
+		 create or delete a row, but not modify.
+
+		 NOTE: Parsing is done when the status changes
+		 to valid. The ipfParseEntryError field (see below) 
+		 would contain any parse errors."
+        ::= { ipfParseEntry 1 }
+
+ipfParseEntryNumber OBJECT-TYPE
+        SYNTAX  INTEGER 
+	     --%{ return ipf_snmp_ParseEntryNumber(snmpi); %}
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Indicates the rule sequence number. The rules are 
+		 inserted in the ascending sequence number order.
+		
+		 NOTE: A set operation will fail if the attempt is
+		 to modify the rule number."
+        ::= { ipfParseEntry 2 }
+
+ipfParseEntryText OBJECT-TYPE
+        SYNTAX  DisplayString ( SIZE ( 0..256 )  )
+	     --%{ return ipf_snmp_ParseEntryText(snmpi); %}
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "Text string corresponding to a rule. The rule 
+		 specification language is described else where.
+
+		 NOTE: A set operation will fail if the row is
+		 not under creation."
+        ::= { ipfParseEntry 3 }
+
+ipfParseEntryError OBJECT-TYPE
+        SYNTAX  DisplayString ( SIZE ( 0..256 )  )
+	     --%{ return ipf_snmp_ParseEntryError(snmpi); %}
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The parse error. This field is available if the
+		 ipfParseEntryStatus field above has a value = valid"
+        ::= { ipfParseEntry 4 }
+
+
+ipfCurrRules OBJECT-TYPE
+        SYNTAX  SEQUENCE OF IpfCurrRuleType
+	     --%{ return ipf_snmp_CurrRules(snmpi); %}
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "The set of rules currently used by IP-Filter"
+        ::= { ipf 7}
+
+ipfCurrRule OBJECT-TYPE
+        SYNTAX  IpfCurrRuleType
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "An IP-Filter rule."
+	INDEX {ipfCurrRuleNumber }
+        ::= { ipfCurrRules 2}
+
+	IpfCurrRuleType ::=
+		SEQUENCE {
+	                ipfCurrRuleStatus	INTEGER,
+			ipfCurrRuleNumber	INTEGER,
+			ipfCurrRuleText		DisplayString,
+			ipfCurrRuleFlags	INTEGER,
+			ipfCurrRuleHits		INTEGER,
+			ipfCurrRuleBytes	INTEGER
+			}
+
+ipfCurrRuleStatus	OBJECT-TYPE
+        SYNTAX  INTEGER {
+                                                valid(1),
+                                                create-request(2),
+                                                under-creation(3),
+                                                invalid(4)
+                                                }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+		"Returns valid(1) always - dummy entry"
+        ::= { ipfCurrRule 1 }
+
+ipfCurrRuleNumber OBJECT-TYPE
+        SYNTAX  INTEGER 
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Indicates the rule sequence number"
+        ::= { ipfCurrRule 2 }
+
+ipfCurrRuleText OBJECT-TYPE
+        SYNTAX  DisplayString ( SIZE ( 0..256 )  )
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Text string corresponding to a rule. The rule 
+		 specification language is described else where."
+        ::= { ipfCurrRule 3 }
+
+ipfCurrRuleFlags OBJECT-TYPE
+        SYNTAX  INTEGER 
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A bit mapped flags field. Defined values are:
+			FR_BLOCK	0x0001
+			FR_PASS		0x0002
+			FR_OUTQUE	0x0004
+			FR_INQUE	0x0008
+			FR_LOG		0x0010	/* Log */
+			FR_LOGB		0x0021	/* Log-fail */
+			FR_LOGP		0x0022	/* Log-pass */
+			FR_LOGBODY	0x0040	/* Log the body */
+			FR_LOGFIRST	0x0080
+			FR_RETRST	0x0100
+			FR_RETICMP	0x0200
+			FR_NOMATCH	0x0400
+			FR_ACCOUNT	0x0800	/* count packet bytes */
+			FR_KEEPFRAG	0x1000
+			FR_KEEPSTATE	0x2000
+			FR_INACTIVE	0x4000
+			FR_QUICK	0x8000"
+        ::= { ipfCurrRule 4 }
+
+ipfCurrRuleHits OBJECT-TYPE
+        SYNTAX  INTEGER 
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Number of times this rule was hit - ie. matched.
+		 NOTE: Doesn't mean passed or blocked, it just means
+		       this rule evaluated as a match for the packet"
+        ::= { ipfCurrRule 5 }
+
+ipfCurrRuleBytes OBJECT-TYPE
+        SYNTAX  INTEGER 
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Number of bytes of data seen by this rule.
+		 Same as Hits - but in terms of bytes of data."
+        ::= { ipfCurrRule 6 }
+
+natCurrRules OBJECT-TYPE
+        SYNTAX  SEQUENCE OF NatCurrRuleType
+	     --%{ return nat_snmp_CurrRules(snmpi); %}
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "The set of rules currently used by NAT"
+        ::= { ipf 8}
+
+natCurrRule OBJECT-TYPE
+        SYNTAX  NatCurrRuleType
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A NAT rule."
+	INDEX {natCurrRuleNumber }
+        ::= { natCurrRules 2}
+
+	NatCurrRuleType ::=
+		SEQUENCE {
+			natCurrRuleStatus	INTEGER,
+			natCurrRuleNumber	INTEGER,
+			natCurrRuleText		DisplayString,
+			natCurrRuleHits		INTEGER,
+			natCurrRulePend		INTEGER
+			}
+
+natCurrRuleStatus	OBJECT-TYPE
+        SYNTAX  INTEGER {
+                                                valid(1),
+                                                create-request(2),
+                                                under-creation(3),
+                                                invalid(4)
+                                                }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+		"Returns valid(1) always - dummy entry"
+        ::= { natCurrRule 1 }
+
+natCurrRuleNumber OBJECT-TYPE
+        SYNTAX  INTEGER 
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Indicates the rule sequence number"
+        ::= { natCurrRule 2 }
+
+natCurrRuleText OBJECT-TYPE
+        SYNTAX  DisplayString ( SIZE ( 0..256 )  )
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Text string corresponding to a rule. The rule 
+		 specification language is described else where."
+        ::= { natCurrRule 3 }
+
+natCurrRuleHits OBJECT-TYPE
+        SYNTAX  INTEGER 
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Indicates the number of packets mapped by this rule"
+        ::= { natCurrRule 4 }
+
+natCurrRulePend OBJECT-TYPE
+        SYNTAX  INTEGER 
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Indicates the number of packets mapped by this rule"
+        ::= { natCurrRule 5 }
+
+END
+
+
+
+
+
+
+
+
+
+

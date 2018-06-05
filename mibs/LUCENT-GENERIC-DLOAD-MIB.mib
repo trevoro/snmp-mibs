@@ -1,0 +1,989 @@
+LUCENT-GENERIC-DLOAD-MIB DEFINITIONS ::= BEGIN
+
+------------------------------------------------------------------------------
+--
+-- MIB      : lucentGenDload                         Lucent Technologies Inc,
+--
+-- Version  : 1.0.0                                         25, March 1999
+--
+------------------------------------------------------------------------------
+--
+-- Overview :
+--
+-- The Lucent Generic Download MIB defines up & download objects to 
+-- control the transport of run & boot time images along with configuration
+-- files.
+--
+-- The Lucent Generic Download MIB contains the following groups :
+--
+--  luOpTable      - This group contains objects that allow MIB guided operation
+--                   of the device.
+--
+--  luDevice       - This group provides device information for all hardware
+--                   and software components within a device. This MIB 
+--                   identifies the Flash banks, NVRAM etc that can be 
+--                   downloaded into.
+--
+--  luDownload     - This group contains all of the variables required to 
+--                   configure / monitor a download to a device using TFTP
+--                   or RPL. 
+--
+--  luUpload       - This group contains the variables required to configure
+--                   and monitor an upload from a device using TFTP
+--
+--  luDloadNotification
+--                 - This group contains the trap objects required to report the
+--                   completion of an download or upload from a device using TFTP
+--
+------------------------------------------------------------------------------
+-- Referencing the parent branch.
+
+IMPORTS
+            NOTIFICATION-TYPE, MODULE-IDENTITY, OBJECT-TYPE, enterprises,
+	    IpAddress  					FROM SNMPv2-SMI
+	    MacAddress, DisplayString, RowStatus	FROM SNMPv2-TC;
+
+luDload MODULE-IDENTITY
+        LAST-UPDATED "9902230000Z" -- Tuesday Feb 23, 1999"
+        ORGANIZATION "Lucent Technologies Inc."
+        CONTACT-INFO
+	        "Erick Crowell -- ecrowell@lucent.com
+		 Ira Steckler -- isteckler@lucent.com"
+		
+	DESCRIPTION
+       		"Lucent Generic Download / Upload Private MIB"
+	::= { enterprises 677 }
+
+-- OperationsGroup
+--
+
+        luOpTable OBJECT-TYPE
+                SYNTAX SEQUENCE OF LuOpEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        ""
+                ::= { luDload 1 }
+
+        luOpEntry OBJECT-TYPE
+                SYNTAX LuOpEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        "Each entry in the LU Operations Table corresponds to a unique
+			logical managed device.  It is possible that a single HW device
+			can have resident severial Logical managed devices."
+                INDEX { luOpIndex }
+                ::= { luOpTable 1}
+
+        LuOpEntry ::= SEQUENCE  
+                {
+                luOpSerialNumber        OCTET STRING,
+                luOpMCodeVersion        OCTET STRING,
+                luOpBCodeVersion        OCTET STRING,
+                luOpMCodeFilename       DisplayString,
+                luOpAdminStatus         INTEGER,
+                luOpOperStatus          INTEGER,
+                luOpEraseFlashVersion   INTEGER,
+                luOpDefaultFlashVersion INTEGER,
+                luOpConfFileName        DisplayString,
+                luOpIndex          	INTEGER
+                }
+
+        luOpSerialNumber OBJECT-TYPE
+                SYNTAX OCTET STRING (SIZE (0..32))
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "The identifier of the device. This is a unique number 
+			and in most cases maps directly to the base MAC address 
+			of the device. Otherwise any combination of characters 
+			up to 32 bytes long."
+                ::= { luOpEntry 1 }
+
+        luOpMCodeVersion OBJECT-TYPE
+                SYNTAX OCTET STRING (SIZE (4))
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "Microcode version of the device. Stored in the
+                         format :-
+
+                         first Byte - not used
+                           2nd Byte - microcode major version number
+                           3rd Byte - microcode minor version number
+                           4th Byte - microcode debug version number."
+                ::= { luOpEntry 2 }
+
+        luOpBCodeVersion OBJECT-TYPE
+                SYNTAX OCTET STRING (SIZE (4))
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "Bootcode version of the device and the hardware
+                         version. Stored in the format :-
+
+                         first Byte - hardware version number
+                           2nd Byte - microcode major version number
+                           3rd Byte - microcode minor version number
+                           4th Byte - microcode debug version number."
+                ::= { luOpEntry 3 }
+
+        luOpMCodeFilename OBJECT-TYPE
+                SYNTAX DisplayString
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "Original filename for the microcode that has
+                         been downloaded to the device."
+                ::= { luOpEntry 4 }
+
+        luOpAdminStatus OBJECT-TYPE
+                SYNTAX INTEGER  {
+                                normal          (1),
+                                reboot          (2),
+                                identify        (3),
+                                test            (4),
+                                erase-config    (5),
+                                erase-flash     (6),
+                                tftp-ip         (7),
+                                tftp-ipx        (8),
+                                rpl-ipx         (9),
+                                rpl-llc         (10),
+                                halt            (11),
+                                up-tftp-ip      (12),
+                                up-tftp-ipx     (13),
+                                snapshot        (14),
+				snapshot-tftp   (15),
+				startup-tftp	(16),
+				file-tftp       (17),
+				tftp-snapshot   (18),
+				tftp-startup	(19),
+				tftp-start-snap	(20),
+				tftp-file       (21),
+				snapshot-startup (22),
+				file-snapshot   (23),
+				file-startup    (24)
+                                }
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The desired operating mode of the device. The mode
+                         can be changed by setting this object. If the device
+                         does not support the action it will return a bad 
+                         value error. The behaviour of these states is
+                         device specific and some of the states may latch 
+                         until the state is returned to normal.
+
+                         normal       - standard operating mode / can be used
+                                        to cancel a download or return the
+                                        device from any latching state.
+                         reboot       - force the device to reboot. The
+                                        device will reboot into the version
+                                        of flash identified by 
+                                        luOpDefaultFlashVersion.
+                         identify     - force the device to identify itself
+                                        by flashing lights. This state may 
+                                        latch.
+                         test         - force the device to do a self test. 
+                                        This state may latch.
+                         erase-config - erase all configuration info 
+                         erase-flash  - erase the version of microcode stored
+                                        in the flash bank identifed by
+                                        luOpEraseFlashVersion.
+                         tftp-ip      - force the device to start a TFTP
+                                        download over IP
+                         tftp-ipx     - force the device to start a TFTP
+                                        download over IPX
+                         rpl-ipx      - force the device to start a RPL 
+                                        download over IPX
+                         rpl-llc      - force the device to start a RPL
+                                        download over LLC
+                         halt         - force the defice to shutdown ready
+                                        for power off
+                         up-tftp-ip   - force the device to start a TFTP
+                                        upload over IP
+                         up-tftp-ipx  - force the device to start a TFTP
+                                        upload over IPX
+                         snapshot     - force the device to take a snapshot
+                                        of its current configuration and save it to the
+					name specified by the luOpConfFileName object.
+			 snapshot-tftp - force the device to take a snapshot
+			 		of its running configuration and tftp it
+					to a server.
+			 startup-tftp     - force the device to upload it's startup
+			 		    configuration to a tftp server.
+			 file-tftp        - force the device to upload a configuration file
+			 		    (specified in the luOpConfFileName object )
+			 		    to a tftp server.
+			 tftp-startup     - force the device to download it's startup
+			 		    configuration from a tftp server. 
+			 tftp-snapshot    - force the device to download it's running
+			 		    configuration from a tftp server. 
+			 tftp-start-snap  - force the device to download it's running
+			 		    configuration & startup configuration from 
+					    a tftp server.
+			 tftp-file        - force the device to download a configuration file
+			 		    from a tftp server.
+			 snapshot-startup - force the device to take a snapshot of it's running
+			 		    configuration and save it as the startup configuration.
+			 file-snapshot    - force the device to copy the file specified in the
+			 		    luOpConfFileName to it's running configuration
+			 file-startup     - force the device to copy the file specified in the
+			 		    luOpConfFileName to it's startup configuration"
+                ::= { luOpEntry 5 }
+
+        luOpOperStatus OBJECT-TYPE
+                SYNTAX INTEGER  {
+                                normal          (1),
+                                reboot          (2),
+                                identify        (3),
+                                test            (4),
+                                downloading     (5),
+                                uploading       (6),
+				reading-config  (7)
+                                }
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "The current operating mode of the device. 
+                         normal       - standard operating mode
+                         reboot       - the device is rebooting
+                         identify     - the device is identifying itself
+                         test         - the device is performing a self-test
+                         downloading  - the device is performing a download
+                         uploading    - the device is performing an upload
+			 reading-config - the device is reading a configuration file
+
+                         NOTE:This variable is only available on devices
+                         that support version 1.2 or greater of the Box MIB"
+                ::= { luOpEntry 6 }
+
+        luOpEraseFlashVersion OBJECT-TYPE
+                SYNTAX INTEGER
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "A valid version index for the bank of flash or a 
+                         software component to erase when AdminStatus is set 
+                         to erase-flash.
+
+                         NOTE:This variable is only available on devices
+                         that support version 1.2 or greater of the Box MIB"
+                ::= { luOpEntry 7 }
+
+        luOpDefaultFlashVersion OBJECT-TYPE
+                SYNTAX INTEGER
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The version index of the default flash bank that
+                         a device will reboot into when a standard reboot
+                         is performed.
+
+                         NOTE:This variable is only available on devices
+                         that support version 1.2 or greater of the Box MIB"
+                ::= { luOpEntry 8 }
+
+        luOpConfFileName OBJECT-TYPE 
+                SYNTAX DisplayString
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "This specifies the filename under which to store
+                         the current configuration. "
+                ::= { luOpEntry 9 }
+
+        luOpIndex OBJECT-TYPE
+                SYNTAX INTEGER 
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        ""
+                ::= { luOpEntry 10 }
+
+-- The Device Group
+--
+
+--  The device Group contains version and type information for each downloadable 
+--   device in the system.  The table is index by luOpIndex 
+--   (essentially the slot or stackable) number followed by luDeviceIndex 
+--   (one for each download location with the slot or stackable).
+
+        luDeviceTable OBJECT-TYPE
+                SYNTAX SEQUENCE OF LuDeviceEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        "A table containing information for all
+                         downloadable locations in the device components 
+			 in a device."
+                ::= { luDload 2 }
+
+        luDeviceEntry OBJECT-TYPE
+                SYNTAX LuDeviceEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        "An entry containing information for a
+                         specific downloadable location in a device."
+                INDEX { luOpIndex, luDeviceIndex }
+                ::= { luDeviceTable 1 }
+
+        LuDeviceEntry ::= SEQUENCE
+                {
+			luDeviceIndex		INTEGER,
+			luDeviceDescription	DisplayString,
+			luDeviceLocation	DisplayString,
+			luDeviceNumber		OCTET STRING,
+			luDeviceType		INTEGER,
+			luDeviceFileName	DisplayString 
+                }
+
+        luDeviceIndex OBJECT-TYPE
+                SYNTAX INTEGER 
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        "Index into the table. Note: To support backwards
+			compatibility, the following restrictions apply to
+			the assignment of luDeviceIndex values.
+
+			luDeviceIndex value 1 -- flash device Bank A,
+			luDeviceIndex value 2 -- flash device Bank B"
+                ::= { luDeviceEntry 1 }
+
+        luDeviceDescription OBJECT-TYPE
+                SYNTAX DisplayString (SIZE (0..64))
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "A string containing a textual description for
+                         the component identified by this entry."
+                ::= { luDeviceEntry 2 }
+
+        luDeviceLocation OBJECT-TYPE
+                SYNTAX DisplayString (SIZE (0..32))
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "A string containing a textual description of the
+                         location of the component identified by this entry.
+                         eg Flash Bank A        Flash ROM
+                            Boot ROM            Boot Bank A
+                            Base Hardware       Hardware Module 
+			    NvRam               non-Volitile Ram storage"
+                ::= { luDeviceEntry 3 }
+
+        luDeviceNumber OBJECT-TYPE
+                SYNTAX OCTET STRING (SIZE (3))
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "Version number for the component. Stored in the
+                         format :-
+                           1st Byte - major version number
+                           2nd Byte - minor version number
+                           3rd Byte - debug version number."
+                ::= { luDeviceEntry 4 }
+
+        luDeviceType OBJECT-TYPE
+                SYNTAX INTEGER  {
+		flash(1),
+		boot-fixed(2),
+		boot-updateable(3),
+		hardware-fixed(4),
+		hardware-upgradeable(5),
+		other(6),
+		sw-running(7),
+		sw-component(8),
+		default-image(9),
+		non-default-image(10),
+		default-boot-loader(11),
+		non-default-boot-loader(12),
+		unknown(20),
+		nvram (21)
+                        }
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "The type of object that this table entry contains
+                         Location information for.
+
+                         flash : code image resident in flash OR the flash
+                                 bank itself
+                         boot-fixed : the version of the fixed boot ROM.
+                         boot-updateable : the current version of boot ROM 
+                                code where the code can be updated.
+                         hardware-fixed : Hardware that cannot be upgraded.
+                         hardware-upgradeable : a plug in card that can be 
+                                changed.
+                         sw_running : code image that is currently running in 
+                                RAM.
+                         sw_component : a subcomponent of the entire software.
+                                Can be resident in flash or ram. These items
+                                should be placed in the version table 
+                                following the version of which they are a
+                                subcomponent.
+			 default-image: The default image.
+			 non-default-image: Other images.
+			 default-boot-loader: The default boot loader.
+			 non-default-boot-loader: Other boot loaders.
+			 unknown - unknown.
+			 nvram - non-volitile Ram"
+                ::= { luDeviceEntry 5 }
+
+	luDeviceFileName OBJECT-TYPE
+                SYNTAX DisplayString (SIZE (0..64))
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "A string containing the file name of the component 
+			identified by this entry. Allows to rename a file."
+                ::= { luDeviceEntry 6 }
+
+        luDeviceCount OBJECT-TYPE
+                SYNTAX INTEGER
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "The number of entries in the Location table"
+                ::= { luDload 3 }
+
+-- The Download Group
+--
+
+        luDownloadTable OBJECT-TYPE
+                SYNTAX SEQUENCE OF LuDownloadEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        ""
+                ::= { luDload 4 }
+
+        luDownloadEntry OBJECT-TYPE
+                SYNTAX LuDownloadEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        ""
+                INDEX { luOpIndex }
+                ::= { luDownloadTable 1}
+
+        LuDownloadEntry ::= SEQUENCE  
+                {
+                luDownloadIPAddress         IpAddress,
+                luDownloadIPGateway         IpAddress,
+                luDownloadIPXAddress        OCTET STRING,
+                luDownloadNodeAddress       MacAddress,
+                luDownloadFileName          DisplayString,
+                luDownloadDestination       INTEGER,
+                luDownloadState             INTEGER,
+                luDownloadFailureCode       INTEGER,
+                luDownloadStatusText        DisplayString,
+                luDownloadSize              INTEGER,
+		luDownloadErrorLogName 	    DisplayString,
+		luDownloadErrorLogLocation  INTEGER
+                }
+
+        luDownloadIPAddress OBJECT-TYPE
+                SYNTAX IpAddress
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "The IP address of the server to use for the
+                         download when using TFTP-IP"
+                ::= { luDownloadEntry 1 }
+
+        luDownloadIPGateway OBJECT-TYPE
+                SYNTAX IpAddress
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The IP gateway to be used to access the server.
+                         If this variable is zero then use the default 
+                         gateway in luOpIPGateway."
+                ::= { luDownloadEntry 2 }
+
+        luDownloadIPXAddress OBJECT-TYPE
+                SYNTAX OCTET STRING (SIZE (12))
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The IPX address of the server to use for the
+                         download when using TFTP-IPX or RPL-IPX.
+                         The format of the address is <ipx network><node
+                         address><socket> = 12 bytes."
+                ::= { luDownloadEntry 3 }
+
+        luDownloadNodeAddress OBJECT-TYPE
+                SYNTAX MacAddress
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The Node address of the server to use for the
+                         download when using RPL-LLC "
+                ::= { luDownloadEntry 4 }
+
+        luDownloadFileName OBJECT-TYPE
+                SYNTAX DisplayString
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The filename of the microcode to download. The
+                         maximum length of this string is device specific. 
+                         If a string that is too long is written to this
+                         variable BAD VALUE will be returned."
+                ::= { luDownloadEntry 5 }
+
+        luDownloadDestination OBJECT-TYPE
+                SYNTAX INTEGER 
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The destination for the download. This will 
+                         contain the luDeviceIndex for the download
+                         destination."
+                ::= { luDownloadEntry 6 }
+
+        luDownloadState OBJECT-TYPE
+                SYNTAX INTEGER  {
+                                idle                    (1),
+                                tftp-waiting-ip         (2),
+                                tftp-running-ip         (3),
+                                tftp-waiting-ipx        (4),
+                                tftp-running-ipx        (5),
+                                waiting-xmodem          (6),
+                                running-xmodem          (7),
+                                rpl-waiting-ipx         (8),
+                                rpl-running-ipx         (9),
+                                rpl-waiting-llc         (10),
+                                rpl-running-llc         (11),
+				reading-configuration   (12)
+                                }
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "The current state of the download"
+                ::= { luDownloadEntry 7 }
+
+        luDownloadFailureCode OBJECT-TYPE
+                SYNTAX INTEGER  {
+                                no-error            	(1),
+                                config-error        	(2),
+                                busy                	(3),
+                                timeout             	(4),
+                                cancelled           	(5),
+                                incompatible-file   	(6),
+                                file-too-big        	(7),
+                                protocol-error      	(8),
+                                flash-write-error   	(9),
+				nvram-write-error	(10),
+                                conf-file-gen-err   	(11),
+				conf-file-parse-error 	(12),
+				conf-file-exec-error  	(13),
+				undefined-error     	(100),
+                                file-not-found      	(101),
+                                access-violation    	(102),
+                                out-of-memory       	(103),
+                                illegal-operation   	(104),
+                                unknown-transfer-id 	(105),
+                                file-already-exists 	(106),
+                                no-such-user        	(107)
+                                }
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "While a download is in progress this will 
+                        always be 'no-error'.  After a download is complete 
+                        this indicates the success or failure of the download.
+                        If it is anything other than 'no-error' then 
+                        'luDownloadStatusText' will contain a textual 
+                        description of the error.  Error codes from 100 
+                        upwards are errors returned from a TFTP server.  
+                        Errors below this are locally generated.
+
+			Configuration files may return errors after download
+			as a result of reading a config file into the system.
+
+			conf-file-gen-err     - General (unknown error)
+			conf-file-parse-error - Reading of config file resulted in 
+						parsing errors.
+			conf-file-exec-error  - Reading of config file resulted in
+						execution errors."
+                ::= { luDownloadEntry 8 }
+
+        luDownloadStatusText OBJECT-TYPE
+                SYNTAX DisplayString (SIZE(0..64))
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "A display string describing the status of the
+                         download in progress, or the reason for failure of
+                         the last download.
+                         If FailureCode = no-error then StatusText may be
+                         empty."
+                ::= { luDownloadEntry 9 }
+
+        luDownloadSize OBJECT-TYPE
+                SYNTAX INTEGER
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "While a download is in progress this indicates the 
+                        number of bytes transferred so far.  After the 
+                        download is completed this remains at the final 
+                        size downloaded."
+                ::= { luDownloadEntry 10 }
+
+        luDownloadErrorLogName OBJECT-TYPE
+                SYNTAX DisplayString
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The filename under which an error log has been created.  In 
+			the case of file downloads that produce errors this file should
+			contain a log of errors that occured"
+                ::= { luDownloadEntry 11 }
+
+        luDownloadErrorLogLocation OBJECT-TYPE
+                SYNTAX INTEGER 
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The location of the error log. This will 
+                         contain the luDeviceIndex for the error log"
+                ::= { luDownloadEntry 12 }	
+    	    
+-- The Upload Group
+--
+
+        luUploadTable OBJECT-TYPE
+                SYNTAX SEQUENCE OF LuUploadEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        ""
+                ::= { luDload 5 }
+
+        luUploadEntry OBJECT-TYPE
+                SYNTAX LuUploadEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        ""
+                INDEX { luOpIndex }
+                ::= { luUploadTable 1}
+
+        LuUploadEntry ::= SEQUENCE  
+                {
+                luUploadIPAddress           IpAddress,
+                luUploadIPGateway           IpAddress,
+                luUploadIPXAddress          OCTET STRING,
+                luUploadFileName            DisplayString,
+                luUploadSource              INTEGER,
+                luUploadState               INTEGER,
+                luUploadFailureCode         INTEGER,
+                luUploadStatusText          DisplayString,
+                luUploadSize                INTEGER,
+		luUploadErrorLogName	    DisplayString,
+		luUploadErrorLogLocation    INTEGER 
+                }
+
+        luUploadIPAddress OBJECT-TYPE
+                SYNTAX IpAddress
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "The IP address of the server to use for the
+                         upload when using TFTP-IP"
+                ::= { luUploadEntry 1 }
+
+        luUploadIPGateway OBJECT-TYPE
+                SYNTAX IpAddress
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The IP gateway to be used to access the server.
+                         If this variable is zero then use the default 
+                         gateway in luOpIPGateway."
+                ::= { luUploadEntry 2 }
+
+        luUploadIPXAddress OBJECT-TYPE
+                SYNTAX OCTET STRING (SIZE (12))
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The IPX address of the server to use for the
+                         upload when using TFTP-IPX.
+                         The format of the address is <ipx network><node
+                         address><socket> = 12 bytes."
+                ::= { luUploadEntry 3 }
+
+        luUploadFileName OBJECT-TYPE
+                SYNTAX DisplayString
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The filename under which to store the uploaded 
+                         microcode. The maximum length of this string is 
+                         device specific. 
+                         If a string that is too long is written to this
+                         variable BAD VALUE will be returned."
+                ::= { luUploadEntry 4 }
+
+        luUploadSource OBJECT-TYPE
+                SYNTAX INTEGER 
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The source for the upload. This will 
+                         contain the luDeviceIndex for the upload
+                         source."
+                ::= { luUploadEntry 5 }
+
+        luUploadState OBJECT-TYPE
+                SYNTAX INTEGER  {
+                                idle                    (1),
+                                tftp-waiting-ip         (2),
+                                tftp-running-ip         (3),
+                                tftp-waiting-ipx        (4),
+                                tftp-running-ipx        (5)
+                                }
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "The current state of the Upload"
+                ::= { luUploadEntry 6 }
+
+        luUploadFailureCode OBJECT-TYPE
+                SYNTAX INTEGER  {
+                                no-error            (1),
+                                config-error        (2),
+                                busy                (3),
+                                timeout             (4),
+                                cancelled           (5),
+                                incompatible-file   (6),
+                                file-too-big        (7),
+                                protocol-error      (8),
+                                flash-write-error   (9),
+				nvram-read-error	(10),
+                                conf-file-gen-err   	(11),
+				conf-file-exec-error  	(12),
+                                undefined-error     (100),
+                                file-not-found      (101),
+                                access-violation    (102),
+                                out-of-memory       (103),
+                                illegal-operation   (104),
+                                unknown-transfer-id (105),
+                                file-already-exists (106),
+                                no-such-user        (107)
+                                }
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "While an upload is in progress this will 
+                        always be 'no-error'.  After an upload is complete 
+                        this indicates the success or failure of the upload.
+                        If it is anything other than 'no-error' then 
+                        'luUploadStatusText' will contain a textual 
+                        description of the error.  Error codes from 100 
+                        upwards are errors returned from a TFTP server.  
+                        Errors below this are locally generated.
+	
+		    	Configuration files may return errors after / before 
+			upload, as a result of reading a config file into the system.
+
+			conf-file-gen-err     - General (unknown error)
+			conf-file-exec-error  - Generation of config file resulted in
+						execution errors." 
+                ::= { luUploadEntry 7 }
+
+        luUploadStatusText OBJECT-TYPE
+                SYNTAX DisplayString (SIZE(0..64))
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "A display string describing the status of the
+                         upload in progress, or the reason for failure of
+                         the last upload.
+                         If FailureCode = no-error then StatusText may be
+                         empty."
+                ::= { luUploadEntry 8 }
+
+        luUploadSize OBJECT-TYPE
+                SYNTAX INTEGER
+                MAX-ACCESS read-only
+                STATUS current
+                DESCRIPTION
+                        "While an upload is in progress this indicates the 
+                        number of bytes transferred so far.  After the 
+                        upload is completed this remains at the final 
+                        size uploaded."
+                ::= { luUploadEntry 9 }
+
+        luUploadErrorLogName OBJECT-TYPE
+                SYNTAX DisplayString
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The filename under which an error log has been created.  In 
+			the case of file uploads that produce errors this file should
+			contain a log of errors that occured"
+                ::= { luUploadEntry 10 }
+
+        luUploadErrorLogLocation OBJECT-TYPE
+                SYNTAX INTEGER 
+                MAX-ACCESS read-write
+                STATUS current
+                DESCRIPTION
+                        "The location of the error log. This will 
+                         contain the luDeviceIndex for the error log"
+                ::= { luUploadEntry 11 }	    	    
+
+-- The Download / Upload Trap Group
+--
+	luDloadNotifications		OBJECT IDENTIFIER ::= { luDload 6}
+
+        luNotificationNextIndex OBJECT-TYPE
+                SYNTAX INTEGER
+                MAX-ACCESS read-create
+                STATUS current
+                DESCRIPTION
+                        "The Next available Index of the
+			luNotificationDestTable"
+                ::= { luDloadNotifications 1 }
+
+        luNotificationDestTable OBJECT-TYPE
+                SYNTAX SEQUENCE OF LuNotificationDestEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        ""
+                ::= { luDloadNotifications 2 }
+
+        luNotificationDestEntry OBJECT-TYPE
+                SYNTAX LuNotificationDestEntry
+                MAX-ACCESS not-accessible
+                STATUS current
+                DESCRIPTION
+                        ""
+                INDEX { luNotificationIndex }
+                ::= { luNotificationDestTable 1}
+
+        LuNotificationDestEntry ::= SEQUENCE  
+                {
+                luNotificationIndex 		
+			INTEGER,
+		luNotificationIPAddress         
+			IpAddress,
+                luNotificationIPGateway         
+			IpAddress,
+                luNotificationIPXAddress        
+			OCTET STRING,
+                luNotificationNodeAddress       
+			MacAddress,
+		luNotificationTrapTypes
+			INTEGER,
+		luNotificationRowStatus		
+			RowStatus
+		}
+
+        luNotificationIndex OBJECT-TYPE
+                SYNTAX INTEGER
+                MAX-ACCESS read-create
+                STATUS current
+                DESCRIPTION
+                        "The Index of this Destination entry."
+                ::= { luNotificationDestEntry 1 }
+
+        luNotificationIPAddress OBJECT-TYPE
+                SYNTAX IpAddress
+                MAX-ACCESS read-create
+                STATUS current
+                DESCRIPTION
+                        "The IP address of the trap receiver. If IPX Addresses
+			are being used this entry must be zero."
+                ::= { luNotificationDestEntry 2 }
+
+        luNotificationIPGateway OBJECT-TYPE
+                SYNTAX IpAddress
+                MAX-ACCESS read-create
+                STATUS current
+                DESCRIPTION
+                        "The IP gateway of the trap receiver. If IPX Addresses
+			are being used this entry must be zero."
+                ::= { luNotificationDestEntry 3 }
+
+        luNotificationIPXAddress OBJECT-TYPE
+                SYNTAX OCTET STRING (SIZE (12))
+                MAX-ACCESS read-create
+                STATUS current
+                DESCRIPTION
+                        "The IPX address of the trap receiver. If IP Addresses
+			are being used this entry must be zero.
+                         The format of the address is <ipx network><node
+                         address><socket> = 12 bytes."
+                ::= { luNotificationDestEntry 4 }
+
+        luNotificationNodeAddress OBJECT-TYPE
+                SYNTAX MacAddress
+                MAX-ACCESS read-create
+                STATUS current
+                DESCRIPTION
+                        "The Node address of the trap receiver. If IP Addresses
+			are being used this entry must be zero."
+                ::= { luNotificationDestEntry 5 }
+		
+        luNotificationTrapTypes OBJECT-TYPE
+                SYNTAX INTEGER {
+			noDloadTraps (0),
+			allDloadTraps (1)			
+		}
+                MAX-ACCESS read-create
+                STATUS current
+                DESCRIPTION
+                        "The Trap types this entry should receive."
+                ::= { luNotificationDestEntry 6 }
+
+	luNotificationRowStatus OBJECT-TYPE
+              SYNTAX  RowStatus	
+              MAX-ACCESS  read-create
+              STATUS  current
+              DESCRIPTION
+                      "The Status of this entry in the table.
+  
+		 Note the available states: 
+		 	active(1), -- Obviously Active.
+			notInService(2) -- Configured but disabled.
+			notReady(3), -- NOT fully configured.
+			createAndGo(4), 
+			createAndWait(5)  
+			or destroy(6) 
+			"
+	      ::= { luNotificationDestEntry 7 }
+
+    luDloadTrapCompleted NOTIFICATION-TYPE
+        OBJECTS      { 
+		luOpIndex,
+		luDownloadDestination,
+		luDownloadFileName,
+		luDownloadFailureCode
+                     }
+        STATUS       current
+        DESCRIPTION
+            "Indicates that a download has completed."
+        ::= { luDloadNotifications 3 }
+
+    luUpLoadTrapCompleted NOTIFICATION-TYPE
+        OBJECTS      { 
+		luOpIndex,
+		luUploadSource,
+		luUploadFileName,
+		luUploadFailureCode
+                     }
+        STATUS       current
+        DESCRIPTION
+            "Indicates that a upload has completed."
+        ::= { luDloadNotifications 4 }	
+END

@@ -1,0 +1,2639 @@
+--------------------------------------------------------------------------------
+--               			  Polycom ACOS MIB
+--                              Revision: 1.3
+--                      Last Modified: March 28, 2000
+--
+--------------------------------------------------------------------------------
+--
+------------------------------------------------------------------------------
+--                              Revision History
+------------------------------------------------------------------------------
+--		28-Mar-00		Bob Jacobson	Revision 1.3
+--		* Add WAN statistics
+--
+--		17-Dec-99       Bob Jacobson    Revision 1.2
+--      * Add DNS fields
+--
+--		29-Nov-99		Bob Jacobson	Revision 1.1
+--		* Add DHCP and NAT fields.
+--
+--      08-Jul-99       Bob Jacobson    Revision 1.0
+--      * Corrected some spelling errors
+--      * Changed some verbiage
+--      * Remove some unneeded fields
+--      * Remove entire self test group
+--      * Use SN_SMI_TRUE and FALSE for enable settings
+--
+--      02-Jul-99       Bob Jacobson    Revision 0.9
+--      * Changed USI mode settings.
+--
+--      01-Jul-99       Bob Jacobson    Revision 0.8
+--      * Changed the indexing of the IP address and RIP parameter tables.
+--      * Changed the indexing on the bridging table.
+--
+--      30-Jun-99       Bob Jacobson    Revision 0.7
+--      * Changed name from Diamond.mib to AcosMib.mib
+--
+--      18-Jun-99       Bob Jacobson    Revision 0.6
+--      * Moved IP Peer Address from WAN table to IP connection table
+--
+--      07-Jun-99       Bob Jacobson    Revision 0.5
+--      * Removed static config table, as this is in RFC1213 MIB2.
+--		* Removed DTE status table, as this is in RFC 1317.
+--      * Removed some USI parameters, as these are in RFC1317.
+--
+--      01-Jun-99       Bob Jacobson    Revision 0.4
+--      * Added SDSL and RIP version 2 configuration.
+--		* Deleted global routing table, as this was in RFC1213 MIB2.
+--
+--      05-May-99       Steve Clark     Revision 0.3             
+--
+--      * Corrected errors that were preventing a clean compile
+--        on several different compilers.
+--      * Cleaned up some typos and misspells.
+--      * Added the value pppOverAtm to object aceDmdWANDataLinkProtocol.
+--
+--
+--      13-Apr-99       Steve Clark     Revision 0.2             
+--
+--      * Changed the values in object AceDmdDeviceTypeEnum to more closely
+--        resemble the internal hardware IDs of the cards. Each value 
+--        in AceDmdDeviceTypeEnum is the internal hardware ID of the
+--        applicable card plus one.
+--      * Added the objects aceDmdTftpServerGateway, 
+--        aceDmdTftpServerSubnetMask, and aceDmdTftpAcosName 
+--        to the TFTP client group.
+--      * Changed the definition of object aceDmdTftpApplicationName
+--        to allow a larger string. 
+--      * Added the objects aceDmdTftpServerGateway and 
+--        aceDmdTftpServerSubnetMask as variables in the TFTP traps.
+--      * Added object aceDmdCpuUtilization the status group.
+--      * Added the table aceDmdMemoryCapacityTable to the system group
+--        for reporting the total memory in the box.
+--
+--
+--      05-Apr-99       Steve Clark     Revision 0.1   
+--      
+--      * Initial creation.
+--
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+-- Imports and Object Groupings
+------------------------------------------------------------------------------
+
+ACOS-MIB DEFINITIONS ::= BEGIN
+
+        IMPORTS
+                DisplayString                     FROM RFC1213-MIB
+                TRAP-TYPE                         FROM RFC-1215
+                OBJECT-TYPE                       FROM RFC-1212 
+                IpAddress, enterprises, TimeTicks FROM RFC1155-SMI;
+
+
+atlasComEngines         OBJECT IDENTIFIER ::= { enterprises 2221 }
+
+aceProductFamily        OBJECT IDENTIFIER ::= { atlasComEngines 1 }
+
+aceAcos                 OBJECT IDENTIFIER ::= { aceProductFamily 1 }
+
+acosSystem           OBJECT IDENTIFIER ::= { aceAcos 1  }
+acosDevices          OBJECT IDENTIFIER ::= { aceAcos 2  }
+acosStatus           OBJECT IDENTIFIER ::= { aceAcos 3  }
+acosDS1              OBJECT IDENTIFIER ::= { aceAcos 4  }
+acosUSI              OBJECT IDENTIFIER ::= { aceAcos 5  }
+acosSDSL             OBJECT IDENTIFIER ::= { aceAcos 6  }
+acosEthernet         OBJECT IDENTIFIER ::= { aceAcos 7  }
+acosWAN              OBJECT IDENTIFIER ::= { aceAcos 8  }
+acosRouting          OBJECT IDENTIFIER ::= { aceAcos 9  }
+acosBridge           OBJECT IDENTIFIER ::= { aceAcos 10 }
+acosTftpClient       OBJECT IDENTIFIER ::= { aceAcos 11 }
+acosManagement       OBJECT IDENTIFIER ::= { aceAcos 12 }
+acosTrapObjects      OBJECT IDENTIFIER ::= { aceAcos 13 }
+acosDhcp             OBJECT IDENTIFIER ::= { aceAcos 14 }
+acosNat              OBJECT IDENTIFIER ::= { aceAcos 15 }
+
+------------------------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------------------------
+
+-- Device types, values are derived by taking the internal hardware ID 
+-- and adding one. In the reverse, the internal hardware ID is the value
+-- shown below minus 1.
+
+AcosDeviceTypeEnum ::= INTEGER {
+                                 ethernet(1),         -- 10BaseT ethernet
+                                 singleUSI(2),        -- Single USI
+                                 atm25(4),            -- ATM 25Mbps
+                                 singleDS1-Bt8370(7), -- Single T1/E1
+                                 dualDS1-Bt8370(8),   -- Dual T1/E1
+                                 sdsl-CO(9),          -- SDSL CO
+                                 sdsl-Remote(10),     -- SDSL Remote
+                                 mpeg2(11),           -- MPEG2 Audio/Video
+                                 quadPotsD1(12),      -- 4-port POTS DiamondI
+                                 quadPotsD2(13),      -- 4-port POTS DiamondII
+                                 octalPOTS(14),       -- 8-port POTS DiamondII
+                                 copperGold-CO(17),   -- CopperGold CO
+                                 copperGold-RT(18),   -- CopperGold CO
+                                 sdsl-Rev1(24),       -- SDSL Rev 1
+                                 noDevice(65534),     -- Slot is empty
+                                 unknown(65535)       -- Unknown device 
+                                 }
+
+        
+------------------------------------------------------------------------------
+-- System Group
+------------------------------------------------------------------------------
+
+acosSystemReboot  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        noAction(1),
+                        rebootSystem(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Reboots The Box"
+        DESCRIPTION
+        "The value 'noAction' is always reported in a GET.
+        The value 'rebootSystem' in a SET will cause the box to reboot."
+        ::= { acosSystem 1 }
+
+acosHardwareRevision  OBJECT-TYPE
+        SYNTAX DisplayString (SIZE (0..32))
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Motherboard Hardware Revision"
+        DESCRIPTION
+        "The hardware revision of the motherboard."
+        ::= { acosSystem 2 }
+
+acosSoftwareRevision  OBJECT-TYPE
+        SYNTAX DisplayString (SIZE (0..32))
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Motherboard Software Revision"
+        DESCRIPTION
+        "The software revision of the motherboard."
+        ::= { acosSystem 3 }
+
+acosSerialNumber  OBJECT-TYPE
+        SYNTAX DisplayString (SIZE (0..32))
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Motherboard Serial Number"
+        DESCRIPTION
+        "The serial number of the motherboard."
+        ::= { acosSystem 4 }
+
+acosPartNumber  OBJECT-TYPE
+        SYNTAX DisplayString (SIZE (0..32))
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Motherboard Part Number"
+        DESCRIPTION
+        "The part number of the motherboard."
+        ::= { acosSystem 5 }
+
+acosTotalSlots  OBJECT-TYPE
+        SYNTAX INTEGER 
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Total Slots In The Box"
+        DESCRIPTION
+        "The total number of slots present in the box. This value represents
+        the maximum index into tables that are indexed by slot number."
+        ::= { acosSystem 6 }
+
+-- Memory capacities 
+
+acosMemoryCapacityTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosMemoryCapacityEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Memory Capacity Table"
+        DESCRIPTION
+        "This is a table of objects that report the total memory capacity 
+        of each type of memory present in the box."
+        ::= { acosSystem 7 }
+
+acosMemoryCapacityEntry  OBJECT-TYPE
+        SYNTAX AcosMemoryCapacityEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Memory Capacity Table Entry"
+        DESCRIPTION
+        "An entry in the memory capacity table."
+        INDEX { acosMemoryTypeIndex }
+        ::= { acosMemoryCapacityTable 1 }
+
+AcosMemoryCapacityEntry ::= SEQUENCE  {
+        acosMemoryTypeIndex           
+                INTEGER,
+        acosMemoryCapacity        
+                INTEGER
+                                        }
+acosMemoryTypeIndex  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        sdram(1),
+                        bootFlashRom(2),
+                        nandFlashRom(3)
+                        }
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Memory Type Index"
+        DESCRIPTION
+        "The type of memory."
+        ::= { acosMemoryCapacityEntry 1 }
+
+acosMemoryCapacity  OBJECT-TYPE
+        SYNTAX INTEGER  
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Memory Capacity"
+        DESCRIPTION
+        "The amount of memory expressed in megabytes. For example, 
+        8 megabytes would be reported as 8."
+        ::= { acosMemoryCapacityEntry 2 }
+
+
+acosDSPCount  OBJECT-TYPE
+        SYNTAX INTEGER 
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP System
+    --% ALIAS "Total DSP's In The Box"
+        DESCRIPTION
+        "The total number of DSP devices present in the box."
+        ::= { acosSystem 8 }
+
+------------------------------------------------------------------------------
+-- Devices Group
+------------------------------------------------------------------------------
+
+-- Devices in table form
+
+acosDeviceTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosDeviceEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Devices
+    --% ALIAS "Device Table"
+        DESCRIPTION
+        "This is a table of devices that are present in the box. The table
+        contains an entry for every slot in the box including empty slots.
+        An empty slot will be reported as 'nimNoDevice' in object
+        'acosDeviceType'." 
+        ::= { acosDevices 1 }
+
+acosDeviceEntry  OBJECT-TYPE
+        SYNTAX AcosDeviceEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Devices
+    --% ALIAS "Device Table Entry"
+        DESCRIPTION
+        "An entry in the device table."
+        INDEX { acosDeviceSlotIndex }
+        ::= { acosDeviceTable 1 }
+
+AcosDeviceEntry ::= SEQUENCE      {
+        acosDeviceSlotIndex           
+                INTEGER,
+        acosDeviceType                
+                AcosDeviceTypeEnum,
+        acosDeviceTotal
+                INTEGER,
+        acosDeviceDescription         
+                DisplayString            
+                                    }
+
+acosDeviceSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Devices
+    --% ALIAS "Device Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosDeviceEntry 1 }
+
+acosDeviceType  OBJECT-TYPE
+        SYNTAX AcosDeviceTypeEnum  
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Devices
+    --% ALIAS "Device Type"
+        DESCRIPTION
+        "Identifies the unique device type of the card in this slot."
+        ::= { acosDeviceEntry 2 }
+
+acosDeviceTotal  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Devices
+    --% ALIAS "Total Devices In Slot"
+        DESCRIPTION
+        "The total number of devices contained within the slot. This value 
+        represents the maximum index into tables that are indexed by a
+        slot device number. Multiple devices can reside in a slot. For 
+        example, a slot might contain a dual DS1 NIM consisting of two DS1 
+        interfaces. In MIB tables where both interfaces are accessible, the 
+        objects would be indexed through a combination of the slot number 
+        and the slot device number. If the slot is empty then 0 is reported 
+        for this object." 
+        ::= { acosDeviceEntry 3 }
+
+acosDeviceDescription  OBJECT-TYPE
+        SYNTAX DisplayString  (SIZE (0..255))
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Devices
+    --% ALIAS "Device Description"
+        DESCRIPTION
+        "A description of the device in the slot. If the slot is empty then
+        a null length string is reported for this object."
+        ::= { acosDeviceEntry 4 }
+
+-- Devices in aggregate form
+
+acosDeviceTypesAggregate  OBJECT-TYPE
+        SYNTAX OCTET STRING
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Devices
+    --% ALIAS "Aggregate List Of Devices"
+        DESCRIPTION
+        "This object contains an aggregate list of the devices present in 
+        the box. The list contains pairs of octets, each pair forming 
+        a 16 bit integer representing the device type for a slot.  
+        Every slot is reported including empty slots. The first octet pair 
+        represents slot 1 and the last octet pair represents the highest slot 
+        number. The highest slot number can be gotten from object 
+        'acosTotalSlots'. Each octet pair is sent LSB first. The total 
+        octets sent will be 2 x acosTotalSlots.
+        
+        The value reported in each octet pair comes from 
+        'AcosDeviceTypeEnum'." 
+        ::= { acosDevices 2 }
+
+acosDeviceTotalsAggregate  OBJECT-TYPE
+        SYNTAX OCTET STRING
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Devices
+    --% ALIAS "Aggregate List Of Device Totals"
+        DESCRIPTION
+        "This object contains an aggregate list of the total number of 
+        devices present in each slot. An octet will be sent for each
+        slot including empty slots. The first octet represents slot 1 and 
+        the last octet represents the highest slot number. The highest 
+        slot number can be gotten from object 'acosTotalSlots'. The 
+        total octets sent will be equal to 'acosTotalSlots'. A value of
+        0 will be reported for empty slots."
+        ::= { acosDevices 3 }
+
+------------------------------------------------------------------------------
+-- Status Group
+------------------------------------------------------------------------------
+
+-- CPU utilization 
+
+acosCpuUtilization  OBJECT-TYPE
+        SYNTAX INTEGER  (0..100)  
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Status
+    --% ALIAS "CPU Utilization"
+        DESCRIPTION
+        "The utilization of the CPU in percent."
+        ::= { acosStatus 1 }
+
+------------------------------------------------------------------------------
+-- DS1 Group
+------------------------------------------------------------------------------
+
+-- T1 Specific DS1 Configuration
+
+acosT1LineConfigTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosT1LineConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "T1 Line Configuration Table"
+        DESCRIPTION
+        "This is a table of configurables for T1 lines." 
+        ::= { acosDS1 1 }
+
+acosT1LineConfigEntry  OBJECT-TYPE
+        SYNTAX AcosT1LineConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "T1 Line Config Table Entry"
+        DESCRIPTION
+        "An entry in the T1 line config table."
+        INDEX { acosT1LineSlotIndex, 
+                acosT1LineSlotInterfaceIndex 
+              }
+        ::= { acosT1LineConfigTable 1 }
+
+AcosT1LineConfigEntry ::= SEQUENCE    {
+        acosT1LineSlotIndex           
+                INTEGER,
+        acosT1LineSlotInterfaceIndex     
+                INTEGER,
+        acosT1LineBuildOut            
+                INTEGER
+                                        }
+
+acosT1LineSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "T1 Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosT1LineConfigEntry 1 }
+
+acosT1LineSlotInterfaceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "T1 Slot Interface Index"
+        DESCRIPTION
+        "The interface number of a specific device in the slot. The device 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosT1LineConfigEntry 2 }
+
+acosT1LineBuildOut  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        lbo0db(1),              --  0db
+                        lbo133ft(2),            -- 133 to 266 feet
+                        lbo266ft(3),            -- 266 to 399 feet
+                        lbo399ft(4),            -- 399 to 533 feet
+                        lbo533ft(5),            -- 533 to 655 feet
+                        lbo75db(6),             -- -7.5db
+                        lbo15db(7),             -- -15db
+                        lbo225db(8)             -- -22.5db
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "T1 Line Transmit Attenuation"
+        DESCRIPTION
+        "Transmit level attenuation of the T1 line."
+        ::= { acosT1LineConfigEntry 3 }
+
+
+-- Individual channel assignments
+
+acosDS1ChannelConfigTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosDS1ChannelConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "DS1 Channel Configuration Table"
+        DESCRIPTION
+        "Channel configuration table for a DS1." 
+        ::= { acosDS1 2 }
+
+acosDS1ChannelConfigEntry  OBJECT-TYPE
+        SYNTAX AcosDS1ChannelConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "DS1 Channel Config Table Entry"
+        DESCRIPTION
+        "An entry in the DS1 channel config table."
+        INDEX { acosDS1ChannelSlotIndex, 
+                acosDS1ChannelSlotDeviceIndex, 
+                acosDS1ChannelIndex
+              }
+        ::= { acosDS1ChannelConfigTable 1 }
+
+AcosDS1ChannelConfigEntry ::= SEQUENCE  {
+        acosDS1ChannelSlotIndex          
+                INTEGER,
+        acosDS1ChannelSlotDeviceIndex    
+                INTEGER,
+        acosDS1ChannelIndex
+                INTEGER,
+        acosDS1TxChannelControl
+                INTEGER,                                          
+        acosDS1RxChannelControl
+                INTEGER
+                                          }
+
+acosDS1ChannelSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "DS1 Channel Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosDS1ChannelConfigEntry 1 }
+
+acosDS1ChannelSlotDeviceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "DS1 Channel Slot Device Index"
+        DESCRIPTION
+        "The device number of a specific device in the slot. The device 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosDS1ChannelConfigEntry 2 }
+
+acosDS1ChannelIndex  OBJECT-TYPE
+        SYNTAX INTEGER  (1..31)
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "DS1 Channel Index"
+        DESCRIPTION
+        "The channel number to configure. For T1 interfaces the valid values
+        are 1..24, and for E1 interfaces the valid values are 1..31."
+        ::= { acosDS1ChannelConfigEntry 3 }
+
+acosDS1TxChannelControl  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),
+                        disabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "DS1 Transmit Channel Control"
+        DESCRIPTION
+        "Enables or disables the transmit channel on the DS1 on this 
+        device in this slot."
+        ::= { acosDS1ChannelConfigEntry 4 }
+
+acosDS1RxChannelControl  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),
+                        disabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "DS1 Receive Channel Control"
+        DESCRIPTION
+        "Enables or disables the receive channel on the DS1 on this 
+        device in this slot."
+        ::= { acosDS1ChannelConfigEntry 5 }
+
+
+-- Aggregate channel assignments. All channels on a DS1 can be read in 
+-- a single GET and can be written in a single SET.
+
+acosDS1AggChanConfigTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosDS1AggChanConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "Aggregate Channel Config Table"
+        DESCRIPTION
+        "Channel configuration table for a DS1. Channels can be 
+        configured in aggregate." 
+        ::= { acosDS1 3 }
+
+acosDS1AggChanConfigEntry  OBJECT-TYPE
+        SYNTAX AcosDS1AggChanConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "Aggregate Channel Config Entry"
+        DESCRIPTION
+        "An entry in the aggregate channel config table."
+        INDEX { acosDS1AggChanSlotIndex, 
+                acosDS1AggChanSlotDeviceIndex 
+              }
+        ::= { acosDS1AggChanConfigTable 1 }
+
+AcosDS1AggChanConfigEntry ::= SEQUENCE    {
+        acosDS1AggChanSlotIndex          
+                INTEGER,
+        acosDS1AggChanSlotDeviceIndex    
+                INTEGER,
+        acosDS1TxChannelsAggregate
+                OCTET STRING,                                          
+        acosDS1RxChannelsAggregate
+                OCTET STRING
+                                            }
+
+acosDS1AggChanSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "Aggregate Channel Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosDS1AggChanConfigEntry 1 }
+
+acosDS1AggChanSlotDeviceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "Aggregate Channel Slot Device Index"
+        DESCRIPTION
+        "The device number of a specific device in the slot. The device 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosDS1AggChanConfigEntry 2 }
+
+acosDS1TxChannelsAggregate  OBJECT-TYPE
+        SYNTAX OCTET STRING  
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "Aggregate Transmit Channels"
+        DESCRIPTION
+        "An aggregate of all transmit channel settings. An octet is sent
+        for each channel on the DS1. For T1 interfaces the total number of
+        octets will be 24, and for E1 interfaces the total number of octets
+        will be 31. The octets are sent starting with the lowest channel and 
+        ending with the highest channel. 
+
+        Each octet contains a value representing the state of the channel
+        as follows:
+
+        1 = Channel is enabled
+        2 = Channel is disabled"
+        ::= { acosDS1AggChanConfigEntry 3 }
+
+acosDS1RxChannelsAggregate  OBJECT-TYPE
+        SYNTAX OCTET STRING  
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP DS1
+    --% ALIAS "Aggregate Receive Channels"
+        DESCRIPTION
+        "An aggregate of all receive channel settings. An octet is sent
+        for each channel on the DS1. For T1 interfaces the total number of
+        octets will be 24, and for E1 interfaces the total number of octets
+        will be 31. The octets are sent starting with the lowest channel and 
+        ending with the highest channel. 
+
+        Each octet contains a value representing the state of the channel
+        as follows:
+
+        1 = Channel is enabled
+        2 = Channel is disabled"
+        ::= { acosDS1AggChanConfigEntry 4 }
+
+------------------------------------------------------------------------------
+-- USI Group
+------------------------------------------------------------------------------
+
+acosUSIConfigTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosUSIConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP USI
+    --% ALIAS "USI Configuration Table"
+        DESCRIPTION
+        "This is a table of configurables for a 
+        universal serial interface (USI)." 
+        ::= { acosUSI 1 }
+
+acosUSIConfigEntry  OBJECT-TYPE
+        SYNTAX AcosUSIConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP USI
+    --% ALIAS "USI Config Table Entry"
+        DESCRIPTION
+        "An entry in the USI config table."
+        INDEX { acosUSISlotIndex, 
+                acosUSISlotInterfaceIndex 
+              }
+        ::= { acosUSIConfigTable 1 }
+
+AcosUSIConfigEntry ::= SEQUENCE       {
+        acosUSISlotIndex              
+                INTEGER,
+        acosUSISlotInterfaceIndex        
+                INTEGER,
+        acosUSIInterfaceType          
+                INTEGER
+                                        }
+
+acosUSISlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP USI
+    --% ALIAS "USI Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosUSIConfigEntry 1 }
+
+acosUSISlotInterfaceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP USI
+    --% ALIAS "USI Slot Interface Index"
+        DESCRIPTION
+        "The interface number of a specific device in the slot. The device 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosUSIConfigEntry 2 }
+
+acosUSIInterfaceType  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        rs232(2),
+                        v10(4),
+                        v35(5),
+                        x21(6),
+                        rs530(7),
+                        rs530a(8)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP USI
+    --% ALIAS "USI Interface Type"
+        DESCRIPTION
+        "The interface type."
+        ::= { acosUSIConfigEntry 3 }
+
+------------------------------------------------------------------------------
+-- SDSL Group
+------------------------------------------------------------------------------
+
+acosSDSLConfigTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosSDSLConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP SDSL
+    --% ALIAS "SDSL Configuration Table"
+        DESCRIPTION
+        "This is a table of configurables for a 
+        symmetric digital subscriber line (SDSL)." 
+        ::= { acosSDSL 1 }
+
+acosSDSLConfigEntry  OBJECT-TYPE
+        SYNTAX AcosSDSLConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP SDSL
+    --% ALIAS "SDSL Config Table Entry"
+        DESCRIPTION
+        "An entry in the SDSL config table."
+        INDEX { acosSDSLSlotIndex, 
+                acosSDSLSlotInterfaceIndex 
+              }
+        ::= { acosSDSLConfigTable 1 }
+
+AcosSDSLConfigEntry ::= SEQUENCE       {
+        acosSDSLSlotIndex              
+                INTEGER,
+        acosSDSLSlotInterfaceIndex        
+                INTEGER,
+        acosSDSLInterfaceType          
+                INTEGER,
+        acosSDSLClockType
+                INTEGER
+                                        }
+
+acosSDSLSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP SDSL
+    --% ALIAS "SDSL Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosSDSLConfigEntry 1 }
+
+acosSDSLSlotInterfaceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP SDSL
+    --% ALIAS "SDSL Slot Interface Index"
+        DESCRIPTION
+        "The interface number of a specific device in the slot. The device 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosSDSLConfigEntry 2 }
+
+acosSDSLInterfaceType  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        cpe(1),
+                        co(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP SDSL
+    --% ALIAS "SDSL Interface Type"
+        DESCRIPTION
+        "The interface type, Customer Premise Equipment (CPE), or 
+        Telephone Company Central Office (CO)."
+        ::= { acosSDSLConfigEntry 3 }
+
+acosSDSLClockType  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        auto(1),
+                        fixed(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP SDSL
+    --% ALIAS "SDSL Clocking Type"
+        DESCRIPTION
+        "The clocking type setting."
+        ::= { acosSDSLConfigEntry 4 }
+
+
+------------------------------------------------------------------------------
+-- Ethernet Group
+------------------------------------------------------------------------------
+
+acosEthernetConfigTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosEthernetConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Ethernet
+    --% ALIAS "Ethernet Configuration Table"
+        DESCRIPTION
+        "This is a table of configurables for an ethernet interface." 
+        ::= { acosEthernet 1 }
+
+acosEthernetConfigEntry  OBJECT-TYPE
+        SYNTAX AcosEthernetConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Ethernet
+    --% ALIAS "Ethernet Config Table Entry"
+        DESCRIPTION
+        "An entry in the ethernet config table."
+        INDEX { acosEthernetSlotIndex }
+        ::= { acosEthernetConfigTable 1 }
+
+AcosEthernetConfigEntry ::= SEQUENCE  {
+        acosEthernetSlotIndex         
+                INTEGER,
+        acosEthernetFullDuplex        
+                INTEGER
+                                        }
+
+acosEthernetSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Ethernet
+    --% ALIAS "Ethernet Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosEthernetConfigEntry 1 }
+
+acosEthernetFullDuplex  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),    
+                        disabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Ethernet
+    --% ALIAS "Ethernet Full Duplex Mode"
+        DESCRIPTION
+        "Enables or disable ethernet full duplex mode"
+        ::= { acosEthernetConfigEntry 2 }
+
+
+------------------------------------------------------------------------------
+-- WAN Group
+------------------------------------------------------------------------------
+
+-- This table contains objects that are common to WAN interfaces of 
+-- various types. Currently the table supports objects that are applicable 
+-- to USI, SDSL, and DS1 interfaces. 
+
+acosWANConfigTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosWANConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Configuration Table"
+        DESCRIPTION
+        "This is a table of common configurables for WAN interfaces." 
+        ::= { acosWAN 1 }
+
+acosWANConfigEntry  OBJECT-TYPE
+        SYNTAX AcosWANConfigEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Config Table Entry"
+        DESCRIPTION
+        "An entry in the WAN config table."
+        INDEX { acosWANSlotIndex, 
+                acosWANSlotDeviceIndex 
+              }
+        ::= { acosWANConfigTable 1 }
+
+AcosWANConfigEntry ::= SEQUENCE       {
+        acosWANSlotIndex              
+                INTEGER,
+        acosWANSlotDeviceIndex        
+                INTEGER,
+        acosWANDataLinkProtocol
+                INTEGER,
+        acosWANSpeed
+                INTEGER
+                                        }
+
+acosWANSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosWANConfigEntry 1 }
+
+acosWANSlotDeviceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Slot Device Index"
+        DESCRIPTION
+        "The device number of a specific device in the slot. The device 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosWANConfigEntry 2 }
+
+acosWANDataLinkProtocol  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        transparent(1),
+                        raw-HDLC(2),
+                        cisco-HDLC(3),
+                        ip-Plus-HDLC(4),
+                        ppp(5),
+                        atm-RFC1483(6),
+                        pppOverAtm-RFC2364(7),
+                        frameRelay(8)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Data Link Protocol"
+        DESCRIPTION
+        "Sets the High Level Data Link Control protocol for this device
+        in this slot."
+        ::= { acosWANConfigEntry 3 }
+
+acosWANSpeed  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Speed"
+        DESCRIPTION
+        "Sets the data link speed for this device
+        in this slot."
+        ::= { acosWANConfigEntry 4 }
+
+-- This table contains statistic objects that are common to serial and 
+-- Frame Relay WAN interfaces of various types.
+
+acosWANSerialStatsTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosWANSerialStatsEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Serial Statistics Table"
+        DESCRIPTION
+        "This is a table of common serial statistics for WAN interfaces." 
+        ::= { acosWAN 2 }
+
+acosWANSerialStatsEntry  OBJECT-TYPE
+        SYNTAX AcosWANSerialStatsEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Serial Statistics Table Entry"
+        DESCRIPTION
+        "An entry in the WAN serial statistics table."
+        INDEX { acosWANSerialStatsSlotIndex, 
+                acosWANSerialStatsSlotDeviceIndex 
+              }
+        ::= { acosWANSerialStatsTable 1 }
+
+AcosWANSerialStatsEntry ::= SEQUENCE       {
+        acosWANSerialStatsSlotIndex              
+                INTEGER,
+        acosWANSerialStatsSlotDeviceIndex        
+                INTEGER,
+		acosWANTotalRxFrames
+                INTEGER,
+		acosWANTotalRxOctets
+                INTEGER,
+		acosWANRxMissedFrames
+                INTEGER,
+		acosWANRxErrorFrames
+                INTEGER,
+		acosWANRxGlitchErrors
+                INTEGER,
+		acosWANRxPllErrors
+                INTEGER,
+		acosWANRxLongErrors
+                INTEGER,
+		acosWANRxNonOctetErrors
+                INTEGER,
+		acosWANRxAbortErrors
+                INTEGER,
+		acosWANRxCrcErrors
+                INTEGER,
+		acosWANRxOverrunErrors
+                INTEGER,
+		acosWANRxCdLostErrors
+                INTEGER,
+		acosWANTotalTxFrames
+                INTEGER,
+		acosWANTotalTxOctets
+                INTEGER,
+		acosWANTxMissedFrames
+                INTEGER,
+		acosWANTxDiscardedFrames
+                INTEGER,
+		acosWANTxErrorFrames
+                INTEGER,
+		acosWANTxGlitchErrors
+                INTEGER,
+		acosWANTxUnderrunErrors
+                INTEGER,
+		acosWANTxCtsLostErrors
+                INTEGER
+                                        }
+
+acosWANSerialStatsSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosWANSerialStatsEntry 1 }
+
+acosWANSerialStatsSlotDeviceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Slot Device Index"
+        DESCRIPTION
+        "The device number of a specific device in the slot. The device 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosWANSerialStatsEntry 2 }
+
+acosWANTotalRxFrames  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN Total RX Frames"
+		DESCRIPTION
+		"The total number of frames received on this port."
+		::= { acosWANSerialStatsEntry 3 }
+
+acosWANTotalRxOctets  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN Total RX Octets"
+		DESCRIPTION
+		"The total number of octets received on this port."
+		::= { acosWANSerialStatsEntry 4 }
+
+acosWANRxMissedFrames  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX Frames Missed"
+		DESCRIPTION
+		"The total number of frames discarded on this port because the 
+		receive buffer descriptor ring was empty."
+		::= { acosWANSerialStatsEntry 5 }
+
+acosWANRxErrorFrames  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX Error Frames"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		receive errors."
+		::= { acosWANSerialStatsEntry 6 }
+
+acosWANRxGlitchErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX Clock Glitch Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		receive clock glitch errors."
+		::= { acosWANSerialStatsEntry 7 }
+
+acosWANRxPllErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX PLL Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		receive phase lock loop errors."
+		::= { acosWANSerialStatsEntry 8 }
+
+acosWANRxLongErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX Long Frame Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because the
+		received frame was too long."
+		::= { acosWANSerialStatsEntry 9 }
+
+acosWANRxNonOctetErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX Non Octet Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because the
+		received frame was not an integral number of octets."
+		::= { acosWANSerialStatsEntry 10 }
+
+acosWANRxAbortErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX Abort Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		abort sequences within the received frame."
+		::= { acosWANSerialStatsEntry 11 }
+
+acosWANRxCrcErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX CRC Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		received CRC errors."
+		::= { acosWANSerialStatsEntry 12 }
+
+acosWANRxOverrunErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX Overrun Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		receiver overrun errors."
+		::= { acosWANSerialStatsEntry 13 }
+
+acosWANRxCdLostErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN RX CD Lost Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		lost Carrier Detect."
+		::= { acosWANSerialStatsEntry 14 }
+
+acosWANTotalTxFrames  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN Total TX Frames"
+		DESCRIPTION
+		"The total number of frames transmitted on this port."
+		::= { acosWANSerialStatsEntry 15 }
+
+acosWANTotalTxOctets  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN Total TX Octets"
+		DESCRIPTION
+		"The total number of octets received on this port."
+		::= { acosWANSerialStatsEntry 16 }
+
+acosWANTxMissedFrames  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN TX Frames Missed"
+		DESCRIPTION
+		"The total number of frames discarded on this port because the 
+		transmit buffer descriptor ring was empty."
+		::= { acosWANSerialStatsEntry 17 }
+
+acosWANTxDiscardedFrames  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN TX Discarded Frames"
+		DESCRIPTION
+		"The total number of frames discarded on this port because the
+		packet was bad, or the link was not ready."
+		::= { acosWANSerialStatsEntry 18 }
+
+acosWANTxErrorFrames  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN TX Error Frames"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		transmitter errors."
+		::= { acosWANSerialStatsEntry 19 }
+
+acosWANTxGlitchErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN TX Clock Glitch Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		transmitter clock glitch errors."
+		::= { acosWANSerialStatsEntry 20 }
+
+acosWANTxUnderrunErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN TX Underrun Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		transmitter underrun errors."
+		::= { acosWANSerialStatsEntry 22 }
+
+acosWANTxCtsLostErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN TX CTS Lost Errors"
+		DESCRIPTION
+		"The total number of frames discarded on this port because of
+		transmitter CTS lost errors."
+		::= { acosWANSerialStatsEntry 23 }
+
+-- This table contains statistic objects that are common to ATM
+-- WAN interfaces of various types.
+
+acosWANAtmStatsTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosWANAtmStatsEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN ATM Statistics Table"
+        DESCRIPTION
+        "This is a table of common ATM statistics for WAN interfaces." 
+        ::= { acosWAN 3 }
+
+acosWANAtmStatsEntry  OBJECT-TYPE
+        SYNTAX AcosWANAtmStatsEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN ATM Statistics Table Entry"
+        DESCRIPTION
+        "An entry in the WAN ATM statistics table."
+        INDEX { acosWANAtmStatsSlotIndex, 
+                acosWANAtmStatsSlotDeviceIndex 
+              }
+        ::= { acosWANAtmStatsTable 1 }
+
+AcosWANAtmStatsEntry ::= SEQUENCE       {
+        acosWANAtmStatsSlotIndex              
+                INTEGER,
+        acosWANAtmStatsSlotDeviceIndex        
+                INTEGER,
+		acosWANAtmTotalRxCells
+                INTEGER,
+		acosWANAtmClpiRxCells
+                INTEGER,
+		acosWANAtmOamRxCells
+                INTEGER,
+		acosWANAtmEfciRxCells
+                INTEGER,
+		acosWANAtmRmRxCells
+                INTEGER,
+		acosWANAtmRxCellsDiscarded
+                INTEGER,
+		acosWANAtmTotalTxCells
+                INTEGER,
+		acosWANAtmOamTxCells
+                INTEGER,
+		acosWANAtmClpiTxCells
+                INTEGER,
+		acosWANAtmEfciTxCells
+                INTEGER,
+		acosWANAtmRmTxCells
+                INTEGER,
+		acosWANAtmRxHecErrors
+                INTEGER,
+		acosWANAtmPortStatus
+                INTEGER
+                                        }
+
+acosWANAtmStatsSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosWANAtmStatsEntry 1 }
+
+acosWANAtmStatsSlotDeviceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP WAN
+    --% ALIAS "WAN Slot Device Index"
+        DESCRIPTION
+        "The device number of a specific device in the slot. The device 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosWANAtmStatsEntry 2 }
+
+acosWANAtmTotalRxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Total Received Cell Count"
+		DESCRIPTION
+		"The total number of ATM cells received on this port."
+		::= { acosWANAtmStatsEntry 3 }
+
+acosWANAtmClpiRxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Received Cell Count with CLPI=1"
+		DESCRIPTION
+		"The number of ATM cells received on this port with Cell Loss Priority
+		Indication set."
+		::= { acosWANAtmStatsEntry 4 }
+
+acosWANAtmOamRxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Operation and Maintenance Received Cell Count"
+		DESCRIPTION
+		"The number of operation and maintenance ATM cells received on this port."
+		::= { acosWANAtmStatsEntry 5 }
+
+acosWANAtmEfciRxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Received Cell Count with EFCI=1"
+		DESCRIPTION
+		"The number of ATM cells received on this port with Explicit Forward
+		Congestion Indication set."
+		::= { acosWANAtmStatsEntry 6 }
+
+acosWANAtmRmRxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Resource Management Received Cell Count"
+		DESCRIPTION
+		"The number of resource management ATM cells received on this port."
+		::= { acosWANAtmStatsEntry 7 }
+
+acosWANAtmRxCellsDiscarded  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Received Cells Discarded"
+		DESCRIPTION
+		"The number of ATM cells received and discarded on this port."
+		::= { acosWANAtmStatsEntry 8 }
+
+acosWANAtmTotalTxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Total Transmitted Cell Count"
+		DESCRIPTION
+		"The total number of ATM cells transmitted on this port."
+		::= { acosWANAtmStatsEntry 9 }
+
+acosWANAtmOamTxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Operation and Maintenance Transmitted Cell Count"
+		DESCRIPTION
+		"The number of operation and maintenance ATM cells transmitted on this port."
+		::= { acosWANAtmStatsEntry 10 }
+
+acosWANAtmClpiTxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Transmitted Cell Count with CLPI=1"
+		DESCRIPTION
+		"The number of ATM cells transmitted on this port with Cell Loss
+		Priority Indication set."
+		::= { acosWANAtmStatsEntry 11 }
+
+acosWANAtmEfciTxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Transmitted Cell Count with EFCI=1"
+		DESCRIPTION
+		"The number of ATM cells transmitted on this port with Explicit Forward
+		Congestion Indication set."
+		::= { acosWANAtmStatsEntry 12 }
+
+acosWANAtmRmTxCells  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Resource Management Transmitted Cell Count"
+		DESCRIPTION
+		"The number of resource management ATM cells transmitted on this port."
+		::= { acosWANAtmStatsEntry 13 }
+
+acosWANAtmRxHecErrors  OBJECT-TYPE
+		SYNTAX INTEGER
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Received HEC Error Count"
+		DESCRIPTION
+		"The number of ATM cells received on this port with Header
+		Error Correction errors."
+		::= { acosWANAtmStatsEntry 14 }
+
+acosWANAtmPortStatus  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),
+                        disabled(2)
+                        }
+		ACCESS read-only
+		STATUS mandatory
+    --% GROUP WAN
+	--% ALIAS "WAN ATM Port Status"
+		DESCRIPTION
+		"The ATM port status."
+		::= { acosWANAtmStatsEntry 15 }
+
+------------------------------------------------------------------------------
+-- Routing Group
+------------------------------------------------------------------------------
+
+-- Device IP address assignments
+
+acosDeviceIpAddressTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosDeviceIpAddressEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "IP Addresses Assigned To Devices"
+        DESCRIPTION
+        "This is a table of IP addresses associated with devices contained 
+        in the box." 
+        ::= { acosRouting 1 }
+
+acosDeviceIpAddressEntry  OBJECT-TYPE
+        SYNTAX AcosDeviceIpAddressEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "IP Address Entry For A Device"
+        DESCRIPTION
+        "An entry in the device level IP address table."
+        INDEX { acosDeviceIpSlotIndex, 
+                acosDeviceIpInterfaceIndex,
+                acosDeviceIpPortIndex,
+                acosDeviceIpConnectionIndex
+              }
+        ::= { acosDeviceIpAddressTable 1 }
+
+AcosDeviceIpAddressEntry ::= SEQUENCE   {
+        acosDeviceIpSlotIndex           
+                INTEGER,
+        acosDeviceIpInterfaceIndex     
+                INTEGER,
+        acosDeviceIpPortIndex     
+                INTEGER,
+        acosDeviceIpConnectionIndex     
+                INTEGER,
+        acosDeviceIpAddress
+                IpAddress,
+        acosDeviceIpAddressSubnetMask
+                IpAddress,
+        acosDeviceIpPeerAddress
+                IpAddress
+                                          }
+
+acosDeviceIpSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "IP Address Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosDeviceIpAddressEntry 1 }
+
+acosDeviceIpInterfaceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "IP Address Interface Index"
+        DESCRIPTION
+        "The interface number of a specific device in the slot. The interface 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosDeviceIpAddressEntry 2 }
+
+acosDeviceIpPortIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "IP Address Port Index"
+        DESCRIPTION
+        "The port number of a specific device in the slot. The port 
+        numbers range from 1 to the maximum number of devices reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosDeviceIpAddressEntry 3 }
+
+acosDeviceIpConnectionIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "IP Address Connection Index"
+        DESCRIPTION
+        "The connection number of a specific device in the slot. The connection 
+        numbers range from 1 to the maximum number of allowed connections."
+        ::= { acosDeviceIpAddressEntry 4 }
+
+acosDeviceIpAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "Device IP Address"
+        DESCRIPTION
+        "The IP address assigned to this device in this slot. A value of
+        '0.0.0.0' in a SET will delete the IP address assigned to this 
+        device. A value of '0.0.0.0' returned in a GET means the device 
+        does not have an IP address assigned to it."
+        ::= { acosDeviceIpAddressEntry 5 }
+
+acosDeviceIpAddressSubnetMask  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "Device IP Address Subnet Mask"
+        DESCRIPTION
+        "The subnet mask for the IP address assigned to this device 
+        in this slot. A value of '0.0.0.0' will be returned in a GET 
+        when the device does not have an IP address assigned to it."
+        ::= { acosDeviceIpAddressEntry 6 }
+
+acosDeviceIpPeerAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "Peer Address For PPP Protocol"
+        DESCRIPTION
+        "The IP address of the peer for this device in this slot. 
+        Note that this object is only accessible if the protocol is
+        set to 'ppp' in object 'acosWANDataLinkProtocol'."
+        ::= { acosDeviceIpAddressEntry 7 }
+
+-- RIP control
+
+acosRIPControl  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),
+                        disabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "Enable Or Disable RIP"
+        DESCRIPTION
+        "This object enables or disables the Routing Information Protocol
+        (RIP) for the box."
+        ::= { acosRouting 2 }
+
+-- Device RIP parameters
+
+acosDeviceRipParameterTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosDeviceRipParameterEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "RIP Device Parameter Table"
+        DESCRIPTION
+        "This is a table of RIP parameters associated with devices contained 
+        in the box." 
+        ::= { acosRouting 3 }
+
+acosDeviceRipParameterEntry  OBJECT-TYPE
+        SYNTAX AcosDeviceRipParameterEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "RIP Parameters Entry For A Device"
+        DESCRIPTION
+        "An entry in the device level RIP parameter table."
+        INDEX { acosDeviceRipSlotIndex, 
+                acosDeviceRipInterfaceIndex,
+                acosDeviceRipPortIndex
+              }
+        ::= { acosDeviceRipParameterTable 1 }
+
+AcosDeviceRipParameterEntry ::= SEQUENCE   {
+        acosDeviceRipSlotIndex           
+                INTEGER,
+        acosDeviceRipInterfaceIndex     
+                INTEGER,
+        acosDeviceRipPortIndex     
+                INTEGER,
+        acosDeviceRipVersion
+                INTEGER,
+        acosDeviceRipPoisonedReverse
+                INTEGER
+                                          }
+
+acosDeviceRipSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "RIP Parameter Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosDeviceRipParameterEntry 1 }
+
+acosDeviceRipInterfaceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "IP Address Interface Index"
+        DESCRIPTION
+        "The interface number of a specific interface in the slot. The interface
+        numbers range from 1 to the maximum number of interfaces reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosDeviceRipParameterEntry 2 }
+
+acosDeviceRipPortIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "IP Address Interface Index"
+        DESCRIPTION
+        "The port number of a specific interface in the slot. The port
+        numbers range from 1 to the maximum number of ports reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosDeviceRipParameterEntry 3 }
+
+acosDeviceRipVersion  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        disabled(1),
+                        version1Broadcast(2),
+                        version2Broadcast(3),
+                        version2Multicast(4)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "Device RIP Version"
+        DESCRIPTION
+        "The version of RIP configured for this interface."
+        ::= { acosDeviceRipParameterEntry 4 }
+
+acosDeviceRipPoisonedReverse  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),
+                        disabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "Device RIP Poisoned Reverse"
+        DESCRIPTION
+        "The poisoned reverse configuration for this interface."
+        ::= { acosDeviceRipParameterEntry 5 }
+
+-- DNS Client
+
+acosDNSServerAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "DNS Server address"
+        DESCRIPTION
+        "This object specifies the IP address of the Domain Name Server
+        for the box.  Zero to disable DNS client functionality"
+        ::= { acosRouting 4 }
+
+acosDNSTimeout  OBJECT-TYPE
+        SYNTAX  TimeTicks
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "DNS Server timeout"
+        DESCRIPTION
+        "This object specifies the timeout for replys from the
+        Domain Name Server."
+        ::= { acosRouting 5 }
+
+------------------------------------------------------------------------------
+-- Bridging Group
+------------------------------------------------------------------------------
+
+-- Global bridging control, affects all devices
+
+acosBridging  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        globallyEnabled(1),    
+                        globallyDisabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Bridging
+    --% ALIAS "Global Bridging Control"
+        DESCRIPTION
+        "Enables or disables bridging for all devices. The value 'disabled'
+        in a SET will cause bridging to be disabled on all devices. The value 
+        'enabled' in a SET will cause bridging to be enabled on all devices."
+        ::= { acosBridge 1 }
+
+-- Device level bridging, bridging can be enabled 
+-- or disabled for each device
+
+acosBridgeTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosBridgeEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Bridging
+    --% ALIAS "Device Level Bridging Control"
+        DESCRIPTION
+        "This table controls bridging on an individual device level." 
+        ::= { acosBridge 2 }
+
+acosBridgeEntry  OBJECT-TYPE
+        SYNTAX AcosBridgeEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Bridging
+    --% ALIAS "Entry In Bridging Table"
+        DESCRIPTION
+        "An entry in the device level bridging control table."
+        INDEX { acosBridgeSlotIndex, 
+                acosBridgeInterfaceIndex,
+                acosBridgePortIndex 
+              }
+        ::= { acosBridgeTable 1 }
+
+AcosBridgeEntry ::= SEQUENCE  {
+        acosBridgeSlotIndex           
+                INTEGER,
+        acosBridgeInterfaceIndex     
+                INTEGER,
+        acosBridgePortIndex     
+                INTEGER,
+        acosBridgeControl
+                INTEGER
+                                        }
+
+acosBridgeSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Bridging
+    --% ALIAS "Bridge Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosBridgeEntry 1 }
+
+acosBridgeInterfaceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Bridging
+    --% ALIAS "Bridge Interface Index"
+        DESCRIPTION
+        "The interface number of a specific interface in the slot. The interface 
+        numbers range from 1 to the maximum number of interfaces reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosBridgeEntry 2 }
+
+acosBridgePortIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Bridging
+    --% ALIAS "Bridge Port Index"
+        DESCRIPTION
+        "The port number of a specific port in the slot. The port 
+        numbers range from 1 to the maximum number of interfaces reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosBridgeEntry 3 }
+
+acosBridgeControl  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),    
+                        disabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Bridging
+    --% ALIAS "Device Level Bridge Control"
+        DESCRIPTION
+        "Enables or disables bridging for this device in this slot." 
+        ::= { acosBridgeEntry 4 }
+
+------------------------------------------------------------------------------
+-- TFTP Client Group
+------------------------------------------------------------------------------
+
+acosTftpServerAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP TFTP_Client
+    --% ALIAS "IP Address Of TFTP Server"
+        DESCRIPTION
+        "The IP address of the TFTP server where upgrade files are stored."
+        ::= { acosTftpClient 1 }
+
+acosTftpAcosName  OBJECT-TYPE
+        SYNTAX DisplayString (SIZE (0..255))
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP TFTP_Client
+    --% ALIAS "ACOS Filename"
+        DESCRIPTION
+        "The filename of the ACOS image that will be read when the box
+        is commanded to upgrade ACOS. If necessary, the name should include 
+        the full directory path where the file is stored on the 
+        TFTP server (server specific)." 
+        ::= { acosTftpClient 2 }
+
+acosTftpUpgradeACOS  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        noAction(1),
+                        upgradeACOS(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP TFTP_Client
+    --% ALIAS "Upgrade ACOS"
+        DESCRIPTION
+        "The value 'noAction' is always reported in a GET.
+        The value 'upgradeACOS' in a SET will cause the box to initiate
+        a TFTP session with the IP address of the TFTP server identified
+        in object 'acosTftpServerAddress'. The box will request from the 
+        server the file identified in object 'acosTftpAcosName'."
+        ::= { acosTftpClient 3 }
+
+acosTftpApplicationName  OBJECT-TYPE
+        SYNTAX DisplayString  (SIZE (0..255))
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP TFTP_Client
+    --% ALIAS "Application Filename"
+        DESCRIPTION
+        "The filename of the application image that will be read when the
+        box is commanded to upgrade the application. If necessary, the name 
+        should include the full directory path where the file is stored on 
+        the TFTP server (server specific)." 
+        ::= { acosTftpClient 4 }
+
+acosTftpUpgradeApplication  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        noAction(1),
+                        upgradeApp(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP TFTP_Client
+    --% ALIAS "Upgrade An Application"
+        DESCRIPTION
+        "The value 'noAction' is always reported in a GET.
+        The value 'upgradeApp' in a SET will cause the box to initiate
+        a TFTP session with the IP address of the TFTP server identified
+        in object 'acosTftpServerAddress'. The box will request from the 
+        server the file identified in object 'acosTftpApplicationName'."
+        ::= { acosTftpClient 5 }
+
+acosTftpSessionStatus  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        ready(1),                     
+                        inProgress(2),
+                        succeeded(3),
+                        failed(4)
+                        }
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP TFTP_Client
+    --% ALIAS "Status Of TFTP Session"
+        DESCRIPTION
+        "This object reports the status of the TFTP client. If a TFTP 
+        session has never been active since the box has booted, the value 
+        'ready' is reported. If a session is currently active, the value
+        'inProgress' is reported. If a session is not currently active, 
+        the status of the last active session is reported as 'succeeded' 
+        or 'failed'. If the status is 'failed' the object 
+        'acosTftpFailReason' will contain the reason for the
+        failure. If the status is 'failed' or 'succeeded', the object
+        'acosTftpOctetsRead' will contain the number of octets read."
+        ::= { acosTftpClient 6 }
+
+acosTftpFailReason OBJECT-TYPE
+        SYNTAX  DisplayString (SIZE (0..64))
+        ACCESS  read-only
+        STATUS  mandatory
+    --% GROUP TFTP_Client
+    --% ALIAS "TFTP Failure Reason"
+        DESCRIPTION
+        "The reason for a TFTP failure between the client in the box
+        and a server. If there have not been any failures since the box 
+        was last booted, a null length string will be returned. If the
+        last TFTP session succeeded, a null length string will be
+        returned." 
+        ::= { acosTftpClient 7 }
+
+acosTftpOctetsRead OBJECT-TYPE
+        SYNTAX  INTEGER 
+        ACCESS  read-only
+        STATUS  mandatory
+    --% GROUP   TFTP_Client
+    --% ALIAS   "Total TFTP Octets Read"
+        DESCRIPTION
+        "The total number of octets read during a TFTP session. This 
+        object is updated periodically by the agent during an active
+        session. This means that if a session is currently in progress, 
+        this object can be periodically read by the management station to 
+        track the progress of the session. If a session has never been 
+        active since the box was last booted, this object will return 0. 
+        If a session has failed or succeeded, this object will return the 
+        number of blocks read for the failure or success."
+        ::= { acosTftpClient 8 }
+
+------------------------------------------------------------------------------
+-- Network Management Group
+------------------------------------------------------------------------------
+
+acosManagerIpAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Management
+    --% ALIAS "Manager IP Address"
+        DESCRIPTION
+        "The IP address of the management station to send traps."
+        ::= { acosManagement 1 }
+
+acosManagerWriteCommunity  OBJECT-TYPE
+        SYNTAX DisplayString    (SIZE (0..39))
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Manager
+    --% ALIAS "Manager Write Community"
+        DESCRIPTION
+        "The write community string for the management station allowed to
+        manage the box." 
+        ::= { acosManagement 2 }
+
+
+------------------------------------------------------------------------------
+------------------------------------------------------------------------------
+
+acosTftpFileName OBJECT-TYPE
+        SYNTAX  DisplayString (SIZE (0..255))
+        ACCESS  not-accessible
+        STATUS  mandatory                                         
+    --% GROUP   Trap_Objects
+    --% ALIAS   "Name Of TFTP File"
+        DESCRIPTION
+        "Identifies the name of the file read by the TFTP client
+        in the box. This object will be sent in traps that report
+        TFTP client activity. This object is not accessible other than
+        when sent in a trap."
+        ::= { acosTrapObjects 1 }
+
+------------------------------------------------------------------------------
+-- DHCP Group
+------------------------------------------------------------------------------
+
+acosDhcpEnable  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),    
+                        disabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Enable Field"
+        DESCRIPTION
+        "The enable/disable field for DHCP server."
+        ::= { acosDhcp 1 }
+
+acosDhcpGateway  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Default Gateway"
+        DESCRIPTION
+        "The default gateway IP address to be returned to the DHCP client."
+        ::= { acosDhcp 2 }
+
+acosDhcpDnsServer  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP DNS Server"
+        DESCRIPTION
+        "The DNS server IP address to be returned to the DHCP client."
+        ::= { acosDhcp 3 }
+
+acosDhcpSubnet  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Subnet"
+        DESCRIPTION
+        "The subnet mask to be returned to the DHCP client."
+        ::= { acosDhcp 4 }
+
+acosDhcpLowAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Range Low AddressEnable Field"
+        DESCRIPTION
+        "The low IP address of the DHCP assignable IP address pool."
+        ::= { acosDhcp 5 }
+
+acosDhcpHighAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Range High Address"
+        DESCRIPTION
+        "The high IP address of the DHCP assignable IP address pool."
+        ::= { acosDhcp 6 }
+
+acosDhcpLeaseTime  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Lease Time"
+        DESCRIPTION
+        "The lease time in seconds for DHCP assigned addresses.  -1 means forever."
+        ::= { acosDhcp 7 }
+
+acosDhcpDomainName  OBJECT-TYPE
+        SYNTAX DisplayString    (SIZE (0..15))
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Domain Name"
+        DESCRIPTION
+        "The domain name returned to the DHCP client."
+        ::= { acosDhcp 8 }
+
+acosDhcpInterface  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Server Interface Number"
+        DESCRIPTION
+        "The logical interface number processed by the DHCP server."
+        ::= { acosDhcp 9 }
+
+-- DHCP Server special handling client list.
+
+acosDhcpClientTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosDhcpClientEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Server Client Table"
+        DESCRIPTION
+        "DHCP Server special handling client table." 
+        ::= { acosDhcp 10 }
+
+acosDhcpClientEntry  OBJECT-TYPE
+        SYNTAX AcosDhcpClientEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "Entry In DHCP Server Client Table"
+        DESCRIPTION
+        "An entry in the DHCP server special handling client table."
+        INDEX { acosDhcpClientIndex
+              }
+        ::= { acosDhcpClientTable 1 }
+
+AcosDhcpClientEntry ::= SEQUENCE  {
+        acosDhcpClientIndex           
+                INTEGER,
+        acosDhcpClientIpAddress
+                IpAddress,
+        acosDhcpClientMacAddress
+                OCTET STRING,
+        acosDhcpClientName
+                DisplayString,
+        acosDhcpClientLeaseTime
+                INTEGER,
+        acosDhcpClientSubnetMask
+                IpAddress,
+        acosDhcpClientGateway
+                IpAddress,
+        acosDhcpClientDnsServer
+                IpAddress
+                                        }
+
+acosDhcpClientIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Server Special Client Index"
+        DESCRIPTION
+        "The index number of the DHCP server special handling client table. The index
+        numbers range from 1 to the maximum size of the client table."
+        ::= { acosDhcpClientEntry 1 }
+
+acosDhcpClientIpAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Special Client IP Address"
+        DESCRIPTION
+        "DHCP Server special handling client table IP address.  Zero means use
+        an IP address from the address pool." 
+        ::= { acosDhcpClientEntry 2 }
+
+acosDhcpClientMacAddress  OBJECT-TYPE
+        SYNTAX OCTET STRING	(SIZE (6))
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Special Client MAC address"
+        DESCRIPTION
+        "DHCP Server special handling client table MAC address." 
+        ::= { acosDhcpClientEntry 3 }
+
+acosDhcpClientName  OBJECT-TYPE
+        SYNTAX DisplayString (SIZE (0..15))
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Special Client Name"
+        DESCRIPTION
+        "DHCP Server special handling client table name." 
+        ::= { acosDhcpClientEntry 4 }
+
+acosDhcpClientLeaseTime  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Special Client Lease Time"
+        DESCRIPTION
+        "DHCP Server special handling client table lease time in seconds.  Zero
+		means use the DHCP default lease time.  -1 means forever."
+        ::= { acosDhcpClientEntry 5 }
+
+acosDhcpClientSubnetMask  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Special Client Subnet Mask"
+        DESCRIPTION
+        "DHCP Server special handling client table subnet mask.  Zero means use
+		the default value."
+        ::= { acosDhcpClientEntry 6 }
+
+acosDhcpClientGateway  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Special Client Gateway"
+        DESCRIPTION
+        "DHCP Server special handling client table default gateway.  Zero
+        means use the default value."
+        ::= { acosDhcpClientEntry 7 }
+
+acosDhcpClientDnsServer  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Dhcp
+    --% ALIAS "DHCP Special Client DNS Server"
+        DESCRIPTION
+        "DHCP Server special handling client table Domain Name Server.  Zero
+		means use the default value."
+        ::= { acosDhcpClientEntry 8 }
+
+------------------------------------------------------------------------------
+-- NAT Group
+------------------------------------------------------------------------------
+
+-- NAT Local Server Table
+
+acosNatServerTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosNatServerEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Local Server Table"
+        DESCRIPTION
+        "NAT Local Server Table." 
+        ::= { acosNat 1 }
+
+acosNatServerEntry  OBJECT-TYPE
+        SYNTAX AcosNatServerEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "Entry In NAT Local Server Table"
+        DESCRIPTION
+        "An entry in the NAT local server table."
+        INDEX { acosNatServerIndex
+              }
+        ::= { acosNatServerTable 1 }
+
+AcosNatServerEntry ::= SEQUENCE  {
+        acosNatServerIndex           
+                INTEGER,
+        acosNatServerTranslatedIpAddress
+                IpAddress,
+        acosNatServerTranslatedPort
+                INTEGER,
+        acosNatServerStandardPort
+                INTEGER,
+        acosNatServerProtocol
+                INTEGER
+                                 }
+
+acosNatServerIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Local Server Index"
+        DESCRIPTION
+        "The index number of the NAT local server table. The index
+        numbers range from 1 to the maximum size of the local server table."
+        ::= { acosNatServerEntry 1 }
+
+acosNatServerTranslatedIpAddress  OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Server Translated IP Address"
+        DESCRIPTION
+        "The actual IP address of this server on the local side of the NAT
+		enabled router."
+        ::= { acosNatServerEntry 2 }
+
+acosNatServerTranslatedPort  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Server Translated Port"
+        DESCRIPTION
+        "The actual port number of this server on the local side of the NAT
+		enabled router."
+        ::= { acosNatServerEntry 3 }
+
+acosNatServerStandardPort  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Server Standard Port"
+        DESCRIPTION
+        "The port number by which this server is seen from the Internet."
+        ::= { acosNatServerEntry 4 }
+
+acosNatServerProtocol  OBJECT-TYPE
+        SYNTAX INTEGER {
+						tcp(6),
+						udp(17)
+					   }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Server Protocol"
+        DESCRIPTION
+        "NAT local server protocol (TCP or UDP)."
+        ::= { acosNatServerEntry 5 }
+
+-- Device NAT parameters
+
+acosNatDeviceParameterTable  OBJECT-TYPE
+        SYNTAX SEQUENCE OF AcosNatDeviceParameterEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Device Parameter Table"
+        DESCRIPTION
+        "This is a table of NAT parameters associated with devices contained 
+        in the box." 
+        ::= { acosNat 2 }
+
+acosNatDeviceParameterEntry  OBJECT-TYPE
+        SYNTAX AcosNatDeviceParameterEntry
+        ACCESS not-accessible
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Parameters Entry For A Device"
+        DESCRIPTION
+        "An entry in the device level NAT parameter table."
+        INDEX { acosNatDeviceSlotIndex, 
+                acosNatDeviceInterfaceIndex,
+                acosNatDevicePortIndex
+              }
+        ::= { acosNatDeviceParameterTable 1 }
+
+AcosNatDeviceParameterEntry ::= SEQUENCE   {
+        acosNatDeviceSlotIndex           
+                INTEGER,
+        acosNatDeviceInterfaceIndex     
+                INTEGER,
+        acosNatDevicePortIndex     
+                INTEGER,
+        acosNatDeviceTranslationEnabled
+                INTEGER
+                                          }
+
+acosNatDeviceSlotIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Routing
+    --% ALIAS "NAT Parameter Slot Index"
+        DESCRIPTION
+        "The slot number the device resides in. The slot numbers range from
+        1 to the maximum number of slots reported in object 
+        'acosTotalSlots'."
+        ::= { acosNatDeviceParameterEntry 1 }
+
+acosNatDeviceInterfaceIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Parameter Interface Index"
+        DESCRIPTION
+        "The interface number of a specific interface in the slot. The interface
+        numbers range from 1 to the maximum number of interfaces reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosNatDeviceParameterEntry 2 }
+
+acosNatDevicePortIndex  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-only
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Parameter Port Index"
+        DESCRIPTION
+        "The port number of a specific interface in the slot. The port
+        numbers range from 1 to the maximum number of ports reported
+        in 'acosDeviceTotal' for this slot." 
+        ::= { acosNatDeviceParameterEntry 3 }
+
+acosNatDeviceTranslationEnabled  OBJECT-TYPE
+        SYNTAX INTEGER  {
+                        enabled(1),
+                        disabled(2)
+                        }
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Device Translation Enabled"
+        DESCRIPTION
+        "The NAT translation configuration for this port."
+        ::= { acosNatDeviceParameterEntry 4 }
+
+acosNatTcpTimeout  OBJECT-TYPE
+        SYNTAX  TimeTicks
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT TCP Timeout"
+        DESCRIPTION
+        "The NAT TCP connection timeout time in hundredths of seconds."
+        ::= { acosNat 3 }
+
+acosNatUdpTimeout  OBJECT-TYPE
+        SYNTAX  TimeTicks
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT UDP Timeout"
+        DESCRIPTION
+        "The NAT UDP connection timeout time in hundredths of seconds."
+        ::= { acosNat 4 }
+
+acosNatPortLow  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT Low Port Number"
+        DESCRIPTION
+        "The low end of the port number range used for NAT connections."
+        ::= { acosNat 5 }
+
+acosNatPortHigh  OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+    --% GROUP Nat
+    --% ALIAS "NAT High Port Number"
+        DESCRIPTION
+        "The high end of the port number range used for NAT connections."
+        ::= { acosNat 6 }
+
+------------------------------------------------------------------------------
+-- Traps
+------------------------------------------------------------------------------
+
+acosCardInsertedTrap TRAP-TYPE
+        ENTERPRISE  aceAcos
+        VARIABLES { acosDeviceSlotIndex,
+                    acosDeviceType
+                  }      
+        DESCRIPTION
+        "A card has been detected in a slot that was previously empty.
+        The slot number is reported in 'acosDeviceSlotIndex'. The card
+        type is reported in 'acosDeviceType'"
+        ::= 1
+    
+acosCardRemovedTrap TRAP-TYPE
+        ENTERPRISE  aceAcos
+        VARIABLES { acosDeviceSlotIndex,
+                    acosDeviceType
+                  }      
+        DESCRIPTION
+        "A card has been removed from a slot. The slot number is reported
+        in 'acosDeviceSlotIndex'. The type of card that was in the 
+        slot is reported in 'acosDeviceType'"
+        ::= 2
+
+acosTftpInitiatedTrap TRAP-TYPE
+        ENTERPRISE  aceAcos
+        VARIABLES { acosTftpFileName,
+                    acosTftpServerAddress
+                  }      
+        DESCRIPTION
+        "The box has been commanded to start a TFTP session. The name of
+        the file being read is reported in 'acosTftpFileName'. The
+        IP address of the server where the file is being read from is
+        reported in 'acosTftpServerAddress'."
+        ::= 3
+
+acosTftpFailedTrap TRAP-TYPE
+        ENTERPRISE  aceAcos
+        VARIABLES { acosTftpFileName,
+                    acosTftpServerAddress,        
+                    acosTftpFailReason
+                  }      
+        DESCRIPTION
+        "The TFTP session failed. The name of the file that could not be
+        read is reported in 'acosTftpFileName'. The IP address of the 
+        server where the file could not be read is reported in
+        'acosTftpServerAddress'.
+        The reason for the failure is reported in 'acosTftpFailReason'."
+        ::= 4
+
+acosTftpSucceededTrap TRAP-TYPE
+        ENTERPRISE  aceAcos
+        VARIABLES { acosTftpFileName,
+                    acosTftpServerAddress
+                  }      
+        DESCRIPTION
+        "The TFTP session succeeded. The name of the file that was
+        read is reported in 'acosTftpFileName'. The IP address of the 
+        server where the file was read is reported in 
+        'acosTftpServerAddress'."
+        ::= 5
+
+
+END

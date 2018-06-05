@@ -1,0 +1,1850 @@
+-- PairGain DSLAM SESSION MIB Release 1.1
+-- Revision 08/25/99
+
+-- Copyright 1998 PairGain Technologies, Inc.  All Rights
+-- Reserved.  Reproduction of this document is authorized on
+-- condition that the foregoing copyright notice is included.
+-- This PairGain SNMP Management Information Base Specification
+-- (Specification) embodies PairGain's confidential and
+-- proprietary intellectual property.  PairGain retains all
+-- title and ownership in the Specification, including any
+-- revisions.
+--
+-- It is PairGain's intent to encourage the widespread use of
+-- this Specification in connection with the management of
+-- PairGain products. PairGain grants vendors, end-users,
+-- and other interested parties a non-exclusive license to
+-- use this Specification in connection with the management
+-- of PairGain products.
+--
+-- This Specification is supplied "AS IS," and PairGain makes
+-- no warranty, either expressed or implied, as to the use,
+-- operation, condition, or performance of the Specification.
+--
+-- Revision History
+--------------------------------------------------------------
+-- Date     Ver     Programmer  Description
+--------------------------------------------------------------
+-- 08/25/99 1.0     Abbas       Changes to describe the use
+--				of MIB objects.
+-- 03/03/98 1.0     Abbas       Initial Release
+
+--        OBJECT-TYPE,
+--        MODULE-IDENTITY,
+--        IpAddress,
+--        NOTIFICATION-TYPE,
+--        Integer32
+--                FROM SNMPv2-SMI
+
+
+PG-BRIDGE-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	DisplayString,
+	PhysAddress,
+        MacAddress,
+	RowStatus,
+	TruthValue
+		FROM SNMPv2-TC
+	OBJECT-TYPE, MODULE-IDENTITY FROM SNMPv2-SMI
+	IpAddress, Counter, TimeTicks
+		FROM RFC1155-SMI
+	TRAP-TYPE
+		FROM RFC-1215
+        ifIndex,
+        mib-2
+		FROM RFC1213-MIB
+
+	pgainDSLAM
+		FROM PAIRGAIN-COMMON-HD-MIB;
+
+          -- All representations of MAC addresses in this MIB Module
+          -- use, as a textual convention (i.e. this convention does
+          -- not affect their encoding), the data type:
+
+        --  MacAddress ::= OCTET STRING (SIZE (6))
+                                                    -- a 6 octet address
+                                                    -- in the
+                                                    -- "canonical"
+                                                    -- order
+          -- defined by IEEE 802.1a, i.e., as if it were transmitted
+          -- least significant bit first, even though 802.5 (in
+          -- contrast to other n802.x protocols) requires MAC
+          -- addresses to be transmitted most significant bit first.
+          --
+
+          -- 16-bit addresses, if needed, are represented by setting
+          -- their upper 4 octets to all 0's, i.e., AAFF would be
+          -- represented as 00000000AAFF.
+
+
+          -- Similarly, all representations of Bridge-Id in this MIB
+          -- Module use, as a textual convention (i.e. this
+          -- convention does not affect their encoding), the data
+          -- type:
+
+          BridgeId ::= OCTET STRING (SIZE (8))   -- the
+                                                 -- Bridge-Identifier
+                                                 -- as used in the
+                                                 -- Spanning Tree
+          -- Protocol to uniquely identify a bridge.  Its first two
+          -- octets (in network byte order) contain a priority
+          -- value and its last 6 octets contain the MAC address
+          -- used to refer to a bridge in a unique fashion
+          -- (typically, the numerically smallest MAC address
+          -- of all ports on the bridge).
+          -- Several objects in this MIB module represent values of
+          -- timers used by the Spanning Tree Protocol.  In this
+          -- MIB, these timers have values in units of hundreths of
+          -- a second (i.e. 1/100 secs).
+          -- These timers, when stored in a Spanning Tree Protocol's
+          -- BPDU, are in units of 1/256 seconds.  Note, however,
+          -- that 802.1D-1990 specifies a settable granularity of
+          -- no more than 1 second for these timers.  To avoid
+          -- ambiguity, a data type is defined here as a textual
+          -- convention and all representation of these timers
+          -- in this MIB module are defined using this data type.  An
+          -- algorithm is also defined for converting between the
+          -- different units, to ensure a timer's value is not
+          -- distorted by multiple conversions.
+          -- The data type is:
+
+          Timeout ::= INTEGER -- a STP timer in units of 1/100 seconds
+
+          -- To convert a Timeout value into a value in units of
+          -- 1/256 seconds, use the following algorithm:
+          --
+          --      b  = floor( (n * 256) / 100)
+          --
+          -- where:
+          --      floor   =  quotient [ignore remainder]
+          --      n is the value in 1/100 second units
+          --      b is the value in 1/256 second units
+          --
+          -- To convert the value from 1/256 second units back to
+          -- 1/100 seconds, use the following algorithm:
+          --
+          --      n = ceiling( (b * 100) / 256)
+          --
+          -- where:
+          --      ceiling =  quotient [if remainder is 0], or
+          --                 quotient + 1 [if remainder is non-zero]
+          --      n is the value in 1/100 second units
+          --      b is the value in 1/256 second units
+          --
+          -- Note: it is important to perform the arithmetic operations
+          -- in the order specified (i.e., multiply first, divide
+          -- second).
+
+
+
+
+
+pgsessionMIB MODULE-IDENTITY
+        LAST-UPDATED    "9812170000Z"
+	ORGANIZATION	"Pairgain Technology"
+        CONTACT-INFO	"Abbas Dadabhoy"
+        DESCRIPTION     "The module defines MIB for Bridge configuration and stats"
+        ::= {pgainDSLAM 8}
+
+
+pgSessionPort           OBJECT IDENTIFIER ::= { pgsessionMIB 1 }
+
+pgDot1dBase             OBJECT IDENTIFIER ::= { pgsessionMIB 2 }
+
+pgDot1dBasePort         OBJECT IDENTIFIER ::= { pgsessionMIB 3 }
+
+pgDot1dStpPort          OBJECT IDENTIFIER ::= { pgsessionMIB 4 }
+
+pgDot1dTp               OBJECT IDENTIFIER ::= { pgsessionMIB 5 }
+
+pgDot1dStatic           OBJECT IDENTIFIER ::= { pgsessionMIB 6 }
+
+pgVlanGroup             OBJECT IDENTIFIER ::= { pgsessionMIB 7 }
+
+pgSessionRouterGroup    OBJECT IDENTIFIER ::= { pgsessionMIB 8 }
+
+pgIfindexToSlotPortMap  OBJECT IDENTIFIER ::= { pgsessionMIB 9 }
+
+pgBridgePortToSlotPortMap  OBJECT IDENTIFIER ::= { pgsessionMIB 10 }
+
+
+
+
+--
+-- The Pairgain Session Port Table
+--
+
+
+pgSessionPortTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PgSessionPortEntry
+        MAX-ACCESS  not-accessible
+        STATUS  mandatory
+	DESCRIPTION
+                "A table that contains port database information
+		for the Bridge/Router Engine. This table primarily applies
+		to the logical port of ATM PVC in Avidia chassis"
+	REFERENCE
+        	""
+        ::= { pgSessionPort 1 }
+
+pgSessionPortEntry OBJECT-TYPE
+        SYNTAX  PgSessionPortEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries in a table that contains port database information
+		for the Bridge/Router Engine. This table primarily applies
+		to the logical port of ATM PVC in Avidia chassis"
+        REFERENCE
+                ""
+        INDEX { pgSessionInstance,
+                pgSessionPortVpi,
+                pgSessionPortVci
+               }
+        ::= { pgSessionPortTable 1 }
+
+PgSessionPortEntry ::=
+        SEQUENCE {
+                pgSessionInstance               INTEGER,
+                pgSessionPortVpi                INTEGER,
+                pgSessionPortVci                INTEGER,
+                pgSessionPortSlotNum                    INTEGER,
+                pgSessionPortNum                        INTEGER,
+                pgSessionPortIfIndex                    INTEGER,
+                pgSessionPortBridgePort                 INTEGER,
+                pgSessionPortRouterGroupInterface       INTEGER,
+                pgSessionPortVlanIdentifier             INTEGER,
+                pgSessionPortServiceType                INTEGER,
+                pgSessionPortSubscriberName             DisplayString,
+                pgSessionPortRowStatus                  RowStatus
+        }
+
+pgSessionInstance OBJECT-TYPE
+	SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+	DESCRIPTION
+                "The following three Indexes refer to a Session Logical Port.
+                        pgSessionInstance
+                                The Bridge Instance Identifier. Multiple bridge instances may
+                                be running on the Avidia Chassis. This Object identifies which
+                                bridge instance the user wishes to address.
+
+                        pgSessionPortVpi
+				On an AMC Card, this value is always 0.
+				On an OC3 Card, this is the external VPI number.
+				On Cell or Frame based Channel cards, this value is
+					the internal VPI number of the PVC terminating into
+					the Bridge slot.
+                        pgSessionPortVci
+                                On an AMC Card, this value is always between 1024 and (MAX_BRT_PVCIF -1) for WAN  or the
+					VLAN Identifier in which this ethernet port belongs.
+				On an OC3 Card, this is the external VCI number.
+				On Cell or Frame based Channel cards, this value is
+					the internal VCI number of the PVC terminating into
+					the Bridge slot.
+                        "
+	REFERENCE
+        	""
+        ::= { pgSessionPortEntry 1 }
+
+pgSessionPortVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The following three Indexes refer to a Session Logical Port.
+                        pgSessionInstance
+                                The Bridge Instance Identifier. Multiple bridge instances may
+                                be running on the Avidia Chassis. This Object identifies which
+                                bridge instance the user wishes to address.
+
+                        pgSessionPortVpi
+				On an AMC Card, this value is always 0.
+				On an OC3 Card, this is the external VPI number.
+				On Cell or Frame based Channel cards, this value is
+					the internal VPI number of the PVC terminating into
+					the Bridge slot.
+                        pgSessionPortVci
+                                On an AMC Card, this value is always between 1024 and (MAX_BRT_PVCIF -1) for WAN  or the
+					VLAN Identifier in which this ethernet port belongs.
+				On an OC3 Card, this is the external VCI number.
+				On Cell or Frame based Channel cards, this value is
+					the internal VCI number of the PVC terminating into
+					the Bridge slot.
+                        "
+        REFERENCE
+                ""
+        ::= { pgSessionPortEntry 2 }
+
+pgSessionPortVci OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The following three Indexes refer to a Session Logical Port.
+                        pgSessionInstance
+                                The Bridge Instance Identifier. Multiple bridge instances may
+                                be running on the Avidia Chassis. This Object identifies which
+                                bridge instance the user wishes to address.
+
+                        pgSessionPortVpi
+				On an AMC Card, this value is always 0.
+				On an OC3 Card, this is the external VPI number.
+				On the Cell or Frame based Channel cards, this value is
+					the internal VPI number of the PVC terminating into
+					the Bridge slot.
+                        pgSessionPortVci
+                                On an AMC Card, this value is always between 1024 and (MAX_BRT_PVCIF -1) for WAN  or the
+					VLAN Identifier in which this ethernet port belongs.
+				On an OC3 Card, this is the external VCI number.
+				On the Cell or Frame based Channel cards, this value is
+					the internal VCI number of the PVC terminating into
+					the Bridge slot.
+                        "
+        REFERENCE
+                ""
+        ::= { pgSessionPortEntry 3 }
+
+
+pgSessionPortSlotNum OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                 "The number of the remote (external) Card slot"
+        REFERENCE
+                ""
+        ::= { pgSessionPortEntry 4 }
+
+pgSessionPortNum OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The Physical Port number of the card, for
+                 which this logical port number is addressed.
+                 On an AMC Card, the values are 1 or 2 for Ethernet port
+                 1 or 2.
+                 On an OC3 Card, the values are 1 or 2 for the OC3 line
+                 number.
+                 On Cell or Frame based Channel cards, the value is
+                 the physical xDSL port number."
+        REFERENCE
+                ""
+        ::= { pgSessionPortEntry 5 }
+
+
+pgSessionPortIfIndex OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This is the Interface Index returned by the Logical Layer Manager that
+		is used to retrieve statistics (ifEntery) for the port defined in
+		this MIB.
+
+ A pgSessionPortIfIndex is created for each session
+		Port. This object does not attach to the TCP/IP stack."
+        REFERENCE
+                ""
+        ::= { pgSessionPortEntry 6 }
+
+pgSessionPortBridgePort OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This is the bridge port number returned when a port is configured
+		using the indexes for this row. This port is referenced
+		by the Bridge code and other bridge-related configuration."
+        REFERENCE
+                ""
+        ::= { pgSessionPortEntry 7 }
+
+pgSessionPortRouterGroupInterface OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+
+                "This object is an index into a row in the pgSessionRouterGroupTable that is created by
+                the Logical Layer Manager. It is used to attach this session port to the TCP/IP stack. When a session port needs an
+                IP route entry, a row is created in the pgSessionRouterGroupTable and its
+                index is used in this MIB to map this session base port to the
+                pgSessionGroupTable row."
+        REFERENCE
+                ""
+	DEFVAL { 0 }
+        ::= { pgSessionPortEntry 8 }
+
+pgSessionPortVlanIdentifier OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The identifier of the 802.1q VLAN group to which this port belongs.
+
+		The system always has a VLAN group entry defined with the
+		group identifier value of 1."
+        REFERENCE
+                ""
+	DEFVAL { 1 }
+        ::= { pgSessionPortEntry 9 }
+
+pgSessionPortServiceType OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+                "This field shows the type of service enabled for the port.
+Bit Positions:
+
+       7        6       5       4       3       2       1       0
+                                                |       |       |
+                                                |       |       ----   Bridging
+                                                |       ------------   Routing
+                                                --------------------   PPP
+
+The services can be enabled or disabled by a logical OR with the existing value."
+       REFERENCE
+        	""
+        ::= { pgSessionPortEntry 10 }
+
+pgSessionPortSubscriberName OBJECT-TYPE
+              SYNTAX  DisplayString(SIZE(1..32))
+              MAX-ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                      "The name of the subscriber to whom this Port is assigned."
+              REFERENCE
+                      ""
+              ::= { pgSessionPortEntry 11 }
+
+pgSessionPortRowStatus OBJECT-TYPE
+	SYNTAX		RowStatus
+        MAX-ACCESS      read-write
+        STATUS          mandatory
+		DESCRIPTION	"This object allows table entries to be created and deleted.
+ 			The RowStatus should be out of
+			the ACTIVE state for other columns to be modified."
+        ::= { pgSessionPortEntry 12 }
+
+--
+-- the pgDot1dBase group
+-- the dot1dTp group
+--
+-- Implementation of the pgDot1dBase group is mandatory for all
+-- bridges.
+--
+
+pgDot1dBaseTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF PgDot1dBaseEntry
+        MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A table that contains global database information
+		for the Bridge Engine."
+	REFERENCE
+        	""
+	::= { pgDot1dBase 1 }
+
+pgDot1dBaseEntry OBJECT-TYPE
+	SYNTAX  PgDot1dBaseEntry
+        MAX-ACCESS  not-accessible
+        STATUS  mandatory
+	DESCRIPTION
+                "Table entries that contain global database information
+		for the Bridge Engine."
+	REFERENCE
+        	""
+              INDEX   { pgSessionInstance }
+	::= { pgDot1dBaseTable 1 }
+
+PgDot1dBaseEntry ::=
+	SEQUENCE {
+		pgDot1dBaseBrEnable 		INTEGER,
+		pgDot1dBaseBrStpEnable		INTEGER,
+		pgDot1dBaseBridgeAddress	MacAddress,
+		pgDot1dBaseNumPorts		INTEGER,
+                pgDot1dBaseType                 INTEGER,
+		pgDot1dTpLearnedEntryDiscards	INTEGER,
+                pgDot1dTpAgingTime              INTEGER
+	}
+
+pgDot1dBaseBrEnable OBJECT-TYPE
+	SYNTAX  INTEGER {
+        	enabled(1),			-- Enabled
+        	disabled(2)			-- Disabled
+	}
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+        	"Status of the Bridge. The Bridge code can be enabled or disabled
+		based on this flag. This MIB is implementation dependent."
+	REFERENCE
+        	""
+	::= { pgDot1dBaseEntry 1 }
+
+pgDot1dBaseBrStpEnable OBJECT-TYPE
+	SYNTAX  INTEGER {
+        	enabled(1),			-- Enabled
+        	disabled(2)			-- Disabled
+	}
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+        	"The admin status of Spanning Tree Protocol. This object enables the user
+			to run Spanning Tree."
+	REFERENCE
+        	""
+        ::= { pgDot1dBaseEntry 2 }
+
+pgDot1dBaseBridgeAddress OBJECT-TYPE
+	SYNTAX  MacAddress
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+	DESCRIPTION
+        	"The MAC address used to create a unique identifier for the bridge.  It is
+        	recommended that this be the numerically smallest
+        	MAC address of all ports that belong to this
+        	bridge.  However it is only required that this address be unique.
+        	When concatenated with dot1dStpPriority, a unique
+        	BridgeIdentifier is formed, for use by the
+        	Spanning Tree Protocol."
+	REFERENCE
+        	"IEEE 802.1D-1990: Sections 6.4.1.1.3 and 3.12.5	--	dot1dBaseBridgeAddress"
+
+        ::= { pgDot1dBaseEntry 3 }
+
+pgDot1dBaseNumPorts OBJECT-TYPE
+	SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+	DESCRIPTION
+        	"The number of ports controlled by this bridging
+        	entity."
+	REFERENCE
+        	"IEEE 802.1D-1990: Section 6.4.1.1.3	--	dot1dBaseNumPorts"
+        ::= { pgDot1dBaseEntry 4 }
+
+pgDot1dBaseType OBJECT-TYPE
+	SYNTAX  INTEGER {
+                	unknown(1),
+                	transparent-only(2),
+                	sourceroute-only(3),
+                	srt(4)
+        	}
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+	DESCRIPTION
+        	"The type of bridging this bridge can
+        	perform.  The type of bridging performed by a bridge is indicated by
+        	entries in the port table for the given type."
+        ::= { pgDot1dBaseEntry 5 }
+
+pgDot1dTpLearnedEntryDiscards OBJECT-TYPE
+        SYNTAX  Counter
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The total number of Forwarding Database entries
+                that have been or would have been learned, but
+                have been discarded due to a lack of space
+ 				in the Forwarding Database.  If this
+                counter is increasing, it indicates that the
+                Forwarding Database is regularly becoming full, reducing subnetwork performance. If this counter has a
+                significant value but is not presently increasing,
+                it indicates that the problem has occurred
+                but is not persistent."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.7.1.1.3"
+        ::= { pgDot1dBaseEntry 6 }
+
+pgDot1dTpAgingTime OBJECT-TYPE
+        SYNTAX   INTEGER (10..1000000)
+        MAX-ACCESS   read-write
+        STATUS   mandatory
+        DESCRIPTION
+                "The timeout period in seconds for aging out
+                dynamically learned forwarding information.
+                802.1D-1990 recommends a default of 300 seconds."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.7.1.1.3"
+        ::= { pgDot1dBaseEntry 7 }
+
+-- The Generic Bridge Port Table
+
+pgdot1dBasePortTable OBJECT-TYPE
+              SYNTAX  SEQUENCE OF Pgdot1dBasePortEntry
+              MAX-ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                      "A table that contains generic information about
+                      every port that is associated with this bridge.
+                      Transparent, source-route, and srt ports are
+                      included."
+              ::= { pgDot1dBasePort 1 }
+
+pgdot1dBasePortEntry OBJECT-TYPE
+              SYNTAX  Pgdot1dBasePortEntry
+              MAX-ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                      "A list of information for each port that is associated with the
+                      bridge."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 6.4.2, 6.6.1"
+              INDEX  { pgSessionInstance, pgSessionPortBridgePort }
+              ::= { pgdot1dBasePortTable 1 }
+
+Pgdot1dBasePortEntry ::=
+              SEQUENCE {
+                  pgdot1dBasePort
+                      INTEGER,
+                  pgdot1dBasePortIfIndex
+                      INTEGER,
+                  pgdot1dBasePortCircuit
+                      OBJECT IDENTIFIER,
+                  pgdot1dBasePortDelayExceededDiscards
+                      Counter,
+                  pgdot1dBasePortMtuExceededDiscards
+                      Counter
+              }
+
+pgdot1dBasePort OBJECT-TYPE
+              SYNTAX  INTEGER (1..65535)
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The logical port number of the port for which this entry
+                      contains bridge management information."
+              ::= { pgdot1dBasePortEntry 1 }
+
+pgdot1dBasePortIfIndex OBJECT-TYPE
+              SYNTAX  INTEGER
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The value of the instance of the ifIndex object,
+                      defined in MIB-II, for the interface corresponding
+                      to this port."
+              ::= { pgdot1dBasePortEntry 2 }
+
+pgdot1dBasePortCircuit OBJECT-TYPE
+              SYNTAX  OBJECT IDENTIFIER
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "For a port which (potentially) has the same dot1dBasePortIfIndex value
+ 					  as another port on the
+                      same bridge, this object contains the name of an
+                      object instance unique to this port.  For example,
+                      in the case where multiple ports correspond one-
+                      to-one with multiple X.25 virtual circuits, this
+                      value might identify an object
+                      instance, such as the first instance, associated with the X.25 virtual circuit
+                      that corresponds to this port.
+
+                      For a port that has a unique dot1dBasePortIfIndex value
+					  , this object can have the
+                      value { 0 0 }."
+              ::= { pgdot1dBasePortEntry 3 }
+
+pgdot1dBasePortDelayExceededDiscards OBJECT-TYPE
+              SYNTAX  Counter
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The number of frames discarded by this port due
+                      to excessive transit delay through the bridge.  It
+                      is incremented by both transparent and source
+                      route bridges."
+              REFERENCE
+                       "IEEE 802.1D-1990: Section 6.6.1.1.3"
+              ::= { pgdot1dBasePortEntry 4 }
+
+pgdot1dBasePortMtuExceededDiscards OBJECT-TYPE
+              SYNTAX  Counter
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The number of frames discarded by this port due
+                      to an excessive size.  It is incremented by both
+                      transparent and source route bridges."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 6.6.1.1.3"
+              ::= { pgdot1dBasePortEntry 5 }
+
+
+-- The Spanning Tree Port Table
+
+pgdot1dStpPortTable OBJECT-TYPE
+              SYNTAX  SEQUENCE OF PgDot1dStpPortEntry
+              MAX-ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                      "A table that contains port-specific information
+                      for the Spanning Tree Protocol."
+              ::= { pgDot1dStpPort 1 }
+
+pgdot1dStpPortEntry OBJECT-TYPE
+              SYNTAX  PgDot1dStpPortEntry
+              MAX-ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                      "A list of information maintained by every port
+                      about the Spanning Tree Protocol state for that
+                      port."
+              INDEX  { pgSessionInstance, pgSessionPortBridgePort }
+              ::= { pgdot1dStpPortTable 1 }
+
+PgDot1dStpPortEntry ::=
+              SEQUENCE {
+                  pgdot1dStpPort
+                      INTEGER,
+                  pgdot1dStpPortPriority
+                      INTEGER,
+                  pgdot1dStpPortState
+                      INTEGER,
+                  pgdot1dStpPortEnable
+                      INTEGER,
+                  pgdot1dStpPortPathCost
+                      INTEGER,
+                  pgdot1dStpPortDesignatedRoot
+                      BridgeId,
+                  pgdot1dStpPortDesignatedCost
+                      INTEGER,
+                  pgdot1dStpPortDesignatedBridge
+                      BridgeId,
+                  pgdot1dStpPortDesignatedPort
+                      OCTET STRING,
+                  pgdot1dStpPortForwardTransitions
+                      Counter,
+		  pgdot1dStpPortRowStatus
+		      RowStatus
+              }
+
+pgdot1dStpPort OBJECT-TYPE
+              SYNTAX  INTEGER (1..65535)
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The logical number of the port for which this entry
+                      contains Spanning Tree Protocol management
+                      information."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 6.8.2.1.2"
+              ::= { pgdot1dStpPortEntry 1 }
+
+pgdot1dStpPortPriority OBJECT-TYPE
+              SYNTAX  INTEGER (0..255)
+              MAX-ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                      "The value of the priority field that is
+                      contained in the first (in network byte order)
+                      octet of the (2 octet long) Port ID.  The other
+                      octet of the Port ID is given by the value of
+                      dot1dStpPort."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 4.5.5.1"
+              ::= { pgdot1dStpPortEntry 2 }
+
+pgdot1dStpPortState OBJECT-TYPE
+              SYNTAX  INTEGER {
+                          disabled(1),
+                          blocking(2),
+                          listening(3),
+                          learning(4),
+                          forwarding(5),
+                          broken(6)
+                      }
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The port's current state as defined by
+					  the Spanning Tree Protocol application.  This
+                      state controls what action a port takes when it receives
+					  a frame.  If the bridge detects
+                      a port that is malfunctioning it places that
+                      port into the broken (6) state.  Disabled ports
+ (see dot1dStpPortEnable) have a value of disabled (1)."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 4.5.5.2"
+              ::= { pgdot1dStpPortEntry 3 }
+
+pgdot1dStpPortEnable OBJECT-TYPE
+              SYNTAX  INTEGER {
+                          enabled(1),
+                          disabled(2)
+                      }
+              MAX-ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                      "The enabled/disabled status of the port."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 4.5.5.2"
+              ::= { pgdot1dStpPortEntry 4 }
+
+pgdot1dStpPortPathCost OBJECT-TYPE
+              SYNTAX  INTEGER (1..65535)
+              MAX-ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                      "The path cost of this port. This cost is used to calculate the cost of
+                      paths that include this port that are directed toward the spanning tree root.  802.1D-1990 recommends that the
+                      default value of this parameter be in inverse
+                      proportion to the speed of the attached LAN."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 4.5.5.3"
+              ::= { pgdot1dStpPortEntry 5 }
+
+pgdot1dStpPortDesignatedRoot OBJECT-TYPE
+              SYNTAX  BridgeId
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The unique Bridge Identifier of the Bridge
+                      recorded as the Root in the Configuration BPDUs
+                      transmitted by the Designated Bridge for the
+                      segment to which the port is attached."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 4.5.5.4"
+              ::= { pgdot1dStpPortEntry 6 }
+
+pgdot1dStpPortDesignatedCost OBJECT-TYPE
+              SYNTAX  INTEGER
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The path cost of the Designated Port of the
+                      segment connected to this port.  This value is
+                      compared to the Root Path Cost field in received
+                      bridge PDUs."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 4.5.5.5"
+              ::= { pgdot1dStpPortEntry 7 }
+
+pgdot1dStpPortDesignatedBridge OBJECT-TYPE
+              SYNTAX  BridgeId
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The Bridge Identifier of the port's Designated Bridge for
+                      this port's segment."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 4.5.5.6"
+              ::= { pgdot1dStpPortEntry 8 }
+
+pgdot1dStpPortDesignatedPort OBJECT-TYPE
+              SYNTAX  OCTET STRING (SIZE (2))
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The Port Identifier of the port on the Designated
+                      Bridge for this port's segment."
+              REFERENCE
+                      "IEEE 802.1D-1990: Section 4.5.5.7"
+              ::= { pgdot1dStpPortEntry 9 }
+
+pgdot1dStpPortForwardTransitions OBJECT-TYPE
+              SYNTAX  Counter
+              MAX-ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The number of times this port has transitioned
+                      from the Learning state to the Forwarding state."
+              ::= { pgdot1dStpPortEntry 10 }
+
+pgdot1dStpPortRowStatus OBJECT-TYPE
+	      SYNTAX  RowStatus
+              MAX-ACCESS  read-write
+              STATUS  mandatory
+	      DESCRIPTION
+		      	"This object allows table entries to be created and deleted.
+   				The RowStatus should be out of
+		      the ACTIVE state for other columns to be modified."
+              ::= { pgdot1dStpPortEntry 11 }
+
+------------------------------------------------------------------------------
+--  The Forwarding Database for Transparent Bridges
+------------------------------------------------------------------------------
+
+pgDot1dTpFdbTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PgDot1dTpFdbEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A table that contains information about unicast
+                entries for which the bridge has forwarding and/or
+                filtering information.  This information is used
+                by the transparent bridging function in
+                determining how to propagate a received frame."
+        ::= { pgDot1dTp 1 }
+
+pgDot1dTpFdbEntry OBJECT-TYPE
+        SYNTAX  PgDot1dTpFdbEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Information about a specific unicast MAC address
+                for which the bridge has some forwarding and/or
+                filtering information."
+        INDEX   { pgSessionInstance, pgDot1dTpFdbAddress }
+        ::= { pgDot1dTpFdbTable 1 }
+
+PgDot1dTpFdbEntry ::=
+        SEQUENCE {
+                pgDot1dTpFdbAddress             MacAddress,
+                pgDot1dTpFdbPort                INTEGER,
+                pgDot1dTpFdbStatus		INTEGER
+        }
+
+pgDot1dTpFdbAddress OBJECT-TYPE
+        SYNTAX  MacAddress
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A unicast MAC address for which the bridge has
+                forwarding and/or filtering information."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 3.9.1, 3.9.2"
+        ::= { pgDot1dTpFdbEntry 1 }
+
+pgDot1dTpFdbPort OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Either the value '0' or the port number of the
+                port on which a frame having a source address
+                equal to the value of the corresponding instance
+                of pgDot1dTpFdbAddress has been seen.  A value of
+                '0' indicates that the port number has not been
+                learned but that the bridge does have some
+                forwarding/filtering information about this
+                address (e.g. in the pgDot1dStaticTable).
+                Implementors are encouraged to assign the port
+                value to this object whenever it is learned, even
+                for addresses for which the corresponding value of
+                pgDot1dTpFdbStatus is not learned(3)."
+        ::= { pgDot1dTpFdbEntry 2 }
+
+pgDot1dTpFdbStatus OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        other(1),
+                        invalid(2),
+                        learned(3),
+                        self(4),
+                        mgmt(5)
+                }
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The status of this entry.  The meanings of the
+                values are:
+
+                other(1)   : none of the following.  This
+                                includes the case in which some other
+                                MIB object (not the corresponding
+                                instance of pgDot1dTpFdbPort, nor an
+                                entry in the pgDot1dStaticTable) is
+                                being used to determine if and how
+                                frames addressed to the value of
+                                the corresponding instance of
+                                pgDot1dTpFdbAddress are being
+                                forwarded.
+
+                invalid(2) : this entry is not longer valid
+                                (e.g., it was learned but has since
+                                aged-out), but has not yet been
+                                flushed from the table.
+
+                learned(3) : the value of the corresponding
+                                instance of pgDot1dTpFdbPort was
+                                learned, and is being used.
+
+                self(4)    : the value of the corresponding
+                                instance of pgDot1dTpFdbAddress
+                                represents one of the bridge's
+                                addresses.  The corresponding
+                                instance of pgDot1dTpFdbPort
+                                indicates which of the bridge's
+                                ports has this address.
+
+                mgmt(5)    : the value of the corresponding
+                                instance of pgDot1dTpFdbAddress is
+                                also the value of an existing
+                                instance of pgDot1dStaticAddress."
+        ::= { pgDot1dTpFdbEntry 3 }
+
+------------------------------------------------------------------------------
+--  Port Table for Transparent Bridges
+------------------------------------------------------------------------------
+
+pgDot1dTpPortTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PgDot1dTpPortEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A table that contains information about every
+                port that is associated with this transparent
+                bridge."
+        ::= { pgDot1dTp 2 }
+
+pgDot1dTpPortEntry OBJECT-TYPE
+        SYNTAX  PgDot1dTpPortEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A list of information for each port of a
+                transparent bridge."
+        INDEX   { pgSessionInstance, pgDot1dTpPort }
+        ::= { pgDot1dTpPortTable 1 }
+
+PgDot1dTpPortEntry ::=
+        SEQUENCE {
+                pgDot1dTpPort			INTEGER,
+                pgDot1dTpPortMaxInfo		INTEGER,
+                pgDot1dTpPortInFrames		Counter,
+                pgDot1dTpPortOutFrames		Counter,
+                pgDot1dTpPortInDiscards		Counter
+        }
+
+pgDot1dTpPort OBJECT-TYPE
+        SYNTAX  INTEGER (1..65535)
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The port number of the port for which this entry
+                contains Transparent bridging management
+                information."
+        ::= { pgDot1dTpPortEntry 1 }
+
+-- It would be nice if we could use ifMtu as the size of the
+-- largest INFO field, but we can't because ifMtu is defined
+-- to be the size that the (inter-)network layer can use which
+-- can differ from the MAC layer (especially if several layers
+-- of encapsulation are used).
+
+pgDot1dTpPortMaxInfo OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The maximum size of the INFO (non-MAC) field that
+                this port will receive or transmit."
+        ::= { pgDot1dTpPortEntry 2 }
+
+pgDot1dTpPortInFrames OBJECT-TYPE
+        SYNTAX  Counter
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of frames that have been received by
+                this port from its segment. Note that a frame
+                received on the interface corresponding to this
+                port is only counted by this object if and only if
+                it is for a protocol being processed by the local
+                bridging function, including bridge management
+                frames."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.6.1.1.3"
+        ::= { pgDot1dTpPortEntry 3 }
+
+pgDot1dTpPortOutFrames OBJECT-TYPE
+        SYNTAX  Counter
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of frames that have been transmitted
+                by this port to its segment.  Note that a frame
+                transmitted on the interface corresponding to this
+                port is only counted by this object if and only if
+                it is for a protocol being processed by the local
+                bridging function, including bridge management
+                frames."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.6.1.1.3"
+        ::= { pgDot1dTpPortEntry 4 }
+
+pgDot1dTpPortInDiscards OBJECT-TYPE
+        SYNTAX   Counter
+       MAX-ACCESS   read-only
+        STATUS   mandatory
+        DESCRIPTION
+                "Count of valid frames received which were
+                discarded (i.e., filtered) by the Forwarding
+                Process."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.6.1.1.3"
+        ::= { pgDot1dTpPortEntry 5 }
+
+------------------------------------------------------------------------------
+-- The Static (Destination-Address Filtering) Database
+
+-- Implementation of this group is optional.
+------------------------------------------------------------------------------
+
+
+pgDot1dStaticTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PgDot1dStaticEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A table containing filtering information
+                configured into the bridge by (local or network)
+                management, specifying the set of ports to which
+                frames received from specific ports and containing
+                specific destination addresses are allowed to be
+                forwarded.  The value of zero in this table as the
+                port number from which frames with a specific
+                destination address are received, is used to
+                specify all ports for which there is no specific
+                entry in this table for that particular
+                destination address.  Entries are valid for
+                unicast and for group/broadcast addresses."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.7.2"
+        ::= { pgDot1dStatic 1 }
+
+pgDot1dStaticEntry OBJECT-TYPE
+        SYNTAX  PgDot1dStaticEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Filtering information configured into the bridge
+                by (local or network) management, specifying the
+                set of ports to which frames received from a
+                specific port and containing a specific
+                destination address are allowed to be forwarded."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.7.2"
+        INDEX   { pgSessionInstance, pgDot1dStaticAddress, pgDot1dStaticReceivePort }
+        ::= { pgDot1dStaticTable 1 }
+
+PgDot1dStaticEntry ::=
+        SEQUENCE {
+                pgDot1dStaticAddress			MacAddress,
+                pgDot1dStaticReceivePort		INTEGER,
+                pgDot1dStaticAllowedToGoTo		OCTET STRING,
+                pgDot1dStaticStatus                     INTEGER
+        }
+
+pgDot1dStaticAddress OBJECT-TYPE
+        SYNTAX  MacAddress
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The destination MAC address in a frame to which
+                this entry's filtering information applies.  This
+                object can take the value of a unicast address, a
+                group address or the broadcast address."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 3.9.1, 3.9.2"
+        ::= { pgDot1dStaticEntry 1 }
+
+pgDot1dStaticReceivePort OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "Either the value '0', or the port number of the
+                port from which a frame must be received in order
+                for this entry's filtering information to apply.
+                A value of zero indicates that this entry applies
+                to all ports of the bridge for which there is no
+                other applicable entry."
+        ::= { pgDot1dStaticEntry 2 }
+
+pgDot1dStaticAllowedToGoTo OBJECT-TYPE
+        SYNTAX  OCTET STRING
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The set of ports to which frames received from a
+                specific port, and destined for a specific MAC
+                address, are allowed to be forwarded.  Each octet
+                within the value of this object specifies a set of
+                eight ports, with the first octet specifying ports
+                1 through 8, the second octet specifying ports 9
+                through 16, etc.  Within each octet, the most
+                significant bit represents the lowest numbered
+                port, and the least significant bit represents the
+                highest numbered port.  Thus, each port of the
+                bridge is represented by a single bit within the
+                value of this object.  If that bit has a value of
+                '1' then that port is included in the set of
+                ports; the port is not included if its bit has a
+                value of '0'.  (Note that the setting of the bit
+                corresponding to the port from which a frame is
+                received is irrelevant.)  The default value of
+                this object is a string of ones of appropriate
+                length."
+        ::= { pgDot1dStaticEntry 3 }
+
+pgDot1dStaticStatus OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        other(1),
+                        invalid(2),
+                        permanent(3),
+                        deleteOnReset(4),
+                        deleteOnTimeout(5)
+                }
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "This object indicates the status of this entry.
+                The default value is permanent(3).
+
+                        other(1) - this entry is currently in use but
+                        the conditions under which it will
+                        remain so are different from each of the
+                        following values.
+                        invalid(2) - writing this value to the object
+                        removes the corresponding entry.
+                        permanent(3) - this entry is currently in use
+                        and will remain so after the next reset
+                        of the bridge.
+                        deleteOnReset(4) - this entry is currently in
+                        use and will remain so until the next
+                        reset of the bridge.
+                        deleteOnTimeout(5) - this entry is currently
+                        in use and will remain so until it is
+                        aged out."
+        ::= { pgDot1dStaticEntry 4 }
+
+
+------------------------------------------------------------------------------
+-- The Pairgain Vlan Group Table
+------------------------------------------------------------------------------
+
+pgVlanGroupTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF PgVlanGroupEntry
+             MAX-ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                      ""
+              REFERENCE
+                      ""
+              ::= { pgVlanGroup 1 }
+
+pgVlanGroupEntry OBJECT-TYPE
+        SYNTAX  PgVlanGroupEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                ""
+        REFERENCE
+                ""
+        INDEX   { pgSessionInstance, pgBrVlanGroupIdentifier }
+        ::= { pgVlanGroupTable 1 }
+
+PgVlanGroupEntry ::=
+	SEQUENCE {
+		pgBrVlanGroupIdentifier			INTEGER,
+		pgBrVlanGroupWanBcEnable		INTEGER,
+		pgBrVlanGroupName			OCTET STRING,
+		pgBrVlanGroupMode			INTEGER,
+		pgBrVlanGroupTag			INTEGER,
+		pgBrVlanGroupStpEnable 			INTEGER,
+		pgBrVlanGroupStpProtocolSpecification 	INTEGER,
+		pgBrVlanGroupStpPriority		INTEGER,
+		pgBrVlanGroupStpTimeSinceTopologyChange	TimeTicks,
+		pgBrVlanGroupStpTopChanges		Counter,
+		pgBrVlanGroupStpDesignatedRoot		BridgeId,
+		pgBrVlanGroupStpRootCost		INTEGER,
+		pgBrVlanGroupStpRootPort		INTEGER,
+		pgBrVlanGroupStpMaxAge			Timeout,
+		pgBrVlanGroupStpHelloTime		Timeout,
+		pgBrVlanGroupStpHoldTime		INTEGER,
+		pgBrVlanGroupStpForwardDelay		Timeout,
+		pgBrVlanGroupStpBridgeMaxAge		Timeout,
+		pgBrVlanGroupStpBridgeHelloTime		Timeout,
+		pgBrVlanGroupStpBridgeForwardDelay	Timeout,
+		pgBrVlanGroupRowStatus			RowStatus
+        }
+
+pgBrVlanGroupIdentifier OBJECT-TYPE
+	SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+	DESCRIPTION
+        	"The value that defines the VLAN group indentifier.
+
+		The system will always have a VLAN group entry defined with the
+		group identifier value of 1."
+
+	REFERENCE
+        	""
+	::= { pgVlanGroupEntry 1 }
+
+pgBrVlanGroupWanBcEnable OBJECT-TYPE
+	SYNTAX  INTEGER {
+        	enabled(1),			-- Enabled
+        	disabled(2)			-- Disabled
+	}
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+        	"Flag that defines whether broadcast messages are
+		allowed.
+
+		When disabled, a packet with an unknown destination MAC
+		address may not be flooded into the WAN ports."
+	REFERENCE
+        	""
+	::= { pgVlanGroupEntry 2 }
+
+pgBrVlanGroupName OBJECT-TYPE
+	SYNTAX  OCTET STRING (SIZE (16))
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+        	"String identifier to the VLAN group. Used only for
+		display."
+	REFERENCE
+        	""
+	::= { pgVlanGroupEntry 3 }
+
+pgBrVlanGroupMode OBJECT-TYPE
+	SYNTAX  INTEGER {
+        	open(1),			-- Open mode
+        	close(2)			-- Close mode
+	}
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+        	"Determines whether data with a unicast MAC address can be
+		forwarded between configured Vlans."
+	REFERENCE
+        	""
+	::= { pgVlanGroupEntry 4 }
+
+pgBrVlanGroupTag OBJECT-TYPE
+	SYNTAX  INTEGER {
+        	enabled(1),			-- Enabled
+        	disabled(2)			-- Disabled
+	}
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+        	"802.1Q enable/disable."
+	REFERENCE
+        	""
+	::= { pgVlanGroupEntry 5 }
+
+pgBrVlanGroupStpEnable OBJECT-TYPE
+	SYNTAX INTEGER {
+                enabled(1),			-- Enabled
+                disabled(2)			-- Disabled
+	}
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "STP status of the VLAN group. This object is not used until VLAN implementation is complete."
+        REFERENCE
+                ""
+        ::= { pgVlanGroupEntry 6 }
+
+
+pgBrVlanGroupStpProtocolSpecification OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        unknown(1),
+                        decLb100(2),
+                        ieee8021d(3)
+                }
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "An indication of which Spanning
+                Tree Protocol version is being run.  The value
+                'decLb100(2)' indicates the DEC LANbridge 100
+                Spanning Tree protocol.  IEEE 802.1d
+                implementations return 'ieee8021d(3)'.  If
+                future versions of the IEEE Spanning Tree Protocol
+                are released that are incompatible with the
+                current version, a new value will be defined."
+        ::= { pgVlanGroupEntry 7 }
+
+pgBrVlanGroupStpPriority OBJECT-TYPE
+        SYNTAX  INTEGER (0..65535)
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The value of the write-able portion of the Bridge
+                ID, i.e., the first two octets of the (8 octet
+                long) Bridge ID.  The other (last) 6 octets of the
+                Bridge ID are defined by the value of
+                dot1dBaseBridgeAddress."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.7	--	dot1dStpPriority"
+        ::= { pgVlanGroupEntry 8 }
+
+pgBrVlanGroupStpTimeSinceTopologyChange OBJECT-TYPE
+        SYNTAX  TimeTicks
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The time (in hundredths of a second) since the
+                last time a topology change was detected by the
+                bridge entity."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.8.1.1.3	--	dot1dStpTimeSinceTopologyChange"
+        ::= { pgVlanGroupEntry 9 }
+
+pgBrVlanGroupStpTopChanges OBJECT-TYPE
+        SYNTAX  Counter
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The total number of topology changes detected by
+                this bridge since the management entity was last
+                reset or initialized."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 6.8.1.1.3	--	dot1dStpTopChanges"
+        ::= { pgVlanGroupEntry 10 }
+
+pgBrVlanGroupStpDesignatedRoot OBJECT-TYPE
+        SYNTAX  BridgeId
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The bridge identifier of the spanning
+                tree root as determined by the Spanning Tree Protocol
+                as executed by this node.  This value is used as
+                the Root Identifier parameter in all Configuration
+                Bridge PDUs originated by this node."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.1	--	dot1dStpDesignatedRoot"
+        ::= { pgVlanGroupEntry 11 }
+
+pgBrVlanGroupStpRootCost OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The cost of the path to the root as seen from
+                this bridge."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.2	--	dot1dStpRootCost"
+        ::= { pgVlanGroupEntry 12 }
+
+pgBrVlanGroupStpRootPort OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The port number of the port that offers the
+                lowest cost path from this bridge to the root
+                bridge."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.3	--	dot1dStpRootPort"
+        ::= { pgVlanGroupEntry 13 }
+
+pgBrVlanGroupStpMaxAge OBJECT-TYPE
+        SYNTAX  Timeout
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The maximum age of Spanning Tree Protocol
+                information learned from the network on any port
+                before it is discarded, in units of hundredths of
+                a second.  This is the actual value that this
+                bridge is currently using."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.4	--	dot1dStpMaxAge"
+        ::= { pgVlanGroupEntry 14 }
+
+pgBrVlanGroupStpHelloTime OBJECT-TYPE
+        SYNTAX  Timeout
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The amount of time between the transmission of
+                Configuration bridge PDUs by this node on any port
+                when it is the root of the spanning tree or trying
+                to become so, in units of hundredths of a second.
+                This is the actual value that this bridge is
+                currently using."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.5	--	dot1dStpHelloTime"
+        ::= { pgVlanGroupEntry 15 }
+
+pgBrVlanGroupStpHoldTime OBJECT-TYPE
+        SYNTAX  INTEGER
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This time value determines the interval length
+                during which no more than two Configuration bridge
+                PDUs shall be transmitted by this node, in units
+                of hundredths of a second."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.14	--	dot1dStpHoldTime"
+        ::= { pgVlanGroupEntry 16 }
+
+pgBrVlanGroupStpForwardDelay OBJECT-TYPE
+        SYNTAX  Timeout
+       MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This time value, in units of hundredths
+                of a second, controls how fast a port changes its
+                spanning state when moving towards the Forwarding
+                state.  The value determines how long the port
+                stays in each of the Listening and Learning
+                states, which precede the Forwarding state.  This
+                value is also used when a topology change has
+                been detected and is underway, to age all dynamic
+                entries in the Forwarding Database.  (Note that
+                this value is the one that this bridge is
+                currently using, in contrast to
+                dot1dStpBridgeForwardDelay which is the value that
+                this bridge and all others would start using
+                if/when this bridge were to become the root.)"
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.6	--	dot1dStpForwardDelay"
+        ::= { pgVlanGroupEntry 17 }
+
+pgBrVlanGroupStpBridgeMaxAge OBJECT-TYPE
+        SYNTAX  Timeout (600..4000)
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The value that all bridges use for MaxAge when
+                this bridge is acting as the root.  Note that
+                802.1D-1990 specifies that the range for this
+                parameter is related to the value of
+                pgBrVlanGroupStpBridgeHelloTime. The granularity of this
+                timer is specified by 802.1D-1990 to be 1 second.
+                An agent may return a badValue error if a set is
+                attempted to a value which is not a whole number
+                of seconds."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.8	--	dot1dStpBridgeMaxAge"
+	DEFVAL { 2000 }
+        ::= { pgVlanGroupEntry 18 }
+
+pgBrVlanGroupStpBridgeHelloTime OBJECT-TYPE
+        SYNTAX  Timeout (100..1000)
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The value that all bridges use for HelloTime when
+                this bridge is acting as the root.  The
+                granularity of this timer is specified by 802.1D-
+                1990 to be 1 second.  An agent may return a
+                badValue error if a set is attempted to a value
+                which is not a whole number of seconds."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.9	--	dot1dStpBridgeHelloTime"
+	DEFVAL { 200 }
+        ::= { pgVlanGroupEntry 19 }
+
+pgBrVlanGroupStpBridgeForwardDelay OBJECT-TYPE
+        SYNTAX  Timeout (400..3000)
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The value that all bridges use for ForwardDelay
+                when this bridge is acting as the root.  Note that
+                802.1D-1990 specifies that the range for this
+                parameter is related to the value of
+                dot1dStpBridgeMaxAge.  The granularity of this
+                timer is specified by 802.1D-1990 to be 1 second.
+                An agent may return a badValue error if a set is
+                attempted to a value that is not a whole number
+                of seconds."
+        REFERENCE
+                "IEEE 802.1D-1990: Section 4.5.3.10	--	dot1dStpBridgeForwardDelay"
+	DEFVAL { 1500 }
+        ::= { pgVlanGroupEntry 20 }
+
+pgBrVlanGroupRowStatus OBJECT-TYPE
+	SYNTAX		RowStatus
+        MAX-ACCESS      read-write
+        STATUS          mandatory
+		DESCRIPTION
+			"This object allows table entries to be created and deleted.
+			 The RowStatus should be out of
+			the ACTIVE state for other columns to be modified."
+        ::= { pgVlanGroupEntry 21 }
+
+
+------------------------------------------------------------------------------
+-- The Pairgain Session Router Group Table
+------------------------------------------------------------------------------
+
+pgSessionRouterGroupTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PgSessionRouterGroupEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This row is used to create an IP route for the TCP/IP stack using a
+		Logical Layer Interface.
+
+                The pgSessionGroupIfIndex is used to map a row in the
+                pgSessionPortTable to this Group Interface.
+
+		The name suggests that multiple instances
+                of pgSessionPortEntry can be grouped into a single
+                pgSessionRouterGroupEntry to save on IP address space."
+        REFERENCE
+                ""
+        ::= { pgSessionRouterGroup 1 }
+
+pgSessionRouterGroupEntry OBJECT-TYPE
+        SYNTAX  PgSessionRouterGroupEntry
+       MAX-ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                ""
+        REFERENCE
+                ""
+        INDEX   { pgSessionInstance, pgSessionPortRouterGroupInterface}
+        ::= { pgSessionRouterGroupTable 1 }
+
+PgSessionRouterGroupEntry ::=
+        SEQUENCE {
+                pgSessionGroupIpAddress         IpAddress,
+                pgSessionGroupSubnetMask        IpAddress,
+                pgSessionGroupRowStatus         RowStatus
+        }
+
+pgSessionGroupIpAddress OBJECT-TYPE
+	SYNTAX	IpAddress
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+        	"IP address of this interface"
+	REFERENCE
+        	""
+        ::= { pgSessionRouterGroupEntry 1 }
+
+pgSessionGroupSubnetMask OBJECT-TYPE
+	SYNTAX	IpAddress
+       MAX-ACCESS  read-write
+        STATUS  mandatory
+	DESCRIPTION
+        	"Subnet mask of the LAN into which this interface belongs."
+	REFERENCE
+        	""
+        ::= { pgSessionRouterGroupEntry 2 }
+
+pgSessionGroupRowStatus OBJECT-TYPE
+	SYNTAX		RowStatus
+        MAX-ACCESS      read-write
+        STATUS          mandatory
+		DESCRIPTION
+			"This object allows table entries to be created and deleted.
+ 			The RowStatus should be out of
+			the ACTIVE state for other columns to be modified."
+        ::= { pgSessionRouterGroupEntry 3 }
+
+
+pgIfindexToSlotPortMapTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PgIfindexToSlotPortMapEntry
+        MAX-ACCESS  not-accessible
+        STATUS  mandatory
+	DESCRIPTION
+                "A table that contains mapping between the ifIndex and
+                solt, port, VPI, and VCI values of the remote side."
+	REFERENCE
+        	""
+        ::= { pgIfindexToSlotPortMap 1 }
+
+pgIfindexToSlotPortMapEntry OBJECT-TYPE
+       SYNTAX  PgIfindexToSlotPortMapEntry
+       MAX-ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+                "A table that contains mapping between the ifIndex and
+                solt, port, internal VPI, internal VCI, external VPI,
+                and external VCI values of the remote side."
+        REFERENCE
+                ""
+        INDEX { pgSessionInstance,
+                ifIndex}
+        ::= { pgIfindexToSlotPortMapTable 1 }
+
+PgIfindexToSlotPortMapEntry ::=
+        SEQUENCE {
+                pgIfindexToSlotPortMapSlot              INTEGER,
+                pgIfindexToSlotPortMapPort              INTEGER,
+                pgIfindexToSlotPortMapIntVpi               INTEGER,
+                pgIfindexToSlotPortMapIntVci               INTEGER,
+                pgIfindexToSlotPortMapExtVpi               INTEGER,
+                pgIfindexToSlotPortMapExtVci               INTEGER
+        }
+
+pgIfindexToSlotPortMapSlot OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The slot number of the remote device of the PVC between the device and the AMC."
+REFERENCE
+                ""
+        ::= { pgIfindexToSlotPortMapEntry 1 }
+
+
+pgIfindexToSlotPortMapPort OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The port number of the remote device of the PVC between the device and the AMC."
+REFERENCE
+                ""
+        ::= { pgIfindexToSlotPortMapEntry 2 }
+
+pgIfindexToSlotPortMapIntVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The internal VPI number of the AMC."
+        REFERENCE
+                ""
+        ::= { pgIfindexToSlotPortMapEntry 3 }
+
+
+pgIfindexToSlotPortMapIntVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The internal VCI number of the AMC."
+        REFERENCE
+                ""
+        ::= { pgIfindexToSlotPortMapEntry 4 }
+
+
+pgIfindexToSlotPortMapExtVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The external VPI number of the remote device of the PVC between the device and the AMC."
+REFERENCE
+                ""
+        ::= { pgIfindexToSlotPortMapEntry 5 }
+
+
+pgIfindexToSlotPortMapExtVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The external VCI number of the remote device of the PVC between the device and the AMC."
+REFERENCE
+                ""
+        ::= { pgIfindexToSlotPortMapEntry 6 }
+
+
+pgBridgePortToSlotPortMapTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PgBridgePortToSlotPortMapEntry
+        MAX-ACCESS  not-accessible
+        STATUS  mandatory
+	DESCRIPTION
+                "A table that contains mapping between a BridgePort and the remote
+                solt, port, VPI, and VCI."
+	REFERENCE
+        	""
+        ::= { pgBridgePortToSlotPortMap 1 }
+
+pgBridgePortToSlotPortMapEntry OBJECT-TYPE
+       SYNTAX  PgBridgePortToSlotPortMapEntry
+       MAX-ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+                "A table that contains mapping between a BridgePort and the remote
+                solt, port, internal VPI, internal VCI, external VPI,
+                and external VCI values of the remote side."
+        REFERENCE
+                ""
+        INDEX { pgSessionInstance,
+                pgSessionPortBridgePort }
+        ::= { pgBridgePortToSlotPortMapTable 1 }
+
+PgBridgePortToSlotPortMapEntry ::=
+        SEQUENCE {
+                pgBridgePortToSlotPortMapSlot              INTEGER,
+                pgBridgePortToSlotPortMapPort              INTEGER,
+                pgBridgePortToSlotPortMapIntVpi               INTEGER,
+                pgBridgePortToSlotPortMapIntVci               INTEGER,
+                pgBridgePortToSlotPortMapExtVpi               INTEGER,
+                pgBridgePortToSlotPortMapExtVci               INTEGER
+        }
+
+
+pgBridgePortToSlotPortMapSlot OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The slot number of the remote device of the PVC between the device and the AMC."
+REFERENCE
+                ""
+        ::= { pgBridgePortToSlotPortMapEntry 1 }
+
+
+pgBridgePortToSlotPortMapPort OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The port number of the remote device of the PVC between the device and the AMC."
+REFERENCE
+                ""
+        ::= { pgBridgePortToSlotPortMapEntry 2 }
+
+
+pgBridgePortToSlotPortMapIntVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The internal VPI number of the AMC.
+		"
+        REFERENCE
+                ""
+        ::= { pgBridgePortToSlotPortMapEntry 3 }
+
+
+pgBridgePortToSlotPortMapIntVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The internal VCI number of the AMC.
+		"
+        REFERENCE
+                ""
+        ::= { pgBridgePortToSlotPortMapEntry 4 }
+
+pgBridgePortToSlotPortMapExtVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The external VPI number of the remote device of the PVC between the device and the AMC."
+REFERENCE
+                ""
+        ::= { pgBridgePortToSlotPortMapEntry 5 }
+
+
+pgBridgePortToSlotPortMapExtVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        MAX-ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The external VCI number of the remote device of the PVC between the device and the AMC."
+REFERENCE
+                ""
+        ::= { pgBridgePortToSlotPortMapEntry 6 }
+
+END

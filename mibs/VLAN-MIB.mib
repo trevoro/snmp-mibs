@@ -1,0 +1,494 @@
+-- 
+-- Copyright 1999 by Fore Systems, Inc. 
+-- Converted to SMIv2 rfc 2578,2579,2580 - STD 58
+--
+-- ($Id: //depot/prod/switch/bu_inf_alchemy/src/smf/mibs/vlan.mib#1 $)
+
+-- Copyright 1995, 1996 by Fore Systems, Inc.
+--
+-- This file contains definitions for management information for
+-- pre-standards IEEE 802.1Q VLANs and their association with a Lan Emulation
+-- Client (lec).  Devices implementing these pre-standards maintain port
+-- groupings and associated filters used to form a 'virtual bridge'
+--
+-- IMPORTANT: This MIB requires a subset of both RFC 1573 and ATMF LEC MIBs.
+--            The portions that are required are:
+--               lecConfTable (pp 35-45 af-lane-0044-000, Sept 1995),
+--               lecStatusTable (pp 45-51 af-lane-0044-000, Sept 1995)
+--               All of RFC 1573, except for statics counters.  For
+--               example packet counts and octet counts are not required.
+--            The relationship between the LEC MIB and RFC 1573 is
+--               defined on pp 13 of af-lane-0044-000, Sept 1995.
+--
+-- Implementation issues:
+--    This MIB controls 802 style VLANs and has very strict semantics with
+--    regards to what happens when a row is created, when rows are
+--    modified, etc.  Many of these actions have large side-effects, such
+--    as dropping ports from VLANs, associating elans to 802 style VLANs,
+--    etc.  Where entries have special meanings, an IMPORTANT tag has been
+--    added to draw attention to specific semantics of this variable.
+--    Additionally, implementation issues are spelled out here so that
+--    all implementations of this MIB are consistent.
+--
+--    LIST ALL IMPLEMENTATION ISSUES HERE
+--
+--
+------------------------------------------------------------------------------
+
+VLAN-MIB DEFINITIONS ::= BEGIN
+
+    IMPORTS
+	Integer32,
+	IpAddress,
+	OBJECT-TYPE,
+	MODULE-IDENTITY    	  FROM SNMPv2-SMI
+	MacAddress, TestAndIncr,
+ 	RowStatus,
+	DisplayString		  FROM SNMPv2-TC
+	preDot1qVlanMIB 	  FROM Fore-Common-MIB;
+
+vlanMIBObjects  MODULE-IDENTITY
+          LAST-UPDATED         "9911050000Z"
+          ORGANIZATION         "FORE"
+          CONTACT-INFO         
+               "      Postal:   FORE Systems Inc.
+                                 1000 FORE Drive
+                                 Warrendale, PA 15086-7502
+                       Tel:      +1 724 742 6900
+                       Email:    nm_mibs@fore.com
+                       Web:      http://www.fore.com"
+          DESCRIPTION "
+	      This module contains definitions for management information for
+	      pre-standards IEEE 802.1Q VLANs and their association with a
+	      Lan Emulation Client (lec).  Devices implementing these pre-standards
+	      maintain port groupings and associated filters used to form a
+	      'virtual bridge'."
+    ::= { preDot1qVlanMIB 1 }
+
+--------------------------------------------------------------------------------
+-- Configuration Group
+--------------------------------------------------------------------------------
+
+vlanConfGroup OBJECT IDENTIFIER ::= { vlanMIBObjects 1 }
+
+vlanConfTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF VlanConfEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		"A table of VLAN names and characteristics."
+	::= { vlanConfGroup 1 }
+
+vlanConfEntry OBJECT-TYPE
+	SYNTAX  VlanConfEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		"A table entry containing VLAN names and characteristics.
+
+		IMPORTANT:  The read-write fields of this table should be
+		modifiable, such that as VLAN characteristics change, the
+		individual parameters in the table can be modified."
+	INDEX   { vlanName }
+	::= { vlanConfTable 1 }
+
+VlanConfEntry ::=
+	SEQUENCE {
+		vlanName                DisplayString,
+		vlanID                  Integer32,
+		vlanConfRowStatus       RowStatus,
+		vlanCreatedBy           DisplayString,
+		vlanType                Integer32,
+		vlanPortGroupInstance   Integer32,
+		vlanMacListInstance     Integer32,
+		vlanProtocolType        INTEGER,
+		vlanProtocolSubtype     OCTET STRING,
+		vlanIPSubnetAddress     IpAddress,
+		vlanBridgeName          DisplayString,
+		vlanIPMulticastFilter   INTEGER
+	}
+
+vlanName OBJECT-TYPE
+	SYNTAX DisplayString (SIZE (1..255))
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+		"The textual name of this VLAN, this is the identifier
+		that the user of a configuration utility will be using.
+		Using a VLAN ID for the index and resolving to a name
+		would be easier for an individual switch.  However, the user
+		will not (and should not) use this ID.  The problem would
+		then be how to resolve an ID to a Name, given that network
+		manager needs to know this for all devices.  Using the name
+		as the index allows a management application to have a list
+		of names and each network device resolves that to a
+		locally significant ID.  This means however, if the user
+		configures, via a local interface, two switches with VLANs
+		that have the same name, the network manager will assume
+		that they are the same VLAN.
+
+		In the future, when the 802.1Q standard comes out, there
+		will be a standard way of maintaining globally unique VLAN
+		IDs because these will be used as the VLAN tag.  At that
+		time the index into this table should become the VLAN tag."
+	::= { vlanConfEntry 1 }
+
+vlanID OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+		"This is the locally significant ID that is used
+		internally by this device to reference this VLAN."
+	::= { vlanConfEntry 2 }
+
+vlanConfRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"This object is used to create a new row or to modify or
+		delete an existing row in this table."
+	::= { vlanConfEntry 3 }
+
+vlanCreatedBy OBJECT-TYPE
+	SYNTAX DisplayString
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"This object is used to enter a string to identify the
+		management entity that created this entry."
+	::= { vlanConfEntry 4 }
+
+vlanType OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"The type of vlan, specified as a bitmap.  The bitmap indicates
+		all the types of filters that are to be applied to the vlan.
+		The bit locations and meanings are:
+		   0x01 - port-based VLAN
+		   0x02 - MAC-based VLAN
+		   0x04 - protocol-based VLAN
+		   0x08 - IP subnet VLAN
+		for example a VLAN that will look at an incoming port and
+		then apply a MAC filter would use the value 0x03 to indicate
+		both the port and the MAC filters."
+	DEFVAL { 1 }
+	::= { vlanConfEntry 5 }
+
+vlanPortGroupInstance    OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"The index that identifies the the sub tree in the
+		vlanPortGroupTable that should be walked to retrieve
+		the group of ports in this VLAN.
+
+		IMPORTANT: This table has slightly different semantics than
+		the next three objects because in all 802 VLANs, in the end
+		they all resolve down to a group of ports.
+
+		Therefore, this object has the following semantic based on
+		its value and the value of vlanType:
+
+		   vlanType    vlanPortGroupInstance    mode
+		   ------------------  -------------------------------  ----
+		   Port-based set      points to a user configured      Manual
+				       set of ports
+		   Port-based not set  0 - There are no ports assigned  Auto
+				       to this VLAN at this time.
+		   Port-based not set  non zero - points to a system    Auto
+				       (agent) maintained list of ports
+		"
+	::= { vlanConfEntry 6 }
+
+vlanMacListInstance     OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"If this is a MAC-based VLAN then this is the index that
+		identifies the sub tree in the vlanMacListTable
+		that should be walked to retrieve the list of MAC address to
+		allow into this VLAN.
+
+		If this is not a MAC-based VLAN then the value is 0"
+	DEFVAL { 0 }
+	::= { vlanConfEntry 7 }
+
+vlanProtocolType OBJECT-TYPE
+	SYNTAX INTEGER {
+		  none(1),
+		  ethernetv2(2),
+		  ieee802dot3(3)
+	       }
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"If this is a protocol-based VLAN then this is the protocol
+		type whose traffic is allowed into this VLAN.
+
+		If this is not a protocol-based VLAN the value is 'none'."
+	DEFVAL { none }
+	::= { vlanConfEntry 8 }
+
+vlanProtocolSubtype OBJECT-TYPE
+	SYNTAX OCTET STRING (SIZE (0..2))
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"If this is a protocol-based VLAN then this is the protocol
+		subtype whose traffic is allowed into this VLAN.  This value is
+		based on the protocol type (vlanProtocolType).
+
+		If the protocol type is Ethernet V2.0 (ethernetv2) then the
+		value is the value assigned by Xerox (two octets).  For example,
+		the value 08-00 is the value for IP.
+
+		If the protocol type is IEEE 802.3 DSAP then the value is the
+		DSAP value (one octet).  For example, the value 224 (0xE0) is
+		the value for IPX.
+
+		If this is not a protocol-based VLAN the value is a zero length
+		octet string."
+	DEFVAL { "" }
+	::= { vlanConfEntry 9 }
+
+vlanIPSubnetAddress OBJECT-TYPE
+	SYNTAX IpAddress
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"If this is a subnetBased VLAN then this is the subnet
+		whose traffic is allowed into this VLAN.
+
+		If this is not a subnetBased VLAN then the value is 0.0.0.0"
+	DEFVAL { 0 }
+	::= { vlanConfEntry 10 }
+
+vlanBridgeName OBJECT-TYPE
+	SYNTAX DisplayString (SIZE (0..20))
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"The textual name of the bridge that is associated with this
+		VLAN.  This is provided for those devices that allow multiple
+		bridge (spanning tree) instances under the management of a
+		single agent.  If this value is a NULL string, then the default
+		bridge's name will be applied.
+
+		See the Fore-Bridge-Extensions-MIB for details on how bridges
+		are managed."
+	DEFVAL { "" }
+	::= { vlanConfEntry 11 }
+
+vlanIPMulticastFilter OBJECT-TYPE
+	SYNTAX INTEGER  {
+		  enabled(1),
+		  disabled(2)
+	       }
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"This object allows the enabling and disabling of IP multicast
+		filtering on the VLAN."
+	DEFVAL { disabled }
+	::= { vlanConfEntry 12 }
+
+--------------------------------------------------------------------------------
+-- Port Group Table
+--------------------------------------------------------------------------------
+
+vlanPortGroupTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF VlanPortGroupEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		"A table of port groupings.  The first index breaks down
+		the table into multiple port groups.  Then the second
+		index is the port that belongs in the group.  This way
+		walking the table, given the first index, will give the
+		list of all ports in that group.  This allows the user of
+		this MIB to create many port groupings, and then each VLAN
+		can point to the port grouping they want to associate with
+		a particular VLAN.
+
+		IMPORTANT: This table depends on RFC 1573 extensions to
+		the interfaces.ifTable.  This is because, entries in
+		vlanPort can be virtual interfaces (representing
+		LEC instances)"
+	::= { vlanConfGroup 2 }
+
+vlanPortGroupEntry OBJECT-TYPE
+	SYNTAX  VlanPortGroupEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		"A table entry containing a port number"
+	INDEX   { vlanPortGroupIndex, vlanPort }
+	::= { vlanPortGroupTable 1 }
+
+VlanPortGroupEntry ::=
+	SEQUENCE {
+		vlanPortGroupIndex      Integer32,
+		vlanPort                Integer32,
+		vlanPortGroupRowStatus  RowStatus,
+		vlanPortStatus          INTEGER
+	}
+
+vlanPortGroupIndex OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS not-accessible
+	STATUS current
+	DESCRIPTION
+		"Index used so that there can be many different
+		port groups"
+	::= { vlanPortGroupEntry 1 }
+
+vlanPort OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS not-accessible
+	STATUS current
+	DESCRIPTION
+		"The value of the instance of the ifIndex object, defined
+		in MIB-II, for the interface corresponding to this port.
+		In the case of a non-atm port this is the physical ifIndex
+		of that port, in the case of an atm port it is the virtual
+		ifIndex that represents the LEC.
+
+		IMPORTANT: By adding a port here, that port will now be
+		part of any VLAN(s) that this port group is associated with.
+		In addition, if the port is a virtual interface that
+		represents a LEC, the ELAN that that LEC represents will
+		also be part of the VLAN that this port group is associated
+		with. Control of the LECs (creating and assignment) is
+		handled by the ATMF Lan Emulation Client MIB, specifically
+		the lecConfigTable in Configuration Group"
+	::= { vlanPortGroupEntry 2 }
+
+vlanPortGroupRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	MAX-ACCESS read-create
+	STATUS current
+	DESCRIPTION
+		"This object is used to create a new row or to modify or
+		delete an existing row in this table."
+	::= { vlanPortGroupEntry 3 }
+
+vlanPortStatus OBJECT-TYPE
+	SYNTAX INTEGER {
+		   autoActive (1),
+		   allowed (2),
+		   allowedActive (3),
+		   allowedNotAvail (4),
+		   notAssociated(5)
+		}
+	MAX-ACCESS read-only
+	STATUS current
+	DESCRIPTION
+		"The status of this port relative to the VLAN that points
+		 at this port group.  The meanings of each value are:
+
+		 autoActive: Means that the port is part of this VLAN
+			  because the switch automatically added it.
+		 allowed: Means that the port has been configured so that
+			  if all other criteria (if any) are met, this port
+			  is allowed to be in this VLAN.
+		 allowedActive: Means the same as allowed plus the fact
+			  that there is a device attached to this port and
+			  participating in the VLAN.
+		 allowedNotAvail: This value is only needed for devices
+			  that don't allow a port to be in more than one
+			  VLAN at a time.  This value means that this port
+			  also exists in some other VLAN(s) and is active
+			  in another VLAN.  Therefore this port is not
+			  available to be used in this VLAN.
+		 notAssociated: Means that the Port Group is not currently
+			  associated with any VLAN."
+	DEFVAL { allowed }
+	::= { vlanPortGroupEntry 4 }
+
+vlanPortGroupNextIndex OBJECT-TYPE
+	SYNTAX  TestAndIncr
+	MAX-ACCESS  read-write
+	STATUS  current
+	DESCRIPTION
+		"The index of the next free row in the table."
+	::= { vlanConfGroup 3 }
+
+--------------------------------------------------------------------------------
+-- MAC List Table
+--------------------------------------------------------------------------------
+
+
+vlanMacListTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF VlanMacListEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		"A table of MAC Lists.  The first index breaks down
+		the table into multiple MAC Lists.  Then the second
+		index is the MAC Address that belongs in the group.  This
+		way walking the table, given the first index, will give the
+		list of all MAC Addresses in that group.  This allows the
+		user of this MIB to create many MAC Lists, and then each VLAN
+		can point to the MAC List they want to associate with
+		a particular VLAN."
+	::= { vlanConfGroup 4 }
+
+vlanMacListEntry OBJECT-TYPE
+	SYNTAX  VlanMacListEntry
+	MAX-ACCESS  not-accessible
+	STATUS  current
+	DESCRIPTION
+		"A table entry containing MAC Addresses"
+	INDEX   { vlanMacListIndex, vlanMacAddress }
+	::= { vlanMacListTable 1 }
+
+
+vlanMacListNextIndex OBJECT-TYPE
+	SYNTAX  TestAndIncr
+	MAX-ACCESS  read-write
+	STATUS  current
+	DESCRIPTION
+		"The index of the next free row in the table."
+	::= { vlanMacListTable 2 }
+
+VlanMacListEntry ::=
+	SEQUENCE {
+		vlanMacListIndex        Integer32,
+		vlanMacAddress          MacAddress,
+		vlanMacListRowStatus    RowStatus
+	}
+
+vlanMacListIndex OBJECT-TYPE
+	SYNTAX Integer32
+	MAX-ACCESS not-accessible
+	STATUS current
+	DESCRIPTION
+		"Index used so that there can be many different
+		MAC Lists"
+	::= { vlanMacListEntry 1 }
+
+vlanMacAddress OBJECT-TYPE
+	SYNTAX MacAddress
+	MAX-ACCESS not-accessible
+	STATUS current
+	DESCRIPTION
+		"The MAC Address that belongs to this group.  Adding a new
+		MAC Address will mean that packets from that MAC are allow to
+		be sent on the VLAN that this MAC List is associated with."
+	::= { vlanMacListEntry 2 }
+
+vlanMacListRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	MAX-ACCESS read-write
+	STATUS current
+	DESCRIPTION
+		"This object is used to create a new row or to modify or
+		delete an existing row in this table."
+	::= { vlanMacListEntry 3 }
+END

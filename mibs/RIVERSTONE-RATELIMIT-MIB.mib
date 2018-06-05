@@ -1,0 +1,2107 @@
+-- #condInclude "rs.inc"
+-- #condInclude "rfc2037.inc"
+-- compile command "smicng -C0F rstone-rl-mib.txt"
+
+RIVERSTONE-RATELIMIT-MIB DEFINITIONS ::= BEGIN
+
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-IDENTITY, OBJECT-TYPE, TimeTicks,
+   Integer32, Unsigned32,Counter32
+   FROM SNMPv2-SMI
+   
+   TEXTUAL-CONVENTION, RowStatus,StorageType, TruthValue
+       FROM SNMPv2-TC
+
+   SnmpAdminString
+       FROM  SNMP-FRAMEWORK-MIB
+
+   ifIndex, InterfaceIndexOrZero
+       FROM IF-MIB
+
+   entPhysicalIndex
+      FROM    ENTITY-MIB
+
+   MODULE-COMPLIANCE, OBJECT-GROUP
+       FROM SNMPv2-CONF
+   riverstoneMibs 
+       FROM RIVERSTONE-SMI-MIB;
+   
+   rsRateLimitMIB MODULE-IDENTITY
+   LAST-UPDATED
+     "200210100000Z" --  10th October 2002.
+
+        ORGANIZATION "Riverstone Networks, Inc"
+        CONTACT-INFO
+            "Riverstone Networks, Inc
+             5200 Great America Parkway
+             Santa Clara CA USA 95054
+             PHONE:+1 408.878.6500
+             EMAIL: nms-eng@riverstonenet.com
+             WEB: http://www.riverstonenet.com"
+        DESCRIPTION
+            "This mib module defines the Riverstone Networks enterpise MIB for 
+             rate limit module.
+             http://www.riverstonenet.com/products. 
+             Copyright (C) Riverstone Networks, Inc 2000"
+
+   -- Revision history
+   REVISION
+     "200210100000Z" --  10th October 2002.
+   DESCRIPTION
+     "Second revision.  Added more types and tables for Layer 2 rate limiting
+      features and deprecated some invalid values."
+   REVISION
+     "200107060000Z" --   6th July 2001.
+   DESCRIPTION
+      "First version."
+
+   ::= { riverstoneMibs 25 }    
+                                
+  
+
+RsRateLimit ::= TEXTUAL-CONVENTION
+       STATUS       current
+       DESCRIPTION
+           "Rate limit on the selected traffic flow is specified using
+           this data type. For RS Platform, this value can
+           be set from 3000..1000000000 bits per second on all
+           line cards."
+       SYNTAX Unsigned32
+
+RsBurst ::= TEXTUAL-CONVENTION
+       STATUS       current
+       DESCRIPTION
+           "Burst  traffic rate on the selected traffic 
+            flow is specified using
+            this data type. For RS platform, the valid range
+            is 10,000..1000000000 bits per second. This is used for
+            dual token bucket meter or Burst Safe(TM) meter"
+       SYNTAX Unsigned32 
+
+RsAdminStatus ::= TEXTUAL-CONVENTION
+       STATUS       current
+       DESCRIPTION
+           "Specifies the administrative status enabled or disabled"
+       SYNTAX INTEGER { enabled(1), disabled(2) }
+
+
+RsDistAmong ::= TEXTUAL-CONVENTION
+       STATUS       deprecated
+       DESCRIPTION
+           "Distribute the unused 'bandwidth' among n number of flows, 
+            keeping a minimum specified bandwidth
+            
+            For example if the 
+            Software based AggregateRate is 10,000,000 
+            MinBandwidth is 500,000 for each flow and
+            Number of flows is 'n =15'
+
+            leftOverBandwidth = AggregateRate -(n * MinBandwidth)
+            
+            'leftOverBandwidth' is distributed among RsDistAmong
+             number of flows.
+
+            RsDistAmong is 5
+
+            leftOverBandwidth = 10,000,000 - (15 * 500,000)
+                              = 2,500,000
+            
+            5 flows among 15 will get an extra  2,500,000/5 = 500000 bps
+           "
+
+       REFERENCE "Refer Riverstone Networks white paper entitled
+                  'An Overview on  Rate Limiting' 
+                   http://www.riverstonenet.com/technology/rate.shtml"
+                  
+       SYNTAX Integer32(1..10) 
+
+
+
+
+
+ RsMeterType  ::= TEXTUAL-CONVENTION
+        STATUS      current
+        DESCRIPTION
+            "The type of meter service. The value 
+             
+             perFlow(1) indicates
+             that this entry specifies a per L3 flow rate limit.
+             
+             softwareFlowAggregate(2) indicates that this 
+             entry specifies a software based rate limit aggregate.
+             This is deprecated.
+             
+             hardwareFlowAggregate(3) indicates that this entry 
+             specifies a hardware based flow aggregation rate limit
+
+             perPort(4) indicates that this entry specifies a 
+             port-level rate limit service. 
+  
+             burstsafe(5) indicates that this entry specifies a 
+             dual bucket rate limit.
+           
+             l2(6) indicates that this entry specifies a layer 2 
+             rate limit service.
+
+              "
+        REFERENCE "Refer Riverstone Networks white paper entitled
+                  'An Overview on  Rate Limiting' 
+                   http://www.riverstonenet.com/technology/rate.shtml"
+
+        SYNTAX      INTEGER {
+                        perFlow(1),
+                        softwareFlowAggregate(2),
+	                hardwareFlowAggregate(3),
+	                perPort(4),
+                        burstsafe(5),
+                        l2(6)	
+                    }
+
+
+
+
+
+       
+RsMeterInterval ::= TEXTUAL-CONVENTION
+       STATUS       deprecated
+       DESCRIPTION
+           "RS rate limiting is based on credit bucket scheme. 
+            A bucket is filled with certain number of credits, 
+            and credits are deducted over a given time period. 
+           When the time period is expired, the bucket is filled 
+           again with the same number of credits. 
+           
+           This TC can be used to select time period. This feature
+           does not allow user to specify the period in 'seconds' but
+           a set of numbers from 0 to 10 only.
+           "
+       REFERENCE "Refer Riverstone Networks white paper entitled
+                  'An Overview on  Rate Limiting' 
+                   http://www.riverstonenet.com/technology/rate.shtml"
+
+       SYNTAX Integer32(0..10) 
+
+RsLabel ::= TEXTUAL-CONVENTION
+       STATUS current
+       DESCRIPTION
+           "
+            ASCII character which are Letters,Digits and Under Scores 
+            Strings beginning with Digits and Underscores are not allowed
+
+           "
+       SYNTAX OCTET STRING (SIZE(1..30)) 
+
+RsTOS ::= TEXTUAL-CONVENTION
+    STATUS   current
+    DESCRIPTION
+
+       "In IPv4 its the TOS byte of IP packet header.
+        Unsigned integer value which can be mapped to TOS or DSCP
+        depending on the associated rate limit action type"
+    SYNTAX   Integer32 (0..255)
+           
+
+RsIfDirection ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+       " Specifies a direction of data travel  on  interface.
+         'inbound' traffic is operated on during reception
+       from the interface, while 'outbound' traffic  is
+       operated on prior to transmission on the interface.
+       'both' traffic is operated during both reception and
+       prior to transmission on the interface.
+       "
+
+    SYNTAX  INTEGER {
+                inbound(1),     -- ingress interface
+                outbound(2),    -- egress interface
+                both(3),    
+                unknown(4) 
+            }
+
+           
+RsAction ::= TEXTUAL-CONVENTION
+       STATUS       current
+       DESCRIPTION
+           "Different actions allowed on the RS switch router 
+            Can be associated with rsTBMeterTable, or rsPortRLTable
+            for rate limit purposes
+            Note: not all the actions may be applicable to all the modules
+                  "
+       SYNTAX     INTEGER {
+	       noAction(1),
+               dropPackets(2),
+               setPriorityLow(3),   
+               setPriorityMedium(4),   
+               setPriorityHigh(5),
+	       lowerPriority(6),
+	       lowerPriorityExceptControl(7),
+               tosRewrite(8),
+	       tosRewriteAndLowerPriority(9),
+               tosPrecedenceRewrite(10),
+	       tosPrecedenceRewriteAndLowerPriority(11),
+               markPackets(12)
+       }
+
+--
+--  Token(Credit) Bucket Meter 
+--
+
+-- Rate limit Notification entries
+rsRateLimitNotifications   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        "Group for Rate Limit related Notifications"
+
+    ::= { rsRateLimitMIB 0 }
+
+rsTBMeter   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        "Token Bucket Meter Table and associated objects"
+    REFERENCE "Refer Riverstone Networks white paper 
+                    'An Overview of RateLimiting' for more details"
+ 
+    ::= { rsRateLimitMIB 5 }
+
+
+
+--Token(Credit) Bucket Meter Apply
+rsTBMeterApply   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        " Meter Apply table and associated objects"
+    REFERENCE "Refer Riverstone Networks white paper 
+                    'An Overview of RateLimiting' for more details"
+ 
+    ::= { rsRateLimitMIB 10 }
+
+
+-- Rate Limit Monitor 
+rsTBMeterApplyMonitor   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        " Group of token bucket rate limit monitor objects "
+ 
+    ::= { rsRateLimitMIB 15 }
+
+
+-- Token(Credit) Bucket Port based ratelimit 
+rsPortRateLimit   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        "Input and Output Port based rate limit tables"
+    REFERENCE "Refer Riverstone Networks white paper 
+                    'An Overview of RateLimiting' for more details"
+
+    ::= { rsRateLimitMIB 20 }
+
+-- Rate Limit Monitor 
+rsPortRLMonitor   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        " Group of port based rate limit monitor objects "
+ 
+    ::= { rsRateLimitMIB 25 }
+
+-- Token(Credit) Bucket L2 based ratelimit 
+rsL2RateLimit   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        "L2 based rate limit tables"
+
+    ::= { rsRateLimitMIB 26 }
+
+-- Rate Limit Monitor 
+rsL2RLMonitor   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        " Group of l2 based rate limit monitor objects "
+ 
+    ::= { rsRateLimitMIB 29 }
+
+
+-- Rate Limit Modes on RS Platform
+rsRateLimitModes   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        " Group of rate limit mode configuration on RS platform "
+ 
+    ::= { rsRateLimitMIB 30 }
+
+-- Groups used in rate limiting
+rsRateLimitGroups   OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION 
+        " All different kinds of groupings used in RS rate limiting"
+ 
+    ::= { rsRateLimitMIB 33 }
+
+
+
+
+rsRateLimitConformance OBJECT-IDENTITY
+    STATUS current
+    DESCRIPTION
+	   "rate limit conformance group "
+    ::= { rsRateLimitMIB 35 }
+
+
+
+--TB Meter  table
+ rsTBMeterLastChanged OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "
+        The value of sysUpTime when last SET operation succeeds 
+        on this table.
+        "
+       ::= { rsTBMeter 1 }
+ 
+ rsTBMeterCount  OBJECT-TYPE
+       SYNTAX    Unsigned32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "Total number of entries in the table "
+
+       ::= { rsTBMeter 2 }
+
+rsTBMeterErrorMessage  OBJECT-TYPE
+       SYNTAX    SnmpAdminString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "Description of the error caused from the 
+         last SET operation that failed on this table"
+       ::= { rsTBMeter 3 }
+
+
+ rsTBMeterTable OBJECT-TYPE
+        SYNTAX      SEQUENCE OF RsTBMeterEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "Token bucket service entry table"
+       ::= { rsTBMeter 4 }
+
+ rsTBMeterEntry OBJECT-TYPE
+       SYNTAX      RsTBMeterEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "A record containing a token bucket service parameters.
+            A new row can be created by setting the appropriate value 
+            in the table entry with RowStatus to CreateAndGo.
+            The columns in this table are modifiable when the state of 
+            entry RowStatus is equal to 'NotInService' or 'NotReady'"
+            
+       INDEX   { rsTBMeterId }
+       ::= { rsTBMeterTable 1 }
+
+   
+  RsTBMeterEntry ::=
+       
+       SEQUENCE {
+           rsTBMeterId                     RsLabel,
+           rsTBMeterType                   RsMeterType,
+           rsTBMeterRate                   RsRateLimit,
+-- deprecated
+           rsTBMeterInterval               RsMeterInterval,  
+           rsTBMeterBurst                  RsBurst,
+	   rsTBMeterFailAction             RsAction,
+           rsTBMeterFailActionRewrite      RsTOS,
+	   rsTBMeterBurstFailAction        RsAction,
+           rsTBMeterBurstFailActionRewrite RsTOS,  
+-- deprecated
+     	   rsTBMeterMinimumBandwidth       RsRateLimit,
+-- deprecated
+	   rsTBMeterDistributeAmong        RsDistAmong,
+           rsTBMeterStorageType            StorageType,
+	   rsTBMeterStatus                 RowStatus
+       }
+
+
+   rsTBMeterId OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            "The administratively assigned name to this Meter entry.
+             This name must be unique across the rate-limit module
+             including port based rate limit module
+             Note: name must be unique across the RS platform
+             ratelimit  module
+            "
+       ::= { rsTBMeterEntry 1 }
+
+
+
+    rsTBMeterType OBJECT-TYPE
+        SYNTAX   RsMeterType
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The type of meter service. The value 
+             
+             perFlow(1) indicates
+             that this entry specifies a per L3 flow rate limit.
+             For this type the rsTBMeterRate can take a value
+             between 3000 and 1000000000.
+             
+	        Agent must ignore the value in the following fields
+                while validating the row:
+                
+                rsTBMeterBurst                  RsBurst,
+                rsTBMeterBurstFailAction        RsAction,
+                rsTBMeterBurstFailActionRewrite RsTOS,  
+--     	        rsTBMeterMinimumBandwidth       RsRateLimit,
+--              rsTBMeterDistributeAmong        RsDistAmong,
+                
+             
+             softwareFlowAggregate(2) value is deprecated.
+--           softwareFlowAggregate(2) indicates that this 
+--           entry specifies a software based rate limit aggregate.
+--           Agent must ignore the value in the following fields while
+--           validating the row:
+--              
+--              rsTBMeterBurst                  RsBurst,
+--              rsTBMeterBurstFailAction        RsAction,
+--              rsTBMeterBurstFailActionRewrite RsTOS,  
+               
+             hardwareFlowAggregate(3) indicates that this entry 
+             specifies a hardware based flow aggregation rate limit
+             For this type the rsTBMeterRate can take a value
+             between 0 and 1000000000.
+
+	        Agent must ignore the value in the following fields
+                while validating the row:
+                
+                rsTBMeterBurst                  RsBurst,
+                rsTBMeterBurstFailAction        RsAction,
+                rsTBMeterBurstFailActionRewrite RsTOS,  
+--              rsTBMeterMinimumBandwidth       RsRateLimit,
+--              rsTBMeterDistributeAmong        RsDistAmong,
+
+             perPort(4) indicates that this entry specifies a 
+             port-level rate limit service. 
+             For this type the rsTBMeterRate can take a value
+             between 3000 and 1000000000 in outbound direction
+             and between 0 and 1000000000 in inbound direction.
+           
+                Agent must ignore the value in the following fields
+                while validating the row:
+                
+                rsTBMeterBurst                  RsBurst,
+                rsTBMeterBurstFailAction        RsAction,
+                rsTBMeterBurstFailActionRewrite RsTOS,  
+--              rsTBMeterMinimumBandwidth       RsRateLimit,
+--              rsTBMeterDistributeAmong        RsDistAmong,
+
+             burstsafe(5) indicates that this entry specifies a 
+             dual bucket rate limit.
+             For this type the rsTBMeterRate can take a value
+             between 10000 and 1000000000.
+           
+                Agent must ignore the value in the following fields
+                while validating the row:
+           
+--              rsTBMeterMinimumBandwidth       RsRateLimit,
+--              rsTBMeterDistributeAmong        RsDistAmong,
+		
+             l2(6) indicates that this entry specifies a layer 2 
+             rate limit.
+             For this type the rsTBMeterRate can take a value
+             between 0 and 1000000000.
+           
+                Agent must ignore the value in the following fields
+                while validating the row:
+           
+                rsTBMeterBurst                  RsBurst,
+	        rsTBMeterBurstFailAction        RsAction,
+                rsTBMeterBurstFailActionRewrite RsTOS,  
+
+              "
+        DEFVAL { perFlow }
+
+        ::= { rsTBMeterEntry 2 }
+
+  rsTBMeterRate OBJECT-TYPE
+       SYNTAX      RsRateLimit
+       UNITS "bps"
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Token Bucket rate in bits per second.  Refer to the
+             Description of rsTBMeterType for acceptable values.
+             "
+	  DEFVAL { 3000 }
+       ::= { rsTBMeterEntry 3 }
+ 
+  rsTBMeterBurst OBJECT-TYPE
+       SYNTAX      RsBurst
+       UNITS "bps"
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "
+             The burst traffic rate (size) supported.
+             This attribute is used only when
+             rsTBMeterType is set to burstsafe(5)
+            For RS platform rate ranges from 10000 to  1000000000.
+            "
+       DEFVAL { 10000 }
+       ::= { rsTBMeterEntry 4 }
+
+  rsTBMeterInterval OBJECT-TYPE
+       SYNTAX      RsMeterInterval
+       MAX-ACCESS  read-create
+       STATUS      deprecated
+       DESCRIPTION
+       " The time interval used with the token bucket. "
+       REFERENCE "Refer Riverstone Networks white paper 
+                  'An Overview of RateLimiting' for more details"
+        
+      ::= { rsTBMeterEntry 5 }
+ 
+
+ 
+  rsTBMeterFailAction OBJECT-TYPE
+       SYNTAX     RsAction
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+          "
+          The fail action to take when the traffic rate
+          exceeds rsTBMeterRate. If the Action value indicates
+          TOS rewrite or TOS Precedence rewrite, appropriate
+          rewrite value should be in rsTBMeterFailActionRewrite.
+          "
+
+          ::= { rsTBMeterEntry 6 }
+
+rsTBMeterFailActionRewrite OBJECT-TYPE
+       SYNTAX     RsTOS
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "
+            TOS or TOS Precedence rewrite when the traffic exceeds
+            rsTBMeterRate.  rsTBMeterFailAction indicates
+            this object value either TOS  or TOS Precedence
+            The object is ignored by agent if rsTBMeterFailAction does not
+            indicate rewrite option.
+            "
+
+       DEFVAL { 0 }
+          ::= { rsTBMeterEntry 7 }
+
+
+ rsTBMeterBurstFailAction OBJECT-TYPE
+       SYNTAX     RsAction
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+          "
+          The fail action to take when the traffic rate
+          exceeds rsTBMeterBurst. If the Action value indicates
+          TOS rewrite or TOS Precedence rewrite, appropriate
+          rewrite value should be in rsTBMeterBurstFailActionRewrite.
+          
+          "
+       ::= { rsTBMeterEntry 8 }
+
+ rsTBMeterBurstFailActionRewrite OBJECT-TYPE
+       SYNTAX     RsTOS
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "
+            TOS or TOS Precedence rewrite when the traffic exceeds
+            rsTBMeterBurst, rsTBMeterBurstFailAction indicates
+            this object value either TOS  or TOS Precedence
+            The object is ignored by agent if rsTBMeterBurstFailAction does not
+            indicate rewrite option.
+            "
+       DEFVAL { 0 }
+          ::= { rsTBMeterEntry 9 }
+
+ rsTBMeterMinimumBandwidth OBJECT-TYPE
+       SYNTAX     RsRateLimit
+       UNITS "bps"
+       MAX-ACCESS  read-create
+       STATUS      deprecated
+       DESCRIPTION
+            "The minimum bandwidth to allocate for each  flow 
+             when rsTBMeterType is 'softwareFlowAggreage' 
+             For RS platform rate ranges from 3000 to  1000000000.
+            "
+	  DEFVAL { 3000 }
+       ::= { rsTBMeterEntry 10 }
+
+  rsTBMeterDistributeAmong OBJECT-TYPE
+       SYNTAX     RsDistAmong
+       MAX-ACCESS  read-create
+       STATUS      deprecated
+       DESCRIPTION
+        "The rate-limit module allocates the minimum specified bandwidth to
+         each matching flow,and the leftover bandwidth of rsTBMeterAccessRate
+         will be distributed among these  number of flow."
+         DEFVAL  { 1 }
+       ::= { rsTBMeterEntry 11 }
+
+
+  rsTBMeterStorageType OBJECT-TYPE
+       SYNTAX      StorageType { volatile(2), nonVolatile(3) }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Specify if entry should be persistent or not. "
+       DEFVAL { volatile }
+       ::= { rsTBMeterEntry 12 }
+      
+  rsTBMeterStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "The  RowStatus  variable  controls  the  activation,
+             deactivation,  or  deletion  of a meter. Writable
+             variable may not be  modified when  the row is active.
+            "
+       ::= { rsTBMeterEntry 13 }
+
+
+
+--
+-- TB Meter apply table
+--
+ rsTBMeterApplyLastChanged OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUpTime when last SET operation succeeds 
+            on this table"
+       ::= { rsTBMeterApply 1 }
+ 
+ rsTBMeterApplyCount  OBJECT-TYPE
+       SYNTAX    Unsigned32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "The current number of entries in rsTBMeterApplyTable "
+
+       ::= { rsTBMeterApply 2 }
+ 
+rsTBMeterApplyErrorMessage  OBJECT-TYPE
+       SYNTAX    SnmpAdminString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "Description of the error of the 
+         last SET operations to fail on this table"
+       ::= { rsTBMeterApply 3 }
+ 
+rsTBMeterApplyMasterAdminStatus OBJECT-TYPE
+        SYNTAX     RsAdminStatus
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            " This object enables or disables all the entries 
+              in rsTBMeterApplyTable. This behaves like master 
+              fuse and do not change individual states of each row.
+
+              User must check the state of this object before he
+              tries to enable the state of entry.
+
+            "
+        DEFVAL { enabled }
+        ::= { rsTBMeterApply 4 }
+
+ rsTBMeterApplyTable OBJECT-TYPE   
+       SYNTAX      SEQUENCE OF RsTBMeterApplyEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+       "This table associates rate limits with interfaces.
+       In particular, a profile from the rsTBMeter table with name 
+       rsTBMeterId2 is applied on certain IP interfaces and ports specified 
+       by ifIndex with classifier specified by rsTBMeterApplyAclName "
+       ::= { rsTBMeterApply 5 }
+
+   rsTBMeterApplyEntry OBJECT-TYPE
+       SYNTAX      RsTBMeterApplyEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+          "'ifIndex' is imported from IF-MIB.
+          For RS platform, this value must point to an entry that has
+           ifType of IP interface(126)
+                     ethernetCsmacd(6)
+         
+          L4 bridging MUST be enabled on the port before creating the entry.
+          To enable/disable the L4 bridging state on a particular port
+          use VLAN-EXTENSION-MIB module.
+                      
+          The columns in this table are modifiable when the state of 
+          rsTBMeterApplyStatus equal to  NotInService, NotReady.
+          " 
+       INDEX {ifIndex,rsTBMeterApplyDirection,rsTBMeterApplyAclName,rsTBMeterId2 }
+       ::= { rsTBMeterApplyTable 1 }
+
+
+   RsTBMeterApplyEntry ::=
+       
+       SEQUENCE { 
+                  rsTBMeterApplyDirection          RsIfDirection,
+                  rsTBMeterApplyAclName            RsLabel,
+                  rsTBMeterId2                     RsLabel,
+                  rsTBMeterApplyOwner              SnmpAdminString,
+                  rsTBMeterApplyAdminStatus        RsAdminStatus,
+                  rsTBMeterApplyStorageType        StorageType,
+                  rsTBMeterApplyStatus  	   RowStatus
+       }    
+
+
+ rsTBMeterApplyDirection OBJECT-TYPE
+       SYNTAX      RsIfDirection { inbound(1), outbound(2) }
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            "Interface traffic direction.
+            "
+       ::= { rsTBMeterApplyEntry 1 }
+
+ rsTBMeterApplyAclName OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+
+            "Access Control List name or Classifier Name,
+             Must exist on the underlying system before activation.
+            "
+       ::= { rsTBMeterApplyEntry 2 }
+
+ rsTBMeterId2 OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            "The meter id from rsTBMeterEntry.rsTBMeterId. 
+             rsTBMeterId must be an active row in rsTBMeterTable.
+             "
+       ::= { rsTBMeterApplyEntry 3 }
+
+ rsTBMeterApplyOwner OBJECT-TYPE
+        SYNTAX      SnmpAdminString (SIZE(0..32))
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The owner of this rate limit apply entry. The exact semantics of
+             this string are subject to the security policy defined by
+             the security administrator.
+              If this entry was created via Command Line Interface, this will
+             be set to 'monitor' "
+        ::= { rsTBMeterApplyEntry 4 }
+
+
+ rsTBMeterApplyAdminStatus OBJECT-TYPE
+        SYNTAX      RsAdminStatus
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The desired state of the rate limit entry."
+        DEFVAL { enabled }
+        ::= { rsTBMeterApplyEntry 5 }
+ 
+
+ rsTBMeterApplyStorageType OBJECT-TYPE
+       SYNTAX      StorageType { volatile(2), nonVolatile(3) }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Specify if entry should be persistent or not."
+       DEFVAL { volatile }
+       ::= { rsTBMeterApplyEntry 6 }
+	
+ rsTBMeterApplyStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Allows to create a new row and modify or destroy an 
+            existing row in the manner described in the definition 
+            of the RowStatus textual convention "
+       ::= { rsTBMeterApplyEntry 7 }
+
+--
+-- Token(Credit) Bucket Port Based Rate Limiting.
+--
+ rsPortRLLastChanged OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUpTime  when last SET operation succeeds 
+            on this table"
+       ::= { rsPortRateLimit 1 }
+ 
+ rsPortRLCount  OBJECT-TYPE
+       SYNTAX    Unsigned32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "The current number of entries in rsPortRLTable "
+
+       ::= { rsPortRateLimit 2 }
+
+rsPortRLErrorMessage  OBJECT-TYPE
+       SYNTAX    SnmpAdminString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "Description of the error caused when
+         the last SET operation failed on this table"
+       ::= { rsPortRateLimit 3 }
+
+rsPortRLMasterAdminStatus OBJECT-TYPE
+        SYNTAX      RsAdminStatus 
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            " This object enables or disables all the entries 
+              in rsPortRLTable. This behaves like master 
+              fuse and do not change individual states of each row.
+
+              User must check the state of this object before he
+              tries to enable the state of an entry in rsPortRLTAble.
+            "
+        DEFVAL { enabled }
+        ::= { rsPortRateLimit 4 }
+
+ rsPortRLTable OBJECT-TYPE   
+       SYNTAX      SEQUENCE OF RsPortRLEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An entry which allows to create port based ratelimit
+            service and to activate it on a physical port"
+       ::= { rsPortRateLimit 5 }
+
+   rsPortRLEntry OBJECT-TYPE
+       SYNTAX      RsPortRLEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+          "'ifIndex' is imported from IF-MIB, which carries an index for
+            physical port.
+           
+           For RS platform, this value must point to an entry that has
+           ifType of ethernetCsmacd(6). 
+               
+          The columns in this table are modifiable when the state of 
+          rsPortRLStatus equal to  NotInService, NotReady.
+          " 
+       INDEX { ifIndex, rsPortRLDirection,rsPortRLMeterId}
+       ::= { rsPortRLTable 1 }
+
+
+   RsPortRLEntry ::=
+       
+       SEQUENCE {
+                  rsPortRLDirection         RsIfDirection,
+                  rsPortRLMeterId           RsLabel,
+                  rsPortRLOwner             SnmpAdminString,
+                  rsPortRLRate              RsRateLimit,
+                  rsPortRLFailAction        RsAction,
+                  rsPortRLFailActionRewrite RsTOS,
+-- deprecated
+                  rsPortRLInterval          RsMeterInterval,
+                  rsPortRLAdminStatus       RsAdminStatus,
+                  rsPortRLStorageType       StorageType,
+                  rsPortRLStatus  	    RowStatus
+       }    
+
+ rsPortRLDirection OBJECT-TYPE
+       SYNTAX      RsIfDirection { inbound(1), outbound(2) }
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            "Input/Output direction to apply rate limit on a port
+            "
+       ::= { rsPortRLEntry 1 }
+
+ rsPortRLMeterId OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+        "Administratively assigned name to port based rate limit entry
+         Note: name must be unique across the RS platform ratelimit module
+        "
+       ::= { rsPortRLEntry 2 }
+  
+  rsPortRLOwner OBJECT-TYPE
+        SYNTAX      SnmpAdminString (SIZE(0..32))
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The owner of this  entry. The exact semantics of
+             this string are subject to the security policy defined by
+             the security administrator."
+        ::= { rsPortRLEntry 3 }
+
+ rsPortRLRate OBJECT-TYPE
+       SYNTAX RsRateLimit
+       UNITS "bps"
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Rate to limit port traffic to.
+             For RS platform rate ranges from 3000 to  1000000000.
+             "
+	  DEFVAL { 3000 }
+       ::= { rsPortRLEntry 4 }	
+
+ rsPortRLFailAction OBJECT-TYPE
+       SYNTAX     RsAction
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "
+          The action to take when the traffic rate
+          exceeds rsPortRLRate. If the Action value indicates
+          TOS rewrite or TOS Precedence rewrite, appropriate
+          rewrite value should be in rsPortRLFailActionRewrite.
+            "
+          ::= { rsPortRLEntry 5 }
+
+ rsPortRLFailActionRewrite OBJECT-TYPE
+       SYNTAX     RsTOS
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "
+            TOS or TOS Precedence rewrite when the traffic exceeds
+            rsPortRLRate.  rsPortRLFailAction indicates
+            this object value either TOS  or TOS Precedence
+            The object is ignored by agent if rsPortRLFailAction does not
+            indicate rewrite option.
+           "
+
+          ::= { rsPortRLEntry 6 }
+
+ rsPortRLInterval OBJECT-TYPE
+       SYNTAX      RsMeterInterval
+       MAX-ACCESS  read-create
+       STATUS      deprecated
+       DESCRIPTION
+        " The time interval used with the token bucket. "
+       
+       REFERENCE "Refer Riverstone Networks white paper 
+                  'An Overview of RateLimiting' for more details"
+       
+       ::= { rsPortRLEntry 7 }
+  
+ rsPortRLAdminStatus OBJECT-TYPE
+        SYNTAX   RsAdminStatus
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The desired state of the rate limit entry."
+        DEFVAL { enabled }
+        ::= { rsPortRLEntry 8 }
+ 
+ rsPortRLStorageType OBJECT-TYPE
+       SYNTAX      StorageType { volatile(2), nonVolatile(3) }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+
+            "Specify if entry should be persistent or not. "
+       DEFVAL { volatile }
+       ::= { rsPortRLEntry 9 }
+
+  rsPortRLStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            " Allows to create a new row and modify or destroy an 
+            existing row in the manner described in the definition 
+            of the RowStatus textual convention "
+       ::= { rsPortRLEntry 10 }
+
+--
+-- Token Bucket L2 based rate-limiting
+--
+ rsL2RLApplyLastChanged OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUpTime when last SET operation succeeds 
+            on this table"
+       ::= { rsL2RateLimit 1 }
+ 
+ rsL2RLApplyCount  OBJECT-TYPE
+       SYNTAX    Unsigned32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "The current number of entries in rsL2RLApplyTable "
+
+       ::= { rsL2RateLimit 2 }
+ 
+rsL2RLApplyErrorMessage  OBJECT-TYPE
+       SYNTAX    SnmpAdminString
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+        "Description of the error of the 
+         last SET operations to fail on this table"
+       ::= { rsL2RateLimit 3 }
+ 
+rsL2RLApplyMasterAdminStatus OBJECT-TYPE
+        SYNTAX     RsAdminStatus
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            " This object enables or disables all the entries 
+              in rsL2RLApplyTable. This behaves like master 
+              fuse and do not change individual states of each row.
+
+              User must check the state of this object before he
+              tries to enable the state of entry.
+
+            "
+        DEFVAL { enabled }
+        ::= { rsL2RateLimit 4 }
+
+ rsL2RLApplyTable OBJECT-TYPE   
+       SYNTAX      SEQUENCE OF RsL2RLApplyEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+       "This table associates rate limits with port / portgroups / 
+        filter / filtergroups.
+       In particular, a profile from the rsTBMeter table with name 
+       rsTBMeterId is applied on certain ports specified 
+       by ifIndex or the port groups specified with rsL2RLApplyPortGroupName 
+       with filter specified by rsL2RLApplyFilterName or the filter
+       groups specified with the rsL2RLApplyFilterName or the classifier 
+       mentioned in the entry. "
+       ::= { rsL2RateLimit 5 }
+
+   rsL2RLApplyEntry OBJECT-TYPE
+       SYNTAX      RsL2RLApplyEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+          "'ifIndex' is imported from IF-MIB.
+          For RS platform, this value must point to an entry that has
+           ifType of ethernetCsmacd(6)
+         
+          The columns in this table are modifiable when the state of 
+          rsL2RLApplyStatus equal to  NotInService, NotReady.
+          " 
+       INDEX {   rsTBMeterId, 
+                 rsL2RLApplyDirection,
+                 rsL2RLApplyIfIndex,
+                 rsL2RLApplyPortGroupName,
+                 rsL2RLApplyFilterName
+             }
+       ::= { rsL2RLApplyTable 1 }
+
+
+   RsL2RLApplyEntry ::=
+       
+       SEQUENCE { 
+                  rsL2RLApplyDirection          RsIfDirection,
+                  rsL2RLApplyIfIndex            InterfaceIndexOrZero,
+                  rsL2RLApplyPortGroupName      RsLabel,
+                  rsL2RLApplyFilterName         RsLabel,
+                  rsL2RLIsFilterGroup           TruthValue,
+                  rsL2RLApplyOnePGrouping       INTEGER,
+                  rsL2RLApplyOwner              SnmpAdminString,
+                  rsL2RLApplyAdminStatus        RsAdminStatus,
+                  rsL2RLApplyStorageType        StorageType,
+                  rsL2RLApplyStatus  	        RowStatus
+       }    
+
+
+ rsL2RLApplyDirection OBJECT-TYPE
+       SYNTAX      RsIfDirection { inbound(1), outbound(2) }
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            "Interface traffic direction.
+            "
+       ::= { rsL2RLApplyEntry 1 }
+
+ rsL2RLApplyIfIndex OBJECT-TYPE
+       SYNTAX      InterfaceIndexOrZero
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            "When the service is applied on a single port, this value
+             should be the ifIndex of the port where the service is applied.
+             If it is applied on a group of ports, this value should be
+             zero.  If it is nonZero, the rsL2RLApplyPortGroupName should
+             be a zero length octet string."
+       ::= { rsL2RLApplyEntry 2 }
+
+ rsL2RLApplyPortGroupName OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+
+            "This object identifies one or more rows in the 
+             rsRLPortGroupTable, when it of length nonzero.  In this
+             case the rsL2RLApplyIfIndex should be zero.  If the
+             service is applied on a single port, this object is
+             supposed to be a zero length octet string."
+
+       ::= { rsL2RLApplyEntry 3 }
+
+ rsL2RLApplyFilterName OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+
+            "Filter name or Classifier Name,
+             Must exist on the underlying system before activation.
+
+             If rsL2RLIsFilterGroup is set to true, then this name
+             specifies the filter group name.  The actual filters
+             associated to this entry are specified in rsRLFilterGroupTable.
+
+             If both filter and port groups are present, this value should
+             be same as the rsL2RLApplyPortGroupName.
+            "
+       ::= { rsL2RLApplyEntry 4 }
+
+ rsL2RLIsFilterGroup OBJECT-TYPE
+       SYNTAX      TruthValue
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "When this value is set to true, then rsL2RLApplyFilterName
+             specifies the group of filters mentioned in the 
+             rsRLFilterGroupTable.
+
+             If set to false, the rsL2RLApplyFilterName specifies the
+             filter name associated with the service."
+       ::= { rsL2RLApplyEntry 5 }
+
+ rsL2RLApplyOnePGrouping OBJECT-TYPE
+       SYNTAX      INTEGER {
+                        none(0),
+                        other(1),
+                        group1(2),
+                        group2(3),
+                        group3(4),
+                        group4(5)
+                        }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "This object specifies the 802.1p priority groupings
+             for which this service is to be applied.  Currently,
+             4 different groups can be constructed and those priorities
+             which are not in any groups is put under other category."
+
+       ::= { rsL2RLApplyEntry 6 }
+
+ rsL2RLApplyOwner OBJECT-TYPE
+        SYNTAX      SnmpAdminString (SIZE(0..32))
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The owner of this rate limit apply entry. The exact semantics of
+             this string are subject to the security policy defined by
+             the security administrator.
+              If this entry was created via Command Line Interface, this will
+             be set to 'monitor' "
+        ::= { rsL2RLApplyEntry 7 }
+
+
+ rsL2RLApplyAdminStatus OBJECT-TYPE
+        SYNTAX      RsAdminStatus
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The desired state of the rate limit entry."
+        DEFVAL { enabled }
+        ::= { rsL2RLApplyEntry 8 }
+ 
+
+ rsL2RLApplyStorageType OBJECT-TYPE
+       SYNTAX      StorageType { volatile(2), nonVolatile(3) }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Specify if entry should be persistent or not."
+       DEFVAL { volatile }
+       ::= { rsL2RLApplyEntry 9 }
+	
+ rsL2RLApplyStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Allows to create a new row and modify or destroy an 
+            existing row in the manner described in the definition 
+            of the RowStatus textual convention "
+       ::= { rsL2RLApplyEntry 10 }
+
+
+
+-- Rate Limit Mode on RS platform
+
+rsRLModeLastChanged OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUpTime  when last SET operation succeeds 
+            on this table"
+       ::= { rsRateLimitModes 1 }
+
+
+rsRLModeTable OBJECT-TYPE
+        SYNTAX      SEQUENCE OF RsRLModeEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "Entry of rate limit mode and input port ratelimit state 
+            
+            The rows in this table are created dynamically by inserting
+            line cards in their respective slots of the underlying
+            system.  When a slot/module  is activated  resulting entry
+            in this table will have the default operating modes.
+            Essentially the ratelimit mode and input port ratelimit            
+            status value. Certain SET operation on this entry might fail if the
+            underlying hardware does not support the mode.
+           "
+
+       ::= { rsRateLimitModes 2 }
+
+ rsRLModeEntry OBJECT-TYPE
+       SYNTAX      RsRLModeEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            " A record containing ratelimt mode on given module/slot.
+              The columns in this entry are modifiable. 
+              This is indexed by entPhysicalIndex whose
+              entPhysicalClass == module(9). 
+            "           
+       INDEX   { entPhysicalIndex } 
+
+       ::= { rsRLModeTable 1 }
+
+   
+  RsRLModeEntry ::=
+       
+       SEQUENCE {
+
+	   rsRLModeType                   INTEGER,
+	   rsRLModeInputPortStatus        RsAdminStatus,
+           rsRLModeCapabilityBits         BITS,
+           rsRLModeEntryLastChanged       TimeTicks,         
+           rsRLModeStorageType            StorageType
+
+                }
+
+  rsRLModeType OBJECT-TYPE
+        SYNTAX      INTEGER {
+                     flowMode(1),
+                aggregateMode(2)
+          }
+
+        MAX-ACCESS  read-write
+        STATUS      current
+
+        DESCRIPTION
+            "
+           Type of rate limit modes supported on this slot
+           Value is writable only when rsRLModeCapabilityBits
+           has rlMode(0) set to '1'.
+           The table below relates the ratelimit type
+           supported in each Mode.
+           +---------------------+----------+--------------+
+           |RsMeterType          | flowMode | aggregateMode|
+           +---------------------+----------+--------------+
+           |perFlow(1)           |    X     |              |
+           |softFlowAgg(2)       |    X     |              |
+           |hardFlowAgg(3)       |          |    X         |
+           |perPort(4) -input    |          |    X         |
+           |perPort(4) -output   |    X     |    X         |
+           +---------------------+----------+--------------+
+           X indicates supported.
+            "
+       ::= { rsRLModeEntry 1 }
+
+
+
+ rsRLModeInputPortStatus OBJECT-TYPE
+        SYNTAX    RsAdminStatus
+        MAX-ACCESS  read-write
+        STATUS      current
+        DESCRIPTION
+            "
+            Input Port RateLimit status on this slot.
+            Value is writable only when rsRLModeCapabilityBits has
+            rlInputPortRateLimit set to '1'.
+            "
+       ::= { rsRLModeEntry 2 }
+
+rsRLModeCapabilityBits OBJECT-TYPE
+        SYNTAX      BITS  {
+                
+                 rlMode(0), --flow and aggregate mode supported
+                rlInputPortRateLimit(1)
+                            -- input port based rate limit supported
+          }
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+             Specifies the Module capability.
+             rlMode(0) if set to 1 indicates the Module 
+             supports the Flow or Aggregate mode.
+             rlInputPortRateLimit(1) if set to 1 indicates the
+             Module supports input port based rate limiting.
+             "
+       ::= { rsRLModeEntry 3 }
+
+ rsRLModeEntryLastChanged OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUpTime  when last SET operation succeeds 
+            on this entry"
+       ::= { rsRLModeEntry 4 }
+
+ rsRLModeStorageType OBJECT-TYPE
+       SYNTAX      StorageType { volatile(2), nonVolatile(3) }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+            "
+            Storage type for this entry.
+            "
+       DEFVAL { volatile }
+       ::= { rsRLModeEntry 5 }
+
+-- Rate Limit Port Groups on RS platform
+
+rsRLPortGroupLastChanged OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUpTime  when last SET operation succeeds 
+            on this table"
+       ::= { rsRateLimitGroups 1 }
+
+
+rsRLPortGroupTable OBJECT-TYPE
+        SYNTAX      SEQUENCE OF RsRLPortGroupEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table is to associate one or more ports as a group."
+
+       ::= { rsRateLimitGroups 2 }
+
+ rsRLPortGroupEntry OBJECT-TYPE
+       SYNTAX      RsRLPortGroupEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            " A record containing group name and ifIndex."
+
+       INDEX   { rsRLPortGroupName, ifIndex } 
+
+       ::= { rsRLPortGroupTable 1 }
+
+   
+  RsRLPortGroupEntry ::=
+       
+       SEQUENCE {
+
+	   rsRLPortGroupName              RsLabel,
+           rsRLPortGroupStorageType       StorageType,
+           rsRLPortGroupStatus            RowStatus
+
+                }
+
+ rsRLPortGroupName OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+
+            "The administratively assigned name to this PortGroup entry.
+            "
+       ::= { rsRLPortGroupEntry 1 }
+
+ rsRLPortGroupStorageType OBJECT-TYPE
+       SYNTAX      StorageType { volatile(2), nonVolatile(3) }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+            "
+            Storage type for this entry.  The value of this entry
+            will be the same as the one specified in the row of 
+            rsL2RLApplyTable where this group is used.
+
+            If none of the entries use this group, then the storage
+            type will be volatile.
+            "
+       ::= { rsRLPortGroupEntry 2 }
+
+ rsRLPortGroupStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Allows to create a new row and modify or destroy an 
+            existing row in the manner described in the definition 
+            of the RowStatus textual convention "
+       ::= { rsRLPortGroupEntry 3 }
+
+
+-- Rate Limit Filter Groups on RS platform
+
+rsRLFilterGroupLastChanged OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUpTime  when last SET operation succeeds 
+            on this table"
+       ::= { rsRateLimitGroups 3 }
+
+
+rsRLFilterGroupTable OBJECT-TYPE
+        SYNTAX      SEQUENCE OF RsRLFilterGroupEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table is to associate one or more ports as a group."
+
+       ::= { rsRateLimitGroups 4 }
+
+ rsRLFilterGroupEntry OBJECT-TYPE
+       SYNTAX      RsRLFilterGroupEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            " A record containing group name and filter name."
+
+       INDEX   { rsRLFilterGroupName, rsRLFilterName } 
+
+       ::= { rsRLFilterGroupTable 1 }
+
+   
+  RsRLFilterGroupEntry ::=
+       
+       SEQUENCE {
+
+	   rsRLFilterGroupName              RsLabel,
+	   rsRLFilterName                   RsLabel,
+           rsRLFilterGroupStorageType       StorageType,
+           rsRLFilterGroupStatus            RowStatus
+
+                }
+
+ rsRLFilterGroupName OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+
+            "The administratively assigned name to this FilterGroup entry.
+            "
+       ::= { rsRLFilterGroupEntry 1 }
+
+ rsRLFilterName OBJECT-TYPE
+       SYNTAX      RsLabel
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+
+            "The name of the filter part of this group.
+            "
+       ::= { rsRLFilterGroupEntry 2 }
+
+ rsRLFilterGroupStorageType OBJECT-TYPE
+       SYNTAX      StorageType { volatile(2), nonVolatile(3) }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+            "
+            Storage type for this entry.  The value of this entry
+            will be the same as the one specified in the row of 
+            rsL2RLApplyTable where this group is used.
+
+            If none of the entries use this group, then the storage
+            type will be volatile.
+            "
+       ::= { rsRLFilterGroupEntry 3 }
+
+ rsRLFilterGroupStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+            "Allows to create a new row and modify or destroy an 
+            existing row in the manner described in the definition 
+            of the RowStatus textual convention "
+       ::= { rsRLFilterGroupEntry 4 }
+
+
+
+-- Token Bucket Rate Limit Monitor table  
+rsTBMeterMonitorTable OBJECT-TYPE
+        SYNTAX      SEQUENCE OF RsTBMeterMonitorEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "
+           Table which carries exceed count for each 
+           token bucket meter applied on  Access Control List.
+           "
+       ::= { rsTBMeterApplyMonitor 1 }
+
+ rsTBMeterMonitorEntry OBJECT-TYPE
+       SYNTAX      RsTBMeterMonitorEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            " 
+            This is a read only table of exceed count
+            for each token bucket  entry applied on Access Contol
+            List.
+            "           
+       AUGMENTS { rsTBMeterApplyEntry } 
+
+       ::= { rsTBMeterMonitorTable 1 }
+   
+  RsTBMeterMonitorEntry ::=
+       
+       SEQUENCE {
+               rsTBMeterExceedByteCount   Counter32,
+               rsTBMeterCounterDiscontinuityTime TimeTicks,
+               rsTBMeterExceedPacketCount Counter32,
+               rsTBMeterExceedBurstPacketCount Counter32
+                }
+
+  rsTBMeterExceedByteCount OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+            Total number of bytes exceeded as a result of 
+            traffic rate limiting on a particular rsTBMeterApplyEntry
+            entry.
+            Discontinuities in the value of this counter can occur at
+            re-initialization of the management system, and at other
+            times as indicated by the value of
+            rsTBMeterCounterDiscontinuityTime.
+            "
+       ::= { rsTBMeterMonitorEntry 1 }
+
+rsTBMeterCounterDiscontinuityTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The value of sysUpTime on the most recent occasion at which
+            this counters suffered a discontinuity.  If
+            no such discontinuities have occurred since the last re-
+            initialization of the local management subsystem, then this
+            object contains a zero value."
+    ::= { rsTBMeterMonitorEntry 2 }
+
+  rsTBMeterExceedPacketCount OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+            Total number of packets exceeded the specified
+            traffic rate limiting on a particular rsTBMeterApplyEntry
+            entry.
+            Discontinuities in the value of this counter can occur at
+            re-initialization of the management system, and at other
+            times as indicated by the value of
+            rsTBMeterCounterDiscontinuityTime.
+            "
+       ::= { rsTBMeterMonitorEntry 3 }
+
+  rsTBMeterExceedBurstPacketCount OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+            Total number of packets exceeded the specified burst 
+            rate on a particular rsTBMeterApplyEntry entry.
+
+            This is object is valid only when the rsTBMeterType
+            is burstsafe(5) in the row referred by the rsTBMeterId2
+            in the rsTBMeterTable.
+
+            Discontinuities in the value of this counter can occur at
+            re-initialization of the management system, and at other
+            times as indicated by the value of
+            rsTBMeterCounterDiscontinuityTime.
+            "
+       ::= { rsTBMeterMonitorEntry 4 }
+
+
+
+
+
+
+-- Token Bucket Rate Limit Monitor table  
+rsPortRLMonitorTable OBJECT-TYPE
+        SYNTAX      SEQUENCE OF RsPortRLMonitorEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "
+           Table which carries exceed count for each 
+           token bucket meter applied on  the port based ones.
+           "
+       ::= { rsPortRLMonitor 1 }
+
+ rsPortRLMonitorEntry OBJECT-TYPE
+       SYNTAX      RsPortRLMonitorEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            " 
+            This is a read only table of exceed count
+            for each token bucket  entry applied the port based ones.
+            "           
+       AUGMENTS { rsPortRLEntry } 
+
+       ::= { rsPortRLMonitorTable 1 }
+   
+  RsPortRLMonitorEntry ::=
+       
+       SEQUENCE {
+               rsPortRLExceedByteCount   Counter32,
+               rsPortRLCounterDiscontinuityTime TimeTicks,
+               rsPortRLExceedPacketCount   Counter32
+                }
+
+ rsPortRLExceedByteCount OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+            Total number of bytes exceeded as a result of 
+            traffic rate limiting on a particular rsPortRLEntry
+            entry.
+            Discontinuities in the value of this counter can occur at
+            re-initialization of the management system, and at other
+            times as indicated by the value of
+            rsPortRLCounterDiscontinuityTime.
+
+            "
+       ::= { rsPortRLMonitorEntry 1 }
+
+ rsPortRLCounterDiscontinuityTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The value of sysUpTime on the most recent occasion at which
+            this counters suffered a discontinuity.  If
+            no such discontinuities have occurred since the last re-
+            initialization of the local management subsystem, then this
+            object contains a zero value."
+    ::= { rsPortRLMonitorEntry 2 }
+
+ rsPortRLExceedPacketCount OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+            Total number of packets that exceeded the specified
+            traffic rate limiting on a particular rsPortRLEntry
+            entry.
+            Discontinuities in the value of this counter can occur at
+            re-initialization of the management system, and at other
+            times as indicated by the value of
+            rsPortRLCounterDiscontinuityTime.
+
+            "
+       ::= { rsPortRLMonitorEntry 3 }
+
+
+-- Token Bucket L2 Rate Limit Monitor table  
+rsL2RLMonitorTable OBJECT-TYPE
+        SYNTAX      SEQUENCE OF RsL2RLMonitorEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "
+           Table which carries exceed count for each 
+           token bucket meter applied on  L2 Filter or Filter Group.
+           "
+       ::= { rsL2RLMonitor 1 }
+
+ rsL2RLMonitorEntry OBJECT-TYPE
+       SYNTAX      RsL2RLMonitorEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            " 
+            This is a read only table of exceed count
+            for each token bucket  entry applied on L2 Filter or
+            Filter Groups.
+            "           
+       AUGMENTS { rsL2RLApplyEntry } 
+
+       ::= { rsL2RLMonitorTable 1 }
+   
+  RsL2RLMonitorEntry ::=
+       
+       SEQUENCE {
+               rsL2RLExceedByteCount   Counter32,
+               rsL2RLExceedPacketCount Counter32,
+               rsL2RLCounterDiscontinuityTime TimeTicks
+                }
+
+  rsL2RLExceedByteCount OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+            Total number of bytes that exceeded the specified
+            traffic rate limiting on a particular rsL2RLApplyEntry
+            entry.
+            Discontinuities in the value of this counter can occur at
+            re-initialization of the management system, and at other
+            times as indicated by the value of
+            rsL2RLCounterDiscontinuityTime.
+            "
+       ::= { rsL2RLMonitorEntry 1 }
+
+  rsL2RLExceedPacketCount OBJECT-TYPE
+        SYNTAX      Counter32
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            "
+            Total number of packets that exceeded the specified
+            traffic rate limiting on a particular rsL2RLApplyEntry
+            entry.
+            Discontinuities in the value of this counter can occur at
+            re-initialization of the management system, and at other
+            times as indicated by the value of
+            rsL2RLCounterDiscontinuityTime.
+            "
+       ::= { rsL2RLMonitorEntry 2 }
+
+rsL2RLCounterDiscontinuityTime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The value of sysUpTime on the most recent occasion at which
+            this counters suffered a discontinuity.  If
+            no such discontinuities have occurred since the last re-
+            initialization of the local management subsystem, then this
+            object contains a zero value."
+    ::= { rsL2RLMonitorEntry 3 }
+
+
+
+ rsRateLimitCompliances OBJECT IDENTIFIER ::= { rsRateLimitConformance 1 }
+ rsRateLimitGroup       OBJECT IDENTIFIER ::= { rsRateLimitConformance 2 }
+
+ 
+rsRateLimitComplianceV2  MODULE-COMPLIANCE
+
+    STATUS current
+    DESCRIPTION
+           "rsRateLimitGroup1 and rsRateLimitGroup2 is 
+            mandatory for implementation of this MIB.
+
+            This compliance is deprecated and replaced by rsRateLimitComplianceV2"
+
+    MODULE   --this module
+    MANDATORY-GROUPS { rsRateLimitGroup1, rsRateLimitGroup2, rsRateLimitGroup6 }
+
+    OBJECT rsL2RLIsFilterGroup 
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+            
+    OBJECT rsL2RLApplyOnePGrouping 
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    OBJECT rsL2RLApplyOwner
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    OBJECT rsL2RLApplyAdminStatus
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    OBJECT rsL2RLApplyStorageType
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    OBJECT rsL2RLApplyStatus
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    OBJECT rsRLPortGroupStorageType
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    OBJECT rsRLPortGroupStatus
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    OBJECT rsRLFilterGroupStorageType
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    OBJECT rsRLFilterGroupStatus     
+    MIN-ACCESS read-only
+    DESCRIPTION
+        "Write access is not required."
+
+    ::= { rsRateLimitCompliances 2 }      
+ 
+rsRateLimitCompliance  MODULE-COMPLIANCE
+
+    STATUS deprecated
+    DESCRIPTION
+           "rsRateLimitGroup1 and rsRateLimitGroup2 is 
+            mandatory for implementation of this MIB.
+
+            This compliance is deprecated and replaced by rsRateLimitComplianceV2"
+
+    MODULE   --this module
+    MANDATORY-GROUPS { rsRateLimitGroup1, rsRateLimitGroup2 }
+    ::= { rsRateLimitCompliances 1 }      
+ 
+rsRateLimitGroup1  OBJECT-GROUP
+   
+  OBJECTS {
+	--Meter Table
+            rsTBMeterLastChanged            ,
+            rsTBMeterCount                  ,
+            rsTBMeterErrorMessage           ,
+            rsTBMeterType                   ,
+            rsTBMeterRate                   ,
+            rsTBMeterBurst                  ,
+            rsTBMeterFailAction             ,
+            rsTBMeterFailActionRewrite      ,
+            rsTBMeterBurstFailActionRewrite ,
+            rsTBMeterStorageType            ,
+            rsTBMeterStatus                 ,
+	     
+    --Apply Table
+            rsTBMeterApplyLastChanged       ,
+            rsTBMeterApplyCount             ,
+            rsTBMeterApplyErrorMessage      ,
+            rsTBMeterApplyMasterAdminStatus ,
+            rsTBMeterApplyOwner             ,
+            rsTBMeterApplyAdminStatus       ,
+            rsTBMeterApplyStorageType       ,
+	    rsTBMeterApplyStatus            	    
+
+          }
+STATUS current
+
+      DESCRIPTION
+      "A set of managed objects that make up version 0.1 of the RS 
+       rate limit MIB Group."
+      ::= { rsRateLimitGroup 1 }
+
+rsRateLimitGroup2  OBJECT-GROUP
+   
+  OBJECTS {
+    --Port Based RateLimit 
+
+            rsPortRLLastChanged             ,
+            rsPortRLCount                   ,      
+            rsPortRLErrorMessage            ,
+            rsPortRLMasterAdminStatus       ,
+            rsPortRLOwner                   ,
+            rsPortRLRate                    ,
+            rsPortRLFailAction              ,
+            rsPortRLFailActionRewrite       ,
+            rsPortRLAdminStatus             ,
+            rsPortRLStorageType             ,
+            rsPortRLStatus
+          }
+STATUS current
+
+      DESCRIPTION
+      "A set of managed objects that make up version 0.1 of the RS 
+       rate limit MIB Group  for port based rate limiting."
+      ::= { rsRateLimitGroup 2 }
+
+rsRateLimitGroup3  OBJECT-GROUP
+   
+  OBJECTS {
+-- Rate limit Modes
+             rsRLModeLastChanged    ,
+             rsRLModeType           ,
+             rsRLModeCapabilityBits ,
+             rsRLModeInputPortStatus, 
+             rsRLModeEntryLastChanged,
+             rsRLModeStorageType 
+          }
+STATUS current
+
+      DESCRIPTION
+      "This group is mandatory for all RS platforms that
+       support port or interface based rate limits"
+      ::= { rsRateLimitGroup 3 }
+
+rsRateLimitGroup4  OBJECT-GROUP
+   
+  OBJECTS {
+
+-- Rate limit special objects
+            rsTBMeterBurstFailAction        ,
+            rsTBMeterMinimumBandwidth       ,
+            rsTBMeterDistributeAmong        ,
+            rsTBMeterInterval               ,
+            rsPortRLInterval                
+            }
+STATUS deprecated
+
+      DESCRIPTION
+      "This optional group applies to RS Product line
+       that supports dual rate token bucket metering (aka
+       Burst Safe (tm)  This group is replaced by rsRateLimitGroup4V2"
+      ::= { rsRateLimitGroup 4 }
+
+
+rsRateLimitGroup5  OBJECT-GROUP
+    OBJECTS {
+
+          rsTBMeterExceedByteCount          ,
+          rsTBMeterCounterDiscontinuityTime ,
+          rsPortRLExceedByteCount           ,
+          rsPortRLCounterDiscontinuityTime
+
+            }
+STATUS deprecated
+
+      DESCRIPTION
+      "
+      Optional Group of rate limit monitor objects.  This group is
+      replaced by rsRateLimitGroup5V2.
+      "
+      ::= { rsRateLimitGroup 5 }
+
+
+rsRateLimitGroup4V2  OBJECT-GROUP
+   
+  OBJECTS {
+
+-- Rate limit special objects
+            rsTBMeterBurstFailAction        
+            }
+STATUS current
+
+      DESCRIPTION
+      "This optional group applies to RS Product line
+       that supports dual rate token bucket metering (aka
+       Burst Safe (tm)"
+      ::= { rsRateLimitGroup 6 }
+
+
+rsRateLimitGroup5V2  OBJECT-GROUP
+    OBJECTS {
+
+          rsTBMeterExceedByteCount          ,
+          rsTBMeterExceedPacketCount        ,
+          rsTBMeterCounterDiscontinuityTime ,
+          rsTBMeterExceedBurstPacketCount   ,
+          rsPortRLExceedByteCount           ,
+          rsPortRLExceedPacketCount         ,
+          rsPortRLCounterDiscontinuityTime  ,
+          rsL2RLExceedByteCount             ,
+          rsL2RLExceedPacketCount           ,
+          rsL2RLCounterDiscontinuityTime 
+
+            }
+STATUS current
+
+      DESCRIPTION
+      "
+      Optional Group of rate limit monitor objects
+      "
+      ::= { rsRateLimitGroup 7 }
+
+rsRateLimitGroup6  OBJECT-GROUP
+    OBJECTS {
+
+            rsL2RLApplyLastChanged       ,
+            rsL2RLApplyCount             ,
+            rsL2RLApplyErrorMessage      ,
+            rsL2RLApplyMasterAdminStatus ,
+            rsL2RLIsFilterGroup          ,
+            rsL2RLApplyOnePGrouping      ,
+            rsL2RLApplyOwner             ,
+            rsL2RLApplyAdminStatus       ,
+            rsL2RLApplyStorageType       ,
+            rsL2RLApplyStatus  	         ,
+            rsRLFilterGroupLastChanged   ,
+            rsRLPortGroupStorageType     ,
+            rsRLPortGroupStatus          ,
+            rsRLPortGroupLastChanged     ,
+            rsRLFilterGroupStorageType   ,
+            rsRLFilterGroupStatus     
+
+            }
+STATUS current
+
+      DESCRIPTION
+      "A set of managed objects that make up version 0.2 of the RS 
+       rate limit MIB Group  for l2 based rate limiting."
+
+      ::= { rsRateLimitGroup 8 }
+
+
+END
+

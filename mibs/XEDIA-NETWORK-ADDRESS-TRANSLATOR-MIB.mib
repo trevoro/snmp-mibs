@@ -1,0 +1,1356 @@
+-- Open issues:
+
+--   None of this is set in stone and will be modified as needed
+
+--   ../emissary/emissary -partial xedia_reg.mib xnat.mib -o xnat.ctl
+--   ../emissary/emissary -skel xedia_reg.mib xnat.mib xnat.ctl -o xnat.c.stub
+
+-- ================================================================
+
+XEDIA-NETWORK-ADDRESS-TRANSLATOR-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+     MODULE-IDENTITY, OBJECT-TYPE, Integer32, IpAddress, Counter32
+          FROM SNMPv2-SMI
+     TEXTUAL-CONVENTION, DisplayString, RowStatus
+          FROM SNMPv2-TC
+     MODULE-COMPLIANCE, OBJECT-GROUP
+          FROM SNMPv2-CONF
+     xediaMibs
+        FROM XEDIA-REG
+     ;
+
+xediaNetworkAddressTranslatorMIB MODULE-IDENTITY
+     LAST-UPDATED "9805252155Z" -- May 25, 1998
+     ORGANIZATION "Xedia Corp."
+     CONTACT-INFO
+          "support@xedia.com"
+     DESCRIPTION
+          "This module defines objects for the management of Xedia's
+           proprietary Network Address Translator. This translator is
+           based on RFC1631 and its successors.
+
+           The purpose of the Xedia Network Address Translator (xnat) is  
+           to allow hosts in private networks using the RFC1918 address space
+           to communicate with the public Internet by translating private IP 
+           addresses to globally unique IP addresses registered with the IANA."
+    ::= { xediaMibs 23 }
+
+
+-- ================================================================
+-- Top-level organization of the MIB
+-- ================================================================
+
+xnatObjects          OBJECT IDENTIFIER ::= { xediaNetworkAddressTranslatorMIB 1 }
+xnatConformance      OBJECT IDENTIFIER ::= { xediaNetworkAddressTranslatorMIB 2 }
+
+-- ================================================================
+-- Textual Conventions (datatypes)
+-- ================================================================
+
+
+XnatIpAddress ::= TEXTUAL-CONVENTION
+     STATUS          current
+     DESCRIPTION
+          "An IPv4 address."
+     SYNTAX          IpAddress
+
+XnatPort ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT    "d"
+     STATUS          current
+     DESCRIPTION
+          "A UDP or TCP port value or an ICMP ID. The values of this field are
+          defined in the Assigned Numbers RFC."
+     SYNTAX          Integer32 (0..65535)
+
+XnatCounter ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT    "d"
+     STATUS          current
+     DESCRIPTION
+          "A 32 bit counter."
+     SYNTAX          Counter32
+
+-- Syntax assumes seconds for now
+
+XnatTimeout ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT    "d"
+     STATUS          current
+     DESCRIPTION
+          "The duration of time a translation entry remains in the translation
+          table before being aged out"
+     SYNTAX          Integer32 (0..86400)
+
+XnatProtocol ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT    "d"
+     STATUS          current
+     DESCRIPTION
+          "The protocol type of a translation session
+     
+          +------------+-------+
+          |  PROTOCOL  | VALUE |
+          +------------+-------+
+
+               ANY         0
+               ICMP        1
+               TCP         6
+               UDP         17
+          "
+     SYNTAX          Integer32
+
+XnatSessionType ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT    "d"
+     STATUS         current
+     DESCRIPTION
+          "The session type indicate whether a translation session was
+           initiated from inside the private network or outside the 
+           private network
+
+          +------------+-------+
+          |  LOCATION  | VALUE |
+          +------------+-------+
+          
+             INBOUND        0
+             OUTBOUND       1
+         "
+     SYNTAX         INTEGER { inbound(0), outbound(1) }
+
+XnatBindingType ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT   "d"
+     STATUS         current
+     DESCRIPTION
+          "The binding type indicates whether a binding was created
+           dynamically, statically, or by a load sharing pool.
+
+          +----------------+-------+
+          |  BINDING TYPE  | VALUE |
+          +----------------+-------+
+
+             DYNAMIC           0
+             STATIC            1
+             LOAD-SHARE        2
+         "
+     SYNTAX         INTEGER { dynamic(0), static(1), loadshare(2) }
+
+-- ================================================================
+-- Object Definitions
+-- ================================================================
+
+-- Xedia Address Translation Config Group
+
+-- The Config Group is a set of object that set specific configuration
+-- parameters.
+ 
+     xnatGeneral  OBJECT IDENTIFIER ::= { xnatObjects 1 }
+
+     xnatAdminStatus  OBJECT-TYPE
+          SYNTAX       INTEGER {
+            enabled     (1),
+            disabled    (2)
+          }
+          MAX-ACCESS   read-write
+          STATUS       current
+          DESCRIPTION
+           "Determines whether address translation will be performed."
+          DEFVAL { disabled }
+     ::= { xnatGeneral 1 }
+
+     xnatMaxIboundSessions  OBJECT-TYPE
+          SYNTAX       Integer32 (0..5000)
+          MAX-ACCESS   read-write
+          STATUS       current
+          DESCRIPTION
+           "Indicates the maximum number of inbound sessions that 
+            can be associated with a single binding."
+     ::= { xnatGeneral 2 }
+
+     xnatMaxOboundSessions  OBJECT-TYPE
+          SYNTAX       Integer32 (0..5000)
+          MAX-ACCESS   read-write
+          STATUS       current
+          DESCRIPTION
+           "Indicates the maximum number of outbound sessions that 
+            can be associated with a single binding."
+     ::= { xnatGeneral 3 }
+
+-- Xedia Network Address Translator Counters Group
+
+-- The Counters Group is a set of object that indicate the number
+-- of packets seen, translated, and not translated by the NAT
+
+     xnatCounters  OBJECT IDENTIFIER ::= { xnatObjects 2 } 
+
+     xnatOboundPackets  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of outbound packets seen by the network 
+            address translator."
+     ::= { xnatCounters 1 }
+
+     xnatOboundIcmp  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of outbound ICMP packets translated by the 
+            network address translator."
+     ::= { xnatCounters 2 }
+
+     xnatOboundTcp  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of outbound TCP packets translated by the 
+            network address translator."
+     ::= { xnatCounters 3 }
+
+     xnatOboundUdp  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of outbound UDP packets translated by the 
+            network address translator."
+     ::= { xnatCounters 4 }
+
+     xnatOboundUntranslated  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of outbound packets not translated by the 
+            network address translator."
+     ::= { xnatCounters 5 }
+
+     xnatOboundDiscards  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of outbound packets discarded by the 
+            network address translator."
+     ::= { xnatCounters 6 }
+
+     xnatIboundPackets  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of inbound packets seen by the network 
+            address translator."
+     ::= { xnatCounters 7 }
+
+     xnatIboundIcmp  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of inbound ICMP packets translated by the 
+            network address translator."
+     ::= { xnatCounters 8 }
+
+     xnatIboundTcp  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of inbound TCP packets translated by the 
+            network address translator."
+     ::= { xnatCounters 9 }
+
+     xnatIboundUdp  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of inbound UDP packets translated by the 
+            network address translator."
+     ::= { xnatCounters 10 }
+
+     xnatIboundUntranslated  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of inbound packets not translated by the 
+            network address translator."
+     ::= { xnatCounters 11 }
+
+     xnatIboundDiscards  OBJECT-TYPE
+          SYNTAX       XnatCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of inbound packets discarded by the 
+            network address translator."
+     ::= { xnatCounters 12 }
+
+-- Xedia Network Address Translator Timers Group
+
+-- The Timers Group is a set of object that indicate the amount of time
+-- before an unused translation session will be aged out of the 
+-- translation table.
+
+     xnatTimers  OBJECT IDENTIFIER ::= { xnatObjects 3 } 
+
+     xnatUdpTimeout  OBJECT-TYPE
+          SYNTAX   XnatTimeout
+          MAX-ACCESS   read-write
+          STATUS   current
+          DESCRIPTION
+           "A 32-bit integer that determines the duration of time 
+            an unused UDP session remains in the translation table
+            before being aged out."
+          DEFVAL    {300}
+     ::= { xnatTimers 1 }
+
+     xnatDnsTimeout  OBJECT-TYPE
+          SYNTAX   XnatTimeout
+          MAX-ACCESS   read-write
+          STATUS   current
+          DESCRIPTION
+           "A 32-bit integer that determines the duration of time 
+            an unused UDP session remains in the translation table
+            before being aged out."
+          DEFVAL    {60}
+     ::= { xnatTimers 2 }
+
+     xnatTcpTimeout  OBJECT-TYPE
+          SYNTAX   XnatTimeout
+          MAX-ACCESS   read-write
+          STATUS   current
+          DESCRIPTION
+               "A 32-bit integer that determines the duration of time 
+               an unused TCP session remains in the translation table
+               before being aged out."
+          DEFVAL    {86400}
+     ::= { xnatTimers 3 }
+
+     xnatFinRstTimeout  OBJECT-TYPE
+          SYNTAX   XnatTimeout
+          MAX-ACCESS   read-write
+          STATUS   current
+          DESCRIPTION
+               "A 32-bit integer that determines the duration of time 
+               a TCP session in which a FIN or RST was seen remains 
+               in the translation table before being aged out."
+          DEFVAL    {60}
+     ::= { xnatTimers 4 }
+
+     xnatSynTimeout  OBJECT-TYPE
+          SYNTAX   XnatTimeout
+          MAX-ACCESS   read-write
+          STATUS   current
+          DESCRIPTION
+               "A 32-bit integer that determines the duration of time 
+               a TCP session in which a SYN without an ACK was seen
+               remains in the translation table before being aged out."
+          DEFVAL    {120}
+     ::= { xnatTimers 5 }
+
+     xnatIcmpTimeout  OBJECT-TYPE
+          SYNTAX   XnatTimeout
+          MAX-ACCESS   read-write
+          STATUS   current
+          DESCRIPTION
+               "A 32-bit integer that determines the duration of time 
+               an ICMP session remains in the translation table before
+               being aged out."
+          DEFVAL    {90}
+     ::= { xnatTimers 6 }
+
+-- Xedia Network Address Translator Session Table
+
+-- The address translation session table maintains every active translation
+-- session that the router is performing
+
+     xnatSessionTable  OBJECT-TYPE
+          SYNTAX   SEQUENCE OF XnatSessionEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of current address translation sessions"
+          ::= { xnatObjects 4 }
+
+     xnatSessionEntry  OBJECT-TYPE
+          SYNTAX XnatSessionEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained of each translation session" 
+          INDEX { xnatSessionPriAddr, xnatSessionPriPort, 
+                  xnatSessionOutAddr, xnatSessionOutPort,
+                  xnatSessionProtocol }
+          ::= { xnatSessionTable 1 } 
+
+     XnatSessionEntry ::= SEQUENCE {
+          xnatSessionPriAddr        XnatIpAddress,
+          xnatSessionPriPort        XnatPort,
+          xnatSessionRegAddr        XnatIpAddress,
+          xnatSessionRegPort        XnatPort,
+          xnatSessionOutAddr        XnatIpAddress,
+          xnatSessionOutPort        XnatPort,
+          xnatSessionProtocol       XnatProtocol,
+          xnatSessionType           XnatSessionType,
+          xnatSessionRowStatus      RowStatus
+     }
+
+     xnatSessionPriAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The private IP address of the host associated with
+                a translation session"
+          ::= { xnatSessionEntry 1 }
+
+     xnatSessionPriPort  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The private port number associated with a translation
+                session"
+          ::= { xnatSessionEntry 2 }
+
+     xnatSessionRegAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The registered IP address of the host associated with
+                a translation session"
+          ::= { xnatSessionEntry 3 }
+
+     xnatSessionRegPort  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The registered port number associated with a translation
+                session"
+          ::= { xnatSessionEntry 4 }
+
+     xnatSessionOutAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The oustside host IP address associated with a translation
+                session"
+          ::= { xnatSessionEntry 5 }
+
+     xnatSessionOutPort  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The outside port number associated with a translation
+                session"
+          ::= { xnatSessionEntry 6 }
+
+     xnatSessionProtocol  OBJECT-TYPE
+          SYNTAX  XnatProtocol
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The protocol associated with a translation session"
+          ::= { xnatSessionEntry 7 }          
+
+     xnatSessionType  OBJECT-TYPE
+          SYNTAX  XnatSessionType
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+               "This variable shows whether the session was initiated
+                from inside or outside the private network"
+          ::= { xnatSessionEntry 8 }
+
+     xnatSessionRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS  read-write
+          STATUS  current
+          DESCRIPTION
+               "An xnatSessionEntry can only be created as a result
+                of a translation request. An xnatSessionEntry   
+                cannot be created through a management request.
+                Therefore,  this object only supports the values of
+                'active' and 'destroy'. Changing the value of this
+                object to 'destroy' has the effect of removing the 
+                entry"
+          ::= { xnatSessionEntry 9 }
+
+ 
+-- Xedia Network Address Translator Binding Table
+
+-- The table binding constains the mappings between private and
+-- registered address/port pairs used to create translation sessions
+
+     xnatBindingTable  OBJECT-TYPE
+          SYNTAX   SEQUENCE OF XnatBindingEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of current mappings between private and registered
+                addresses/port pairs"
+          ::= { xnatObjects 5 }
+  
+     xnatBindingEntry  OBJECT-TYPE
+          SYNTAX XnatBindingEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for each binding"
+          INDEX { xnatBindingPriAddr, xnatBindingPriPort, xnatBindingRegAddr, 
+                  xnatBindingRegPort, xnatBindingProtocol }
+          ::= { xnatBindingTable 1 } 
+
+     XnatBindingEntry ::= SEQUENCE {
+          xnatBindingPriAddr        XnatIpAddress,
+          xnatBindingPriPort        XnatPort,
+          xnatBindingRegAddr        XnatIpAddress,
+          xnatBindingRegPort        XnatPort,
+          xnatBindingProtocol       XnatProtocol,
+          xnatBindingType           XnatBindingType,
+          xnatBindingInSessions     Integer32,
+          xnatBindingOutSessions    Integer32,
+          xnatBindingRowStatus      RowStatus
+     }
+     
+     xnatBindingPriAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The private IP address of the host associated with
+                a binding"
+          ::= { xnatBindingEntry 1 }
+
+     xnatBindingPriPort  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The private port number associated with a binding
+                session. A port number of zero indicates any port"
+          ::= { xnatBindingEntry 2 }
+
+     xnatBindingRegAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  not-accessible 
+          STATUS  current
+          DESCRIPTION
+               "The registered IP address of the host associated with
+                a binding session"
+          ::= { xnatBindingEntry 3 }
+
+     xnatBindingRegPort  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The registered port number associated with a binding
+                binding. A port number of zero inidicates any port"
+          ::= { xnatBindingEntry 4 }
+
+     xnatBindingProtocol  OBJECT-TYPE
+          SYNTAX  XnatProtocol
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The protocol assocaited with the binding. A protocol
+                number of zero indicates any protocol"
+          ::= { xnatBindingEntry 5 }
+
+     xnatBindingType  OBJECT-TYPE
+          SYNTAX  XnatBindingType
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+               "The type of binding associated with an entry"
+          ::= { xnatBindingEntry 6 }
+
+     xnatBindingInSessions  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The number of inbound session instantiated using the
+                binding"
+          DEFVAL {0}
+          ::= { xnatBindingEntry 7 }
+
+     xnatBindingOutSessions  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The number of outbound session instantiated using the
+                binding"
+          DEFVAL {0}
+          ::= { xnatBindingEntry 8 }
+
+     xnatBindingRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "This object controls creation and deletion of
+                conceptual Binding Table rows.  The object only
+                supports the values of 'active', 'createAndGo', and
+                'destroy'. Only static bindings can be created
+                through SNMP requests. Both static and dynamic entries
+                can be destroyed. An attempt to add or remove the
+                wrong type of entry will result in the return of a
+                'wrongValue' error."
+          ::= { xnatBindingEntry 9 }
+
+
+-- Xedia Network Address Translator Pools Group
+
+-- The poosl group consists of the 3 pool tables: the dynamic NAT pool
+-- pool table, the dynamic NAPT pool table, and the load sharing pool
+-- table.  
+
+     xnatPools      OBJECT IDENTIFIER ::= { xnatObjects 6 }
+
+--
+--  Dynamic NAT Pool Table
+--
+
+     xnatDynamicNatPoolTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF XnatDynamicNatPoolEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of dynamic NAT pools configured for the router."
+          ::= { xnatPools 1 }
+
+     xnatDynamicNatPoolEntry  OBJECT-TYPE
+          SYNTAX XnatDynamicNatPoolEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for each dynamic NAT Pool.
+                Each pool may have a maximum of 5 ranges. Unused
+                ranges are displayed as zeros" 
+          INDEX { xnatDynNatPoolName }
+          ::= { xnatDynamicNatPoolTable 1 } 
+
+     XnatDynamicNatPoolEntry ::= SEQUENCE {
+          xnatDynNatPoolName             DisplayString,
+          xnatDynNatPoolRangeCount       Integer32,
+          xnatDynNatPoolNetAssgns        Integer32,
+          xnatDynNatPoolRowStatus        RowStatus
+     }
+ 
+     xnatDynNatPoolName  OBJECT-TYPE
+          SYNTAX  DisplayString
+          MAX-ACCESS not-accessible
+          STATUS current
+          DESCRIPTION
+               "The name of the pool. It must be unique and is the
+                index for the dynamic NAT pool table."
+          ::= { xnatDynamicNatPoolEntry 1 }
+
+     xnatDynNatPoolRangeCount  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+               "The number of ranges associated with the pool."
+          ::= { xnatDynamicNatPoolEntry 2 }
+
+     xnatDynNatPoolNetAssgns  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+               "The number of private networks to which the pool is assigned."
+          ::= { xnatDynamicNatPoolEntry 3 }
+
+     xnatDynNatPoolRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The status control the creation of dynamic NAT Pool
+                entries. The only values supported for this object are
+                'active', 'createAndGo', and 'destroy'."
+          ::= { xnatDynamicNatPoolEntry 4 }
+
+--
+--  Dynamic NAT Pool Range Table
+--
+     xnatDynamicNatPoolRangeTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF XnatDynamicNatPoolRangeEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of ranges associated with a pool."
+          ::= { xnatPools 2 }
+
+     xnatDynamicNatPoolRangeEntry  OBJECT-TYPE
+          SYNTAX XnatDynamicNatPoolRangeEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for each dynamic NAT range."
+          INDEX { xnatDynNatPoolRangeName, xnatDynNatPoolRangeBeg }
+          ::= { xnatDynamicNatPoolRangeTable 1 } 
+
+     XnatDynamicNatPoolRangeEntry ::= SEQUENCE {
+          xnatDynNatPoolRangeName        DisplayString,
+          xnatDynNatPoolRangeBeg         XnatIpAddress,
+          xnatDynNatPoolRangeEnd         XnatIpAddress,
+          xnatDynNatPoolRangeMask        XnatIpAddress,
+          xnatDynNatPoolRangeRowStatus   RowStatus
+     }
+
+     xnatDynNatPoolRangeName  OBJECT-TYPE
+          SYNTAX  DisplayString
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The name of the pool with which the range belongs."
+          ::= { xnatDynamicNatPoolRangeEntry 1 }
+
+     xnatDynNatPoolRangeBeg  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The beginning registered IP address for the range."
+          ::= { xnatDynamicNatPoolRangeEntry 2 }
+
+     xnatDynNatPoolRangeEnd  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The ending registered IP address for the range."
+          ::= { xnatDynamicNatPoolRangeEntry 3 }
+
+     xnatDynNatPoolRangeMask  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS read-create
+          STATUS  current
+          DESCRIPTION
+               "The network mask for the range."
+          ::= { xnatDynamicNatPoolRangeEntry 4 }
+
+     xnatDynNatPoolRangeRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The status object is used to add and delete conceptual
+                rows to the table."
+          ::= { xnatDynamicNatPoolRangeEntry 5 }
+
+--
+--  Dynamic NAPT Pool Table
+--
+
+     xnatDynamicNaptPoolTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF XnatDynamicNaptPoolEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of dynamic NAPT pools configured for the router"
+          ::= { xnatPools 3 }
+
+     xnatDynamicNaptPoolEntry  OBJECT-TYPE
+          SYNTAX XnatDynamicNaptPoolEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for each dynamic NAPT Pool.
+                The pool may have only 1 associated port range. The
+                range is used for TCP, UDP, and ICMP sequence numbers."
+          INDEX { xnatDynNaptPoolName }
+          ::= { xnatDynamicNaptPoolTable 1 } 
+
+     XnatDynamicNaptPoolEntry ::= SEQUENCE {
+          xnatDynNaptPoolName            DisplayString,
+          xnatDynNaptPoolAddr            XnatIpAddress,
+          xnatDynNaptPoolMask            XnatIpAddress,
+          xnatDynNaptPoolRangeBeg        XnatPort,
+          xnatDynNaptPoolRangeEnd        XnatPort,
+          xnatDynNaptPoolNetAssgns       Integer32,
+          xnatDynNaptPoolRowStatus       RowStatus
+     }
+ 
+     xnatDynNaptPoolName  OBJECT-TYPE
+          SYNTAX  DisplayString
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The name of the pool. It must be unique and is the
+                index for the dynamic NAPT pool table."
+          ::= { xnatDynamicNaptPoolEntry 1 }
+
+     xnatDynNaptPoolAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The single registered IP address used for NAPT. The
+                address is usually the interface address of the
+                interface to the public Internet"
+          ::= { xnatDynamicNaptPoolEntry 2 }
+
+     xnatDynNaptPoolMask  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The network mask for the pool address."
+          ::= { xnatDynamicNaptPoolEntry 3 }
+
+     xnatDynNaptPoolRangeBeg  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The beginning number for UDP and TCP port ranges and ICMP
+                sequence number range"
+          DEFVAL { 20000 }
+          ::= { xnatDynamicNaptPoolEntry 4 }
+
+     xnatDynNaptPoolRangeEnd  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The ending number for UDP and TCP port ranges and ICMP
+                sequence number range"
+          DEFVAL { 24095 }
+          ::= { xnatDynamicNaptPoolEntry 5 }
+
+     xnatDynNaptPoolNetAssgns  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The number of private networks to which the pool is assigned."
+          ::= { xnatDynamicNaptPoolEntry 6 }
+
+     xnatDynNaptPoolRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The status control the creation of dynamic NAPT Pool
+                entries"
+          ::= { xnatDynamicNaptPoolEntry 7 }
+
+--
+--  Load Sharing Pool Table
+--
+
+
+     xnatLoadSharePoolTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF XnatLoadSharePoolEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of load sharing pools configured for the router"
+          ::= { xnatPools 4 }
+
+     xnatLoadSharePoolEntry  OBJECT-TYPE
+          SYNTAX XnatLoadSharePoolEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for each load sharing
+                pool. Each pool may have a maximum of 5 ranges. 
+                Unused ranges are displayed as zeros" 
+          INDEX { xnatLoadSharePoolName }
+          ::= { xnatLoadSharePoolTable 1 } 
+
+     XnatLoadSharePoolEntry ::= SEQUENCE {
+          xnatLoadSharePoolName             DisplayString,
+          xnatLoadSharePoolAddr             XnatIpAddress,
+          xnatLoadSharePoolMask             XnatIpAddress,
+          xnatLoadSharePoolPort             XnatPort,
+          xnatLoadSharePoolProtocol         XnatProtocol,
+          xnatLoadSharePoolRangeCount       Integer32,
+          xnatLoadSharePoolRowStatus        RowStatus
+     }
+ 
+     xnatLoadSharePoolName  OBJECT-TYPE
+          SYNTAX  DisplayString
+          MAX-ACCESS not-accessible
+          STATUS current
+          DESCRIPTION
+               "The name of the pool. It must be unique and is the
+                index for the load sharing pool table."
+          ::= { xnatLoadSharePoolEntry 1 }
+
+     xnatLoadSharePoolAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The registered IP address used to represent the pool."
+          ::= { xnatLoadSharePoolEntry 2 }
+
+     xnatLoadSharePoolMask  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The network mask for the pool address."
+          ::= { xnatLoadSharePoolEntry 3 }
+
+     xnatLoadSharePoolPort  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The port number associated with the address used to 
+                represent the pool. A port number of zero will match
+                any port number"
+          DEFVAL {0}
+          ::= { xnatLoadSharePoolEntry 4 }
+
+     xnatLoadSharePoolProtocol  OBJECT-TYPE
+          SYNTAX  XnatProtocol
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The protocol associated with the address used to 
+                represent the pool. A protocol of zero will match
+                any protocol"
+          DEFVAL {0}
+          ::= { xnatLoadSharePoolEntry 5 }
+
+     xnatLoadSharePoolRangeCount  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+               "The number of ranges associated with the pool."
+          ::= { xnatLoadSharePoolEntry 6 }
+
+     xnatLoadSharePoolRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The status control the creation of load sharing pool
+                entries"
+          ::= { xnatLoadSharePoolEntry 7 }
+
+--
+--  Load Sharing Pool Range Table
+--
+
+     xnatLoadSharePoolRangeTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF XnatLoadSharePoolRangeEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of ranges associated with a pool"
+          ::= { xnatPools 5 }
+
+     xnatLoadSharePoolRangeEntry  OBJECT-TYPE
+          SYNTAX XnatLoadSharePoolRangeEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for each load sharing range."
+          INDEX { xnatLoadSharePoolRangeName, xnatLoadSharePoolRangeBeg }
+          ::= { xnatLoadSharePoolRangeTable 1 } 
+
+     XnatLoadSharePoolRangeEntry ::= SEQUENCE {
+          xnatLoadSharePoolRangeName        DisplayString,
+          xnatLoadSharePoolRangeBeg         XnatIpAddress,
+          xnatLoadSharePoolRangeEnd         XnatIpAddress,
+          xnatLoadSharePoolRangeMask        XnatIpAddress,
+          xnatLoadSharePoolRangePort        XnatPort,
+          xnatLoadSharePoolRangeProtocol    XnatProtocol,
+          xnatLoadSharePoolRangeRowStatus   RowStatus
+     }
+
+     xnatLoadSharePoolRangeName  OBJECT-TYPE
+          SYNTAX  DisplayString
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The name of the pool with which the range belongs."
+          ::= { xnatLoadSharePoolRangeEntry 1 }
+
+     xnatLoadSharePoolRangeBeg  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The beginning private IP address for the range."
+          ::= { xnatLoadSharePoolRangeEntry 2 }
+
+     xnatLoadSharePoolRangeEnd  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The ending private IP address for the range."
+          ::= { xnatLoadSharePoolRangeEntry 3 }
+
+     xnatLoadSharePoolRangeMask  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The ending private IP address for the range."
+          ::= { xnatLoadSharePoolRangeEntry 4 }
+
+     xnatLoadSharePoolRangePort  OBJECT-TYPE
+          SYNTAX  XnatPort
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The port number associated with the range. If a 
+                load sharing pool has an associated port number,
+                a range must also have a port."
+          DEFVAL {0}
+          ::= { xnatLoadSharePoolRangeEntry 5 }
+
+     xnatLoadSharePoolRangeProtocol  OBJECT-TYPE
+          SYNTAX  XnatProtocol
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The port number associated with the range. If a 
+                load sharing pool has an associated port number,
+                a range must also have a port."
+          DEFVAL {0}
+          ::= { xnatLoadSharePoolRangeEntry 6 }
+
+     xnatLoadSharePoolRangeRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The status object is used to add and delete conceptual
+                rows to the table."
+          ::= { xnatLoadSharePoolRangeEntry 7 }
+
+-- Xedia Network Address Translator Private Network Table
+-- The private network table shows the private networks that will be
+-- translated.
+--
+
+     xnatPrivateNetTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF XnatPrivateNetEntry
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The table shows every private network on which address
+                translation will be performed."
+     ::= { xnatObjects 7 }
+
+
+     xnatPrivateNetEntry  OBJECT-TYPE
+          SYNTAX  XnatPrivateNetEntry
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The information maintained for each private network."
+          INDEX { xnatPrivateNetAddr }
+     ::= { xnatPrivateNetTable 1 }
+
+     XnatPrivateNetEntry ::= SEQUENCE {
+          xnatPrivateNetAddr        XnatIpAddress,
+          xnatPrivateNetMask        XnatIpAddress,
+          xnatPrivateNetPoolCount   Integer32,
+          xnatPrivateNetRowStatus   RowStatus
+     }
+
+     xnatPrivateNetAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The network address of the private network."
+          ::= { xnatPrivateNetEntry 1 }
+
+     xnatPrivateNetMask  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The network mask for the network address."
+          ::= { xnatPrivateNetEntry 2 }
+
+     xnatPrivateNetPoolCount  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The number of dynamic pool associated with the network."
+          ::= { xnatPrivateNetEntry 3 }
+
+     xnatPrivateNetRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The status controls the creation and deletion of private
+                network table conceptual rows"
+          ::= { xnatPrivateNetEntry 4 }
+
+-- Xedia Network Address Translator Private Network Associated Pool Table
+-- The associated pool table shows the pools assigned to every private
+-- network.
+--
+
+    xnatPriNetAssoPoolTable  OBJECT-TYPE
+          SYNTAX   SEQUENCE OF XnatPriNetAssoPoolEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The table shows the dynamic translation pools that are
+                associated with private networks."
+     ::= { xnatObjects 8 }
+
+     xnatPriNetAssoPoolEntry  OBJECT-TYPE
+          SYNTAX XnatPriNetAssoPoolEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for each associated pool."
+          INDEX { xnatPriNetAssoPoolNetAddr, xnatPriNetAssoPoolName }
+     ::= { xnatPriNetAssoPoolTable 1 } 
+
+     XnatPriNetAssoPoolEntry ::= SEQUENCE {
+          xnatPriNetAssoPoolNetAddr     XnatIpAddress,
+          xnatPriNetAssoPoolName        DisplayString,
+          xnatPriNetAssoPoolOrder       Integer32,
+          xnatPriNetAssoPoolRowStatus   RowStatus
+     }
+
+     xnatPriNetAssoPoolNetAddr  OBJECT-TYPE
+          SYNTAX  XnatIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The network address of the private network."
+          ::= { xnatPriNetAssoPoolEntry 1 }
+
+     xnatPriNetAssoPoolName  OBJECT-TYPE
+          SYNTAX  DisplayString
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The name of the dynamic pool."
+          ::= { xnatPriNetAssoPoolEntry 2 }
+
+     xnatPriNetAssoPoolOrder  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The order in which the pool is used for allocation."
+          ::= { xnatPriNetAssoPoolEntry 3 }
+
+     xnatPriNetAssoPoolRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS read-create
+          STATUS current
+          DESCRIPTION
+               "The status controls the creation and deletion of 
+                associated pool table conceptual rows"
+          ::= { xnatPriNetAssoPoolEntry 4 }
+
+-- ================================================================
+-- Conformance Information
+-- ================================================================
+ 
+xnatCompliances      OBJECT IDENTIFIER ::= { xnatConformance 1 }
+xnatGroups           OBJECT IDENTIFIER ::= { xnatConformance 2 }
+
+
+--
+-- Compliance Statements
+--
+
+xnatCompliance MODULE-COMPLIANCE
+     STATUS      current
+     DESCRIPTION
+          "The compliance statement for all agents that support this
+          MIB. A compliant agent implements all objects defined in this
+          MIB."
+     MODULE  -- this module
+     MANDATORY-GROUPS {
+          xnatGeneralGroup,
+          xnatTimersGroup,
+          xnatSessionGroup,
+          xnatBindingGroup,
+          xnatDynamicNatPoolGroup,
+          xnatDynamicNatRangeGroup,
+          xnatDynamicNaptPoolGroup,
+          xnatLoadSharePoolGroup,
+          xnatLoadShareRangeGroup,
+          xnatPrivateNetGroup,
+          xnatPriNetAssoPoolGroup         
+     }
+     ::= { xnatCompliances 1 }
+
+xnatGeneralGroup OBJECT-GROUP
+     OBJECTS {
+          xnatAdminStatus,
+          xnatMaxIboundSessions,
+          xnatMaxOboundSessions
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups 1 }
+
+xnatCountersGroup OBJECT-GROUP
+     OBJECTS {
+          xnatOboundPackets,
+          xnatOboundIcmp,
+          xnatOboundTcp,
+          xnatOboundUdp,
+          xnatOboundUntranslated,
+          xnatOboundDiscards,
+          xnatIboundPackets,
+          xnatIboundIcmp,
+          xnatIboundTcp,
+          xnatIboundUdp,
+          xnatIboundUntranslated,
+          xnatIboundDiscards
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups 2 }
+
+xnatTimersGroup OBJECT-GROUP
+     OBJECTS {
+          xnatUdpTimeout,
+          xnatDnsTimeout,
+          xnatTcpTimeout,
+          xnatFinRstTimeout,
+          xnatSynTimeout,
+          xnatIcmpTimeout         
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+    ::= { xnatGroups  3 }
+
+xnatSessionGroup OBJECT-GROUP
+     OBJECTS {
+          xnatSessionRegAddr,
+          xnatSessionRegPort,
+          xnatSessionType,
+          xnatSessionRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  4 }
+
+xnatBindingGroup OBJECT-GROUP
+     OBJECTS {
+          xnatBindingType,
+          xnatBindingInSessions,
+          xnatBindingOutSessions,
+          xnatBindingRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  5 }
+
+xnatDynamicNatPoolGroup OBJECT-GROUP
+     OBJECTS {
+          xnatDynNatPoolRangeCount,
+          xnatDynNatPoolNetAssgns,
+          xnatDynNatPoolRowStatus 
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  6 }
+
+xnatDynamicNatRangeGroup OBJECT-GROUP
+     OBJECTS {
+          xnatDynNatPoolRangeEnd,
+          xnatDynNatPoolRangeMask,
+          xnatDynNatPoolRangeRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  7 }
+     
+xnatDynamicNaptPoolGroup OBJECT-GROUP
+     OBJECTS {
+          xnatDynNaptPoolAddr,
+          xnatDynNaptPoolMask,
+          xnatDynNaptPoolRangeBeg,
+          xnatDynNaptPoolRangeEnd,
+          xnatDynNaptPoolNetAssgns,
+          xnatDynNaptPoolRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  8 }
+
+xnatLoadSharePoolGroup OBJECT-GROUP
+     OBJECTS {
+          xnatLoadSharePoolAddr,
+          xnatLoadSharePoolMask,
+          xnatLoadSharePoolPort,
+          xnatLoadSharePoolProtocol,
+          xnatLoadSharePoolRangeCount,
+          xnatLoadSharePoolRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  9 }
+
+xnatLoadShareRangeGroup OBJECT-GROUP
+     OBJECTS {
+          xnatLoadSharePoolRangeEnd,
+          xnatLoadSharePoolRangeMask,
+          xnatLoadSharePoolRangePort,
+          xnatLoadSharePoolRangeProtocol,
+          xnatLoadSharePoolRangeRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  10 }
+
+xnatPrivateNetGroup OBJECT-GROUP
+     OBJECTS {
+          xnatPrivateNetMask,
+          xnatPrivateNetRowStatus,
+          xnatPrivateNetPoolCount
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  11 }
+
+xnatPriNetAssoPoolGroup OBJECT-GROUP
+     OBJECTS {
+          xnatPriNetAssoPoolOrder,
+          xnatPriNetAssoPoolRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for Address Translation."
+     ::= { xnatGroups  12 }
+
+END

@@ -1,0 +1,798 @@
+-- extracted from draft-pate-mfrmib-00.txt
+-- at Mon Nov 15 17:11:30 1999
+
+ FRF16-MFR-MIB-EXP DEFINITIONS ::= BEGIN
+
+    IMPORTS
+       MODULE-IDENTITY, OBJECT-TYPE, Integer32, Counter32,
+          NOTIFICATION-TYPE, experimental
+          FROM SNMPv2-SMI
+       TEXTUAL-CONVENTION, TestAndIncr, RowStatus
+          FROM SNMPv2-TC
+       MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+          FROM SNMPv2-CONF
+       SnmpAdminString
+          FROM SNMP-FRAMEWORK-MIB
+       InterfaceIndex, ifIndex
+          FROM IF-MIB;
+
+    mfrMib MODULE-IDENTITY
+       LAST-UPDATED "9910191300Z"
+       ORGANIZATION "IETF Frame Relay Service MIB (frnetmib) Working Group"
+       CONTACT-INFO
+          "Prayson Pate/Bob Lynch
+           Postal: Larscom
+                   P. O. Box 14993
+                   RTP, NC, USA 27560
+           Phone:  +1 919 991-9000
+           EMail:  pate@larscom.com/blynch@larscom.com
+
+           Kenneth Rehbehn
+           Postal: Visual Networks
+                   2092 Gaither Road
+                   Rockville, MD USA  20850
+           Tel:    +1 301 296 2325
+           Fax:    +1 301 296 2302
+           E-mail: krehbehn@visualnetworks.com"
+
+       DESCRIPTION
+          "This is the MIB used to control and monitor the multilink frame
+           relay (MFR) function described in FRF.16.   This was originally
+           submitted to the Frame Relay Forum as contribution FRFTC 99-151
+           and then updated as FRFTC 99-193."
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Revision History
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+       REVISION "9910011440Z"
+       DESCRIPTION
+           "Initial version submitted to the Frame Relay Forum
+            October meeting in Huntsville as FRFTC/99-151."
+
+       REVISION "9910151300Z"
+       DESCRIPTION
+           "Updated after review at the October meeting in Huntsville:
+            o  removed log table
+            o  removed several columns from each table
+            o  combined configuration, status and error tables into
+               one table each for bundles and bundle links
+            o  added new objects for
+               - maximum number of bundles
+               - maximum fragment size
+               - size of sequence number
+            o  added notifications
+            o  added conformance information"
+
+       REVISION "9910212020Z"
+       DESCRIPTION
+           "Updated after comments from Michael Allen and Ken Rehben.
+            o  corrected options for sequence number length
+            o  changed frf16Mfr prefix to mfr
+            o  created a sub-group for scalars
+            o  created an entry in the bundleTable for maximum links per bundle
+            o  changed indices to not-accessible
+            o  changed DisplayString to SnmpAdminString
+            o  updated some of the object descriptions
+            o  added a -EXP to the name of the MIB
+            o  added some DEFVAL and REFERENCE clauses"
+
+       ::= { experimental 555 }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Textual Conventions
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    BundleLinkState ::= TEXTUAL-CONVENTION
+       STATUS      current
+       DESCRIPTION
+          "The possible states for a bundle link, as defined in
+           Annex A of FRF.16."
+       REFERENCE "FRF.16 Annex A"
+       SYNTAX  INTEGER {
+          bundleLinkStateAddSent       (1),
+          bundleLinkStateAddRx         (2),
+          bundleLinkStateAddAckRx      (3),
+          bundleLinkStateUp            (4),
+          bundleLinkStateIdlePending   (5),
+          bundleLinkStateIdle          (6),
+          bundleLinkStateDown          (7),
+          bundleLinkStateDownIdle      (8)
+          }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Object Identifers
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+    mfrMibObjects           OBJECT IDENTIFIER ::= { mfrMib 1 }
+    mfrMibTraps             OBJECT IDENTIFIER ::= { mfrMib 2 }
+    mfrMibConformance       OBJECT IDENTIFIER ::= { mfrMib 3 }
+
+    mfrMibScalarObjects     OBJECT IDENTIFIER ::= { mfrMibObjects 1 }
+    mfrMibBundleObjects     OBJECT IDENTIFIER ::= { mfrMibObjects 2 }
+    mfrMibBundleLinkObjects OBJECT IDENTIFIER ::= { mfrMibObjects 3 }
+
+    mfrMibTrapsPrefix       OBJECT IDENTIFIER ::= { mfrMibTraps 0 }
+
+    mfrMibGroups            OBJECT IDENTIFIER ::= { mfrMibConformance 1 }
+    mfrMibCompliances       OBJECT IDENTIFIER ::= { mfrMibConformance 2 }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Scalars
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+    bundleMaxNumBundles OBJECT-TYPE
+       SYNTAX  Integer32
+       MAX-ACCESS read-only
+       STATUS  current
+       DESCRIPTION
+          "This object is used to inform the manager of the
+           maximum number of bundles supported by this device."
+       ::= { mfrMibScalarObjects 1 }
+
+    bundleNextIndex OBJECT-TYPE
+       SYNTAX  TestAndIncr
+       MAX-ACCESS read-write
+       STATUS  current
+       DESCRIPTION
+          "This object is used to assist the manager in
+           selecting a value for bundleIndex during row creation
+           in the bundleTable. It can also be used to avoid race
+           conditions with multiple managers trying to create
+           rows in the table (see RFC 2494 [RFC2494] for one such
+           alogrithm)."
+       REFERENCE "RFC 2494"
+       ::= { mfrMibScalarObjects 2 }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Bundle Table
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+    bundleTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF BundleEntry
+       MAX-ACCESS  not-accessible
+       STATUS  current
+       DESCRIPTION
+          "The bundle configuration and status table.  There
+           is a one-to-one correspondence between a bundle
+           and an interface represented in the ifTable.
+           The manager can use the following entries in the ifTable:
+              ifAdminStatus - the bundle admin status
+              ifOperStatus  - the bundle operational status
+              ifSpeed       - the current bandwidth of the bundle
+              ifInErrors    - packet (not fragment) errors
+              etc."
+       ::= { mfrMibBundleObjects 3 }
+
+    bundleEntry OBJECT-TYPE
+       SYNTAX  BundleEntry
+       MAX-ACCESS  not-accessible
+       STATUS  current
+       DESCRIPTION
+          "An entry in the bundle table."
+       INDEX   { bundleIndex }
+       ::= { bundleTable 1 }
+
+    BundleEntry ::=
+       SEQUENCE {
+          bundleIndex
+             Integer32,
+          bundleIfIndex
+             InterfaceIndex,
+          bundleRowStatus
+             RowStatus,
+          bundleNearEndName
+             SnmpAdminString,
+          bundleFragmentation
+             INTEGER,
+          bundleMaxFragSize
+             Integer32,
+          bundleTimerHello
+             INTEGER,
+          bundleTimerAck
+             INTEGER,
+          bundleCountMaxRetry
+             INTEGER,
+          bundleActivationClass
+             INTEGER,
+          bundleThreshold
+             Integer32,
+          bundleMaxDiffDelay
+             Integer32,
+          bundleSeqNumSize
+             INTEGER,
+          bundleMaxBundleLinks
+             Integer32,
+          bundleFarEndName
+             SnmpAdminString,
+          bundleResequencingErrors
+             Counter32
+          }
+
+    bundleIndex OBJECT-TYPE
+       SYNTAX  Integer32 (1..2147483647)
+       MAX-ACCESS  not-accessible
+       STATUS  current
+       DESCRIPTION
+          "The index into the table.  While this corresponds
+           to an entry in the ifTable, the value of bundleIndex
+           need not match that of the ifIndex in the ifTable.
+           A manager can use bundleNextIndex to select a unique
+           bundleIndex for creating a new row."
+       ::= { bundleEntry 1 }
+
+    bundleIfIndex OBJECT-TYPE
+       SYNTAX  InterfaceIndex
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "The value should match an entry in the interface
+           table.  The ifType should be set to frame-relay.
+           For example: if the value of bundleIfIndex is 10,
+           then a corresponding entry should be present in
+           the ifTable with an index of 10."
+       ::= { bundleEntry 2 }
+
+    bundleRowStatus OBJECT-TYPE
+       SYNTAX  RowStatus
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+           "The bundleRowStatus object allows create, change,
+            and delete operations on bundle entries."
+       REFERENCE "RFC 1903"
+       ::= { bundleEntry 3 }
+
+    bundleNearEndName OBJECT-TYPE
+       SYNTAX  SnmpAdminString (SIZE (0..50))
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The configured name of the bundle."
+       REFERENCE "FRF.16 section 3.4.1"
+       ::= { bundleEntry 4 }
+
+    bundleFragmentation OBJECT-TYPE
+       SYNTAX  INTEGER {
+          enable  (1),
+          disable (2)
+          }
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "Controls whether the bundle performs/accepts
+           fragmentation and re-assembly."
+       DEFVAL { disable }
+       ::= { bundleEntry 5 }
+
+    bundleMaxFragSize OBJECT-TYPE
+       SYNTAX  Integer32
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The maximum fragment size supported.  Note that this
+           is only valid if bundleFragmentation is set to enable(1).
+           Otherwise, it should be reported as -1."
+
+       DEFVAL { -1 }
+       ::= { bundleEntry 6 }
+
+    bundleTimerHello OBJECT-TYPE
+       SYNTAX  INTEGER (1..180)
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The configured MFR Hello Timer value (in seconds).
+           The default value is 10."
+       REFERENCE "FRF.16 section 4.3.8.1"
+       DEFVAL { 10 }
+       ::= { bundleEntry 7 }
+
+    bundleTimerAck OBJECT-TYPE
+       SYNTAX  INTEGER (1..10)
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The configured MFR T_ACK value (in seconds).
+           The default value is 4."
+       REFERENCE "FRF.16 section 4.3.8.2"
+       DEFVAL { 4 }
+       ::= { bundleEntry 8 }
+
+    bundleCountMaxRetry OBJECT-TYPE
+       SYNTAX  INTEGER (1..5)
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The MFR N_MAX_RETRY value.
+           The default value is 2."
+       REFERENCE "FRF.16 section 4.3.8.3"
+       DEFVAL { 2 }
+       ::= { bundleEntry 9 }
+
+    bundleActivationClass OBJECT-TYPE
+       SYNTAX  INTEGER {
+          bundleActivationClassA (1), -- at least one must link up
+          bundleActivationClassB (2), -- all links must be up
+          bundleActivationClassC (3), -- a certain number must be up
+          bundleActivationClassD (4)  -- custom
+          }
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "Controls the conditions under which the bundle is activated."
+       REFERENCE "FRF.16 section 4.2.2.1"
+       DEFVAL { bundleActivationClassA }
+       ::= { bundleEntry 10 }
+
+    bundleThreshold OBJECT-TYPE
+       SYNTAX  Integer32
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "Specifies the number of links that must be in operational
+           'up' state before the bundle will transition to an
+           operational up/active state.  If the number of
+           operational 'up' links falls below this value,
+           then the bundle will transition to an inactive
+           state.
+           Note - this is only valid when bundleActivationClass
+           is set to bundleActivationClassC or to bundleActivationClassD."
+       REFERENCE "FRF.16 section 4.2.2.1"
+       DEFVAL { -1 }
+       ::= { bundleEntry 11 }
+
+    bundleMaxDiffDelay OBJECT-TYPE
+       SYNTAX  Integer32
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The maximum delay difference between the bundle
+           links.  The unit of measure is milliseconds."
+       DEFVAL { -1 }
+       ::= { bundleEntry 12 }
+
+    bundleSeqNumSize OBJECT-TYPE
+       SYNTAX  INTEGER {
+           seqNumSize12bit (1),
+           seqNumSize24bit (2)
+           }
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "Controls whether the standard FRF.12 12-bit
+           sequence number is used or the optional 24-bit
+           sequence number."
+       REFERENCE "FRFTC/99-194"
+       DEFVAL { seqNumSize12bit }
+       ::= { bundleEntry 13 }
+
+    bundleMaxBundleLinks OBJECT-TYPE
+       SYNTAX  Integer32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "The maximum number of bundle links supported for this bundle."
+       ::= { bundleEntry 14 }
+
+    bundleFarEndName OBJECT-TYPE
+       SYNTAX  SnmpAdminString (SIZE (0..50))
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "Name of the bundle received from the far end."
+       REFERENCE "FRF.16 section 3.4.1"
+       ::= { bundleEntry 15 }
+
+    bundleResequencingErrors OBJECT-TYPE
+       SYNTAX  Counter32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "A count of the number of resequncing errors. Each event
+           may correspond to multiple lost frames.  Example:
+           Say sequence number 56, 59 and 60 is received for DLCI 100.
+           It is decided by some means that sequence 57 and 58 is lost.
+           This counter should then be incremented by ONE, even though
+           two frames were lost."
+       ::= { bundleEntry 16 }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- ifIndex Mapping to Bundle Index Table
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+    bundleIfIndexMappingTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF BundleIfIndexMappingEntry
+       MAX-ACCESS  not-accessible
+       STATUS  current
+       DESCRIPTION
+           "A table mapping the values of bundleIfIndex to the
+            bundleIndex. This is required in order to find
+            the bundleIndex given an ifIndex.  The mapping of
+            bundleIndex is provided by the bundleIfIndex entry
+            in the bundleTable."
+       ::= { mfrMibBundleObjects 4 }
+
+    bundleIfIndexMappingEntry OBJECT-TYPE
+       SYNTAX  BundleIfIndexMappingEntry
+       MAX-ACCESS  not-accessible
+       STATUS  current
+       DESCRIPTION
+            "Each row describes one ifIndex to bundleIndex mapping."
+
+     INDEX   { ifIndex }
+     ::= { bundleIfIndexMappingTable 1 }
+
+    BundleIfIndexMappingEntry ::=
+       SEQUENCE {
+         bundleIfIndexMappingIndex
+            InterfaceIndex
+         }
+
+    bundleIfIndexMappingIndex OBJECT-TYPE
+       SYNTAX  InterfaceIndex
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+            "The bundleIndex of the given ifIndex."
+     ::= { bundleIfIndexMappingEntry 2 }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Bundle Link Table
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+    bundleLinkTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF BundleLinkEntry
+       MAX-ACCESS  not-accessible
+       STATUS  current
+       DESCRIPTION
+          "The bundle link configuration and status table.  There
+           is a one-to-one correspondence between a bundle link
+           and a physical interface represented in the ifTable.  The
+           ifIndex of the physical interface is used to index the
+           bundle link table, and to create rows.
+
+           The manager can use the following entries in the ifTable:
+              ifAdminStatus - the bundle link admin status
+              ifOperStatus  - the bundle link operationl status
+              ifSpeed       - the bandwidth of the bundle link
+              ifInErrors    - frame/fragment errors
+              etc."
+       ::= { mfrMibBundleLinkObjects 1 }
+
+    bundleLinkEntry OBJECT-TYPE
+       SYNTAX  BundleLinkEntry
+       MAX-ACCESS  not-accessible
+       STATUS  current
+       DESCRIPTION
+          "An entry in the bundle link table."
+       INDEX   { ifIndex }
+       ::= { bundleLinkTable 1 }
+
+    BundleLinkEntry ::=
+       SEQUENCE {
+          bundleLinkRowStatus
+             RowStatus,
+          bundleLinkConfigBundleIndex
+             Integer32,
+          bundleLinkNearEndName
+             SnmpAdminString,
+          bundleLinkState
+             BundleLinkState,
+          bundleLinkFarEndName
+             SnmpAdminString,
+          bundleLinkFarEndBundleName
+             SnmpAdminString,
+          bundleLinkDelay
+             Integer32,
+          bundleLinkFramesControlTx
+             Counter32,
+          bundleLinkFramesControlRx
+             Counter32,
+          bundleLinkFramesControlInvalid
+             Counter32,
+          bundleLinkTimerExpiredCount
+             Counter32,
+          bundleLinkLoopbackSuspected
+             Counter32,
+          bundleLinkUnexpectedSequence
+             Counter32,
+          bundleLinkMismatch
+             Counter32
+          }
+
+    bundleLinkRowStatus OBJECT-TYPE
+       SYNTAX  RowStatus
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The bundleLinkRowStatus object allows create, change,
+           and delete operations on bundleLink entries."
+       ::= { bundleLinkEntry 1 }
+
+    bundleLinkConfigBundleIndex OBJECT-TYPE
+       SYNTAX  Integer32
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The bundleLinkConfigBundleIndex object allows
+           the manager to control the bundle to which the bundle
+           link is assigned. If no value were in this field, then
+           the bundle would remain in NOT_READY rowStatus and be
+           unable to go to active.  With an appropriate bundleIndex
+           in this field, then we could put the bundleLink row in
+           NOT_IN_SERVICE or ACTIVE rowStatus."
+       ::= { bundleLinkEntry 2 }
+
+    bundleLinkNearEndName OBJECT-TYPE
+       SYNTAX  SnmpAdminString (SIZE (0..50))
+       MAX-ACCESS  read-create
+       STATUS  current
+       DESCRIPTION
+          "The configured bundle link name that is sent to the far end."
+       ::= { bundleLinkEntry 3 }
+
+    bundleLinkState OBJECT-TYPE
+       SYNTAX  BundleLinkState
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "Current bundle link state as defined by the MFR protocol
+           described in Annex A of FRF.16."
+       REFERENCE "FRF.16 Annex A"
+       ::= { bundleLinkEntry 4 }
+
+    bundleLinkFarEndName OBJECT-TYPE
+       SYNTAX  SnmpAdminString (SIZE (0..50))
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "Name of bundle link received from far end."
+       REFERENCE "FRF.16 section 3.4.2"
+       ::= { bundleLinkEntry 5 }
+
+    bundleLinkFarEndBundleName OBJECT-TYPE
+       SYNTAX  SnmpAdminString (SIZE (0..50))
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "Name of far end bundle for this link received from far end."
+       REFERENCE "FRF.16 section 3.4.1"
+       ::= { bundleLinkEntry 6 }
+
+    bundleLinkDelay OBJECT-TYPE
+       SYNTAX  Integer32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "Current round-trip delay for this bundle link."
+       REFERENCE "FRF.16 section 3.4.4"
+       ::= { bundleLinkEntry 7 }
+
+    bundleLinkFramesControlTx OBJECT-TYPE
+       SYNTAX  Counter32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "Number of MFR control frames sent."
+       ::= { bundleLinkEntry 8 }
+
+    bundleLinkFramesControlRx OBJECT-TYPE
+       SYNTAX  Counter32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "Number of valid MFR control frames received."
+       ::= { bundleLinkEntry 9 }
+
+    bundleLinkFramesControlInvalid OBJECT-TYPE
+       SYNTAX  Counter32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "The number of invalid MFR control frames received."
+       ::= { bundleLinkEntry 10 }
+
+    bundleLinkTimerExpiredCount OBJECT-TYPE
+       SYNTAX  Counter32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "Number of times the T_HELLO or T_ACK timers expired."
+       ::= { bundleLinkEntry 11 }
+
+    bundleLinkLoopbackSuspected OBJECT-TYPE
+       SYNTAX  Counter32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "The number of times a loopback has been suspected
+           (based upon the use of magic numbers)."
+       REFERENCE "FRF.16 section 4.3.7"
+       ::= { bundleLinkEntry 12 }
+
+    bundleLinkUnexpectedSequence OBJECT-TYPE
+       SYNTAX  Counter32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "The number of data MFR frames discarded because the sequence
+           number of the frame for a DLCI was less than (delayed frame)
+           or equal to (duplicate frame) the one expected for that DLCI.
+
+           Example:
+           Say frames with sequence numbers 56, 58, 59 is received for
+           DLCI 100. While waiting for sequence number 57 another frame
+           with sequence number 58 arrives. Frame 58 is discarded and
+           the counter is incremented."
+       REFERENCE "FRF.16 section 4.2.3.2"
+       ::= { bundleLinkEntry 13 }
+
+    bundleLinkMismatch OBJECT-TYPE
+       SYNTAX  Counter32
+       MAX-ACCESS  read-only
+       STATUS  current
+       DESCRIPTION
+          "The number of times that the unit has detected a mismatch between
+           the near end and far end bundles."
+       REFERENCE "FRF.16 section 4.3.2.4"
+       ::= { bundleLinkEntry 14 }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Notifications/Traps
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+    mfrMibTrapBundleLinkMismatch NOTIFICATION-TYPE
+       OBJECTS {
+          bundleNearEndName,
+          bundleFarEndName,
+          bundleLinkNearEndName,
+          bundleLinkFarEndName,
+          bundleLinkFarEndBundleName
+          }
+       STATUS  current
+       DESCRIPTION
+          "This trap indicates that a bundle link mismatch has
+           been detected.  The following objects are reported:
+           - bundleNearEndName: configured name of near end bundle
+           - bundleFarEndName:  previously reported name of far end bundle
+           - bundleLinkNearEndName: configured name of near end bundle
+           - bundleLinkFarEndName: reported name of far end bundle
+           - bundleLinkFarEndBundleName: currently reported name of
+              far end bundle
+           Note: that the configured items may have been configured
+                 automatically.
+           Note: The bundleLinkMismatch counter is incremented when
+                 the trap is sent."
+       REFERENCE "FRF.16 section 4.3.2.4"
+        ::= { mfrMibTrapsPrefix 1 }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Conformance/Compliance
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+    mfrMibCompliance MODULE-COMPLIANCE
+       STATUS      current
+       DESCRIPTION
+          "The compliance statement for equipment that implements
+           the FRF16 MIB.  All of the current groups are mandatory,
+           but a number of objects may be read-only if the
+           implementation does not allow configuration."
+       MODULE -- this module
+       MANDATORY-GROUPS {
+          mfrMibBundleGroup,
+          mfrMibBundleLinkGroup,
+          mfrMibTrapGroup
+          }
+
+       OBJECT     bundleFragmentation
+       MIN-ACCESS read-only
+       DESCRIPTION
+           "Write access is not required, but the value used must be reported."
+
+       OBJECT     bundleMaxFragSize
+       MIN-ACCESS read-only
+       DESCRIPTION
+           "Write access is not required, but the value used must be reported.
+            A value of -1 indicates that the value is not applicable."
+
+       OBJECT     bundleThreshold
+       MIN-ACCESS read-only
+       DESCRIPTION
+           "Write access is not required, but the value used must be reported.
+            A value of -1 indicates that the value is not applicable."
+
+       OBJECT     bundleMaxDiffDelay
+       MIN-ACCESS read-only
+       DESCRIPTION
+           "Write access is not required, but the value used must be reported."
+
+       OBJECT     bundleSeqNumSize
+       MIN-ACCESS read-only
+       DESCRIPTION
+           "Write access is not required, but the value used must be reported.
+            A value of -1 indicates that the value is not applicable."
+
+       ::= { mfrMibCompliances 1 }
+
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+    -- Units of Conformance
+    -- ---------------------------------------------------------
+    -- ---------------------------------------------------------
+
+    mfrMibBundleGroup OBJECT-GROUP
+       OBJECTS {
+          bundleMaxNumBundles,
+          bundleIfIndex,
+          bundleRowStatus,
+          bundleNearEndName,
+          bundleFragmentation,
+          bundleMaxFragSize,
+          bundleTimerHello,
+          bundleTimerAck,
+          bundleCountMaxRetry,
+          bundleActivationClass,
+          bundleThreshold,
+          bundleMaxDiffDelay,
+          bundleMaxBundleLinks,
+          bundleSeqNumSize,
+          bundleFarEndName,
+          bundleResequencingErrors,
+          bundleIfIndexMappingIndex,
+          bundleNextIndex
+          }
+       STATUS current
+       DESCRIPTION
+           "Group of objects describing bundles."
+       ::= { mfrMibGroups 1 }
+
+    mfrMibBundleLinkGroup   OBJECT-GROUP
+       OBJECTS {
+          bundleLinkRowStatus,
+          bundleLinkConfigBundleIndex,
+          bundleLinkNearEndName,
+          bundleLinkState,
+          bundleLinkFarEndName,
+          bundleLinkFarEndBundleName,
+          bundleLinkDelay,
+          bundleLinkFramesControlTx,
+          bundleLinkFramesControlRx,
+          bundleLinkFramesControlInvalid,
+          bundleLinkTimerExpiredCount,
+          bundleLinkLoopbackSuspected,
+          bundleLinkUnexpectedSequence,
+          bundleLinkMismatch
+          }
+       STATUS current
+       DESCRIPTION
+           "Group of objects describing bundle links."
+       ::= { mfrMibGroups 2 }
+
+    mfrMibTrapGroup NOTIFICATION-GROUP
+       NOTIFICATIONS {
+          mfrMibTrapBundleLinkMismatch
+          }
+       STATUS current
+       DESCRIPTION
+           "Group of objects describing notifications (traps)."
+       ::= { mfrMibGroups 3 }
+
+ END

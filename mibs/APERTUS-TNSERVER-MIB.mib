@@ -1,0 +1,3525 @@
+--   tn.mib == Tn Server MIB for SNMPv1
+--
+--  AUTHOR: Harold Stevenson
+--  DATE:   01/29/96
+--
+--  SNMPv1 only
+--
+--  EXPLANATION:
+--      The managed entities modeled in this MIB are:
+--      o   Telnet Client Routing Definition
+--          These entities corresponds directly with Telnet Client
+--          Routing Entries defined via EXPRESS TNSERVER configuration
+--          utilities. They are used by the telnet server to route
+--          telnet connection requests to 3270 LU's or 5250 passthrough
+--          destinations based on the client's IP address. Security access
+--          for non-extended tn3270 clients, as well as tn5250 clients
+--          is also provided for in this profile.
+--          This entity is indexed by the IP Address of the client, which
+--          is expressed as a string and can contain ranges of IP addresses.
+--
+--      o   Telnet Client Security Profile
+--          These entities allow TELNET SERVER administrators to limit
+--          access from Extended TN3270 clients using a device name
+--          in their connection requests to a range of IP addresses.
+--
+--      o   Telnet Client Group Profile
+--      o   Telnet Client User Profile
+--          These entities correspond directly to profiles defined
+--          via EXPRESS TNSERVER configuration utilities.
+--          They allow the server to arrange connection profiles
+--          to be used in setting up operational parameters of telnet
+--          sessions such as definition of special AID keys, inactivity
+--          timers, etc. The group-user hierarchy allows user profiles
+--          to inherit their definitions from the group they belong to.
+--          These entities are index by their name.
+--
+--      o   Telnet Session Profile
+--          This entity corresponds directly to profiles defined
+--          via EXPRESS TNSERVER configuration utilities. They
+--          define operation parameters of the 3270 or 5250 session.
+--          Sessions defined for a group profile can be used by
+--          all users that belong to the group.
+--          These entities are index by their name.
+--
+--      o   Tn Connection
+--          This a TCP/IP connection between a specific Tn Client and
+--          the Tn Server. This entity is indexed by the client's
+--          IP Address and TCP Port Number.
+--
+--      o   SNA Session
+--          This is the session over which data flows to the host.
+--          For Tn3270, this entity is indexed by ALS Name and LU Number.
+--          For Tn5250, this entity is indexed by APPC Id.
+--
+--
+--      The MIB is organized in four groups:
+--      o   Administration
+--      o   Operations
+--      o   Statistics
+--      o   Traps
+--
+
+
+APERTUS-TNSERVER-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    enterprises, Counter, IpAddress, TimeTicks
+        FROM RFC1155-SMI
+    OBJECT-TYPE
+        FROM RFC-1212
+    DisplayString
+        FROM RFC1213-MIB
+    TRAP-TYPE
+        FROM RFC-1215;
+
+apertus OBJECT IDENTIFIER ::= { enterprises 543 }
+express OBJECT IDENTIFIER ::= { apertus 3 }
+
+aperTnServMIB OBJECT IDENTIFIER ::= { express 1 }
+
+aperTnServMibVersionNumber OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+       "The version number of this MIB. The version of the MIB which
+        matches the description in this document is 1."
+    ::= { aperTnServMIB 1 }
+
+
+--  Administration Group
+aperTnServAdm       OBJECT IDENTIFIER ::= { aperTnServMIB 2 }
+    aperTnServAdmGen    OBJECT IDENTIFIER ::= { aperTnServAdm 1 }
+    aperTnServAdm3270   OBJECT IDENTIFIER ::= { aperTnServAdm 2 }
+    aperTnServAdm5250   OBJECT IDENTIFIER ::= { aperTnServAdm 3 }
+
+--  Operations Group
+aperTnServOper      OBJECT IDENTIFIER ::= { aperTnServMIB 3 }
+    aperTnServOperGen   OBJECT IDENTIFIER ::= { aperTnServOper 1 }
+    aperTnServOperConns OBJECT IDENTIFIER ::= { aperTnServOper 2 }
+    aperTnServOper3270  OBJECT IDENTIFIER ::= { aperTnServOper 3 }
+    aperTnServOper5250  OBJECT IDENTIFIER ::= { aperTnServOper 4 }
+
+--  Statistics Group
+aperTnServStats     OBJECT IDENTIFIER ::= { aperTnServMIB 4 }
+    aperTnServRtm       OBJECT IDENTIFIER ::= { aperTnServStats 1 }
+
+--  Traps Group
+aperTnServTraps     OBJECT IDENTIFIER ::= { aperTnServMIB 5 }
+
+--  Data Type Definitions
+Tn3270AidKey ::= INTEGER { none(1),  pa1(2),   pa2(3),   pa3(4),
+                            pf1(5),   pf2(6),   pf3(7),   pf4(8),
+                            pf5(9),   pf6(10),  pf7(11),  pf8(12),
+                            pf9(13),  pf10(14), pf11(15), pf12(16),
+                            pf13(17), pf14(18), pf15(19), pf16(20),
+                            pf17(21), pf18(22), pf19(23), pf20(24),
+                            pf21(25), pf22(26), pf23(27), pf24(28) }
+
+Tn5250AidKey ::= INTEGER {  none(1),  pa1(2),   pa2(3),   pa3(4),
+                            pf1(5),   pf2(6),   pf3(7),   pf4(8),
+                            pf5(9),   pf6(10),  pf7(11),  pf8(12),
+                            pf9(13),  pf10(14), pf11(15), pf12(16),
+                            pf13(17), pf14(18), pf15(19), pf16(20),
+                            pf17(21), pf18(22), pf19(23), pf20(24),
+                            pf21(25), pf22(26), pf23(27), pf24(28),
+                            sysreq(29), attn(30), test(31) }
+
+--  Administration Group
+
+aperTnServAdmRelease OBJECT-TYPE
+    SYNTAX      DisplayString
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "Release level of the TNSERVER. This is contained in three
+            components. The first version of the product will have
+            a release level of '2.2.0'"
+    ::= { aperTnServAdmGen 1 }
+
+aperTnServAdmSCN OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "The Source Control Number of the TNSERVER product. This
+            number helps to identify what patches have been applied
+            to product since installation."
+    ::= { aperTnServAdmGen 2 }
+
+aperTnServAdmServerInstanceName OBJECT-TYPE
+    SYNTAX      DisplayString
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "The EXPRESS telnet server Domain Name."
+    ::= { aperTnServAdmGen 3 }
+
+aperTnServAdmMaxSessions OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "Maximum number of sessions currently licensed for the
+            TNSERVER. This includes 3270 and 5250 sessions, as
+            well as all SNA sessions"
+    ::= { aperTnServAdmGen 4 }
+
+aperTnServAdmKeepAliveTimer OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "The number of minutes for the keep-alive timer. The
+            value zero indicates no keep-alive timer is configured."
+    ::= { aperTnServAdmGen 5 }
+
+aperTnServAdmKeepAliveResponseTimeout OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "The number of seconds the server will wait for keep-alive
+            response when testing for dead socket."
+    ::= { aperTnServAdmGen 6 }
+
+aperTnServAdmKeepAliveRetryCount OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "The number of keep-alive polls permitted until a
+            socket is considered dead. After this many retries,
+            the socket will be terminated."
+    ::= { aperTnServAdmGen 7 }
+
+aperTnServAdmDefaultInactivityLimit OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+            "The number of minutes allowed for an idle session,
+            i.e. no datastream events, after which a telnet
+            connection is terminated. If the value is zero, there
+            is no inactivity limit defined. This value may be
+            overridden on a per user basis."
+    ::= { aperTnServAdmGen 8 }
+
+aperTnServAdmUndefinedClients OBJECT-TYPE
+    SYNTAX      INTEGER { prompt(1), reject(2) }
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "Indicates whether the TNSERVER will reject connection
+            requests from clients whose IP address is not contained
+            in the Client Routing Table. If the value is prompt(1),
+            when a telnet client with an address not in the routing
+            table attempts to connect the TNSERVER, it will be
+            prompted for the name of the device to which it should
+            connect."
+    ::= { aperTnServAdmGen 9 }
+
+aperTnServAdmAllowableNameTypes OBJECT-TYPE
+    SYNTAX      INTEGER { all(1), user(2) }
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "What type of destination name types are allowed as
+            device names specified in telnet client connect
+            requests. The value user(2) indicates that only
+            Client Connection Profile Names are allowed, while
+            all(1) indicates that Client Connection Profile
+            Names and LU names are allowed."
+    ::= { aperTnServAdmGen 10 }
+
+aperTnServAdmNumPorts OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "The number of TCP ports on which the TNSERVER
+            is listening for incoming telnet client connections."
+    ::= { aperTnServAdmGen 11 }
+
+aperTnServAdmPortTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF AperTnServAdmPortEntry
+    ACCESS      not-accessible
+    STATUS      mandatory
+    DESCRIPTION
+           "Table of ports."
+    ::= { aperTnServAdmGen 12 }
+
+aperTnServAdmPortEntry OBJECT-TYPE
+    SYNTAX      AperTnServAdmPortEntry
+    ACCESS      not-accessible
+    STATUS      mandatory
+    DESCRIPTION
+           "This table contains TCP/IP ports.  The OID of the instance
+            actually contains the port number. That is, if the three
+            ports 23, 7713 and 3050 are in the list, the OID's
+            of the three elements of this array are
+            aperTnServAdmPort.23 , aperTnServAdmPort.7713 ,
+            and aperTnServAdmPort.3050 . When sets are
+            supported, writing an instance of this variable
+            adds that port to the list. To retrieve all ports in the
+            list, the getnext operator should be used. Retrieve
+            the value of aperTnServAdmNumPorts, and do that
+            many getnext operations. When sets are supported,
+            writing an instance of this variable will delete(0) or
+            add(1) the port from/to the list. For example, setting
+            the instance aperTnServAdmPorts.3050 to 0 will
+            delete 3050 from the list of ports. Setting
+            aperTnServAdmPorts.3051 to 1 will add 3051 to
+            the port list."
+    INDEX       { aperTnServAdmPort }
+    ::= { aperTnServAdmPortTable 1 }
+
+AperTnServAdmPortEntry ::=
+    SEQUENCE {
+        aperTnServAdmPort
+            INTEGER
+    }
+
+aperTnServAdmPort OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "A TCP/IP port"
+    ::= { aperTnServAdmPortEntry 1 }
+
+aperTnServAdmMenuMode OBJECT-TYPE
+    SYNTAX      INTEGER { on(1), off(2) }
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "When a telnet client specifies a device name that
+            contains a choice of destinations, this variable indicates
+            the action of the server. If on(1), then the client is
+            presented with a list of possible destinations. If off(2),
+            then the TNSERVER picks one of the alternatives."
+    ::= { aperTnServAdmGen 13 }
+
+aperTnServAdmPasswordLimit OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "The number of times an invalid password will
+            be allowed to be entered before the Telnet
+            Client Connection Profile will be marked as
+            invalid. The value 0 indicates that there is
+            no limit."
+    ::= { aperTnServAdmGen 14 }
+
+aperTnServAdmNumGroups OBJECT-TYPE
+    SYNTAX      INTEGER
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "The number of Telnet Group Connection Profiles,
+            i.e. the number of rows in aperTnServAdmGroupTable."
+    ::= { aperTnServAdmGen 15 }
+
+aperTnServAdmGroupTableLastChange OBJECT-TYPE
+    SYNTAX      TimeTicks
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "Time stamp of the last time a row was added to or
+            deleted from the user table.
+            This variable can be used to facilitate
+            monitoring of the user table."
+    ::= { aperTnServAdmGen 16 }
+
+aperTnServAdmGroupTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF    AperTnServAdmGroupEntry
+    ACCESS      not-accessible
+    STATUS      mandatory
+    DESCRIPTION
+           "Telnet Group Connection Profiles."
+    ::= { aperTnServAdmGen 17 }
+
+aperTnServAdmGroupEntry OBJECT-TYPE
+    SYNTAX      AperTnServAdmGroupEntry
+    ACCESS      not-accessible
+    STATUS      mandatory
+    DESCRIPTION
+           "This table contains information for Telnet Group
+            Connection Profiles."
+    INDEX     { aperTnServAdmGroupName }
+    ::= { aperTnServAdmGroupTable 1 }
+
+
+AperTnServAdmGroupEntry ::=
+    SEQUENCE {
+        aperTnServAdmGroupName
+            DisplayString,
+        aperTnServAdmGroupDescription
+            DisplayString,
+        aperTnServAdmGroupMenuMode
+            INTEGER,
+        aperTnServAdmGroupInactivityLimit
+            INTEGER,
+        aperTnServAdmGroup3270StatusKey
+            Tn3270AidKey,
+        aperTnServAdmGroup3270PasswordKey
+            Tn3270AidKey,
+        aperTnServAdmGroup3270SysReqKey
+            Tn3270AidKey,
+        aperTnServAdmGroup3270AttnKey
+            Tn3270AidKey,
+        aperTnServAdmGroup5250StatusKey
+            Tn5250AidKey,
+        aperTnServAdmGroup5250PasswordKey
+            Tn5250AidKey
+    }
+
+aperTnServAdmGroupName  OBJECT-TYPE
+    SYNTAX      DisplayString
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+            "The name of the Telnet Group Connection Profile."
+    ::= { aperTnServAdmGroupEntry 1 }
+
+aperTnServAdmGroupDescription   OBJECT-TYPE
+    SYNTAX      DisplayString
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "A short description of the Telnet Group Connection
+            Profile."
+    ::= { aperTnServAdmGroupEntry 2 }
+
+aperTnServAdmGroupMenuMode  OBJECT-TYPE
+    SYNTAX      INTEGER {   on(1), off(2), default(3) }
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+           "This variable indicates whether the TNSERVER will
+           assign a device when a choice of devices fit the requested
+           session service or if the telnet client will be prompted
+           with choices.  The value default(3) indicates the value
+           from aperTnServAdmMenuMode will be used."
+    ::= { aperTnServAdmGroupEntry 3 }
+
+aperTnServAdmGroupInactivityLimit   OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of minutes allowed for an idle connection,
+            i.e. no datastream events, after which a telnet
+            connection is terminated. If the value is zero, there
+            is no inactivity limit defined.  If the value is
+            0xffff the value from aperTnServAdmDefaultInactivityLimit
+            will be used."
+    ::= { aperTnServAdmGroupEntry 4 }
+
+aperTnServAdmGroup3270StatusKey OBJECT-TYPE
+    SYNTAX  Tn3270AidKey
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the session
+            status key. Entering this key will cause a dialogue
+            to appear on the telnet client's screen that lists
+            the status of the 3270 session."
+    ::= { aperTnServAdmGroupEntry 5 }
+
+aperTnServAdmGroup3270PasswordKey   OBJECT-TYPE
+    SYNTAX  Tn3270AidKey
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the change
+            password key. Entering this key will cause a dialogue
+            to appear on the telnet client's screen that allows the
+            user to change the password."
+    ::= { aperTnServAdmGroupEntry 6 }
+
+aperTnServAdmGroup3270SysReqKey OBJECT-TYPE
+    SYNTAX  Tn3270AidKey
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the 3270 SYS_REQ
+            key. This feature is useful for telnet clients incapable
+            of generating the SYS_REQ key. Of course, the aid key
+            configured as the SYS_REQ key can not be sent to the host
+            application."
+    ::= { aperTnServAdmGroupEntry 7 }
+
+aperTnServAdmGroup3270AttnKey   OBJECT-TYPE
+    SYNTAX  Tn3270AidKey
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the 3270
+            Attention key. This feature is useful for telnet clients
+            incapable of generating the Attention key. Of course, the
+            aid key configured as the SYS_REQ key can not be sent to the
+            host application."
+    ::= { aperTnServAdmGroupEntry 8 }
+
+aperTnServAdmGroup5250StatusKey OBJECT-TYPE
+    SYNTAX  Tn5250AidKey
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the session
+            status key. Entering this key will cause a dialogue
+            to appear on the telnet client's screen that lists
+            the status of the 5250 passthrough session."
+    ::= { aperTnServAdmGroupEntry 9 }
+
+aperTnServAdmGroup5250PasswordKey   OBJECT-TYPE
+    SYNTAX  Tn5250AidKey
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the change
+            password key. Entering this key will cause a dialogue
+            to appear on the telnet client's screen that allows the
+            user to change the password."
+    ::= { aperTnServAdmGroupEntry 10 }
+
+aperTnServAdmNumUsers OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of Telnet User Connection Profiles,
+            i.e. the number of rows in aperTnServAdmUserTable."
+    ::= { aperTnServAdmGen 18 }
+
+aperTnServAdmUserTableLastChange OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "Time stamp of the last time a row was added to or
+            deleted from the user table.
+            This variable can be used to facilitate
+            monitoring of the user table."
+    ::= { aperTnServAdmGen 19 }
+
+aperTnServAdmUserTable OBJECT-TYPE
+    SYNTAX    SEQUENCE OF AperTnServAdmUserEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "Telnet User Connection Profiles."
+    ::= { aperTnServAdmGen 20 }
+
+aperTnServAdmUserEntry OBJECT-TYPE
+    SYNTAX    AperTnServAdmUserEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "This table contains information for Telnet User
+            Connection Profiles."
+    INDEX     { aperTnServAdmUserName }
+    ::= { aperTnServAdmUserTable 1 }
+
+AperTnServAdmUserEntry ::=
+    SEQUENCE {
+        aperTnServAdmUserName
+            DisplayString,
+        aperTnServAdmUserDescription
+            DisplayString,
+        aperTnServAdmUserPasswordRequired
+            INTEGER,
+        aperTnServAdmUserEncryptedPassword
+            INTEGER,
+        aperTnServAdmUserBadPasswordCounter
+            INTEGER,
+        aperTnServAdmUserMenuMode
+            INTEGER,
+        aperTnServAdmUserInactivityLimit
+            INTEGER,
+        aperTnServAdmUser3270StatusKey
+            Tn3270AidKey,
+        aperTnServAdmUser3270PasswordKey
+            Tn3270AidKey,
+        aperTnServAdmUser3270SysReqKey
+            Tn3270AidKey,
+        aperTnServAdmUser3270AttnKey
+            Tn3270AidKey,
+        aperTnServAdmUser5250StatusKey
+            Tn5250AidKey,
+        aperTnServAdmUser5250PasswordKey
+            Tn5250AidKey
+    }
+
+aperTnServAdmUserName   OBJECT-TYPE
+    SYNTAX  DisplayString
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The name of the Telnet User Connection Profile."
+    ::= { aperTnServAdmUserEntry 1 }
+
+aperTnServAdmUserDescription    OBJECT-TYPE
+    SYNTAX  DisplayString
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "A short description of the Telnet User Connection
+            Profile."
+    ::= { aperTnServAdmUserEntry 2 }
+
+aperTnServAdmUserPasswordRequired   OBJECT-TYPE
+    SYNTAX  INTEGER { yes(1), no(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "If this variable is yes(1), then a telnet client will be
+             prompted for a password when trying to connect to the
+             TNSERVER using the name of the user profile."
+    ::= { aperTnServAdmUserEntry 3 }
+
+aperTnServAdmUserEncryptedPassword  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The password of the user encrypted to an integer."
+    ::= { aperTnServAdmUserEntry 4 }
+
+aperTnServAdmUserBadPasswordCounter OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of consecutive attempts of a telnet client
+            to access the TNSERVER with this user name but with an
+            incorrect password. A correct password will always reset
+            this counter."
+    ::= { aperTnServAdmUserEntry 5 }
+
+aperTnServAdmUserMenuMode   OBJECT-TYPE
+    SYNTAX      INTEGER {   on(1), off(2), default(3) }
+    ACCESS       read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This variable indicates whether the TNSERVER will
+           assign a device when a choice of devices fit the requested
+           session service or if the telnet client will be prompted
+           with choices.  The value default(3) indicates the value
+           from aperTnServAdmMenuMode will be used."
+    ::= { aperTnServAdmUserEntry 6 }
+
+aperTnServAdmUserInactivityLimit    OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of minutes allowed for an idle connection,
+            i.e. no datastream events, after which a telnet
+            connection is terminated. If the value is zero, there
+            is no inactivity limit defined.  If the value is
+            0xffff the value from aperTnServAdmDefaultInactivityLimit
+            will be used."
+    ::= { aperTnServAdmUserEntry 7 }
+
+aperTnServAdmUser3270StatusKey  OBJECT-TYPE
+    SYNTAX Tn3270AidKey
+    ACCESS read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the session
+            status key. Entering this key will cause a dialogue
+            to appear on the telnet client's screen that lists
+            the status of the 3270 session."
+    ::= { aperTnServAdmUserEntry 8 }
+
+aperTnServAdmUser3270PasswordKey    OBJECT-TYPE
+    SYNTAX Tn3270AidKey
+    ACCESS read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the change
+            password key. Entering this key will cause a dialogue
+            to appear on the telnet client's screen that allows the
+            user to change the password."
+    ::= { aperTnServAdmUserEntry 9 }
+
+aperTnServAdmUser3270SysReqKey  OBJECT-TYPE
+    SYNTAX Tn3270AidKey
+    ACCESS read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the 3270 SYS_REQ
+            key. This feature is useful for telnet clients incapable
+            of generating the SYS_REQ key. Of course, the aid key
+            configured as the SYS_REQ key can not be sent to the host
+            application."
+    ::= { aperTnServAdmUserEntry 10 }
+
+aperTnServAdmUser3270AttnKey    OBJECT-TYPE
+    SYNTAX Tn3270AidKey
+    ACCESS read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the 3270
+            Attention key. This feature is useful for telnet clients
+            incapable of generating the Attention key. Of course, the
+            aid key configured as the SYS_REQ key can not be sent to
+            the host application."
+    ::= { aperTnServAdmUserEntry 11 }
+
+aperTnServAdmUser5250StatusKey  OBJECT-TYPE
+    SYNTAX Tn5250AidKey
+    ACCESS read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the session
+            status key. Entering this key will cause a dialogue
+            to appear on the telnet client's screen that lists
+            the status of the 5250 passthrough session."
+    ::= { aperTnServAdmUserEntry 12 }
+
+aperTnServAdmUser5250PasswordKey    OBJECT-TYPE
+    SYNTAX Tn5250AidKey
+    ACCESS read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Aid key which is to be interpreted as the change
+            password key. Entering this key will cause a dialogue
+            to appear on the telnet client's screen that allows the
+            user to change the password."
+    ::= { aperTnServAdmUserEntry 13 }
+
+aperTnServAdmNumRoutingEntries OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of Telnet Client Routing Entries,
+            i.e. the number of rows in aperTnServAdmRoutingTable."
+    ::= { aperTnServAdmGen 21 }
+
+aperTnServAdmRoutingTableLastChange OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "Time stamp of the last time a row was added to or
+            deleted from the user table.
+            This variable can be used to facilitate
+            monitoring of the user table."
+    ::= { aperTnServAdmGen 22 }
+
+aperTnServAdmRoutingTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AperTnServAdmRoutingEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+           "Telnet Client Routing Table."
+    ::= { aperTnServAdmGen 23 }
+
+aperTnServAdmRoutingEntry OBJECT-TYPE
+    SYNTAX   AperTnServAdmRoutingEntry
+    ACCESS   not-accessible
+    STATUS   mandatory
+    DESCRIPTION
+           "This table contains information for Telnet Client
+            Routing Entries."
+    INDEX     { aperTnServAdmRoutingSourceIp,
+                aperTnServAdmRoutingPort,
+                aperTnServAdmRoutingDeviceType,
+                aperTnServAdmRoutingModelType }
+    ::= { aperTnServAdmRoutingTable 1 }
+
+AperTnServAdmRoutingEntry ::=
+    SEQUENCE {
+        aperTnServAdmRoutingSourceIp
+            DisplayString,
+        aperTnServAdmRoutingPort
+            INTEGER,
+        aperTnServAdmRoutingDeviceType
+            INTEGER,
+        aperTnServAdmRoutingModelType
+            INTEGER,
+        aperTnServAdmRoutingDescription
+            DisplayString,
+        aperTnServAdmRoutingDestinationType
+            INTEGER,
+        aperTnServAdmRoutingDestination
+            DisplayString
+    }
+
+aperTnServAdmRoutingSourceIp OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This string identifies the IP address (or set of IP
+            addresses) where a telnet client connection request may
+            originate.  This column and other columns in the row are
+            used as selection criteria to determine if an incoming telnet
+            connection request will use the destination named in one
+            of the columns of this row.
+
+           Examples:
+                111.222.*.1-33
+                111.222.*.*
+                111.222.2-245.34-50
+                111.222.254.2
+                100.204.105.1-33"
+    ::= { aperTnServAdmRoutingEntry 1 }
+
+aperTnServAdmRoutingPort OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The Server Port on which this connection request will
+            arrive. Negative one means 'any port'."
+    ::= { aperTnServAdmRoutingEntry 2 }
+
+aperTnServAdmRoutingDeviceType OBJECT-TYPE
+      SYNTAX  INTEGER { display3270(1), printer3270(2), display5250(3) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The type of device connecting to the server."
+    ::= { aperTnServAdmRoutingEntry 3 }
+
+aperTnServAdmRoutingModelType OBJECT-TYPE
+      SYNTAX  INTEGER { model2(1), model3(2), model4(3), model5(4),
+                        dynamic(5), any(6) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If the requested device type is a 3270 display, then
+            this variable specifies the 3270 model type
+            requested by the telnet client."
+    ::= { aperTnServAdmRoutingEntry 4 }
+
+aperTnServAdmRoutingDescription OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+          "A description of the Telnet Client Routing Entry."
+    ::= { aperTnServAdmRoutingEntry 5 }
+
+aperTnServAdmRoutingDestinationType OBJECT-TYPE
+      SYNTAX  INTEGER { user(1), lu(2), symbolicdestination(3) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This column describes what type of names are contained in
+            the aperTnServAdmRoutingDestination. The value user(1)
+            specifies a Telnet Client Connection Profile. lu(2)
+            specifies either a 3270 LU Pool or a 3270 printer LU. The
+            value symbolic_destination(3) specifies the name of the
+            CPIC symbolic destination name used to determine the
+            5250 passthrough session."
+    ::= { aperTnServAdmRoutingEntry 6 }
+
+aperTnServAdmRoutingDestination OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This string specifies a name or a list of names, which
+            determine the possible destinations for the telnet
+            client. For 3270 sessions, if more than one name is listed,
+            then the actual destination depends on the value of
+            aperTnServAdm3270LoadBalanceMode. For 5250 sessions,
+            the destination picked will be the first one with a free
+            session. For 3270 printers, only one name is allowed."
+    ::= { aperTnServAdmRoutingEntry 7 }
+
+
+aperTnServAdmNumSecurAccEntries OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of Telnet Client Security Access Entries,
+            i.e. the number of rows in aperTnServAdmSecurAccTable."
+    ::= { aperTnServAdmGen 24 }
+
+aperTnServAdmSecurAccTableLastChange OBJECT-TYPE
+    SYNTAX    TimeTicks
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "Time stamp of the last time a row was added to or
+            deleted from the user table.
+            This variable can be used to facilitate
+            monitoring of the user table."
+    ::= { aperTnServAdmGen 25 }
+
+aperTnServAdmSecurAccTable OBJECT-TYPE
+    SYNTAX    SEQUENCE OF AperTnServAdmSecurAccEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "Telnet Client Security Access Table."
+    ::= { aperTnServAdmGen 26 }
+
+aperTnServAdmSecurAccEntry OBJECT-TYPE
+    SYNTAX    AperTnServAdmSecurAccEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "This table contains information for Telnet Client
+            Security Access Entries."
+    INDEX     { aperTnServAdmSecurAccSourceIp }
+    ::= { aperTnServAdmSecurAccTable 1 }
+
+AperTnServAdmSecurAccEntry ::=
+    SEQUENCE {
+        aperTnServAdmSecurAccSourceIp
+            DisplayString,
+        aperTnServAdmSecurAccDescription
+            DisplayString,
+        aperTnServAdmSecurAccDestination
+            DisplayString
+    }
+
+aperTnServAdmSecurAccSourceIp OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This string identifies the IP address (or set of IP
+            addresses) where a telnet client connection request may
+            originate.  This column and other columns in the row are
+            used as selection criteria to determine if an incoming telnet
+            connection request will use the destination named in one
+            of the columns of this row.
+
+           Examples:
+                111.222.*.1-33
+                111.222.*.*
+                111.222.2-245.34-50
+                111.222.254.2
+                100.204.105.1-33"
+    ::= { aperTnServAdmSecurAccEntry 1 }
+
+aperTnServAdmSecurAccDescription OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+          "A description of the Telnet Client Security Access Entry."
+    ::= { aperTnServAdmSecurAccEntry 2 }
+
+aperTnServAdmSecurAccDestination OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This string specifies a name or a list of names. If
+            a telnet client whose IP address matches the
+            index of this row uses a device name other than one
+            in this list, the connection request is rejected.  A 
+			blank aperTnServAdmSecurAccDestination means that all
+			device names are valid."
+    ::= { aperTnServAdmSecurAccEntry 3 }
+
+aperTnServAdm3270DefaultStatusKey OBJECT-TYPE
+    SYNTAX    Tn3270AidKey
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The default 3270 AID key used by clients to
+            display information about the tn3270 session.
+            none(1) indicates that this function is not available."
+    ::= { aperTnServAdm3270 1 }
+
+aperTnServAdm3270DefaultSysReqKey OBJECT-TYPE
+    SYNTAX    Tn3270AidKey
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The default 3270 AID key used by non-TN3270E clients to
+            simulate the 3270 SYSREQ function.  none(1) indicates that
+            this function is not available."
+    ::= { aperTnServAdm3270 2 }
+
+aperTnServAdm3270DefaultAttnKey OBJECT-TYPE
+    SYNTAX    Tn3270AidKey
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The default 3270 AID key used by non-TN3270E clients to
+            simulate the 3270 ATTN function.  none(1) indicates that
+            this function is not available."
+    ::= { aperTnServAdm3270 3 }
+
+aperTnServAdm3270DefaultPasswordKey OBJECT-TYPE
+    SYNTAX    Tn3270AidKey
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The default 3270 AID key used by clients to
+            change the password of the Telnet User Connection
+            Profile used by an active tn3270 session.  none(1)
+            indicates that this function is not available."
+    ::= { aperTnServAdm3270 4 }
+
+aperTnServAdm3270LoadBalanceMode OBJECT-TYPE
+    SYNTAX    INTEGER { links(1), firstavaillu(2) }
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The load balance selection criteria used when
+            the TNSERVER is making a choice of a destination
+            from several that satisfy client connection request.
+            links(1) indicates to balance load across all
+            acceptable link stations, while first_avail_lu(2)
+            indicates to chose the first available LU device that
+            satisfies the client connection request."
+    ::= { aperTnServAdm3270 5 }
+
+aperTnServAdm3270NumSessions OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of Telnet 3270 display and printer
+            Session Profiles, i.e. the number of rows in
+            aperTnServAdm3270SessionTable."
+    ::= { aperTnServAdm3270 6 }
+
+aperTnServAdm3270SessionTableLastChange OBJECT-TYPE
+    SYNTAX    TimeTicks
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "Time stamp of the last time a row was added to or
+            deleted from the 3270 session table.
+            This variable can be used to facilitate
+            monitoring of the 3270 session table."
+    ::= { aperTnServAdm3270 7 }
+
+aperTnServAdm3270SessionTable OBJECT-TYPE
+    SYNTAX    SEQUENCE OF    AperTnServAdm3270SessionEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "Telnet Group Connection Profiles."
+    ::= { aperTnServAdm3270 8 }
+
+aperTnServAdm3270SessionEntry OBJECT-TYPE
+    SYNTAX    AperTnServAdm3270SessionEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "This table contains information for Telnet Group
+            Connection Profiles."
+    INDEX     { aperTnServAdm3270SessionGroupOrUserName,
+                aperTnServAdm3270SessionName }
+    ::= { aperTnServAdm3270SessionTable 1 }
+
+AperTnServAdm3270SessionEntry ::=
+    SEQUENCE {
+        aperTnServAdm3270SessionGroupOrUserName
+            DisplayString,
+        aperTnServAdm3270SessionName
+            DisplayString,
+        aperTnServAdm3270SessionDescription
+            DisplayString,
+        aperTnServAdm3270SessionGroupOrUser
+            INTEGER,
+        aperTnServAdm3270SessionType
+            INTEGER,
+        aperTnServAdm3270SessionModel
+            INTEGER,
+        aperTnServAdm3270SessionDestination
+            DisplayString
+    }
+
+aperTnServAdm3270SessionGroupOrUserName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the user (or group) connection profile for
+            the session defined."
+    ::= { aperTnServAdm3270SessionEntry 1 }
+
+aperTnServAdm3270SessionName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the 3270 session."
+    ::= { aperTnServAdm3270SessionEntry 2 }
+
+aperTnServAdm3270SessionDescription OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "A description of the 3270 session."
+    ::= { aperTnServAdm3270SessionEntry 3 }
+
+aperTnServAdm3270SessionGroupOrUser OBJECT-TYPE
+      SYNTAX  INTEGER { group(1), user(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This value specifies whether the session is a group
+            session, i.e. one available to any user related to that
+            group, or a user session, i.e. defined for a specific
+            user connection profile."
+    ::= { aperTnServAdm3270SessionEntry 4 }
+
+aperTnServAdm3270SessionType OBJECT-TYPE
+      SYNTAX  INTEGER { display(1), printer(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "Specifies the type of 3270 session - terminal vs. printer."
+    ::= { aperTnServAdm3270SessionEntry 5 }
+
+aperTnServAdm3270SessionModel OBJECT-TYPE
+      SYNTAX  INTEGER { model2(1), model3(2), model4(3),
+                        model5(4), dynamic(5) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If the type of session is a terminal, this variable
+            specifies the model number of the 3270 session. dynamic(5)
+            means that the model size will be set by the client."
+    ::= { aperTnServAdm3270SessionEntry 6 }
+
+aperTnServAdm3270SessionDestination OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This string specifies a name or a list of names, which
+            determine the possible destinations for the telnet 3270
+            client. If more than one name is listed, then the actual
+            destination depends on the value of
+            aperTnServAdm3270LoadBalanceMode. For 3270 printers,
+            only one name is allowed.  Examples of possible
+            destination names:
+                DisplayPool1 , DisplayPool2
+                DisplayPool:3
+                PrinterLu"
+    ::= { aperTnServAdm3270SessionEntry 7 }
+
+aperTnServAdm5250DefaultStatusKey OBJECT-TYPE
+    SYNTAX    Tn5250AidKey
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The default 5250 AID key used by clients to
+            display information about the tn5250 session.
+            none(1) indicates that this function is not available."
+    ::= { aperTnServAdm5250 1 }
+
+aperTnServAdm5250DefaultPasswordKey OBJECT-TYPE
+    SYNTAX    Tn5250AidKey
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The default 5250 AID key used by clients to
+            change the password of the Telnet User Connection
+            Profile used by an active tn5250 session.
+            none(1) indicates that this function is not available."
+    ::= { aperTnServAdm5250 2 }
+
+aperTnServAdm5250NumSessions OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of Telnet 5250 display and printer
+            Session Profiles, i.e. the number of rows in
+            aperTnServAdm5250SessionTable."
+    ::= { aperTnServAdm5250 3 }
+
+aperTnServAdm5250SessionTableLastChange OBJECT-TYPE
+    SYNTAX    TimeTicks
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "Time stamp of the last time a row was added to or
+            deleted from the 5250 session table.
+            This variable can be used to facilitate
+            monitoring of the 5250 session table."
+    ::= { aperTnServAdm5250 4 }
+
+aperTnServAdm5250SessionTable OBJECT-TYPE
+    SYNTAX    SEQUENCE OF    AperTnServAdm5250SessionEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "Telnet Group Connection Profiles."
+    ::= { aperTnServAdm5250 5 }
+
+aperTnServAdm5250SessionEntry OBJECT-TYPE
+    SYNTAX    AperTnServAdm5250SessionEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "This table contains information for Telnet Group
+            Connection Profiles."
+    INDEX     { aperTnServAdm5250SessionGroupOrUserName,
+                aperTnServAdm5250SessionName }
+    ::= { aperTnServAdm5250SessionTable 1 }
+
+AperTnServAdm5250SessionEntry ::=
+    SEQUENCE {
+        aperTnServAdm5250SessionGroupOrUserName
+            DisplayString,
+        aperTnServAdm5250SessionName
+            DisplayString,
+        aperTnServAdm5250SessionDescription
+            DisplayString,
+        aperTnServAdm5250SessionGroupOrUser
+            INTEGER,
+        aperTnServAdm5250SessionAutoSignon
+            INTEGER,
+        aperTnServAdm5250SessionRemoteUser
+            DisplayString,
+        aperTnServAdm5250SessionInitialMenu
+            DisplayString,
+        aperTnServAdm5250SessionInitialProgram
+            DisplayString,
+        aperTnServAdm5250SessionInitialLibrary
+            DisplayString,
+        aperTnServAdm5250SessionAutoDeviceConfiguration
+            INTEGER,
+        aperTnServAdm5250SessionVirtualDeviceOrController
+            INTEGER,
+        aperTnServAdm5250SessionVirtualDeviceOrControllerName
+            DisplayString,
+        aperTnServAdm5250SessionDestination
+            DisplayString
+    }
+
+aperTnServAdm5250SessionGroupOrUserName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the user (or group) connection profile for
+            the session defined."
+    ::= { aperTnServAdm5250SessionEntry 1 }
+
+aperTnServAdm5250SessionName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the 5250 session."
+    ::= { aperTnServAdm5250SessionEntry 2 }
+
+aperTnServAdm5250SessionDescription OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "A description of the 5250 session."
+    ::= { aperTnServAdm5250SessionEntry 3 }
+
+aperTnServAdm5250SessionGroupOrUser OBJECT-TYPE
+      SYNTAX  INTEGER { group(1), user(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This value specifies whether the session is a group
+            session, i.e. one available to any user related to that
+            group, or a user session, i.e. defined for a specific
+            user connection profile."
+    ::= { aperTnServAdm5250SessionEntry 4 }
+
+aperTnServAdm5250SessionAutoSignon OBJECT-TYPE
+      SYNTAX  INTEGER { on(1), off(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This variable specifies whether automatic signon
+            is enabled. If it is, then the 5250 passthrough
+            session uses automatic signon. This feature can be
+            used to bypass the initial 5250 signon screen."
+    ::= { aperTnServAdm5250SessionEntry 5 }
+
+aperTnServAdm5250SessionRemoteUser OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If automatic signon is enabled, this variables specifies
+            the name of the 5250 user as defined on the remote system."
+    ::= { aperTnServAdm5250SessionEntry 6 }
+
+aperTnServAdm5250SessionInitialMenu OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If automatic signon is enabled, this variables specifies
+            the name of the 5250 initial menu on the remote system."
+    ::= { aperTnServAdm5250SessionEntry 7 }
+
+aperTnServAdm5250SessionInitialProgram OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If automatic signon is enabled, this variables specifies
+            the name of the 5250 initial program on the remote system."
+    ::= { aperTnServAdm5250SessionEntry 8 }
+
+aperTnServAdm5250SessionInitialLibrary OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If automatic signon is enabled, this variables specifies
+            the name of the 5250 initial library on the remote system."
+    ::= { aperTnServAdm5250SessionEntry 9 }
+
+aperTnServAdm5250SessionAutoDeviceConfiguration OBJECT-TYPE
+      SYNTAX  INTEGER { on(1), off(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "Specifies whether 5250 passthrough automatic device
+            configuration is supported on the 5250 system that to
+            which the telnet client is connecting. If the value is off(2),
+            then the name of the controller to be used will be
+            specified in this row as well."
+    ::= { aperTnServAdm5250SessionEntry 10 }
+
+aperTnServAdm5250SessionVirtualDeviceOrController OBJECT-TYPE
+      SYNTAX  INTEGER { device(1), controller(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If automatic device configuration is not supported for
+            this 5250 session, then this variable specifies whether
+            the supplied name is a device name or a controller name."
+    ::= { aperTnServAdm5250SessionEntry 11 }
+
+aperTnServAdm5250SessionVirtualDeviceOrControllerName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If automatic device configuration is not supported for
+            this 5250 session, then this variable specifies the name
+            of the device or controller."
+    ::= { aperTnServAdm5250SessionEntry 12 }
+
+
+aperTnServAdm5250SessionDestination OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This string specifies a name or a list of names, which
+            determine the possible destinations for the telnet 5250
+            client. If more than one name is listed, then the actual
+            destination chosen will be the first symbolic destination
+            name in the list with a free session."
+    ::= { aperTnServAdm5250SessionEntry 13 }
+
+
+--  Operations Group
+
+aperTnServOperStatus OBJECT-TYPE
+    SYNTAX   INTEGER {  ready(1), loading(2), draining(3), down(4) }
+    ACCESS   read-only
+    STATUS   mandatory
+    DESCRIPTION
+           "Status of the TNSERVER. Currently this value is read-only.
+            When sets are supported, this variable will be used
+            to change the state of the server."
+    ::= { aperTnServOperGen 1 }
+
+aperTnServOperActiveSessions OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "Number of SNA sessions currently active. In particular,
+            it is the number of 3270 LU's assigned to devices
+            plus the number of LU6.2 LU-LU sessions."
+    ::= { aperTnServOperGen 2 }
+
+aperTnServOperUpTime OBJECT-TYPE
+    SYNTAX    TimeTicks
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "This value represents the time elapsed since the server
+            was started in units of 1/100th of a second."
+    ::= { aperTnServOperGen 3 }
+
+aperTnServOperConnsNumActive OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of active 3270 and 5250 telnet connections,
+            i.e. the number of rows in aperTnServOperConnsTable."
+    ::= { aperTnServOperConns 1 }
+
+aperTnServOperConnsTableLastChange OBJECT-TYPE
+    SYNTAX    TimeTicks
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "Time stamp of the last time a row was added to or
+            deleted from the connection table.
+            This variable can be used to facilitate
+            monitoring of the connection table."
+    ::= { aperTnServOperConns 2 }
+
+aperTnServOperConnsTable OBJECT-TYPE
+    SYNTAX    SEQUENCE OF    AperTnServOperConnsEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "Connection information broken down by client IP address
+            and client port number."
+    ::= { aperTnServOperConns 3 }
+
+aperTnServOperConnsEntry OBJECT-TYPE
+    SYNTAX    AperTnServOperConnsEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "This table contains connection information for client
+            IP and port."
+    INDEX     { aperTnServOperConnsClientIP,
+               aperTnServOperConnsClientPort }
+    ::= { aperTnServOperConnsTable 1 }
+
+AperTnServOperConnsEntry ::=
+    SEQUENCE {
+        aperTnServOperConnsClientIP
+            IpAddress,
+        aperTnServOperConnsClientPort
+            INTEGER,
+        aperTnServOperConnsServerPort
+            INTEGER,
+        aperTnServOperConnsType
+            INTEGER,
+        aperTnServOperConnsAppcSessId
+            INTEGER,
+        aperTnServOperConnsAlsName
+            DisplayString,
+        aperTnServOperConnsLuNumber
+            INTEGER,
+        aperTnServOperConnsState
+            INTEGER,
+        aperTnServOperConnsUpTime
+            TimeTicks,
+        aperTnServOperConnsInactivityLimit
+            INTEGER,
+        aperTnServOperConnsTimeSinceLastEvent
+            TimeTicks,
+        aperTnServOperConnsDeviceName
+            DisplayString,
+        aperTnServOperConnsUserName
+            DisplayString,
+        aperTnServOperConnsSessionName
+            DisplayString,
+        aperTnServOperConnsBytesOutbound
+            Counter,
+        aperTnServOperConnsBytesInbound
+            Counter
+        }
+
+aperTnServOperConnsClientIP OBJECT-TYPE
+      SYNTAX  IpAddress
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The IP address of the telnet client."
+    ::= { aperTnServOperConnsEntry 1 }
+
+aperTnServOperConnsClientPort OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The TCP port of the telnet client."
+    ::= { aperTnServOperConnsEntry 2 }
+
+aperTnServOperConnsServerPort OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The TCP port of the TNSERVER which this client connected
+            to."
+    ::= { aperTnServOperConnsEntry 3 }
+
+aperTnServOperConnsType OBJECT-TYPE
+      SYNTAX  INTEGER { tn3270(1), tn5250(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This variable identifies the socket as either a telnet
+            3270 or telnet 5250 session."
+    ::= { aperTnServOperConnsEntry 4 }
+
+aperTnServOperConnsAppcSessId OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If this is a telnet 5250 session, then this variable
+            identifies the APPC session used for the 5250 passthrough
+            session. This value is valid only if the state of the
+            session is active."
+    ::= { aperTnServOperConnsEntry 5 }
+
+aperTnServOperConnsAlsName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If this is a telnet 3270 session, then this variable
+            identifies which SNA link station the session is active on.
+            This information, as well as the LU number,
+            is used to identify which particular 3270 session a
+            telnet connection is assigned. This value is valid only
+            if the state of the session is active."
+    ::= { aperTnServOperConnsEntry 6 }
+
+aperTnServOperConnsLuNumber OBJECT-TYPE
+      SYNTAX  INTEGER ( 1..255 )
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If this is a telnet 3270 session, then this variable
+            identifies the SNA LU number of the 3270 session.
+            This information, as well as the ALS name,
+            is used to identify which particular 3270 session a
+            telnet connection is assigned. This value is valid only
+            if the state of the session is active."
+    ::= { aperTnServOperConnsEntry 7 }
+
+aperTnServOperConnsState OBJECT-TYPE
+      SYNTAX  INTEGER { connecting(1),
+                        negotiating(2),
+                        menu(3),
+                        reserving(4),
+                        sessionpending(5),
+                        active(6),
+                        disconnecting(7),
+                        other(8) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The state of the telnet connection:
+                connecting(1)           Server has received TCP call packet
+                negotiating(2)          Server and client are negotiating
+                                            Telnet options
+                menu(3)                 Server is presenting menu's to
+                                            client to determine destination
+                reserving(4)            Server is reserving a free 3270 LU
+                sessionpending(5)       Server is waiting for APPC session
+                                            allocation
+                active(6)               Telnet client is connected to
+                                            remote application
+                disconnecting(7)        Server is closing TCP socket
+                other(8)                State is not one of the above"
+    ::= { aperTnServOperConnsEntry 8 }
+
+aperTnServOperConnsUpTime OBJECT-TYPE
+      SYNTAX  TimeTicks
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "How long this telnet connection has existed."
+    ::= { aperTnServOperConnsEntry 9 }
+
+aperTnServOperConnsInactivityLimit OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The inactivity limit of the telnet connection. This
+            value specifies how long in minutes to allow a quiescent
+            session, i.e. one with no data stream events, to be
+            connected before the server will bring it down."
+    ::= { aperTnServOperConnsEntry 10 }
+
+aperTnServOperConnsTimeSinceLastEvent OBJECT-TYPE
+      SYNTAX  TimeTicks
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The time expired since last datastream event was seen by
+            the Telnet server for this telnet connection, in units of
+            1/100th of a second."
+    ::= { aperTnServOperConnsEntry 11 }
+
+aperTnServOperConnsDeviceName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The device name associated with the telnet session. For a
+            3270 display, this name is of the form <LuPool>:<LuNumber>.
+            For a 3270 printer it is <PrinterLU>. For a 5250 session,
+            it is the name of the symbolic destination."
+    ::= { aperTnServOperConnsEntry 12 }
+
+aperTnServOperConnsUserName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the Telnet User Connection Profile identified
+            by the client when a telnet session was requested. This
+            name is undefined if the session was named via destination,
+            i.e. LU name or SymbolicDestination."
+    ::= { aperTnServOperConnsEntry 13 }
+
+aperTnServOperConnsSessionName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the Session Definition identified
+            by the client, or picked by the TNSERVER, when a telnet
+            session was requested. This name is undefined if the session
+            was named via destination, i.e. LU name or
+            SymbolicDestination."
+    ::= { aperTnServOperConnsEntry 14 }
+
+aperTnServOperConnsBytesOutbound OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This value indicates the number of bytes received by
+            the Telnet Server from the remote 3270 or 5250 application."
+    ::= { aperTnServOperConnsEntry 15 }
+
+aperTnServOperConnsBytesInbound OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This value indicates the number of bytes transmitted by
+            the Telnet Server to the remote 3270 or 5250 application."
+    ::= { aperTnServOperConnsEntry 16 }
+
+aperTnServOper3270NumActive OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of active 3270 LU's."
+    ::= { aperTnServOper3270 1 }
+
+aperTnServOper3270Table OBJECT-TYPE
+    SYNTAX    SEQUENCE OF    AperTnServOper3270Entry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "SNA session information for 3270 LU's."
+    ::= { aperTnServOper3270 2 }
+
+aperTnServOper3270Entry OBJECT-TYPE
+    SYNTAX    AperTnServOper3270Entry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "This table contains 3270 LU information."
+    INDEX   { aperTnServOper3270AlsName, aperTnServOper3270LuNumber}
+    ::= { aperTnServOper3270Table 1 }
+
+AperTnServOper3270Entry ::=
+    SEQUENCE {
+            aperTnServOper3270AlsName
+                    DisplayString,
+            aperTnServOper3270LuNumber
+                    INTEGER,
+            aperTnServOper3270ClientIP
+                    IpAddress,
+            aperTnServOper3270ClientPort
+                    INTEGER,
+            aperTnServOper3270LuType
+                    INTEGER,
+            aperTnServOper3270LuState
+                    INTEGER,
+            aperTnServOper3270SscpLuState
+                    INTEGER,
+            aperTnServOper3270LuLuState
+                    INTEGER,
+            aperTnServOper3270KeyboardLock
+                    INTEGER,
+            aperTnServOper3270ModelNumber
+                    INTEGER,
+            aperTnServOper3270NetworkQualifiedSluName
+                    DisplayString,
+            aperTnServOper3270AssociatedPrinter
+                    DisplayString
+        }
+
+aperTnServOper3270AlsName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This variable identifies which SNA link station the
+            session is active on."
+    ::= { aperTnServOper3270Entry 1 }
+
+aperTnServOper3270LuNumber OBJECT-TYPE
+      SYNTAX  INTEGER ( 1..255 )
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This variable identifies the SNA LU number of the 3270
+            session."
+    ::= { aperTnServOper3270Entry 2 }
+
+aperTnServOper3270ClientIP OBJECT-TYPE
+      SYNTAX  IpAddress
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The IP address of the telnet client."
+    ::= { aperTnServOper3270Entry 3 }
+
+aperTnServOper3270ClientPort OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The TCP port of the telnet client."
+    ::= { aperTnServOper3270Entry 4 }
+
+aperTnServOper3270LuType OBJECT-TYPE
+      SYNTAX  INTEGER { display(1), printer(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The type of 3270 LU."
+    ::= { aperTnServOper3270Entry 5 }
+
+aperTnServOper3270LuState OBJECT-TYPE
+      SYNTAX  INTEGER { other(1), enabled(2), connected(3) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The state of the 3270 LU. enabled(2) means that the
+            LU is configured and enabled on the server, connected(3)
+            means it is enabled and connected to some client."
+    ::= { aperTnServOper3270Entry 6 }
+
+aperTnServOper3270SscpLuState OBJECT-TYPE
+      SYNTAX  INTEGER { active(1), inactive(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The state of the SSCP-LU session. active(1) means
+            that an ACTLU, +RSP(ACTLU) has been exchanged."
+    ::= { aperTnServOper3270Entry 7 }
+
+aperTnServOper3270LuLuState OBJECT-TYPE
+      SYNTAX  INTEGER { active(1), inactive(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The state of the LU-LU session. active(1) means
+            that a BIND, +RSP(BIND) has been exchanged."
+    ::= { aperTnServOper3270Entry 8 }
+
+aperTnServOper3270KeyboardLock OBJECT-TYPE
+      SYNTAX  INTEGER { locked(1), unlocked(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This field indicates if the keyboard has been locked as
+            per a 3270 status line.  If the system or connection does
+            not support keyboard lock, the entry will be unlocked(2)."
+    ::= { aperTnServOper3270Entry 9 }
+
+aperTnServOper3270NetworkQualifiedSluName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This is the network qualified name of the secondary LU,
+            if known. This variable may be null if SLU name is
+            not included in the BIND which established the LU-LU
+            session."
+    ::= { aperTnServOper3270Entry 10 }
+
+aperTnServOper3270ModelNumber OBJECT-TYPE
+      SYNTAX  INTEGER { model2(1), model3(2), model4(3), model5(4) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If the type of LU is display, then this variable
+            specifies the type of terminal in regard
+            to screen sizes."
+    ::= { aperTnServOper3270Entry 11 }
+
+aperTnServOper3270AssociatedPrinter OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS       read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "If the type of LU is display, then this variable
+            specifies the 3270 printer LU, if any, that is associated
+            with the display."
+    ::= { aperTnServOper3270Entry 12 }
+
+aperTnServOper5250NumActive OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of active 5250 sessions."
+    ::= { aperTnServOper5250 1 }
+
+aperTnServOper5250TableLastChange OBJECT-TYPE
+    SYNTAX    TimeTicks
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "Time stamp of the last time a row was added to or
+            deleted from the 5250 session table.
+            This variable can be used to facilitate
+            monitoring of the 5250 session table."
+    ::= { aperTnServOper5250 2 }
+
+aperTnServOper5250Table OBJECT-TYPE
+    SYNTAX    SEQUENCE OF    AperTnServOper5250Entry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "SNA session information for 5250 sessions."
+    ::= { aperTnServOper5250 3 }
+
+aperTnServOper5250Entry OBJECT-TYPE
+    SYNTAX    AperTnServOper5250Entry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "This table contains 5250 session information."
+    INDEX   { aperTnServOper5250AppcSessId }
+    ::= { aperTnServOper5250Table 1 }
+
+AperTnServOper5250Entry ::=
+    SEQUENCE {
+            aperTnServOper5250AppcSessId
+                    INTEGER,
+            aperTnServOper5250ClientPort
+                    INTEGER,
+            aperTnServOper5250ClientIP
+                    IpAddress,
+            aperTnServOper5250AlsName
+                    DisplayString,
+            aperTnServOper5250SymbolicDestination
+                    DisplayString,
+            aperTnServOper5250LocalLuName
+                    DisplayString,
+            aperTnServOper5250RemoteLuName
+                    DisplayString,
+            aperTnServOper5250ModeName
+                    DisplayString,
+            aperTnServOper5250KeyboardLock
+                    INTEGER
+        }
+
+
+aperTnServOper5250AppcSessId OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This variable identifies the APPC session used for the 5250
+            passthrough session."
+    ::= { aperTnServOper5250Entry 1 }
+
+aperTnServOper5250ClientIP OBJECT-TYPE
+      SYNTAX  IpAddress
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The IP address of the telnet client."
+    ::= { aperTnServOper5250Entry 2 }
+
+aperTnServOper5250ClientPort OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The TCP port of the telnet client."
+    ::= { aperTnServOper5250Entry 3 }
+
+aperTnServOper5250AlsName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the SNA link station over which the
+            session is active."
+    ::= { aperTnServOper5250Entry 4 }
+
+aperTnServOper5250SymbolicDestination OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the CPIC symbolic destination used for
+            the 5250 passthrough session allocation."
+    ::= { aperTnServOper5250Entry 5 }
+
+aperTnServOper5250LocalLuName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the local LU being used for the 5250
+            passthrough session."
+    ::= { aperTnServOper5250Entry 6 }
+
+aperTnServOper5250RemoteLuName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the remote LU being used for the 5250
+            passthrough session. This typically identifies the 5250
+            system where the user's applications are running."
+    ::= { aperTnServOper5250Entry 7 }
+
+aperTnServOper5250ModeName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "The name of the APPC mode being used for the 5250
+            passthrough session."
+    ::= { aperTnServOper5250Entry 8 }
+
+aperTnServOper5250KeyboardLock OBJECT-TYPE
+      SYNTAX  INTEGER { locked(1), unlocked(2) }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+           "This field indicates if the keyboard has been locked as
+            per a 5250 status line.  If the system or connection does
+            not support keyboard lock, the value is unlocked(2)."
+    ::= { aperTnServOper5250Entry 9 }
+
+
+--  Statistics Group
+
+aperTnServRtmSupport OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates whether RTM is supported or not.
+            If this value is off, all the following RTM values are not
+            visible to an snmp manager."
+    ::= { aperTnServRtm 1 }
+
+aperTnServRtmDefaultState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates whether RTM is initially on or
+            off when a row in the RtmTable is created."
+    ::= { aperTnServRtm 2 }
+
+aperTnServRtmDefaultControl OBJECT-TYPE
+    SYNTAX  INTEGER { host(1), local(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This is the initial value of the control when an ALS
+            is activated, which determines whether the host or the
+            tnserver controls write access to the values in the RtmTable.
+            If controlled by host, the ability to clear the counters and
+            change the boundary values is set by the HOST. If locally
+            controlled, requests from the host to control the RTM state and
+            parameters are rejected by the tnserver. If this value is
+            changed while an ALS is active, the ALS will need to be
+            stopped and then restarted for the new value to take effect
+            for that ALS."
+    ::= { aperTnServRtm 3 }
+
+aperTnServRtmDefaultLocalDisplay OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates whether RTM statistics can be
+            displayed locally. If local display is supported, the
+            Telnet Server is allowed to display RTM statistics
+            in the 3270 session status screen."
+    ::= { aperTnServRtm 4 }
+
+aperTnServRtmDefaultDef OBJECT-TYPE
+    SYNTAX  INTEGER { firstChar(1), kb(2), cdeb(3) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This is the initial value of the
+            the mode of measurement for RTM requests.
+            The values have following meaning:
+              firstChar(1) - time to first character on screen
+              kb(2) - time to keyboard usable by operator
+              cdeb(3) - time to Change Direction/End Bracket."
+    ::= { aperTnServRtm 5 }
+
+aperTnServRtmDefaultMeasureTcpIpTime OBJECT-TYPE
+    SYNTAX  INTEGER {yes(1), no(2)}
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "The initial value of whether the transaction measurement
+            of newly created entries in the RtmTable should include
+            TCP/IP timings."
+    ::= { aperTnServRtm 6 }
+
+aperTnServRtmDefaultMeasureSnaTime OBJECT-TYPE
+    SYNTAX  INTEGER {yes(1), no(2)}
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "The initial value of whether the transaction measurement
+            of newly created entries in the RtmTable should include
+            SNA timings."
+    ::= { aperTnServRtm 7 }
+
+aperTnServRtmDefaultSamplingFactor OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The initial value of fraction of transactions that
+            should be timed when a new entry is created in the
+            RtmTable.  To avoid LAN congestion when TCP/IP timings
+            are included, this value allows the management
+            station to control the number of transactions timed.
+            1 means every transaction, 2 means every other
+            transaction, 3 means every third transaction, etc."
+    ::= { aperTnServRtm 8 }
+
+aperTnServRtmDefaultNumberOfBoundaries OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The initial value of the number of RTM boundaries
+            utilized for newly created entries in the RtmTable.
+            At least one RTM boundary must be specified so
+            the range of this variable is 1-4.
+
+			Writing this value causes the default boundary values
+			to be validated and committed.  If the values previously
+			written for aperTnServRtmDefaultBoundary1, etc. are
+			found to be incompatible with each other,  no commit
+			is done, and the buffered(ie. previously written)
+			values are dropped."
+    ::= { aperTnServRtm 9 }
+
+aperTnServRtmDefaultBoundary1 OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The initial value of the first boundary
+            in units of 1/10th of a second for newly created
+            entries in the RtmTable.
+			
+			The value written to this variable is not committed until
+			aperTnServRtmDefaultNumberOfBoundaries is written, at
+			which time all DefaultBoundary values are validated
+			and confirmed to be in strictly increasing order."
+    ::= { aperTnServRtm 10 }
+
+aperTnServRtmDefaultBoundary2 OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The initial value of the second boundary
+            in units of 1/10th of a second for newly created
+            entries in the RtmTable.
+			
+			The value written to this variable is not committed until
+			aperTnServRtmDefaultNumberOfBoundaries is written, at
+			which time all DefaultBoundary values are validated
+			and confirmed to be in strictly increasing order."
+    ::= { aperTnServRtm 11 }
+
+aperTnServRtmDefaultBoundary3 OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The initial value of the third boundary
+            in units of 1/10th of a second for newly created
+            entries in the RtmTable.
+			
+			The value written to this variable is not committed until
+			aperTnServRtmDefaultNumberOfBoundaries is written, at
+			which time all DefaultBoundary values are validated
+			and confirmed to be in strictly increasing order."
+    ::= { aperTnServRtm 12 }
+
+aperTnServRtmDefaultBoundary4 OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The initial value of the fourth boundary
+            in units of 1/10th of a second for newly created
+            entries in the RtmTable.
+			
+			The value written to this variable is not committed until
+			aperTnServRtmDefaultNumberOfBoundaries is written, at
+			which time all DefaultBoundary values are validated
+			and confirmed to be in strictly increasing order."
+    ::= { aperTnServRtm 13 }
+
+aperTnServRtmDefaultThresholdTrigger OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The default transaction time, in units of 1/10th of a second,
+            which will cause a SNMP trap indicating excessive
+            response time to the manager if the average transaction
+            time exceeds this value."
+    ::= { aperTnServRtm 14 }
+
+aperTnServRtmDefaultThresholdTriggerState OBJECT-TYPE
+    SYNTAX    INTEGER { on(1), off(2) }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The default setting that will determine if the excessive
+            transaction time SNMP trap is enabled when an entry in the
+            RTM table is created."
+    ::= { aperTnServRtm 15 }
+
+aperTnServRtmDefaultCounterOverflowTriggerState OBJECT-TYPE
+    SYNTAX    INTEGER { on(1), off(2) }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The default setting that will determine if a transaction
+            counter overflow SNMP trap is enabled when an entry in the
+            RTM table is created."
+    ::= { aperTnServRtm 16 }
+
+aperTnServRtmDefaultCounterOverflowHostAlert OBJECT-TYPE
+    SYNTAX    INTEGER { on(1), off(2) }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The default setting that will determine if an
+            unsolicited host alert is generated when a transaction
+            counter overflows."
+    ::= { aperTnServRtm 17 }
+
+aperTnServRtmDefaultUnbindTriggerState OBJECT-TYPE
+    SYNTAX    INTEGER { on(1), off(2) }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The default setting that will determine whether the RTM
+            unbind SNMP trap will be enabled when an entry in the RTM
+            table is created."
+    ::= { aperTnServRtm 18 }
+
+aperTnServRtmDefaultUnbindHostAlert OBJECT-TYPE
+    SYNTAX    INTEGER { on(1), off(2) }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The default setting that will determine if an
+            unsolicited host alert is generated when an unbind
+            is received."
+    ::= { aperTnServRtm 19 }
+
+aperTnServRtmNumActive OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of active RTM entries."
+    ::= { aperTnServRtm 20 }
+
+aperTnServRtmTable OBJECT-TYPE
+    SYNTAX    SEQUENCE OF AperTnServRtmEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "SNA RTM information for 3270 display LU's."
+    ::= { aperTnServRtm 21 }
+
+aperTnServRtmEntry OBJECT-TYPE
+    SYNTAX    AperTnServRtmEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+           "This table contains RTM information."
+    INDEX   { aperTnServRtmAlsName, aperTnServRtmLuNumber}
+    ::= { aperTnServRtmTable 1 }
+
+AperTnServRtmEntry ::=
+    SEQUENCE {
+            aperTnServRtmAlsName
+                    DisplayString,
+            aperTnServRtmLuNumber
+                    INTEGER,
+            aperTnServRtmClientIP
+                    IpAddress,
+            aperTnServRtmClientPort
+                    INTEGER,
+            aperTnServRtmState
+                    INTEGER,
+            aperTnServRtmLocalDisplay
+                    INTEGER,
+            aperTnServRtmUpTime
+                    TimeTicks,
+            aperTnServRtmDef
+                    INTEGER,
+            aperTnServRtmMeasureTcpIpTime
+                    INTEGER,
+            aperTnServRtmMeasureSnaTime
+                    INTEGER,
+            aperTnServRtmSamplingFactor
+                    INTEGER,
+            aperTnServRtmNumberOfBoundaries
+                    INTEGER,
+            aperTnServRtmBoundary1
+                    INTEGER,
+            aperTnServRtmBoundary2
+                    INTEGER,
+            aperTnServRtmBoundary3
+                    INTEGER,
+            aperTnServRtmBoundary4
+                    INTEGER,
+            aperTnServRtmCounter1
+                    Counter,
+            aperTnServRtmCounter2
+                    Counter,
+            aperTnServRtmCounter3
+                    Counter,
+            aperTnServRtmCounter4
+                    Counter,
+            aperTnServRtmOverFlows
+                    Counter,
+            aperTnServRtmThresholdTrigger
+                    INTEGER,
+            aperTnServRtmThresholdTriggerState
+                    INTEGER,
+            aperTnServRtmCounterOverflowed
+                    INTEGER,
+            aperTnServRtmCounterOverflowTriggerState
+                    INTEGER,
+            aperTnServRtmCounterOverflowHostAlert
+                    INTEGER,
+            aperTnServRtmUnbindTriggerState
+                    INTEGER,
+            aperTnServRtmUnbindHostAlert
+                    INTEGER,
+            aperTnServRtmNumTrans
+                    INTEGER,
+            aperTnServRtmTotalRspTime
+                    INTEGER,
+            aperTnServRtmLastRspTime
+                    INTEGER,
+            aperTnServRtmAvgRspTime
+                    INTEGER,
+            aperTnServRtmMinRspTime
+                    INTEGER,
+            aperTnServRtmMaxRspTime
+                    INTEGER,
+            aperTnServRtmTotalSnaRspTime
+                    INTEGER,
+            aperTnServRtmAvgSnaRspTime
+                    INTEGER,
+            aperTnServRtmNumTcpIpSamples
+                    INTEGER,
+            aperTnServRtmTotalTcpIpRspTime
+                    INTEGER,
+            aperTnServRtmAvgTcpIpRspTime
+                    INTEGER,
+            aperTnServRtmLastThinkTime
+                    INTEGER,
+            aperTnServRtmAvgThinkTime
+                    INTEGER
+    }
+
+aperTnServRtmAlsName    OBJECT-TYPE
+    SYNTAX  DisplayString
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The name of the link station."
+    ::= { aperTnServRtmEntry 1 }
+
+aperTnServRtmLuNumber   OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The number of the LU."
+    ::= { aperTnServRtmEntry 2 }
+
+aperTnServRtmClientIP OBJECT-TYPE
+    SYNTAX  IpAddress
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The IP address of the telnet client."
+    ::= { aperTnServRtmEntry 3 }
+
+aperTnServRtmClientPort OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The TCP port number of the telnet client."
+    ::= { aperTnServRtmEntry 4 }
+
+aperTnServRtmState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "The value indicates RTM is enabled or disabled for a particular
+            LU."
+    ::= { aperTnServRtmEntry 5 }
+
+aperTnServRtmLocalDisplay OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates whether RTM statistics can be
+            displayed locally at the client's workstation."
+    ::= { aperTnServRtmEntry 6 }
+
+aperTnServRtmUpTime  OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value represents the time elapsed since the
+            RTM state was changed from off to on for this LU in units of
+            1/100th of a second. If the state of RTM is off, the value
+            of this variable will be zero."
+    ::= { aperTnServRtmEntry 7 }
+
+aperTnServRtmDef OBJECT-TYPE
+    SYNTAX  INTEGER {
+            firstChar(1),
+            kb(2),
+            cdeb(3)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+            "The value indicates the mode of measurement for this
+            RTM request.  The values have following meaning:
+              firstChar(1) - time to first character on screen
+              kb(2) - time to keyboard usable by operator
+              cdeb(3) - time to Change Direction/End Bracket."
+    ::= { aperTnServRtmEntry 8 }
+
+aperTnServRtmMeasureTcpIpTime OBJECT-TYPE
+    SYNTAX  INTEGER {yes(1), no(2)}
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "Should transaction measurement include TCP/IP timings?"
+    ::= { aperTnServRtmEntry 9 }
+
+aperTnServRtmMeasureSnaTime OBJECT-TYPE
+    SYNTAX  INTEGER {yes(1), no(2)}
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "Should transaction measurement include SNA timings?"
+    ::= { aperTnServRtmEntry 10 }
+
+aperTnServRtmSamplingFactor OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "The fraction of transactions that should be timed.
+            To avoid LAN congestion when TCP/IP timings
+            are included, this value allows the management
+            station to control the number of transactions timed.
+            1 means every transaction, 2 means every other
+            transaction, 3 means every third transaction, etc."
+    ::= { aperTnServRtmEntry 11 }
+
+aperTnServRtmNumberOfBoundaries OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of RTM boundaries utilized by the LU.
+            At least one RTM boundary must be specified so
+            the range of this variable is 1-4.
+
+			Writing this variable causes the RtmBoundary values for
+			the LU previously written by the management station
+			to be validated and confirmed to be in strictly 
+			increasing order.  If validation is successful, the
+			new boundary values are written to the kernel, causing
+			the current RTM counters to be reset.  If validation
+			is unsuccessful, the buffered values are dropped and
+			not written to the kernel."
+
+    ::= { aperTnServRtmEntry 12 }
+
+aperTnServRtmBoundary1 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the first boundary
+            in units of 1/10th of a second. Setting this value also causes
+            counters for this LU to be reset.
+
+			The value written to this variable is not committed until
+			aperTnServRtmNumberOfBoundaries is written, at which 
+			time all Boundary values are validated and confirmed 
+			to be in strictly increasing order."
+    ::= { aperTnServRtmEntry 13 }
+
+aperTnServRtmBoundary2 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the second boundary
+            in units of 1/10th of a second. Setting this value also causes
+            counters for this LU to be reset.
+
+			The value written to this variable is not committed until
+			aperTnServRtmNumberOfBoundaries is written, at which 
+			time all Boundary values are validated and confirmed 
+			to be in strictly increasing order."
+    ::= { aperTnServRtmEntry 14 }
+
+aperTnServRtmBoundary3 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the third boundary
+            in units of 1/10th of a second. Setting this value also causes
+            counters for this LU to be reset.
+
+			The value written to this variable is not committed until
+			aperTnServRtmNumberOfBoundaries is written, at which 
+			time all Boundary values are validated and confirmed 
+			to be in strictly increasing order."
+    ::= { aperTnServRtmEntry 15 }
+
+aperTnServRtmBoundary4 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the fourth boundary
+            in units of 1/10th of a second. Setting this value also causes
+            counters for this LU to be reset.
+
+			The value written to this variable is not committed until
+			aperTnServRtmNumberOfBoundaries is written, at which 
+			time all Boundary values are validated and confirmed 
+			to be in strictly increasing order."
+    ::= { aperTnServRtmEntry 16 }
+
+aperTnServRtmCounter1 OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            fall in the range specified by the first boundary. When
+            aperTnServRtmNumTrans is set to zero, this counter is
+			reset."
+    ::= { aperTnServRtmEntry 17 }
+
+aperTnServRtmCounter2 OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            fall in the range specified by the second boundary. When
+            aperTnServRtmNumTrans is set to zero, this counter is
+			reset."
+    ::= { aperTnServRtmEntry 18 }
+
+aperTnServRtmCounter3 OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            fall in the range specified by the third boundary. When
+            aperTnServRtmNumTrans is set to zero, this counter is
+			reset."
+    ::= { aperTnServRtmEntry 19 }
+
+aperTnServRtmCounter4 OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            fall in the range specified by the fourth boundary. When
+            aperTnServRtmNumTrans is set to zero, this counter is
+			reset."
+    ::= { aperTnServRtmEntry 20 }
+
+aperTnServRtmOverFlows OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            exceed the highest range specified by the
+            boundaries. When aperTnServRtmNumTrans is set to zero, 
+			this counter is reset."
+    ::= { aperTnServRtmEntry 21 }
+
+aperTnServRtmThresholdTrigger OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the threshold of average response
+            time. If the transaction time being monitored exceeds
+            this value and aperTnServRtmThresholdTriggerState is
+            on(1), then an excessive response time trap will be
+            generated to the manager. Once a trap has been generated,
+            the trigger is disabled and must be re-enabled by
+            the SNMP management station."
+   ::= { aperTnServRtmEntry 22 }
+
+aperTnServRtmThresholdTriggerState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+          "If this value is on(1), then whenever the average response
+           for this LU exceeds aperTnServRtmThresholdTrigger, then an
+           excessive response time trap will be generated to the
+           manage. This causes the state to become off(2). The management
+            station must reset this trigger in order to rearm this trap."
+    ::= { aperTnServRtmEntry 23 }
+
+aperTnServRtmCounterOverflowed OBJECT-TYPE
+    SYNTAX  INTEGER { yes(1), no(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates whether any of the five transaction
+            counters have reached their maximum value. This variable can
+            be reset by setting aperTnServRtmNumTrans to zero."
+    ::= { aperTnServRtmEntry 24 }
+
+aperTnServRtmCounterOverflowTriggerState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "If this value is on(1), then whenever a transaction counter
+            overflows, a counter overflow trap is generated to the
+            management station.."
+    ::= { aperTnServRtmEntry 25 }
+
+aperTnServRtmCounterOverflowHostAlert OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The setting determines if an unsolicited host alert is
+            generated when a transaction counter overflows."
+    ::= { aperTnServRtmEntry 26 }
+
+aperTnServRtmUnbindTriggerState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "If this value is on(1), then whenever an unbind on a session
+            with RTM enabled occurs, a session unbound trap is generated
+            to the management station. "
+    ::= { aperTnServRtmEntry 27 }
+
+aperTnServRtmUnbindHostAlert OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The setting determines if an unsolicited host alert
+            is generated when an unbind is received."
+    ::= { aperTnServRtmEntry 28 }
+
+aperTnServRtmNumTrans OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the total number of transactions
+            monitored. This value can be set to zero only, which will also
+            cause all counters and the counter overflow flag to be reset."
+    ::= { aperTnServRtmEntry 29 }
+
+aperTnServRtmTotalRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the sum of the response times for all
+            transactions, in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 30 }
+
+aperTnServRtmLastRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the response time for the last
+            transaction in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 31 }
+
+aperTnServRtmAvgRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the average response time for all
+            transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 32 }
+
+aperTnServRtmMinRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The minimum response time in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 33 }
+
+aperTnServRtmMaxRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The maximum response time in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 34 }
+
+
+--  The next set of values are useful when both TCP/IP and SNA time are
+--  being measured. They give some indication of the relative delays
+--  between the networks:
+--
+--  aperTnServRtmTotalTcpIpRspTime =
+--      aperTnServRtmNumTcpIpSamples * aperTnServRtmAvgTcpIpRspTime
+--
+--  aperTnServRtmAvgRspTime =
+--      aperTnServRtmAvgSnaRspTime + aperTnServRtmAvgTcpIpRspTime
+
+aperTnServRtmTotalSnaRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The SNA component of sum of the response times
+            for all transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 35 }
+
+aperTnServRtmAvgSnaRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The SNA component of the average response time
+            for all transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 36 }
+
+aperTnServRtmNumTcpIpSamples OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of transaction for which TCP/IP measurements were
+            supplied."
+    ::= { aperTnServRtmEntry 37 }
+
+aperTnServRtmTotalTcpIpRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The TCP/IP component of sum of the response times
+            for all transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 38 }
+
+aperTnServRtmAvgTcpIpRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The TCP/IP component of the average response time
+            for all transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmEntry 39 }
+
+aperTnServRtmLastThinkTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The time between the end of the penultimate transaction
+            and the beginning of the last transaction, in units of
+            1/10th of a second. This gives an indication of how long
+            the user took to think about the transaction before
+            executing it."
+    ::= { aperTnServRtmEntry 40 }
+
+aperTnServRtmAvgThinkTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The average time *between* transactions, in units of 1/10th
+            of a second, during which the user was thinking."
+    ::= { aperTnServRtmEntry 41 }
+
+aperTnServRtmMaxHist OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+           "The maximum number of history entries in the Rtm History
+            Table"
+    ::= { aperTnServRtm 22 }
+
+aperTnServRtmNumHist OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The actual number of history entries in the Rtm History
+            Table"
+    ::= { aperTnServRtm 23 }
+
+aperTnServRtmLastHist OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The time when the latest entry was created in the Rtm
+            History Table"
+    ::= { aperTnServRtm 24 }
+
+aperTnServRtmHistTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF    AperTnServRtmEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+           "SNA RTM information for 3270 display LU's."
+    ::= { aperTnServRtm 25 }
+
+aperTnServRtmHistEntry OBJECT-TYPE
+    SYNTAX  AperTnServRtmHistEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+           "This table contains RTM historical information."
+    INDEX   { aperTnServRtmHistIndex }
+    ::= { aperTnServRtmHistTable 1 }
+
+AperTnServRtmHistEntry ::=
+    SEQUENCE {
+            aperTnServRtmHistIndex
+                    INTEGER,
+            aperTnServRtmHistWhenDisconnected
+                    TimeTicks,
+            aperTnServRtmHistAlsName
+                    DisplayString,
+            aperTnServRtmHistLuNumber
+                    INTEGER,
+            aperTnServRtmHistClientIP
+                    IpAddress,
+            aperTnServRtmHistClientPort
+                    INTEGER,
+            aperTnServRtmHistDeviceName
+                    DisplayString,
+            aperTnServRtmHistUserName
+                    DisplayString,
+            aperTnServRtmHistSessionName
+                    DisplayString,
+            aperTnServRtmHistDef
+                    INTEGER,
+            aperTnServRtmHistMeasureTcpIpTime
+                    INTEGER,
+            aperTnServRtmHistMeasureSnaTime
+                    INTEGER,
+            aperTnServRtmHistSamplingFactor
+                    INTEGER,
+            aperTnServRtmHistNumberOfBoundaries
+                    INTEGER,
+            aperTnServRtmHistBoundary1
+                    INTEGER,
+            aperTnServRtmHistBoundary2
+                    INTEGER,
+            aperTnServRtmHistBoundary3
+                    INTEGER,
+            aperTnServRtmHistBoundary4
+                    INTEGER,
+            aperTnServRtmHistCounter1
+                    Counter,
+            aperTnServRtmHistCounter2
+                    Counter,
+            aperTnServRtmHistCounter3
+                    Counter,
+            aperTnServRtmHistCounter4
+                    Counter,
+            aperTnServRtmHistOverFlows
+                    Counter,
+            aperTnServRtmHistCounterOverflowed
+                    INTEGER,
+            aperTnServRtmHistNumTrans
+                    INTEGER,
+            aperTnServRtmHistTotalRspTime
+                    INTEGER,
+            aperTnServRtmHistAvgRspTime
+                    INTEGER,
+            aperTnServRtmHistMinRspTime
+                    INTEGER,
+            aperTnServRtmHistMaxRspTime
+                    INTEGER,
+            aperTnServRtmHistTotalSnaRspTime
+                    INTEGER,
+            aperTnServRtmHistAvgSnaRspTime
+                    INTEGER,
+            aperTnServRtmHistNumTcpIpSamples
+                    INTEGER,
+            aperTnServRtmHistTotalTcpIpRspTime
+                    INTEGER,
+            aperTnServRtmHistAvgTcpIpRspTime
+                    INTEGER,
+            aperTnServRtmHistAvgThinkTime
+                    INTEGER
+    }
+
+aperTnServRtmHistIndex OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value is used as an index in get-next operations
+            to allow retrieval of the RTM History Table from
+            most recent to oldest entry. The value of this
+            variable is (the_maximum_value_of_TimeTicks minus
+            the value of aperTnServRtmHistWhenDisconnected."
+    ::= { aperTnServRtmHistEntry 1 }
+
+ aperTnServRtmHistWhenDisconnected OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "A timestamp, in units of 1/100th of a second, when the
+            Telnet session being timed was terminated."
+    ::= { aperTnServRtmHistEntry 2 }
+
+ aperTnServRtmHistAlsName OBJECT-TYPE
+    SYNTAX  DisplayString
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The name of the SNA adjacent link station on which the
+            session occurred."
+    ::= { aperTnServRtmHistEntry 3 }
+
+ aperTnServRtmHistLuNumber OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of the SNA LU on which the session occurred."
+    ::= { aperTnServRtmHistEntry 4 }
+
+ aperTnServRtmHistClientIP OBJECT-TYPE
+    SYNTAX  IpAddress
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The IP address of the telnet client for the session
+            that has ended."
+    ::= { aperTnServRtmHistEntry 5 }
+
+ aperTnServRtmHistClientPort OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The TCP port of the telnet client for the session
+            that has ended."
+    ::= { aperTnServRtmHistEntry 6 }
+
+ aperTnServRtmHistDeviceName OBJECT-TYPE
+    SYNTAX  DisplayString
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The Telnet device name, if known, assigned to the
+            telnet session that has ended."
+    ::= { aperTnServRtmHistEntry 7 }
+
+ aperTnServRtmHistUserName OBJECT-TYPE
+    SYNTAX  DisplayString
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The name of the user profile, if known, associated with the
+            telnet session that has ended."
+    ::= { aperTnServRtmHistEntry 8 }
+
+ aperTnServRtmHistSessionName OBJECT-TYPE
+    SYNTAX  DisplayString
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The name of the session profile, if known, associated with
+            the telnet session that has ended."
+    ::= { aperTnServRtmHistEntry 9 }
+
+ aperTnServRtmHistDef OBJECT-TYPE
+    SYNTAX  INTEGER { firstChar(1), kb(2), cdeb(3) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The value indicates the mode of measurement for the
+            session that ended.  The values have following meaning:
+              firstChar(1) - time to first character on screen
+              kb(2) - time to keyboard usable by operator
+              cdeb(3) - time to Change Direction/End Bracket."
+    ::= { aperTnServRtmHistEntry 10 }
+
+ aperTnServRtmHistMeasureTcpIpTime OBJECT-TYPE
+    SYNTAX  INTEGER {yes(1), no(2)}
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "Did transaction measurement include TCP/IP timings?"
+    ::= { aperTnServRtmHistEntry 11 }
+
+ aperTnServRtmHistMeasureSnaTime OBJECT-TYPE
+    SYNTAX  INTEGER {yes(1), no(2)}
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "Did transaction measurement include SNA timings?"
+    ::= { aperTnServRtmHistEntry 12 }
+
+ aperTnServRtmHistSamplingFactor OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The fraction of transactions that should were timed."
+    ::= { aperTnServRtmHistEntry 13 }
+
+aperTnServRtmHistNumberOfBoundaries OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of RTM boundaries utilized by the LU."
+    ::= { aperTnServRtmHistEntry 14 }
+
+ aperTnServRtmHistBoundary1 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the first boundary
+            in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 15 }
+
+ aperTnServRtmHistBoundary2 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the second boundary
+            in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 16 }
+
+ aperTnServRtmHistBoundary3 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the third boundary
+            in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 17 }
+
+ aperTnServRtmHistBoundary4 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the fourth boundary
+            in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 18 }
+
+ aperTnServRtmHistCounter1 OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            fall in the range specified by the first boundary."
+    ::= { aperTnServRtmHistEntry 19 }
+
+ aperTnServRtmHistCounter2 OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            fall in the range specified by the second boundary."
+    ::= { aperTnServRtmHistEntry 20 }
+
+ aperTnServRtmHistCounter3 OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            fall in the range specified by the third boundary."
+    ::= { aperTnServRtmHistEntry 21 }
+
+ aperTnServRtmHistCounter4 OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            fall in the range specified by the fourth boundary."
+    ::= { aperTnServRtmHistEntry 22 }
+
+ aperTnServRtmHistOverFlows OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the number of transactions which
+            exceed the highest range specified by the
+            boundaries."
+    ::= { aperTnServRtmHistEntry 23 }
+
+aperTnServRtmHistCounterOverflowed OBJECT-TYPE
+    SYNTAX  INTEGER { yes(1), no(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates whether any of the five transaction
+            counters has overflowed."
+    ::= { aperTnServRtmHistEntry 24 }
+
+aperTnServRtmHistNumTrans OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the total number of transactions
+            executed since the RTM monitoring began"
+    ::= { aperTnServRtmHistEntry 25 }
+
+aperTnServRtmHistTotalRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the sum of the response times for all
+            transactions, in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 26 }
+
+aperTnServRtmHistAvgRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the average response time for all
+            transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 27 }
+
+aperTnServRtmHistMinRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The minimum response time in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 28 }
+
+aperTnServRtmHistMaxRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The maximum response time in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 29 }
+
+aperTnServRtmHistTotalSnaRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The SNA component of sum of the response times
+            for all transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 30 }
+
+aperTnServRtmHistAvgSnaRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The SNA component of the average response time
+            for all transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 31 }
+
+aperTnServRtmHistNumTcpIpSamples OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of transaction for which TCP/IP measurements were
+            supplied."
+    ::= { aperTnServRtmHistEntry 32 }
+
+aperTnServRtmHistTotalTcpIpRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The TCP/IP component of sum of the response times
+            for all transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 33 }
+
+aperTnServRtmHistAvgTcpIpRspTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The TCP/IP component of the average response time
+            for all transactions in units of 1/10th of a second."
+    ::= { aperTnServRtmHistEntry 34 }
+
+aperTnServRtmHistAvgThinkTime OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The average time *between* transactions, in units of 1/10th
+            of a second, during which the user was thinking."
+    ::= { aperTnServRtmHistEntry 35 }
+
+
+aperTnServRtmNumAls OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The number of per Als rows of RTM configuration entries
+            in the RTM ALS table."
+    ::= { aperTnServRtm 26 }
+
+aperTnServRtmPerAlsTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF    AperTnServRtmEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+           "SNA RTM information for 3270 display LU's. This table is used
+            to alter certain RTM operational parameters for all LU's on
+            a particular ALS. Except for the index (the ALS name) and
+			the RTM ALS control, all columns in rows of this table can 
+			be written only."
+    ::= { aperTnServRtm 27 }
+
+aperTnServRtmPerAlsEntry OBJECT-TYPE
+    SYNTAX  AperTnServRtmPerAlsEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+           "This table is used to change  RTM operational parameters."
+    INDEX   { aperTnServRtmPerAlsName }
+    ::= { aperTnServRtmPerAlsTable 1 }
+
+AperTnServRtmPerAlsEntry ::=
+    SEQUENCE {
+            aperTnServRtmPerAlsName
+                    INTEGER,
+            aperTnServRtmPerAlsControl
+                    INTEGER,
+            aperTnServRtmPerAlsState
+                    INTEGER,
+            aperTnServRtmPerAlsDef
+                    INTEGER,
+            aperTnServRtmPerAlsMeasureTcpIpTime
+                    INTEGER,
+            aperTnServRtmPerAlsMeasureSnaTime
+                    INTEGER,
+            aperTnServRtmPerAlsSamplingFactor
+                    INTEGER,
+            aperTnServRtmPerAlsNumberOfBoundaries
+                    INTEGER,
+            aperTnServRtmPerAlsBoundary1
+                    INTEGER,
+            aperTnServRtmPerAlsBoundary2
+                    INTEGER,
+            aperTnServRtmPerAlsBoundary3
+                    INTEGER,
+            aperTnServRtmPerAlsBoundary4
+                    INTEGER,
+            aperTnServRtmPerAlsResetCounters
+                    INTEGER,
+            aperTnServRtmPerAlsThresholdTrigger
+                    INTEGER,
+            aperTnServRtmPerAlsThresholdTriggerState
+                    INTEGER,
+            aperTnServRtmPerAlsCounterOverflowTriggerState
+                    INTEGER,
+            aperTnServRtmPerAlsUnbindTriggerState
+                    INTEGER
+    }
+
+aperTnServRtmPerAlsName    OBJECT-TYPE
+    SYNTAX  DisplayString
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The name of the link station."
+    ::= { aperTnServRtmPerAlsEntry 1 }
+
+aperTnServRtmPerAlsControl OBJECT-TYPE
+    SYNTAX  INTEGER { host(1), local(2), unsupported(3) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This is the value of the control for the specified ALS
+            which determines whether the host or the tnserver controls
+            write access to the values in the RtmTable for entries with the
+            same ALS name. If controlled by host, the
+            ability to clear the counters and change the boundary
+            values is set by the HOST. If locally controlled, requests
+            from the host to control the RTM state and parameters
+            are rejected by the tnserver."
+    ::= { aperTnServRtmPerAlsEntry 2 }
+
+aperTnServRtmPerAlsState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The variable is used to turn on or off for all LU's on a
+            given ALS. This variable can be set by the management station
+            only when aperTnServRtmPerAlsControl for the specified
+            ALS is local(2)."
+    ::= { aperTnServRtmPerAlsEntry 3 }
+
+aperTnServRtmPerAlsDef OBJECT-TYPE
+    SYNTAX  INTEGER {
+            firstChar(1),
+            kb(2),
+            cdeb(3)
+            }
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The variable is used to change the definition of transactions
+            for all LU's on a given ALS. The values have following meaning:
+              firstChar(1) - time to first character on screen
+              kb(2) - time to keyboard usable by operator
+              cdeb(3) - time to Change Direction/End Bracket.
+            This variable can be set by the management station
+            only when aperTnServRtmPerAlsControl for the specified
+            ALS is local(2)."
+    ::= { aperTnServRtmPerAlsEntry 4 }
+
+aperTnServRtmPerAlsMeasureTcpIpTime OBJECT-TYPE
+    SYNTAX  INTEGER {yes(1), no(2)}
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "Should transaction measurement include TCP/IP timings
+            for all LU's on a given ALS?"
+    ::= { aperTnServRtmPerAlsEntry 5 }
+
+aperTnServRtmPerAlsMeasureSnaTime OBJECT-TYPE
+    SYNTAX  INTEGER {yes(1), no(2)}
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "Should transaction measurement include SNA timings
+            for all LU's on a given ALS?"
+    ::= { aperTnServRtmPerAlsEntry 6 }
+
+aperTnServRtmPerAlsSamplingFactor OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "The fraction of transactions that should be timed.
+            To avoid LAN congestion when TCP/IP timings
+            are included, this value allows the management
+            station to control the number of transactions timed.
+            1 means every transaction, 2 means every other
+            transaction, 3 means every third transaction, etc."
+    ::= { aperTnServRtmPerAlsEntry 7 }
+
+aperTnServRtmPerAlsNumberOfBoundaries OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    write-only
+    STATUS    mandatory
+    DESCRIPTION
+           "The number of RTM boundaries utilized by all the LUs
+            under the ALS.  At least one RTM boundary must be 
+			specified so the range of this variable is 1-4.
+
+			Writing this variable causes the previously written
+			values for aperTnServRtmPerAlsBoundary1 etc. to
+			be validated and confirmed to be in increasing order.
+
+			If the validation is successful, the new boundary
+			values are propagated to the LUs under the ALS.
+			Setting the new boundaries causes counters for all 
+			the LUs to be reset.
+
+			If the validation fails, the buffered(ie. previously-
+			written) values are dropped.
+
+			The values specified for the LUs on an ALS might 
+			subsequently be changed on a per-LU basis."
+    ::= { aperTnServRtmPerAlsEntry 8 }
+
+aperTnServRtmPerAlsBoundary1 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the first boundary
+            for all LU's on a given ALS in units of 1/10th of a second.
+            This variable can be set by the management station
+            only when aperTnServRtmPerAlsControl for the specified
+            ALS is local(2). Setting this value also causes
+            counters for all LU's on this ALS to be reset.
+
+			The value written to this variable is not committed until
+			aperTnServRtmPerAlsNumberOfBoundaries is written, at which 
+			time all RtmPerAlsBoundary values are validated and confirmed 
+			to be in strictly increasing order."
+    ::= { aperTnServRtmPerAlsEntry 9 }
+
+aperTnServRtmPerAlsBoundary2 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the second boundary
+            for all LU's on a given ALS in units of 1/10th of a second.
+            This variable can be set by the management station
+            only when aperTnServRtmPerAlsControl for the specified
+            ALS is local(2). Setting this value also causes
+            counters for all LU's on this ALS to be reset.
+
+			The value written to this variable is not committed until
+			aperTnServRtmPerAlsNumberOfBoundaries is written, at which 
+			time all RtmPerAlsBoundary values are validated and confirmed 
+			to be in strictly increasing order."
+    ::= { aperTnServRtmPerAlsEntry 10 }
+
+aperTnServRtmPerAlsBoundary3 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the third boundary
+            for all LU's on a given ALS in units of 1/10th of a second.
+            This variable can be set by the management station
+            only when aperTnServRtmPerAlsControl for the specified
+            ALS is local(2). Setting this value also causes
+            counters for all LU's on this ALS to be reset.
+
+			The value written to this variable is not committed until
+			aperTnServRtmPerAlsNumberOfBoundaries is written, at which 
+			time all RtmPerAlsBoundary values are validated and confirmed 
+			to be in strictly increasing order."
+    ::= { aperTnServRtmPerAlsEntry 11 }
+
+aperTnServRtmPerAlsBoundary4 OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This object contains the value of the fourth boundary
+            for all LU's on a given ALS in units of 1/10th of a second.
+            This variable can be set by the management station
+            only when aperTnServRtmPerAlsControl for the specified
+            ALS is local(2). Setting this value also causes
+            counters for all LU's on this ALS to be reset.
+
+			The value written to this variable is not committed until
+			aperTnServRtmPerAlsNumberOfBoundaries is written, at which 
+			time all RtmPerAlsBoundary values are validated and confirmed 
+			to be in strictly increasing order."
+    ::= { aperTnServRtmPerAlsEntry 12 }
+
+aperTnServRtmPerAlsResetCounters OBJECT-TYPE
+    SYNTAX  INTEGER { yes(1) }
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "Setting this value to yes(1) will cause all transaction
+            counters for all LU's on the specified ALS to zero.
+            This variable can be set by the management station
+            only when aperTnServRtmPerAlsControl for the specified
+            ALS is local(2)."
+    ::= { aperTnServRtmPerAlsEntry 13 }
+
+aperTnServRtmPerAlsThresholdTrigger OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "This value indicates the threshold of average response
+            time. If the transaction time being monitored exceeds
+            this value and aperTnServRtmPerAlsThresholdTriggerState is
+            on(1), then an excessive response time trap will be
+            generated to the manager. Once a trap has been generated,
+            the trigger is disabled and must be re-enabled by
+            the SNMP management station."
+    ::= { aperTnServRtmPerAlsEntry 14 }
+
+aperTnServRtmPerAlsThresholdTriggerState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "If this value is on(1), then whenever the average response
+            for this LU exceeds aperTnServRtmPerAlsThresholdTrigger, then an
+            excessive response time trap will be generated to the
+            manage. This causes the state to become off(2). The management
+            station must reset this trigger in order to rearm this trap."
+    ::= { aperTnServRtmPerAlsEntry 15 }
+
+aperTnServRtmPerAlsCounterOverflowTriggerState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "If this value is on(1), then whenever a transaction counter
+            overflows, a counter overflow trap is generated to the
+            management station.."
+    ::= { aperTnServRtmPerAlsEntry 16 }
+
+aperTnServRtmPerAlsUnbindTriggerState OBJECT-TYPE
+    SYNTAX  INTEGER { on(1), off(2) }
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+           "If this value is on(1), then whenever an unbind on a session
+            with RTM enabled occurs, a session unbound trap is generated
+            to the management station. "
+    ::= { aperTnServRtmPerAlsEntry 17 }
+
+
+-- Traps
+
+aperTnServTrapsRtmExcessiveTransaction TRAP-TYPE
+    ENTERPRISE  aperTnServTraps
+    VARIABLES { aperTnServRtmAlsName,
+                aperTnServRtmLuNumber,
+                aperTnServRtmClientIP,
+                aperTnServRtmClientPort
+              }
+    DESCRIPTION
+       "This trap indicates that the average transaction time
+        of the specified LU has exceeded that specified as
+        the trigger value of this trap."
+    ::= 1
+
+
+aperTnServTrapsRtmCounterOverflow TRAP-TYPE
+    ENTERPRISE  aperTnServTraps
+    VARIABLES { aperTnServRtmAlsName,
+                aperTnServRtmLuNumber,
+                aperTnServRtmClientIP,
+                aperTnServRtmClientPort,
+				aperTnServRtmPerAlsControl,
+                aperTnServRtmCounterOverflowHostAlert
+              }
+    DESCRIPTION
+       "This trap indicates that a transaction counter has exceeded
+        its maximum value. The variables included is a row in the
+        RtmTable. Once this trap has occur, if RTM is host controlled
+        and HOST Alert on Overflow is enabled, the counters will be
+        automatically reset. Otherwise, the counters must
+        be reset by the management station."
+    ::= 2
+
+aperTnServTrapsRtmSessionUnbound TRAP-TYPE
+    ENTERPRISE  aperTnServTraps
+    VARIABLES { aperTnServRtmAlsName,
+                aperTnServRtmLuNumber,
+                aperTnServRtmClientIP,
+                aperTnServRtmClientPort,
+				aperTnServRtmPerAlsControl,
+                aperTnServRtmUnbindHostAlert
+              }
+    DESCRIPTION
+       "This trap indicates that a LU which has transaction
+        timing active has been unbound. The variables included
+        is a row in the RtmTable. Once this trap has occur,
+        if RTM is host controlled and HOST Alert on Session Unbind
+        is enabled, the counters will be automatically reset.
+        Otherwise, the counters must be reset by the management station."
+    ::= 3
+
+aperTnServTrapsUserDisabled TRAP-TYPE
+    ENTERPRISE  aperTnServTraps
+    VARIABLES { aperTnServAdmUserName,
+                aperTnServOperConnsClientIP,
+                aperTnServOperConnsClientPort
+              }
+    DESCRIPTION
+       "This trap indicates that a user profile has been disabled
+        by the TNSERVER because of an attempt to connect to a
+        Telnet User Connection Name, but supplying an invalid
+        password several times consecutively without specifying
+        the correct password. The number of consecutive attempts
+        allowed is a configurable MIB variable."
+    ::= 4
+
+END

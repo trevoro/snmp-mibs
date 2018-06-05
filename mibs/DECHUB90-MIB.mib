@@ -1,0 +1,2997 @@
+DECHUB90-MIB DEFINITIONS ::= BEGIN
+--
+-- ===========================================================================
+--  DECagent 90 and DEChub 90 Vendor MIB Document for SNMP V1 implementation
+--
+--  Updated: May 10, 1995 17:00 EDT
+-- ===========================================================================
+--
+--
+--  This Digital Equipment  Corporation  SNMP  Management  Information  Base
+--  Specification  embodies Digital Equipment Corporation's confidential and
+--  proprietary  intellectual  property.   Digital   Equipment   Corporation
+--  retains  all  title  and  ownership  in the Specification, including any
+--  revisions.
+--
+--  It is Digital Equipment Corporation's intent to encourage the widespread
+--  use  of  this Specification in connection with the management of Digital
+--  Equipment Corporation products.
+--
+--  Digital Equipment  Corporation  grants  vendors,  end-users,  and  other
+--  interested  parties a non-exclusive license to use this Specification in
+--  connection  with  the  management  of  Digital   Equipment   Corporation
+--  products.
+--
+--  Digital Equipment Corporation reserves the right to make changes in this
+--  specification  and  other information contained in this document without
+--  prior notice.
+--
+--  Digital Equipment Corporation makes no  warranty,  either  expressed  or
+--  implied,  as  to  the  use,  operation, condition, or performance of the
+--  Specification.  In no  event  shall  Digital  Equipment  Corporation  be
+--  liable  for  any incidental, indirect, special, or consequential damages
+--  whatsoever (including but not limited to loss of profits) arising out of
+--  or related to this document or the information contained in it.
+--
+--
+--
+--
+--  The following is the structure for a MIB for the DEChub 90 and DECagent 90.
+--
+--  The DEChub 90 is a Ethernet hub with repeater, bridge and terminal server
+--  modules.  SNMP Management of the hub is provided by the DECagent 90, a
+--  management module which resides in the hub (or optionally on the same LAN
+--  as the hub).  The DECagent 90 also provides proxy SNMP management for
+--  multiple hubs and for stand alone modules which are not installed in a hub. 
+--  
+--  The DECagent 90 (the "agent") uses multiple community strings to proxy for
+--  hubs and/or modules.  Each hub and standalone module uses a distinct pair
+--  of {read-only, read-write} community strings. All SNMP requests are sent to
+--  the agent, and the agent uses the PDUs community string to determine the
+--  destination and the access level for the request.  Standalone modules are
+--  treated as a hub with one slot.  The community table in the da90 group is
+--  used to manage the community strings and access to communities.
+--
+--  Each community contains one hub. The dh90 (DEChub 90) group describes the
+--  hub and the contents of the hub. The dh90SlotTable contains a row for each
+--  slot in the hub and provides information on the module installed in that
+--  slot (type, id, version, MAC address, etc).
+--
+--  Repeater and bridge management is accomplished via the standard bridge MIB
+--  and via DEC extensions in the drpt90PortTable (repeater port table),
+--  db90system group (system-like variables for the bridge), dbIfTable
+--  (interface-like variables for the bridge) and the db90bridge group
+--  (characteristics, statistics, counters, spanning tree, interface and
+--  protocol filter information and control).
+--
+--  Terminal server management is primarily provided through the standard
+--  char-like and rs232-like MIBs.  There is also additional server information
+--  and management controls provided in the ds90LModuleTable, ds90LPortTable
+--  and the ds90LSessionTable.
+--
+--  The following MIB-II interfaces group restrictions should be noted for
+--  proxied devices which have entries in the MIB-II interface table:
+--
+--  An ifAdminStatus of down(2) is not supported for terminal servers and
+--  agents.  Setting this value to down(2) is supported only for bridge ports.
+--  Note that setting a bridge port to down(2) may affect communications
+--  between the agent and your management station.  Be certain to check your
+--  configuration before setting these ports to down(2).
+--
+--  An ifAdminStatus of testing(3) is not supported by any of the proxied
+--  devices.
+--
+--
+-- DEC  { iso org(3) dod(6) internet(1) private(4) enterprises(1) 36 }
+
+    IMPORTS
+        IpAddress, Counter, Gauge, TimeTicks, enterprises
+            FROM RFC1155-SMI
+        OBJECT-TYPE
+            FROM RFC-1212
+        DisplayString
+            FROM RFC1213-MIB
+--        ifIndex, ifOperStatus
+--            FROM RFC1213-MIB
+--        charPortIndex, charPortOperStatus
+--            FROM RFC1316-MIB
+        TRAP-TYPE
+            FROM RFC-1215;
+
+--
+-- See the comments preceding the srvrPortStatusChange trap definition near the
+-- end of this MIB for important information about the commented lines in the
+-- above IMPORTS statement.
+--
+
+--
+-- OID definitions that belong to the Data Space
+--      These are used as registration points for leaf MIB objects.
+--
+
+dec                     OBJECT IDENTIFIER ::=  { enterprises 36 }
+ema                     OBJECT IDENTIFIER ::=  { dec 2 }
+decMIBextension         OBJECT IDENTIFIER ::=  { ema 18 }
+dechub90                OBJECT IDENTIFIER ::=  { decMIBextension 10 }
+
+dh90                    OBJECT IDENTIFIER ::=  { dechub90 1 }
+da90                    OBJECT IDENTIFIER ::=  { dechub90 2 }
+ds90L                   OBJECT IDENTIFIER ::=  { dechub90 3 }
+drpt90                  OBJECT IDENTIFIER ::=  { dechub90 4 }
+db90ext                 OBJECT IDENTIFIER ::=  { dechub90 5 }
+
+db90system              OBJECT IDENTIFIER ::=  { db90ext 1 }
+db90interfaces          OBJECT IDENTIFIER ::=  { db90ext 2 }
+db90bridge              OBJECT IDENTIFIER ::=  { db90ext 3 }
+
+dbSysChar               OBJECT IDENTIFIER ::=  { db90system 1 }
+dbSysStatus             OBJECT IDENTIFIER ::=  { db90system 2 }
+
+db90Char                OBJECT IDENTIFIER ::=  { db90bridge 1 }
+db90Stat                OBJECT IDENTIFIER ::=  { db90bridge 2 }
+db90Coun                OBJECT IDENTIFIER ::=  { db90bridge 3 }
+db90Span                OBJECT IDENTIFIER ::=  { db90bridge 4 }
+db90PortInterfaces      OBJECT IDENTIFIER ::=  { db90bridge 5 }
+db90ProtoFilt           OBJECT IDENTIFIER ::=  { db90bridge 6 }
+
+--
+-- Product OID definition for enterprise field of the trap PDUs.
+--
+
+emaSystem               OBJECT IDENTIFIER ::=  { ema 15 }
+proxyAgent              OBJECT IDENTIFIER ::=  { emaSystem 10 }
+decagent90              OBJECT IDENTIFIER ::=  { proxyAgent 1 }
+decagent90v1            OBJECT IDENTIFIER ::=  { decagent90 1 }
+
+--
+--
+-- dh90 Group
+--
+--      The dh90 variables contain information used to manage each DEChub 90.
+--      A DEChub 90 can contain multiple devices such as bridges, terminal
+--      servers and repeaters.  The DECagent 90 is a module which provides
+--      proxy SNMP management for each of these devices.  A single DECagent
+--      can manage multiple hubs, in which case each hub is a separate
+--      community identified by unique community strings.  The dh90 group then
+--      provides management information not only for each hub, but also for the
+--      communities used to identify each hub.
+--
+--      The DECagent 90 can also manage individual bridge and terminal server
+--      modules which are not resident in a hub.  In this case, each bridge or
+--      server is its own community with its own community strings and is a
+--      community of type standAloneCommunity(3).
+--
+--      Note also that 2 DEChub 90s can be connected and managed as a single
+--      16-slot hub.  The dh90Type value for both is dechub90(4), and either 8
+--      or 16 is set as the value for dh90NumberSlots.  When a community is
+--      created, dh90NumberSlots has a value of 8 by default.
+--
+
+dh90Type OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(1),
+                invalid(2),
+                standAloneCommunity(3),
+                dechub90(4),
+                dechub900(5),
+                decstack90(6)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Identifies the type of community (hub, string or standalone device) 
+        managed by DECagent 90 modules.  Setting this variable to invalid(2) 
+        deletes the community associated with the community string and releases 
+        resources used by the community.  Setting the value of an existing 
+        community of type dechub90(4) or dechub900(5) or STACKhub90(6) to 
+        standAloneCommunity(3) requires that there be no modules or a single 
+        module in the hub.  Any other configuration will result in a 'genErr' 
+        response.  The value unknown(1) is read-only as an indicator that a 
+        particular community's resource area may be corrupt.  Attempting to 
+        set the value to unknown(1) will result in a 'badValue' response."
+        ::= { dh90 1 }
+
+dh90Backplane OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(1),
+                ethernet(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Media on the backplane of hub."
+        ::= { dh90 2 }
+
+dh90LastChange OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The value of the sysUpTime at the time a module was added or removed
+        from this community."
+    ::= { dh90 3 }
+
+dh90NumberSlots OBJECT-TYPE
+    SYNTAX  INTEGER (1..16)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Number of slots in the hub backplane.  Setting this variable to the
+        value 1, 8 or 16 defines the size of a hub in a particular community.
+        Note that attempting to set this variable to a value smaller than the
+        existing value when there are modules present in the slots that would
+        be eliminated by the reduction in hub size will result in a 'genErr'
+        response."
+    ::= { dh90 4 }
+
+dh90SlotTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Dh90SlotEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "A list of modules installed in the DEChub 90.  To create a new row
+        (module) in the slot table, set an instance (slot) of
+        dh90SlotModuleType which is currently empty(2) to the appropriate
+        value.  If adding a bridge or server, next set the
+        dh90SlotPhysicalAddress for the row.  Sets of the other variables in
+        the row must be done in separate PDUs after the MAC address of the
+        device has been set correctly.
+
+        When sweeping the slot table with getNext, rows of the table which are
+        empty will be skipped.  The only values returned are for slots which
+        are occupied.
+            
+        To delete a module, set the dh90SlotModuleType (instanced by slot
+        number) to empty(2).  The row corresponding to the slot number will be
+        deleted from the table."
+    ::= { dh90 5 }
+
+dh90SlotEntry OBJECT-TYPE
+    SYNTAX  Dh90SlotEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "Contains objects defining characteristics of modules in the
+        community."
+    INDEX   { dh90SlotIndex }
+    ::= { dh90SlotTable 1 }
+
+Dh90SlotEntry ::=
+    SEQUENCE {
+        dh90SlotIndex
+            INTEGER,
+        dh90SlotModuleType
+            INTEGER,
+        dh90SlotModuleName
+            DisplayString,
+        dh90SlotModuleVersion
+            DisplayString,
+        dh90SlotCounterTime
+            Gauge,
+        dh90SlotIfBase
+            INTEGER,
+        dh90SlotIfNumber
+            INTEGER,
+        dh90SlotPhysicalAddress
+            OCTET STRING (SIZE (6)),
+        dh90SlotNumberOfPorts
+            INTEGER,
+        dh90SlotPassword
+            DisplayString,
+        dh90SlotNewPassword
+            DisplayString,
+        dh90SlotPolling
+            INTEGER,
+        dh90SlotPrimarySpecific
+            OBJECT IDENTIFIER,
+        dh90SlotSecondarySpecific
+            OBJECT IDENTIFIER,
+        dh90SlotIpAddress
+            IpAddress,
+        dh90SlotCommunityString
+            OCTET STRING (SIZE (0..32)),
+        dh90SlotObjectID
+            OBJECT IDENTIFIER,
+        dh90SlotProxyStatus
+            INTEGER,
+        dh90SlotConflictStatus
+            INTEGER,
+        dh90SlotConflictDiscoveredID
+            OBJECT IDENTIFIER,
+        dh90SlotReset
+            INTEGER
+        }
+        
+dh90SlotIndex OBJECT-TYPE
+    SYNTAX  INTEGER (1..16)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The slot number containing the module.  Setting this variable to the
+        slot number of an empty slot in the community will result in the module
+        being moved to that slot.  Setting this variable to the value of a slot
+        which is occupied results in a 'genErr' response.  Setting it to a
+        value which is outside the range (1..dh90NumberSlots) results in a
+        'badValue' response.
+
+        DEChub 90 restrictions: some modules can reside only in certain slots
+        of a DEChub 90.  The DECbridge 90 and DECbridge 90FL are restricted to
+        slot 7 or 8.  The DECagent 90 and DECrepeater 90FA are restricted to
+        slot 7, 8, 15, or 16.  These restrictions do not apply when these
+        modules are in a DEChub 900.
+
+        You are not allowed to move the managing DECagent 90.  Attempting to do
+        so will result in a 'genErr' response."
+    ::= { dh90SlotEntry 1 }
+
+dh90SlotModuleType OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(1),
+                empty(2),
+                decserver90L(3),
+                decbridge90(4),
+                decrepeater90C(5),
+                decrepeater90T(6),
+                decagent90(7),
+                decserver90Lplus(8),
+                decserver90TL(9),
+                decbrouter90T1(10),
+                decbrouter90T2(11),
+                decrepeater90FL(12),
+                decrepeater90FA(13),
+                decbridge90FL(14),
+                decwanrouter90(15),
+                decpacketprobe90(16),
+                decpacketprobe90plus(17),
+                decserver90Lplus2(18),
+                decserver90M(19),
+                decbrouter90T2A(20),
+                decmau900TL(21),
+                decrepeater900TL(22),
+                decrepeater900SL(23),
+                decagent900RA(24),
+                decmau900TC(25),
+                decrepeater900FL(26)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "- do not use, provided for backwards compatibility only -
+        Use dh90SlotObjectID instead.
+        The type of the module in a slot.  If the slot is known to be empty,
+        a value of empty(2) is used.  If the slot is occupied by a module of
+        unknown type, a value of unknown(1) is used.  Note that the
+        restrictions on module placement in the DEChub 90 as described in the
+        description of dh90SlotIndex apply here as well.  The value unknown(1)
+        is read-only as an indicator that a particular module's resource area
+        may be corrupt.  Attempting to set the value to unknown(1) will result
+        in a 'badValue' response."
+    ::= { dh90SlotEntry 2 }
+
+dh90SlotModuleName OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..16))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "A textual description of the module.  Setting a value with embedded
+        spaces or tabs will result in a 'badValue' response.
+
+        Note that for a DECserver 90, you cannot set this value to a null
+        string.  Attempting to do so will result in a 'badValue' response."
+    ::= { dh90SlotEntry 3 }
+
+dh90SlotModuleVersion OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..32))
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "A textual description of the version level of the hardware and
+        firmware of the module."
+    ::= { dh90SlotEntry 4 }
+
+dh90SlotCounterTime OBJECT-TYPE
+    SYNTAX  Gauge
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Time since the counters of this module were zeroed.  Devices which do
+        not support MOP counters will return a 'noSuchName' response."
+    ::= { dh90SlotEntry 5 }
+
+dh90SlotIfBase OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "An index into the ifTable for the first network interface on this
+        module.  Add one to this value to reference the ifTable entry which
+        corresponds to the second interface, etc.  If no interfaces are
+        supported on the module, a response of 'noSuchName' is returned."
+    ::= { dh90SlotEntry 6 }
+
+dh90SlotIfNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The number of network interfaces on this module.  For example, a
+        DECbridge 90 has 2 network interfaces, the backbone and the workgroup
+        ports.  A DECserver 90L has a single network interface.  For devices
+        with no interfaces, a response of 'noSuchName' is returned."
+    ::= { dh90SlotEntry 7 }
+
+dh90SlotPhysicalAddress OBJECT-TYPE
+    SYNTAX  OCTET STRING (SIZE (6)) 
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "A read-write variable for the physical address to allow devices to be
+        added to the hub remotely.  Writing this variable as part of a remote
+        add device routine will cause the new physical address to be accessible
+        in the corresponding ifPhysAddress variable in the ifTable.  Attempts
+        to set this variable for the managing DECagent 90 with a value which is
+        different from the actual station address will result in a 'genErr'
+        response."
+    ::= { dh90SlotEntry 8 }
+
+dh90SlotNumberOfPorts OBJECT-TYPE
+    SYNTAX  INTEGER (1..32)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The number of ports on this module.  Returns the following values for
+        the indicated devices:
+
+        Device               Value
+        ================     =====
+        DECagent 90            1
+        DECbridge 90           2
+        DECbridge 90FL         2
+        DECrepeater 90FA       2
+        DECrepeater 90FL       4
+        DECrepeater 90C        6
+        DECrepeater 90T        8
+        DECserver 90L          8
+        DECserver 90L+         8
+        DECserver 90M          8
+        DECserver 90TL         8
+
+        Other devices may return a non-zero value also."
+    ::= { dh90SlotEntry 9 }
+
+dh90SlotPassword OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..16))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Password used to enable privileged operations on devices which support
+        the MOP and RBMS protocols for remote management.  Setting a value
+        containing embedded spaces or tabs will result in a 'badValue'
+        response.
+
+        Supported devices include: DECserver 90L, DECserver 90L+, DECbridge 90
+        and DECbridge 90FL.
+
+        For DECserver 90's, the maximum password length is eight (8).
+        For DECbridge 90's, the maximum password length is sixteen (16).
+        Passwords which exceed these values will result in a 'badValue'
+        response.
+
+        Reads to this variable for supported devices will always return a null
+        string.  For other devices, access to this variable will result in a
+        'noSuchName' response.
+
+        NOTE:  It is imperative that the DECagent 90 be password-synchronized
+        with the remote devices it is managing.  If a device has a password,
+        the DECagent 90 will not be able to perform sets to it without the
+        correct password.  Sets to this variable cause the value to be stored
+        in the DECagent 90's non-volatile storage for use when accessing the
+        device in the specified slot."
+    ::= { dh90SlotEntry 10 }
+
+dh90SlotNewPassword OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..16))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Setting this variable causes the agent to set a new password on the
+        device using the value provided as the new password and the current
+        value of dh90SlotPassword as the old password.  Setting a value
+        containing embedded spaces or tabs will result in a 'badValue'
+        response.
+
+        See the description of dh90SlotPassword above for supported devices and
+        password length restrictions.
+
+        Notes related only to DECservers: authorized mode must be enabled in
+        order to set a new password.  See the description of ds90LAuthorizeMode
+        for details.  If authorized mode is disabled, a 'genErr' response will
+        be returned.  Also, the new password cannot be set to null.  Attempting
+        to do so will result in a 'badValue' response.  To disable password
+        security you must set ds90LAuthorizeMode to disable(2).
+
+        Reads to this variable for supported devices will always return a null
+        string.  For other devices, access to this variable will result in a
+        'noSuchName' response."
+    ::= { dh90SlotEntry 11 }
+
+dh90SlotPolling OBJECT-TYPE
+    SYNTAX  INTEGER {
+                off(1),
+                on(2)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The current polling status of the module.  If the DECagent 90 is
+        polling this device, a get of this variable will return on(2),
+        otherwise off(1) is returned.  Setting this variable to off(1) causes
+        the agent to stop polling the device in this slot.  Setting this
+        variable to on(2) causes the agent to start polling the device in the
+        specified slot.  If a device does not repond to a poll, a
+        SlotStatusChange(1) enterprise-specific trap is generated.  Attempting
+        to set to off(1) the slot polling of the agent will result in a
+        'badValue' response."
+    ::= { dh90SlotEntry 12 }
+
+dh90SlotPrimarySpecific OBJECT-TYPE
+    SYNTAX  OBJECT IDENTIFIER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "For proxied modules, a reference to its primary MIB definition.
+        For bridges, a reference to the MIB-II dot1dBridge MIB.  For terminal
+        servers, a reference to the MIB-II character-like MIB.  For DECagents,
+        a reference to the { da90 } portion of this MIB.  For repeaters, a
+        reference to the { drpt90 } portion of this MIB.  If the module
+        realizes some other function, the object identifier
+
+            nullSpecific OBJECT IDENTIFIER ::= { 0 0 }
+
+        is returned."
+    ::= { dh90SlotEntry 13 }
+
+dh90SlotSecondarySpecific OBJECT-TYPE
+    SYNTAX  OBJECT IDENTIFIER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "For bridges, a reference to the { db90ext } portion of this MIB.  For
+        terminal servers, a reference to the MIB-II rs232-like MIB definition.
+        Otherwise, the object identifier
+
+            nullSpecific OBJECT IDENTIFIER ::= { 0 0 }
+
+        is returned."
+    ::= { dh90SlotEntry 14 }
+
+dh90SlotIpAddress OBJECT-TYPE
+    SYNTAX  IpAddress
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "The IP address of the device in the given slot.  This value is returned
+       only for devices which implement their own on-board SNMP agent."
+    ::= { dh90SlotEntry 15 }
+
+dh90SlotCommunityString OBJECT-TYPE
+    SYNTAX  OCTET STRING (SIZE (0..32))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "The community string of the device in the given slot.  This value is
+       returned only for devices which implement their own on-board SNMP agent.
+       For the managing agent, the read-only community string is returned if it
+       is not null, otherwise the read-write community string is returned."
+    ::= { dh90SlotEntry 16 }
+
+dh90SlotObjectID OBJECT-TYPE
+    SYNTAX OBJECT IDENTIFIER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "The sysObjectID of the module in the given slot.  This value is
+        provided by the DECagent 90 for modules in community 1.  It can
+        be stored manually for modules in other communities."
+    ::= { dh90SlotEntry 17 }
+
+dh90SlotProxyStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                reachable(1),
+                unreachable(2),
+                present(3),
+                not-present(4)
+                }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The state of the module as known by the proxy agent.  The possible
+       states and their meanings are:
+
+          reachable   - indicates an operational module for which this agent
+                        will perform proxy operations.
+
+          unreachable - indicates a proxy operation has been unsuccessful to
+                        this module.  The agent cannot determine if the module
+                        has been removed, has failed, or is unreachable due to
+                        network load.
+
+          present     - indicates a module for which this agent does not
+                        perform proxy operations.
+
+          not-present - indicates that the agent has determined that the module
+                        has been removed, or has failed, but the module data
+                        has been retained since the user has performed sets to
+                        this module.  The module data will be retained until
+                        the module is returned to this location, or moved or
+                        deleted by the NMS."
+    ::= { dh90SlotEntry 18 }
+
+dh90SlotConflictStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                none(1),
+                conflict(2)
+                }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Indicates whether a module conflict has been detected.  A conflict
+       indicates that the agent has discovered a module in this slot which is
+       a different type from the module which already exists in the agent's
+       database.  Examples of conflicts are:
+
+          - A module has been discovered in this slot and there is an active
+            module already in this slot.  In this case, dh90SlotProxyStatus
+            would have a value of present(4).  This indicates that the active
+            module was manually added to an incorrect slot and should be moved
+            to its correct location.
+
+          - A module has been discovered in this slot and the last known module
+            in this slot was of a different type and that last known module had
+            other than default parameters set.  The last known module was
+            physically removed and possibly moved to a new location.  In this
+            case, the dh90SlotProxyStatus may have the a of unreachable(2) or
+            not-present(3).  Either delete the module from this slot to allow
+            the discovered module to replace it, or move the module in this
+            slot to a new location."
+    ::= { dh90SlotEntry 19 }
+
+dh90SlotConflictDiscoveredID OBJECT-TYPE
+    SYNTAX  OBJECT IDENTIFIER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "If dh90SlotConflictStatus has a value of conflict(2) then this object
+       indicates the sysObjectID of the module that has been discovered thus
+       creating the conflict.  If dh90SlotConflictStatus has a value of none(1)
+       then this object will contain the sysObjectID of the module."
+    ::= { dh90SlotEntry 20 }
+
+dh90SlotReset OBJECT-TYPE
+    SYNTAX  INTEGER {
+                ready(1),
+                reset(2),
+                resetToFactory(3)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "A control variable to perform reset functions on DEChub 90 modules
+       which are in the same hub as the managing agent.  The agent must be the
+       hub master (see da90BackplaneState) for reset functions to be performed.
+
+       In response to a Get or getNext request, the agent returns the value
+       ready(1).  Setting this value to reset(2) causes the entire module to be
+       reset.  Setting this value to resetToFactory(3) causes the entire device
+       to be reset to the original factory settings.  For repeaters, all port
+       names are cleared and all drpt90PortAdminStatus values are set to
+       enabled(1).  For both reset functions, the port address database is
+       cleared.
+
+       Note that this object performs the same reset functions as
+       ds90LMaintenance for terminal servers, dbSysInitSwitch for bridges and
+       da90Maintenance for the managing agent."
+    ::= { dh90SlotEntry 21 }
+
+dh90TrapAddressTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Dh90TrapEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A table of IP addresses to which this device will send SNMP traps."
+    ::= { dh90 6 }
+   
+dh90TrapEntry OBJECT-TYPE
+    SYNTAX  Dh90TrapEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "Each entry contains an IP address to which all SNMP traps will be sent
+       by this community."
+    INDEX   { dh90TrapAddress }
+    ::= { dh90TrapAddressTable 1 }
+    
+Dh90TrapEntry ::=
+    SEQUENCE {
+        dh90TrapAddress
+            IpAddress
+        }
+               
+dh90TrapAddress OBJECT-TYPE
+    SYNTAX  IpAddress
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "An IP address to which all SNMP traps generated for this community will
+       be sent.  Setting an instance to a value of zero will delete the row in
+       the table.  Setting an instance to the current value of the DECagent's
+       IP address will result in a 'genErr' response."
+    ::= { dh90TrapEntry 1 }
+
+dh90LastErrorMsg OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..80))
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Indicates the last error message for this community.  Examples of
+       errors which may cause this string to be updated are:
+
+          - An error in a proxy operation (get or set) to a terminal server or
+            bridge (e.g. invalid command response, invalid password).
+          - Terminal server MOP console is busy.
+
+       Whenever this object changes value, the dh90LastErrorSlot object and the
+       dh90LastErrorChange object will be updated."
+    ::= { dh90 7 }
+
+dh90LastErrorChange OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The value of MIB-II's sysUpTime (in the agent supporting this MIB) when
+       a module event occurred which caused the dh90LastErrorMsg object to be
+       updated."
+    ::= { dh90 8 }
+
+dh90LastErrorSlot OBJECT-TYPE
+    SYNTAX  INTEGER (0..16)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The slot of the module which caused the dh90LastErrorMsg object to be
+       updated.  A value of zero (0) indicates that an error has not yet
+       occurred."
+    ::= { dh90 9 }
+
+dh90PopulationChange OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The total number of changes in population of the modules within the
+       community.  This counter is incremented:
+
+          - when a module is added or discovered, or
+          - when a module is deleted or undiscovered, or
+          - when a module conflict occurs
+
+       The purpose of this object is to provide a single object in the
+       community which can be polled by an NMS to determine if there have been
+       changes in the hub population."
+    ::= { dh90 10 }
+
+dh90PopulationLastChange OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The value of MIB-II's sysUpTime (in the agent supporting this MIB) when
+       a module event occurred which caused the increment of the
+       dh90PopulationChange counter."
+    ::= { dh90 11 }
+
+dh90StatusChange OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The total number of changes to status of the modules within the
+       community.  This counter is incremented:
+
+          - when a proxied module becomes reachable, or
+          - when a proxied module becomes unreachable, or
+          - when a proxied module has a change in port status.
+
+       The purpose of this object is to provide a single object in the
+       community which can be polled by an NMS to determine if there have been
+       changes in status of modules or ports within the hub.  Note that this
+       object does not warn of impending counter rollovers, which the NMS will
+       still have to poll for occasionally."
+    ::= { dh90 12 }
+
+dh90StatusLastChange OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The value of MIB-II's sysUpTime (in the agent supporting this MIB) when
+       a module event occurred which caused the increment of the
+       dh90StatusChange counter."
+    ::= { dh90 13 }
+
+--
+--
+-- da90 Group
+--
+--      The da90 group variables are used to manage the DECagent 90 module.
+--      The group exists once in the community which contains the proxy agent.
+--
+--      The community table is the basis of the proxy mechanism in the
+--      DECagent 90.  A community is added to the agent by adding a row to the
+--      community table.  Rows can be added via sets to agent.  To create a
+--      row, a set PDU must contain a set of active(3) to da90CommunityType and
+--      sets of strings to da90CommunityROString and da90CommunityRWString.  A
+--      null value is allowed for one of the community strings, all non-null
+--      values must be unique among all the communities proxied by the agent.
+--      The hub corresponding to the community is created by a set to the
+--      dh90Type variable using the read-write community string defined above.
+--      A getNext sweep of the table will return those entries which are
+--      active.
+--
+--      To delete a community, first set the dh90SlotModuleType for each slot
+--      in the community to empty(2), then set da90CommunityType to invalid(2).
+--
+
+da90FlashErasures OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The number of times the flash memory on this DECagent 90 has been
+        erased.  This number is the total of erasures for all flash segments."
+    ::= { da90 1 }
+
+da90Maintenance OBJECT-TYPE
+    SYNTAX  INTEGER {
+                ready(1),
+                setsDisabled(2),
+                reset(3),
+                resetToFactory(4)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "A control variable to perform reset functions on a DECagent 90.  In
+        response to a Get or a getNext request, the agent returns ready(1) if
+        SNMP sets are enabled, or setsDisabled(2) if they are disabled.
+        Setting this value to setsDisabled(2) causes SNMP sets to be disabled.
+        Note, however, that you cannot re-enable SNMP sets via this mechanism.
+        SNMP sets can only be re-enabled via the console interface, or by
+        restoring factory settings.  Setting this value to reset(3) causes the
+        entire module to be reset.  Setting this value to resetToFactory(4)
+        causes the entire device to be reset to the original factory settings.
+        Setting either reset(3) and resetToFactory(4) results in an immediate
+        reset with no response PDU being issued."
+    ::= { da90 2 }
+
+da90CommunityNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..64)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Number of entries in the da90CommunityTable."
+    ::= { da90 3 }
+
+da90CommunityTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Da90CommunityEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "A table of community strings for client communities."
+    ::= { da90 4 }
+
+da90CommunityEntry  OBJECT-TYPE
+    SYNTAX  Da90CommunityEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "Contains community type and strings, including the read-only profile,
+        the read-write profile and a trap string."
+    INDEX   { da90CommunityIndex }
+    ::= { da90CommunityTable 1 }
+
+Da90CommunityEntry ::=
+    SEQUENCE {
+        da90CommunityIndex
+            INTEGER,
+        da90CommunityType
+            INTEGER,
+        da90CommunityROString
+            OCTET STRING (SIZE (0..32)),
+        da90CommunityRWString
+            OCTET STRING (SIZE (0..32)),
+        da90CommunityTrapString
+            OCTET STRING (SIZE (0..32))
+    }
+
+da90CommunityIndex OBJECT-TYPE
+    SYNTAX  INTEGER (1..64)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Index into hub-community string pair table, identifies the community
+        being accessed."
+    ::= { da90CommunityEntry 1 }
+
+da90CommunityType OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(1),
+                invalid(2),
+                active(3)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Identifies whether the current community information is active for
+        this row in the community table.  The value unknown(1) is read-only and
+        indicates that this row in the community table contains questionable
+        data.  Setting to invalid(2) deletes this row in the community table,
+        thereby freeing the NVRAM used to store the community information (i.e.
+        destroys the slot and port tables for this community).  Attempting to
+        set invalid(2) the community in which the managing DECagent resides
+        will result in a 'genErr' response."
+    ::= { da90CommunityEntry 2 }
+
+da90CommunityROString OBJECT-TYPE
+    SYNTAX  OCTET STRING (SIZE (0..32))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Community string, with a read-only profile, used to access a client
+        hub.  All community strings in the read-only set must be unique.
+        Setting such a community string to a pre-existing value returns a
+        status of 'badValue'.  Reading this variable with a community string
+        other than one of the agent's community strings will result in a
+        'noSuchName' response."
+    ::= { da90CommunityEntry 3 }
+
+da90CommunityRWString OBJECT-TYPE
+    SYNTAX  OCTET STRING (SIZE (0..32))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Community string, with a read-write profile, used to access a client
+        hub.  All community strings in the read-write set must be unique.
+        Setting such a community string to a pre-existing value returns a
+        status of 'badValue'.  Reading this variable with a community string
+        other than the agent's read-write community string will result in a
+        'noSuchName' response."
+    ::= { da90CommunityEntry 4 }
+
+da90CommunityTrapString OBJECT-TYPE
+    SYNTAX  OCTET STRING (SIZE (0..32))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Community string sent with traps generated due to events caused by
+        this community.  The trap community strings do not have to be unique.
+        This variable is read using one of the agent's community string."
+    ::= { da90CommunityEntry 5 }
+
+da90AgentSlot OBJECT-TYPE
+    SYNTAX  INTEGER (1..16)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The slot number in which the managing DECagent 90 resides."
+    ::= { da90 5 }
+
+da90ErrorlogTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Da90ErrorlogEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "The da90ErrorlogTable is a ring of eight (8) errorlog entries for this
+        DECagent 90.  Thus, the ninth entry will overwrite the first entry, the
+        tenth entry will overwrite the second entry, and so on.  The last entry
+        with the highest value of da90ErrorlogWriteCount is the most recent
+        entry.  The errorlog contains information about extraordinary events
+        which have occurred in the DECagent, including user-initiated
+        reset-to-factory settings, fatal traps and unexpected traps.  The
+        errorlog does not contain normal SNMP trap information."
+    ::= { da90 6 }
+
+da90ErrorlogEntry  OBJECT-TYPE
+    SYNTAX  Da90ErrorlogEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "An entry in the errorlog containing the DECagent reset count at the
+        time the entry was logged, the timestamp in hundredths of a second
+        since the last reset occurred, the number of times this table entry has
+        been written to and the error information in textual form."
+    INDEX   { da90ErrorlogIndex }
+    ::= { da90ErrorlogTable 1 }
+
+Da90ErrorlogEntry ::=
+    SEQUENCE {
+        da90ErrorlogIndex
+            INTEGER,
+        da90ErrorlogResetCount
+            INTEGER,
+        da90ErrorlogTimeStamp
+            TimeTicks,
+        da90ErrorlogWriteCount
+            INTEGER,
+        da90ErrorlogData
+            DisplayString
+    }
+
+da90ErrorlogIndex OBJECT-TYPE
+    SYNTAX  INTEGER (1..8)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The index into the errorlog table."
+    ::= { da90ErrorlogEntry 1 }
+
+da90ErrorlogResetCount OBJECT-TYPE
+    SYNTAX  INTEGER (0..65535)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The number of times the DECagent has been reset (soft or hard reset)
+        since the creation of the errorlog or the last reset-to-factory
+        settings.  A value of zero indicates that this error occurred before
+        initialization was complete.  See da90ResetCount for additional
+        details."
+    ::= { da90ErrorlogEntry 2 }
+
+da90ErrorlogTimeStamp OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The uptime, in hundredths of a second, of the DECagent when this entry
+        was logged."
+    ::= { da90ErrorlogEntry 3 }
+
+da90ErrorlogWriteCount OBJECT-TYPE
+    SYNTAX  INTEGER (1..65535)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The number of times this row in the errorlog table has been written."
+    ::= { da90ErrorlogEntry 4 }
+
+da90ErrorlogData OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..64))
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "A textual description of the error for this errorlog entry."
+    ::= { da90ErrorlogEntry 5 }
+
+da90ResetCount OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The total number of resets to the agent that has occurred, including
+        power-ups.  This counter is maintained in non-volatile storage and is
+        reset to zero only when a reset-to-factory settings occurs."
+    ::= { da90 7 }
+
+da90BackplaneMode OBJECT-TYPE
+    SYNTAX  INTEGER {
+                slave(1),
+                master(2)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The desired state of the DECagent 90's hub mastership (i.e. it's
+        ability to directly manage repeaters, terminal servers and bridges and
+        discover other modules which reside in the same hub as the agent). 
+        This value is retained in non-volatile storage.  It's default value is
+        master(2)."
+    ::= { da90 8 }
+
+da90BackplaneState OBJECT-TYPE
+    SYNTAX  INTEGER {
+                slave(1),
+                master(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Indicates whether the DECagent 90 is managing the hub (i.e. capable of
+        directly managing repeaters, terminal servers and bridges and
+        discovering other modules)."
+    ::= { da90 9 }
+
+da90BackplaneAddrDbAgingTime OBJECT-TYPE
+    SYNTAX  INTEGER (0..65535)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "A non-volatile value indicating the number of minutes an address
+        discovered by the agent will remain in the forwarding database address
+        table.  This variable is meaningful only when the agent is the bus
+        master of the hub backplane (see da90BackplaneState).  It's default
+        value is 600 minutes."
+    ::= { da90 10 }
+
+da90LoadAdminStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                other(1),
+                start-read(2),
+                start-write(3),
+                cancel(4)
+                }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object is used to control the program TFTP load process of a
+        device.  When read, the value other(1) is returned.
+
+        When set to start-read(2) the device initiates a TFTP read operation to
+        read a new program image.  This implementation does not support
+        start-write(3) to initiate a new program load via a TFTP write
+        operation.
+
+        The status of the last load attempt is reflected in da90LoadOperStatus.
+
+        A device shall always reset upon completion of a successful load
+        attempt.  It may reset upon unsuccessful completion of the load
+        attempt.
+    
+        This implementation does not support the cancel(4) option."
+    ::= { da90 11 }
+
+da90LoadOperStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                none(1),
+                success(2),
+                failure(3)
+                }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The final state of the last load attempt.  The value none(1) indicates 
+        that no load has been attempted, ever.
+    
+        This object is non-volatile.  It's default value is none(1)."
+    ::= { da90 12 }
+    
+da90LoadFilename OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE(0..64))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The name of the file in which to load.  When the device is reading,
+        this is the name of the file to be read.  When the device is being
+        written, this is the only name of the file in which writes will be
+        accepted - provided the device can check the file name.  If the device
+        can not check the file name then this object is ignored.  It is the
+        duty of the NMS triggering the device to load this object.
+
+        This object is non-volatile.  The initial and default value of this
+        object in a zero-length string.  Setting a value containing embedded
+        spaces or tabs will result in a 'badValue' response.
+
+        In the case of multi-file loads (aka segmented loads) this object
+        contains the name of the first file in which to load.  It is an
+        application specific issue as to how to get subsequent load files."
+    ::= { da90 13 }
+    
+da90LoadIpHostAddr OBJECT-TYPE
+    SYNTAX  IpAddress
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The IP address of the host from which to load.  When the device is
+        reading, this is the IP address of the host in which the read will be
+        directed.  When the device is being written, this is the IP address of
+        the only host in which writes will be accepted.
+
+        This object is non-volatile.  The initial and default value of this
+        object is 0.0.0.0."
+    ::= { da90 14 }
+
+da90LoadDevSpecific OBJECT-TYPE
+    SYNTAX  INTEGER {
+                none(1),
+                readFailed(2),
+                timedOut(3),
+                crcFailure(4),
+                unknownFailure(5)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "A device specific parameter which is used to indicate detailed error
+        information about the last attempted load.
+
+        A value of none(0) indicates that no load has been attempted, or that
+        there is nothing interesting to report of the last load.  readFailed(1)
+        and timedOut(2) indicate that the TFTP file transfer was not
+        successful.  A crcFailure(3) is returned when the image transferred
+        failed to pass the CRC check.
+
+        This object is non-volatile.  It's default value is none(1)."
+     ::= { da90 15 }
+
+da90SetupPortStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                console(1),
+                slip(2),
+                reset(3)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "This object indicates the current status of the setup port on
+        the front panel of the DECagent. When read, it will return
+        either console(1) or slip(2). Writing reset(3) to this object
+        will cause the setup port to return to the console state. The
+        setup port cannot be set to slip state from this object; it must
+        be done through the appropriate console menu option. Writing a
+        value other than reset(3) will result in a 'badValue' response."
+     ::= { da90 16 }
+
+--
+--
+-- ds90L Group
+--
+--      Each row of the ds90LModuleTable contains information on
+--      an individual DECserver 90 module.  There is one row in
+--      the table for each DECserver 90 in the hub/community.
+--
+
+ds90LNumberModules OBJECT-TYPE
+    SYNTAX  INTEGER (0..16)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Number of DECserver 90 modules represented in the ds90LModuleTable."
+    ::= { ds90L 1 }
+
+ds90LModuleTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Ds90LModuleEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "A table of DECserver 90 modules installed in the group.  The number of
+        entries is given by ds90LNumberModules."
+    ::= { ds90L 2 }
+
+ds90LModuleEntry OBJECT-TYPE
+    SYNTAX  Ds90LModuleEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "Contains objects defining characteristics of DECserver 90 modules in
+        the group."
+    INDEX   {ds90LSlotIndex }
+    ::= { ds90LModuleTable 1 }
+
+Ds90LModuleEntry ::=
+    SEQUENCE {
+        ds90LSlotIndex
+            INTEGER,
+        ds90LDot3StatsDeferredTransmissions
+            Counter,
+        ds90LDot3StatsSingleCollisionFrames
+            Counter,
+        ds90LDot3StatsMultipleCollisionFrames
+            Counter,
+        ds90LEnetDataOverruns
+            Counter,
+        ds90LLatCircMsgsIns
+            Counter,
+        ds90LLatCircMsgsOuts
+            Counter,
+        ds90LLatSessSolicitAccepts
+            Counter,
+        ds90LLatSessSolicitRejects
+            Counter,
+        ds90LLatCircDuplsMsgs
+            Counter,
+        ds90LLatCircMsgRetransmits
+            Counter,
+        ds90LLatSessIllegalSlots
+            Counter,
+        ds90LIllegalMulticastRcvs
+            Counter,
+        ds90LLatCircKeepAlive
+            INTEGER,
+        ds90LLatCircRetransmitLimit
+            INTEGER,
+        ds90LLatCircInvalidMsgs
+            Counter,
+        ds90LAuthorizeMode
+            INTEGER,
+        ds90LMaintenance
+            INTEGER,
+        ds90LPrompt
+            DisplayString
+    }
+
+ds90LSlotIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..16)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The slot index value which addresses the dh90SlotTable for this
+        module."
+    ::= { ds90LModuleEntry 1 }
+
+ds90LDot3StatsDeferredTransmissions OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of frames for which the first transmission attempt on a
+        particular interface is delayed because the medium is busy.
+
+        The count represented by an instance of this object does not include
+        frames involved in collisions."
+    ::= { ds90LModuleEntry 2 }
+
+ds90LDot3StatsSingleCollisionFrames OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of successfully transmitted frames on a particular interface
+        for which transmission is inhibited by exactly one collision.
+
+        (If the DECserver 90 implements the MIB-II if group, the following also
+        applies:
+
+        A frame that is counted by an instance of this object is also counted
+        by the corresponding instance of either the ifOutUcastPkts or
+        ifOutNUcastPkts object and is not counted by the corresponding instance
+        of the ds90LDot3StatsMultipleCollisionFrames object.)"
+    ::= { ds90LModuleEntry 3 }
+
+ds90LDot3StatsMultipleCollisionFrames OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of successfully transmitted frames on a particular interface
+        for which transmission is inhibited by more than one collision.
+
+        (If the DECserver 90 implements the MIB-II if group, the following also
+        applies:
+
+        A frame that is counted by an instance of this object is also counted
+        by the corresponding instance of either the ifOutUcastPkts or
+        ifOutNUcastPkts object and is not counted by the corresponding instance 
+        of the ds90LDot3StatsSingleCollisionFrames object.)"
+    ::= { ds90LModuleEntry 4 }
+
+ds90LEnetDataOverruns OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the number of frames arriving at the DECserver 90 that were
+        lost due to data overrun since it last reinitialized or zeroed
+        counters."
+    ::= { ds90LModuleEntry 5 }
+
+ds90LLatCircMsgsIns OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the number of LAT circuit messages received by this
+        DECserver 90 since it last reinitialized or zeroed counters."
+    ::= { ds90LModuleEntry 6 }
+
+ds90LLatCircMsgsOuts OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the number of LAT circuit messages transmitted by this
+        DECserver 90 since it last reinitialized or zeroed counters."
+    ::= { ds90LModuleEntry 7 }
+
+ds90LLatSessSolicitAccepts OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the number of LAT solicits accepted by this DECserver 90
+        since it last reinitialized or zeroed counters."
+    ::= { ds90LModuleEntry 8 }
+
+ds90LLatSessSolicitRejects OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the number of LAT solicits rejected by this DECserver 90
+        since it last reinitialized or zeroed counters."
+    ::= { ds90LModuleEntry 9 }
+
+ds90LLatCircDuplsMsgs OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the number of duplicate LAT messages the DECserver 90 LAT
+        implementation has discarded since it last reinitialized or zeroed
+        counters."
+    ::= { ds90LModuleEntry 10 }
+
+ds90LLatCircMsgRetransmits OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the total number of LAT circuit messages this DECserver 90
+        has retransmitted since it last reinitialized or zeroed counters."
+    ::= { ds90LModuleEntry 11 }
+
+ds90LLatSessIllegalSlots OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the number of illegal LAT slots this DECserver 90 has
+        received on all LAT sessions since it last reinitialized or zeroed
+        counters."
+    ::= { ds90LModuleEntry 12 }
+
+ds90LIllegalMulticastRcvs OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A count of the number of illegal multicast LAT messages received on
+        this DECserver 90 since it last reinitialized or zeroed counters."
+    ::= { ds90LModuleEntry 13 }
+
+ds90LLatCircKeepAlive OBJECT-TYPE
+    SYNTAX INTEGER (10..255)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "This defines the number of seconds the LAT circuits provider waits
+        between transmitting LAT circuit layer keep-alive messages.  Writing to
+        this object is equivalent to issuing the CHANGE SERVER KEEPALIVE TIMER
+        command via the user interface."
+    ::= { ds90LModuleEntry 14 }
+
+ds90LLatCircRetransmitLimit OBJECT-TYPE
+    SYNTAX INTEGER (4..120)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "This object defines the maximum number of LAT circuit message
+        retransmissions the server will attempt before declaring the circuit
+        failed.  Writing to this object is equivalent to issuing the CHANGE
+        SERVER RETRANSMIT LIMIT command via the user interface."
+    ::= { ds90LModuleEntry 15 }
+
+ds90LLatCircInvalidMsgs OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "This counts the number of invalid LAT messages received on its entry's
+        LAT circuit since the DECserver last reinitialized or zeroed counters."
+    ::= { ds90LModuleEntry 16 }
+
+ds90LAuthorizeMode OBJECT-TYPE
+    SYNTAX  INTEGER {
+                enable(1),
+                disable(2)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Setting a value of enable(1) causes the DECserver to enter an
+        enable-authorized-mode-pending state.  The device will enter authorized
+        mode if the power is cycled on the device within one minute.  The
+        password used to enable authorized mode will be the current value of
+        dh90SlotPassword, which must be set to the desired value prior to
+        setting ds90LAuthorizeMode to enable(1).
+
+        Setting a value of disable(2) causes the DECserver to enter a
+        disable-authorized-mode-pending state.  The device will exit authorized
+        mode if the power is cycled on the device within one minute."
+    ::= { ds90LModuleEntry 17 }
+
+ds90LMaintenance OBJECT-TYPE
+    SYNTAX  INTEGER {
+                ready(1),
+                zeroCounters(2),
+                reset(3),
+                resetToFactory(4)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "A control variable to reset the counters on a DECserver 90.  In
+        response to a Get or a getNext request, the agent always returns
+        ready(1).  Setting the value to zeroCounters(2) causes the interface,
+        LAT and dh90SlotCounterTime counters to be cleared.  Setting the value
+        to reset(3) causes the entire module to be reset, any users and
+        circuits will be disconnected.  Setting the value to resetToFactory(4)
+        causes the entire device to be reset to the original factory settings.
+        Passwords and port names will be cleared and port speeds set to
+        autobaud."
+    ::= { ds90LModuleEntry 18 }
+
+ds90LPrompt OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (1..16))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Contains the prompt displayed when a session is local to the
+        DECserver 90L+ terminal server.  The default value is '->'.  This
+        variable returns 'noSuchName' for a DECserver 90L.  Setting a value
+        containing embedded spaces or tabs will result in a 'badValue'
+        response."
+    ::= { ds90LModuleEntry 19 }
+
+--
+--  ds90LPortTable
+--
+--      Port specific variables for the DECserver 90L and 
+--      DECserver 90L+.  Most of the management of the ports is
+--      accomplished via the char-like and RS232-like mibs.
+--
+
+ds90LPortTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF Ds90LPortEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A table of port specific variables on this DECserver 90.  The index
+        for a terminal server port is given by
+
+                (slot number * 100) + port number
+
+        The number of ports is given by dh90SlotNumberOfPorts."
+    ::= { ds90L 3 }
+
+ds90LPortEntry OBJECT-TYPE
+    SYNTAX Ds90LPortEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A single LAT session instance this DECserver 90 currently provides."
+    INDEX { ds90LPortIndex }
+    ::= { ds90LPortTable 1 }
+
+Ds90LPortEntry ::= 
+    SEQUENCE {
+        ds90LPortIndex
+            INTEGER,
+        ds90LPortRemoteModification
+            INTEGER,
+        ds90LPortType
+            INTEGER,
+        ds90LPortBreak
+            INTEGER,
+        ds90LPortTest
+            INTEGER,
+        ds90LPortAutoConfigure
+            INTEGER,
+        ds90LPortOnDemandLoading
+            INTEGER,
+        ds90LPortDedicatedServiceStatus
+            INTEGER,
+        ds90LPortDedicatedServiceName
+            DisplayString,
+        ds90LPortDedicatedServiceNode
+            DisplayString,
+        ds90LPortDedicatedServicePort
+            DisplayString,
+        ds90LPortPreferredServiceStatus
+            INTEGER,
+        ds90LPortPreferredServiceName
+            DisplayString,
+        ds90LPortPreferredServiceNode
+            DisplayString,
+        ds90LPortPreferredServicePort
+            DisplayString
+    }
+
+ds90LPortIndex OBJECT-TYPE
+    SYNTAX INTEGER (101..1608)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The value of charPortIndex for this port."
+    ::= { ds90LPortEntry 1 }
+
+ds90LPortRemoteModification OBJECT-TYPE
+    SYNTAX INTEGER {
+               disable(1),
+               enable(2)
+           }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Enables and disables remote modification of the port by the host
+        system."
+    ::= { ds90LPortEntry 2 }
+
+ds90LPortType OBJECT-TYPE
+    SYNTAX INTEGER {
+               terminal(1),
+               printer(2)
+           }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Selects the type of device connected to the port."
+    ::= { ds90LPortEntry 3 }
+
+ds90LPortBreak OBJECT-TYPE
+    SYNTAX INTEGER {
+               local(1),
+               remote(2)
+           }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Determines if the port responds to local or remote break."
+    ::= { ds90LPortEntry 4 }
+
+ds90LPortTest OBJECT-TYPE
+    SYNTAX INTEGER {
+               disable(1),
+               enable(2)
+           }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Setting this variable to enable(2) places the port into loopback mode.
+        Loopback mode can be used to verify that a port is receiving and
+        sending characters."
+    ::= { ds90LPortEntry 5 }
+
+ds90LPortAutoConfigure OBJECT-TYPE
+    SYNTAX INTEGER {
+               enable(1),
+               disable(2)
+           }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Enables or disables the autoconfiguration of a port on a DECserver
+        90L+.  Enabling autoconfiguration allows default settings to be
+        restored to a port after each reset of the terminal server.  Disabling
+        autoconfiguration causes the speed and certain characteristics of the
+        port to be stored in non-volatile memory on the terminal server.  These
+        port settings will be restored after the next reset of the device.
+
+        NOTE: Set this variable to disable(2) BEFORE setting a new port speed
+              with rs232PortInSpeed and rs232PortOutSpeed.
+
+        For the DECserver 90L, reads of this variable always return enable(1).
+        Setting this variable to a value other than enable(1) for a DECserver
+        90L will result in a 'badValue' response."
+    ::= { ds90LPortEntry 6 }
+
+ds90LPortOnDemandLoading OBJECT-TYPE
+    SYNTAX INTEGER {
+               disable(1),
+               enable(2)
+           }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Enables or disables on-demand loading of fonts to a port in a
+        DECserver 90L+.  For the DECserver 90L, reads of this variable always
+        return disable(1).  Setting this variable to a value other than
+        disable(1) for a DECserver 90L will result in a 'badValue' response."
+    ::= { ds90LPortEntry 7 }
+
+ds90LPortDedicatedServiceStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "A status variable indicating whether or not dedicated service is
+        enabled on a terminal server port.
+
+        Dedicated service on a port means that the port will attempt to make
+        a connection only to the specified service/node/port.  Attempts to make
+        a connection to another service/node/port is not possible on a port
+        with dedicated service enabled.
+
+        If the value of this variable is disabled(2), the corresponding name,
+        node and port variables will return 'noSuchName' on an SNMP Get and
+        'notFound' on an SNMP getNext."
+    ::= { ds90LPortEntry 8 }
+
+ds90LPortDedicatedServiceName OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..16))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The name of the dedicated service to which a connection will be
+        attempted when a connection to the terminal server port is made.
+
+        Setting a valid name, from 1 to 16 characters in length, will enable
+        dedicated service on the port.  To disable dedicated service on the
+        port, set this variable to the null string.  Setting a value containing
+        embedded spaces or tabs will result in a 'badValue' response."
+    ::= { ds90LPortEntry 9 }
+
+ds90LPortDedicatedServiceNode OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..10))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The node name of the remote system to which a connection will be
+        attempted when a connection to the terminal server port is made.
+
+        This variable can only be set for ports which already have dedicated
+        service enabled (i.e. ds90LPortDedicatedServiceName is not null).
+        Specifying a value for this variable for a port which does not have
+        dedicated service enabled will result in a 'genErr' response.
+
+        Note that setting this variable to null will also delete the port name
+        specified by ds90LPortDedicatedServicePort for this port.  Setting a
+        value containing embedded spaces or tabs will result in a 'badValue'
+        response."
+    ::= { ds90LPortEntry 10 }
+
+ds90LPortDedicatedServicePort OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..8))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The port on the remote system to which a connection will be attempted
+        when a connection to the terminal server port is made.
+
+        This variable can only be set for ports which already have dedicated
+        service enabled (i.e. ds90LPortDedicatedServiceName is not null) and a
+        valid node name (i.e. ds90LPortDedicatedServiceNode is not null).  If
+        the above conditions are not met, a response of 'genErr' is returned.
+        Setting a value containing embedded spaces or tabs will result in a
+        'badValue' response."
+    ::= { ds90LPortEntry 11 }
+
+ds90LPortPreferredServiceStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "A status variable indicating whether or not preferred service is
+        enabled on a terminal server port.
+
+        Preferred service on a port means that the port will attempt to make
+        a connection to the specific service/node/port when the user does not
+        specify a service name with the 'CONNECT' command at the terminal
+        server prompt.
+
+        If the value of this variable is disabled(2), the corresponding name,
+        node and port variables will return 'noSuchName' on an SNMP Get and
+        'notFound' on an SNMP getNext."
+    ::= { ds90LPortEntry 12 }
+
+ds90LPortPreferredServiceName OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..16))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The name of the preferred service to which a connection will be
+        attempted when a connection to the terminal server port is made.
+
+        Setting a valid name, from 1 to 16 characters in length, will enable
+        preferred service on the port.  To disable preferred service on the
+        port, set this variable to the null string.  Setting a value containing
+        embedded spaces or tabs will result in a 'badValue' response."
+    ::= { ds90LPortEntry 13 }
+
+ds90LPortPreferredServiceNode OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..10))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The node name of the remote system to which a connection will be
+        attempted when a connection to the terminal server port is made.
+
+        This variable can only be set for ports which already have preferred
+        service enabled (i.e. ds90LPortPreferredServiceName is not null).
+        Specifying a value for this variable for a port which does not have
+        preferred service enabled will result in a 'genErr' response.
+
+        Note that setting this variable to null will also delete the port name
+        specified by ds90LPortPreferredServicePort for this port.  Setting a
+        value containing embedded spaces or tabs will result in a 'badValue'
+        response."
+    ::= { ds90LPortEntry 14 }
+
+ds90LPortPreferredServicePort OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..8))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The port on the remote system to which a connection will be attempted
+        when a connection to the terminal server port is made.
+
+        This variable can only be set for ports which already have preferred
+        service enabled (i.e. ds90LPortPreferredServiceName is not null) and a
+        valid node name (i.e. ds90LPortPreferredServiceNode is not null).  If
+        the above conditions are not met, a response of 'genErr' is returned.
+        Setting a value containing embedded spaces or tabs will result in a
+        'badValue' response."
+    ::= { ds90LPortEntry 15 }
+
+--
+--  ds90LSessionTable
+--
+--      Session specific variables for the DECserver 90L and 
+--      DECserver 90L+.  Most of the management of the ports is
+--      accomplished via the CHAR-LIKE and RS232 like mibs.
+--
+
+ds90LSessionTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF Ds90LSessionEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "The list of all LAT sessions active on this DECserver 90."
+    ::= { ds90L 4 }
+
+ds90LSessionEntry OBJECT-TYPE
+    SYNTAX Ds90LSessionEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A single LAT session instance this DECserver 90 currently provides."
+    INDEX { ds90LSessionPort, ds90LSessionIndex }
+    ::= { ds90LSessionTable 1 }
+
+Ds90LSessionEntry ::= 
+    SEQUENCE {
+        ds90LSessionPort
+            INTEGER,
+        ds90LSessionIndex
+            INTEGER,
+        ds90LSessionRemoteNode
+            DisplayString,
+        ds90LSessionService
+            DisplayString,
+        ds90LSessionRemotePortId
+            DisplayString
+    }
+
+ds90LSessionPort OBJECT-TYPE
+    SYNTAX INTEGER (101..1608)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The value of charPortIndex for the port to which this session
+        belongs."
+    ::= { ds90LSessionEntry 1 }
+
+ds90LSessionIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..4)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The session index in the context of the port, a non-zero positive
+        integer.  Will be 1 for the DECserver 90L, 4 for DECserver 90L+."
+    ::= { ds90LSessionEntry 2 }
+
+ds90LSessionRemoteNode OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..6))
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The name of the remote node providing the service for this session."
+    ::= { ds90LSessionEntry 3 }
+
+ds90LSessionService OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..6))
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The service to which this session is connected."
+    ::= { ds90LSessionEntry 4 }
+
+ds90LSessionRemotePortId OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..6))
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The name of the port at the remote node providing the connection, for
+        example, LAT121."
+    ::= { ds90LSessionEntry 5 }
+
+--
+--
+-- drpt90 Group
+--
+--      These are the repeater port objects for the DECrepeater 90 family of
+--      repeaters.
+--
+
+--
+-- drpt90PortTable   - repeater port information
+--
+--      These are interface objects implemented in the DECrepeater 90 family of
+--      repeaters.
+--
+
+drpt90PortTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Drpt90PortEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "A table of port specific variables on this DECrepeater 90.  The index
+        for a repeater port is given by
+
+                (slot number * 100) + port number
+
+        The number of ports is given by dh90SlotNumberOfPorts."
+    ::= { drpt90 1 }
+
+drpt90PortEntry OBJECT-TYPE
+    SYNTAX  Drpt90PortEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A collection of objects containing information for a given interface."
+    INDEX  { drpt90PortIndex }
+    ::= { drpt90PortTable 1 }
+
+Drpt90PortEntry ::=
+    SEQUENCE {
+        drpt90PortIndex
+            INTEGER,
+        drpt90PortName
+            DisplayString,
+        drpt90PortAdminStatus
+            INTEGER,
+        drpt90PortState
+            INTEGER,
+        drpt90PortType
+            INTEGER,
+        drpt90PortPartitions
+            Counter,
+        drpt90PortAutoPartitionReason
+            INTEGER,
+        drpt90PortJamBits
+            INTEGER
+    }
+
+drpt90PortIndex OBJECT-TYPE
+    SYNTAX  INTEGER (101..1608)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Identifies the module and port.  The value of this object is given by:
+
+                (slot number * 100) + port number"
+
+    ::= { drpt90PortEntry 1 }
+
+drpt90PortName OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..16))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The text description of the port given by the network manager.
+        Setting a value containing embedded spaces or tabs will result in a
+        'badValue' response."
+    ::= { drpt90PortEntry 2 }
+
+drpt90PortAdminStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The desired state of the port."
+    ::= { drpt90PortEntry 3 }
+
+drpt90PortState OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(1),
+                autoPartitioned(2),
+                managementPartitioned(3),
+                active(4),
+                inactive(5)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The state of the port.  The value unknown(1) is returned when the port
+        state cannot be determined.  The value autoPartitioned(2) indicates
+        that the repeater has disabled the port automatically, the value
+        managementPartitioned(3) indicates that the port has been disabled
+        remotely, and the value active(4) indicates that the port is
+        operational. A value of inactive(5) is returned by repeaters that
+        can detect that no media is attached to the port."
+    ::= { drpt90PortEntry 4 }
+
+drpt90PortType OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(1),
+                twistedPair(2),
+                thinWire(3),
+                fiberOptic(4),
+                aui(5)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The physical medium type of the port."
+    ::= { drpt90PortEntry 5 }
+
+drpt90PortPartitions OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The number of times this port has partitioned.  This value is
+        significant only if drpt90PortStatus is not unknown(1)."
+    ::= { drpt90PortEntry 6 }
+
+drpt90PortAutoPartitionReason OBJECT-TYPE
+    SYNTAX  INTEGER {
+                notPartitioned(0),
+                managementPartitioned(1),
+                excessiveLength(2),
+                excessiveLengthAndMgmtPart(3),
+                excessiveCollisions(4),
+                excessiveCollisionsAndMgmtPart(5),
+                jabber(6),
+                jabberAndMgmtPart(7),
+                nocarrierLoopback(8),
+                nocarrierLoopbackAndMgmtPart(9),
+                transmitCarrierDropout(10),
+                transmitCarrierDropoutAndMgmtPart(11)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Errors currently detected on the port."
+    ::= { drpt90PortEntry 7 }
+
+drpt90PortJamBits OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(1),
+                jb96(2),
+                jb128(3)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "The number of jam bits being used on the port segment."
+    ::= { drpt90PortEntry 8 }
+
+drpt90PortAddrTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Drpt90PortAddrEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "A list of MAC addresses paired with the repeater port on which they
+        have been seen."
+    ::= { drpt90 2 }
+
+drpt90PortAddrEntry OBJECT-TYPE
+    SYNTAX  Drpt90PortAddrEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A MAC address and the repeater port on which it resides."
+    INDEX  { drpt90PortPhyAddr }
+    ::= { drpt90PortAddrTable 1 }
+
+Drpt90PortAddrEntry ::=
+    SEQUENCE {
+        drpt90PortPhyAddr
+            OCTET STRING (SIZE (6)),
+        drpt90PortAddrIndex
+            INTEGER
+    }
+
+drpt90PortPhyAddr OBJECT-TYPE
+    SYNTAX  OCTET STRING (SIZE (6))
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "A MAC address seen on this port."
+    ::= { drpt90PortAddrEntry 1 }
+
+drpt90PortAddrIndex OBJECT-TYPE
+    SYNTAX  INTEGER (101..1608)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+        "Identifies the module and port.  The value of this object is the same
+        as drpt90PortIndex and is given by:
+
+                (slot number * 100) + port number"
+
+    ::= { drpt90PortAddrEntry 2 }
+
+--
+--
+-- dbSysChar - the system Characteristics group
+--
+--      This group consists of information about the device's hardware
+--      and firmware.  It also displays information about hardware and
+--      software switches that control device operation.
+--
+
+dbSysRomVersion OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The version number of the software stored in ROM.  The return value is
+       encoded as (major_version*10 + minor version).  For example, version 1.0
+       is returned as 10 (1*10 + 0)."
+    ::= { dbSysChar 1 }
+    
+dbSysInitSwitch OBJECT-TYPE
+    SYNTAX  INTEGER {
+                other(1),
+                reset(2),
+                resetToFactory(3)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "This object allows the management action of initializing a device and
+       forcing it to run selftest.  It can also be used to reset all
+       information added to the device's NVRAM.  When read, it returns a value
+       of other(1).  When set to a value of reset(2) the bridge will empty the
+       forwarding database and start relearning.  When set to resetToFactory(3)
+       the bridge will empty the forwarding database, reset spanning tree and
+       clear all protocol filters and password."
+    ::= { dbSysChar 2 }
+
+--
+-- dbSysStatus - the system Status group
+--
+--      This group consists of operational status of the device.
+--
+
+dbSysDeviceState OBJECT-TYPE
+    SYNTAX  INTEGER {
+                init(1),
+                operate(2),
+                broken(3)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The operational state of the device."
+    ::= { dbSysStatus 1 }
+
+dbSysNvramFailed OBJECT-TYPE
+    SYNTAX  INTEGER {
+                true(1),
+                false(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "A flag that, when set to true(1), indicates that the NVRAM failed
+       selftest following the last initialization of the device.  Values set to
+       variables maintained on the bridge will not be preserved over a power
+       cycle of the bridge."
+    ::= { dbSysStatus 2 }
+
+--
+-- dbIfTable   - groups in the extended interface module
+--
+--      These are interface objects implemented in the DECbridge 90
+--      over and above what is available via MIB-II.
+--
+
+dbIfTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF DbIfEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A list of interface entries.  The number of entries is given by
+       ifNumber."
+    ::= { db90interfaces 1 }
+
+dbIfEntry OBJECT-TYPE
+    SYNTAX  DbIfEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A collection of objects containing information for a given interface."
+    INDEX  { dbIfIndex }
+    ::= { dbIfTable 1 }
+
+DbIfEntry ::=
+    SEQUENCE {
+        dbIfIndex
+            INTEGER,
+        dbIfReceiveBadFrames
+            Counter,
+        dbIfTransmitErrorFrames
+            Counter
+         }
+
+dbIfIndex OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Identifies the interface.  The value of this object is the same as the
+       ifIndex for this interface."
+    ::= { dbIfEntry 1 }
+
+dbIfReceiveBadFrames OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Number of frames received with a bad frame check sequence or the device
+       received a frame loss indication from the hardware on the interface."
+    ::= { dbIfEntry 2 }
+
+dbIfTransmitErrorFrames OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Number of frames that were transmitted with an error on the line."
+    ::= { dbIfEntry 3 }
+
+--
+-- db90Char  -  the Bridge Characteristics group
+--
+--      This group consists of information about the bridge's hardware
+--      and firmware.  It also displays information about hardware and
+--      software switches that control device operation.
+--
+
+db90LB100SpanningTreeVer OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The version number of the Spanning Tree algorithm used by the bridge
+       when in the LAN Bridge 100 Spanning Tree mode."
+    ::= { db90Char 1 }
+
+db90802SpanningTreeVer OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The version number of the Spanning Tree algorithm used by the bridge
+       when in the 802.1d Spanning Tree mode."
+    ::= { db90Char 2 }
+
+db90MaxForwardingDBEntries OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The maximum number of address entries that the bridge can store in its
+       volatile memory."
+    ::= { db90Char 3 }
+    
+db90MaxNVForwardingDBEntries OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The maximum number of permanent address entries that the bridge can
+       store in its NVRAM."
+    ::= { db90Char 4 }
+
+db90MaxProtocolDBEntries OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The maximum number of protocol entries that the bridge can store in its
+       protocol database.   These entries control the handling of frames based
+       on their Ethernet protocol type, IEEE 802.2 DSAP or IEEE 802 SNAP
+       Protocol ID."
+    ::= { db90Char 5 }
+
+db90MaxNVProtocolDBEntries OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The maximum number of protocol entries that the bridge can store in its
+       NVRAM.  These are retained after a power-down."
+    ::= { db90Char 6 }
+
+--
+-- db90Stat  -  The Bridge Status group
+--
+--      This group consists of operational status of the bridge.
+--
+    
+db90CurrProtocolDBEntries OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of protocol entries that are stored in the bridge's protocol
+       database.  These control the handling of frames based on their Ethernet
+       protocol type, IEEE 802.2 DSAP, or 802 SNAP Protocol ID."
+    ::= { db90Stat 1 }
+
+db90CurrNVProtocolDBEntries OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of protocol entries in the bridge's NVRAM.  These are
+       retained after a power loss."
+    ::= { db90Stat 2 }
+
+db90MgmtHeardPort OBJECT-TYPE
+    SYNTAX  INTEGER {
+                backbone(1),
+                workgroup(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The port on which this command was received."
+    ::= { db90Stat 3 }
+
+db90LB100BeingPolled OBJECT-TYPE
+    SYNTAX  OCTET STRING (SIZE (6))
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The address of the LAN Bridge 100 mode bridge that sent this bridge
+       into the LAN Bridge 100 Spanning Tree mode. If this bridge is the Root,
+       this object indicates the bridge that will be polled periodically to
+       determine if it is still necessary to stay in this Spanning Tree mode."
+    ::= { db90Stat 4 }
+
+db90TimeSinceLastHello OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of seconds since the bridge last sent a hello message."
+    ::= { db90Stat 5 }
+
+db90HubManagement OBJECT-TYPE
+    SYNTAX  INTEGER {
+                enable(1),
+                disable(2)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "Indicates whether the bridge is managing the hub (i.e., is capable of
+       managing repeaters inserted in the hub)."
+    ::= { db90Stat 6 }
+
+db90CurrFdbEntries OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of entries currently active in the DECbridge 90 forwarding
+       database, or one more than the value of db90MaxForwardingDBEntries if
+       the bridge has exceeded the size of the forwarding database hardware."
+    ::= { db90Stat 7 }
+
+--
+-- db90Coun  -  the Bridge Counters group
+--
+--      This group consists of counters that measure operational
+--      events and errors.
+--
+    
+db90SpanningTreeModeChanges OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of times that the bridge switched from the 802.1d Spanning
+       Tree mode to the LB100 Spanning Tree mode."
+    ::= { db90Coun 1 }
+
+--
+-- db90Span  -  the Bridge Spanning Tree group
+--
+--      This group consists of Spanning Tree characteristics over and
+--      above what is required by the Bridge MIB.
+--
+
+db90BestRootAge OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The age, in hundredths of seconds, of the hello message that
+       established the best root."
+    ::= { db90Span 1 }
+
+db90TopologyChangeFlag OBJECT-TYPE
+    SYNTAX  INTEGER {
+                true(1),
+                false(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "A flag that indicates whether a topology change is currently in effect
+       on the extended LAN."
+    ::= { db90Span 2 }
+
+db90TellParentFlag OBJECT-TYPE
+    SYNTAX  INTEGER {
+                true(1),
+                false(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "A flag that indicates if the bridge is attempting to propagate a
+       topology change towards the root."
+    ::= { db90Span 3 }
+
+db90ForwardingDBShortAgingTime OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of seconds that the bridge keeps learned entries active
+       while a topology change is in effect."
+    ::= { db90Span 4 }
+
+db90BadHelloLimit OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of hello intervals during which the bridge receives one or
+       more bad hellos on a line, before the bridge performs a test on the
+       link.  A bad hello message is one that contains inferior information
+       that is received on a port on which this bridge is designated."
+    ::= { db90Span 5 }
+
+db90BadHelloResetTimer OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of hello intervals without bad hellos that the bridge will
+       wait before it resets its bad hello count to zero."
+    ::= { db90Span 6 }
+
+db90NoFrameInterval OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of seconds of inactivity on a line that will cause the
+       bridge to run a test on that line.  The bridge considers a line to be
+       inactive if it does not receive any frames on that line."
+    ::= { db90Span 7 }
+
+db90LB100PollTime OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of seconds that a root bridge in LAN Bridge 100 mode waits
+       between polling the LAN Bridge 100 that is keeping it in this mode.
+       This polling is done to determine whether the LB100 is still present on
+       the extended LAN."
+    ::= { db90Span 8 }
+
+db90LB100ResponseTimeout OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of seconds that a Root in LAN Bridge 100 Spanning Tree mode
+       will wait for a response from the LAN Bridge 100 which is keeping it in
+       this mode, before which it will assume that the LB100 is no longer on
+       the extended LAN."
+    ::= { db90Span 9 }
+
+db90LB100SpanningTreeCompat OBJECT-TYPE
+    SYNTAX  INTEGER {
+                autoSelect(1),
+                ieee802(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "A switch that controls the Spanning Tree mode used by the bridge.  If
+       in Auto-Select mode, the bridge will go into 802 Spanning Tree mode by
+       default, but will switch to LB100 mode as soon as a LB100 is detected.
+       In 802 Spanning Tree mode, the bridge will stay in 802 mode."
+    ::= { db90Span 10 }
+
+--
+-- db90IfTable  -  the extended bridge port table
+--
+--      This group consists of generic port objects for the bridge
+--
+
+db90IfTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Db90IfEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A list of interface entries.  The number of entries is given by
+       ifNumber."
+    ::= { db90PortInterfaces 1 }
+
+db90IfEntry OBJECT-TYPE
+    SYNTAX  Db90IfEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A collection of objects containing information for a given interface."
+    INDEX  { db90IfIndex }
+    ::= { db90IfTable 1 }
+
+Db90IfEntry ::=
+    SEQUENCE {
+        db90IfIndex
+            INTEGER,
+        db90IfReceiveDeviceFrames
+            Counter,
+        db90IfExceededBadHelloLimits
+            Counter
+    }
+
+db90IfIndex OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Identifies the interface.  The value of this object is the same as the
+       ifIndex for this interface."
+    ::= { db90IfEntry 1 }
+    
+db90IfReceiveDeviceFrames OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of frames addressed to the bridge itself that were received
+       on this line."
+    ::= { db90IfEntry 2 }
+    
+db90IfExceededBadHelloLimits OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of times that the bad hellos on the line exceeded the bad
+       hello limit."
+    ::= { db90IfEntry 3 }
+
+--
+-- db90IfEtherTable -   the extended bridge Ethernet port table
+--
+--      This group consists of Ethernet port objects for the bridge
+--
+
+db90IfEtherTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Db90IfEtherEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A list of interface entries for an Ethernet port."
+    ::= { db90PortInterfaces 2 }
+
+db90IfEtherEntry OBJECT-TYPE
+    SYNTAX  Db90IfEtherEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A collection of objects containing information for a given interface."
+    INDEX  { db90IfEthIndex }
+    ::= { db90IfEtherTable 1 }
+
+Db90IfEtherEntry ::=
+    SEQUENCE {
+        db90IfEthIndex
+            INTEGER,
+        db90IfEthFramingErrors
+            Counter,
+        db90IfEthCarrierLosses
+            Counter,
+        db90IfEthExceededCollisionLimits
+            Counter
+    }
+
+db90IfEthIndex OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Identifies the interface.  The value of this object is the same as the
+       ifIndex for this interface."
+    ::= { db90IfEtherEntry 1 }
+    
+db90IfEthFramingErrors OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of times that a frame received on the line contained both a
+       non-integer multiple of eight bits and a CRC error."
+    ::= { db90IfEtherEntry 2 }
+    
+db90IfEthCarrierLosses OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of times that the bridge detected a loss of the carrier
+       signal while transmitting a frame on the line."
+    ::= { db90IfEtherEntry 3 }
+    
+db90IfEthExceededCollisionLimits OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of times that the bridge failed to transmit a frame on this
+       line after 16 attempts, the collision limit."
+    ::= { db90IfEtherEntry 4 }
+    
+--
+-- db90IfSpanTable -the extended bridge Spanning Tree port table
+--
+--      This group consists of port Spanning Tree objects 
+--      for the bridge.
+--
+
+db90IfSpanTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Db90IfSpanEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A list of interface entries for a port."
+    ::= { db90PortInterfaces 3 }
+
+db90IfSpanEntry OBJECT-TYPE
+    SYNTAX  Db90IfSpanEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+       "A collection of objects containing information for a given interface."
+    INDEX  { db90IfSpIndex }
+    ::= { db90IfSpanTable 1 }
+
+Db90IfSpanEntry ::=
+    SEQUENCE {
+        db90IfSpIndex
+            INTEGER,
+        db90IfSpDesigRootAge
+            TimeTicks,
+        db90IfSpForwardDelayTimer
+            Counter,
+        db90IfSpBadHelloCounts
+            Counter,
+        db90IfSpTopologyChangeAckFlag
+            INTEGER
+    }
+
+db90IfSpIndex OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Identifies the interface.  The value of this object is the same as the
+       ifIndex for this interface."
+    ::= { db90IfSpanEntry 1 }
+    
+db90IfSpDesigRootAge OBJECT-TYPE
+    SYNTAX  TimeTicks
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The age, in hundredths of a second, of the last hello message received
+       from the designated bridge on the line."
+    ::= { db90IfSpanEntry 2 }
+    
+db90IfSpForwardDelayTimer OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The time remaining, in hundredths of a second, before the bridge will
+       leave the learning state of Preforwarding, and enter the Forwarding
+       state."
+    ::= { db90IfSpanEntry 3 }
+    
+db90IfSpBadHelloCounts OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "The number of hello intervals during which at least one bad hello was
+       received."
+    ::= { db90IfSpanEntry 4 }
+    
+db90IfSpTopologyChangeAckFlag OBJECT-TYPE
+    SYNTAX  INTEGER {
+                true(1),
+                false(2)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "A flag that indicates whether a topology change notification received
+       on a link that we are designated on needs to be acknowledged."
+    ::= { db90IfSpanEntry 5 }
+
+--
+-- db90ProtoFilt - the protocol database for DECbridge 90
+--
+ 
+db90ProtoFilterOther OBJECT-TYPE
+    SYNTAX  INTEGER {
+                forward(1),
+                filter(2),
+                default(3)
+            }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+       "Action taken by the bridge on Ethernet protocol types or the 5-byte
+       SNAP SAPs other than those specified in the db90ProtoTable.  forward(1)
+       indicates that a 'filter all' entry exists in the db90ProtoTable.  This
+       value also implies that no 'forward all' entry may be added to the
+       db90ProtoTable.  filter(2) indicates that a 'forward all' entry exists
+       in the db90ProtoTable.  This value also implies that no 'filter all'
+       entry may be added to the db90ProtoTable.  default(3) indicates that an
+       entry of either 'forward all' or 'filter all' (i.e. not just Multicast
+       frames) may be added to the db90ProtoTable.  This value also implies
+       that all other protocol entries not listed in the db90ProtoTable will be
+       forwarded."
+    ::= { db90ProtoFilt 1 }
+
+db90ProtoFilterTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF Db90ProtoFilterEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "A table that contains filtering information about Ethernet protocol
+        types and 5 byte SNAP SAPs for the DECbridge 90."
+    ::= { db90ProtoFilt 2 }
+ 
+db90ProtoFilterEntry OBJECT-TYPE
+    SYNTAX  Db90ProtoFilterEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION
+        "A table that contains filtering characteristics for Ethernet protocol
+        types and 5 byte SNAP SAPs for the DECbridge 90."
+    INDEX   { db90ProtoFilterProtocol }
+    ::= { db90ProtoFilterTable 1 }
+
+Db90ProtoFilterEntry ::=
+    SEQUENCE {
+        db90ProtoFilterProtocol
+            OCTET STRING,
+        db90ProtoFilterType
+            INTEGER,
+        db90ProtoFilterStatus
+            INTEGER,
+        db90ProtoFilterMulticastFlag
+            INTEGER,
+        db90ProtoFilterPortMask
+            INTEGER
+    }
+
+db90ProtoFilterProtocol OBJECT-TYPE
+    SYNTAX  OCTET STRING (SIZE (2..5))
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The protocol type or SNAP SAP in a frame to which this entry's
+        filtering information applies.  The length is 2 for Ethernet protocol
+        types and 5 for SNAP SAP."
+    ::= { db90ProtoFilterEntry 1 }
+ 
+db90ProtoFilterType OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(1),
+                invalid(2),
+                ethernet(3),
+                snap-sap(4),
+                deleteAllProtocols(5)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The type of this entry.  unknown(1) specifies that this protocol
+        filter is unused.  invalid(2) deletes the filter.  ethernet(3) or
+        snap-sap(4) defines the size of db90ProtoFilterProtocol.  Setting this
+        variable to a value of deleteAllProtocols(5) will cause all protocols,
+        both volatile and non-volatile, to be deleted."
+    ::= { db90ProtoFilterEntry 2 }
+ 
+db90ProtoFilterStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                forward(1),
+                filter(2)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Action taken by the bridge when it sees this Ethernet protocol type or
+        SNAP SAP in a received frame.  Note that this value must be identical
+        to db90ProtoFilterOther unless db90ProtoFilterMulticastFlag is
+        multicastOnly(2) or there are no other entries with
+        db90ProtoFilterMulticastFlag equal to allFrames(1)."
+    ::= { db90ProtoFilterEntry 3 }
+ 
+db90ProtoFilterMulticastFlag OBJECT-TYPE
+    SYNTAX  INTEGER {
+                allFrames(1),
+                multicastOnly(2)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Identifies whether or not filtering is based on the multicast bit in
+        the MAC destination address.  If allFrames(1), then filtering is
+        performed as per db90ProtoFilterStatus.  For multicastOnly(2),
+        multicast frames for this protocol are always filtered and unicast
+        frames are always forwarded; this is true regardless of the value of
+        db90ProtoFilterOther."
+    ::= { db90ProtoFilterEntry 4 }
+ 
+db90ProtoFilterPortMask OBJECT-TYPE
+    SYNTAX  INTEGER {
+                backbone(1),
+                workGroup(2),
+                allPorts(3)
+            }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "Must be allPorts(3) unless db90ProtoFilterMulticastFlag is
+        multicastOnly, in which case any specification is valid."
+    ::= { db90ProtoFilterEntry 5 }
+
+--
+--
+-- DECagent 90 Trap Definitions
+--
+--      The following SNMP generic traps are supported by the DECagent 90:
+--
+--          coldStart(0)
+--          warmStart(1)
+--          authenticationFailure(4)
+--
+--      The DECagent 90 also generates the enterpriseSpecific(6) traps defined
+--      below.
+--
+
+consolePasswordFailure TRAP-TYPE
+    ENTERPRISE  decagent90v1
+    DESCRIPTION
+        "There have been three consecutive failures to enter a correct password
+        when attempting to log into the DECagent 90 console port."
+    ::= 1
+
+nonVolatileRamError TRAP-TYPE
+    ENTERPRISE  decagent90v1
+    DESCRIPTION
+        "An error in the non-volatile storage on the DECagent 90 has occurred.
+        Some configuration information may have been lost."
+    ::= 2
+
+configurationExceeded TRAP-TYPE 
+    ENTERPRISE  decagent90v1
+    DESCRIPTION
+        "An attempt was made to exceed the maximum configuration supported by
+        the DECagent 90.  The request to create the additional community or to
+        add the additional module has been rejected."
+    ::= 3
+
+populationChange TRAP-TYPE
+    ENTERPRISE  decagent90v1
+    VARIABLES   { da90CommunityIndex, dh90SlotIndex, dh90SlotObjectID }
+    DESCRIPTION
+        "A module has been added or discovered, or has been deleted or
+        undiscovered.  The objects dh90PopulationChange and
+        dh90PopulationLastChange have been updated to reflect this change.
+        The community index, slot index, and module object id are included in
+        the trap PDU."
+    ::= 4
+
+moduleStatusChange TRAP-TYPE
+    ENTERPRISE  decagent90v1
+    VARIABLES   { da90CommunityIndex, dh90SlotIndex, dh90SlotObjectID,
+                  dh90SlotProxyStatus }
+    DESCRIPTION
+        "A module has become reachable or unreachable.  The objects
+        dh90StatusChange and dh90StatusLastChange have been updated to reflect
+        this change.  The community index, slot index, module object id and
+        proxy status are included in the trap PDU."
+    ::= 5
+
+rptrPortStatusChange TRAP-TYPE
+    ENTERPRISE  decagent90v1
+    VARIABLES   { da90CommunityIndex, dh90SlotIndex, dh90SlotObjectID,
+                  drpt90PortIndex, drpt90PortState }
+    DESCRIPTION
+        "The port status has changed on a repeater module.  The objects
+        dh90StatusChange and dh90StatusLastChange have been updated to reflect
+        this change.  The community index, slot index, module object id, port
+        index and port state are included in the trap PDU."
+    ::= 6
+
+--
+-- !! IMPORTANT NOTE FOR SOME MIB COMPILERS !!
+--
+-- The VARIABLES list has been commented out of the following two trap
+-- definitions because some MIB compilers cannot compile trap definitions that
+-- specify a VARIABLES list containing objects that are external to this MIB.
+--
+-- If your MIB compiler can properly compile trap definitions with a VARIABLES
+-- list containing external objects, you should uncomment the VARIABLES list
+-- for these two trap definitions.  If you do so, you must also uncomment the
+-- IMPORTS near the beginning of this MIB which import the required objects
+-- from their respective RFC.
+--
+-- Note that regardless of how this MIB is compiled into your NMS application,
+-- the trap PDU generated by the DECagent 90 for these traps will contain a
+-- varbind list with the objects specified in the VARIABLES list along with
+-- their values.  It is up to the trap handler on the NMS to decide what to do
+-- with this information.
+--
+
+srvrPortStatusChange TRAP-TYPE
+    ENTERPRISE  decagent90v1
+--    VARIABLES   { da90CommunityIndex, dh90SlotIndex, dh90SlotObjectID,
+--                  charPortIndex, charPortOperStatus }
+    DESCRIPTION
+        "The port status has changed on a terminal server module.  The objects
+        dh90StatusChange and dh90StatusLastChange have been updated to reflect
+        this change.  The community index, slot index, module object id, port
+        index and port operational status are included in the trap PDU."
+    ::= 7
+
+brdgPortStatusChange TRAP-TYPE
+    ENTERPRISE  decagent90v1
+--    VARIABLES   { da90CommunityIndex, dh90SlotIndex, dh90SlotObjectID,
+--                  ifIndex, ifOperStatus }
+    DESCRIPTION
+        "The port status has changed on a bridge module.  The objects
+        dh90StatusChange and dh90StatusLastChange have been updated to reflect
+        this change.  The community index, slot index, module object id, port
+        index and port operational status are included in the trap PDU."
+    ::= 8
+
+END

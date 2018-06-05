@@ -1,0 +1,1073 @@
+
+--
+-- This MIB is for 3Com intermediate systems that support IP
+--
+--
+-- The 3Com Enterprise Products Proprietary MIB Extensions
+--
+-- Copyright 3Com Corporation, 1993. All rights reserved.
+--
+-- changes FOR 7.0 (r2 of MIB)*****************************************
+-- 20-oct-93: kxy added support for multiple priority queues (QPriority)
+-- 21-oct-93: kxy added support for ctl of forwarding Subnet broadcasts
+--
+-- changes FOR 7.1 (r3 of MIB)*****************************************
+-- 10-mar-94: kxy added enum to a3IParpReqFormat:  auto(4)
+-- 15-mar-94: kxy added more enums to a3IParpReqFormat to identify
+--                results of auto req. format determination
+-- 04-apr-94: kxy changed value of auto(4) enum to auto(128) in a3IParpReqFormat.
+--
+-- changes FOR 8.0 (r4 of MIB)****************************************
+-- 01-jun-94: kxy deprecated a3ComBrgX25Qsize, a3ComBrgX25VcLimit,
+--            and a3ComBrgX25VcTimer.  The functionality of these
+--            objects is being assumed by the X25 profile service.
+--
+-- changes FOR 8.3 (r5 of MIB)****************************************
+-- 01-aug-95: kxy added a3IPicmpGenTable
+--
+
+      A3Com-IPextns-r5-MIB DEFINITIONS ::= BEGIN
+
+      IMPORTS
+              enterprises, IpAddress
+                  FROM RFC1155-SMI
+              OBJECT-TYPE
+                      FROM RFC-1212;
+
+      --
+      -- This MIB is for 3Com systems that offer IP routing services
+      --
+      -- This MIB is an extension of the IP group in MIB II (rfc1213)
+      -- and the IP Forwarding table (rfc1354)
+      --
+
+      a3Com          OBJECT IDENTIFIER ::= { enterprises 43 }
+      brouterMIB     OBJECT IDENTIFIER ::= { a3Com 2 }
+      a3ComIPextns   OBJECT IDENTIFIER ::= { brouterMIB 6 }
+
+      SMDSAddress ::= OCTET STRING (SIZE (8))
+      -- the 60-bit SMDS address, preceded by 4 bits with the
+      -- following values:
+      -- "1100" when representing an individual address
+      -- "1110" when representing a group address
+
+      RowStatus ::= INTEGER {
+                         active(1),
+                         notInService(2),
+                         notReady(3),                               
+                         createAndGo(4),
+                         createAndWait(5),
+                         destroy(6)
+      }
+
+      --This data type, which has the same semantics as the rowStatus
+      --textual convention used in SNMPv2, is used to add and 
+      --delete entries from a table.
+
+      --The tables in this MIB allow a subset of the functionality
+      --provided by the rowStatus textual convention.  In particular
+      --row creation is allowed using only the createAndGo method.
+
+      --That is, when adding entries to this table, this object
+      --must be set to createAndGo(4).  The instance identifier
+      --for this object will define the values of the columns 
+      --that make up the index.  
+
+      --In the same PDU, the appropriate remaining columns
+      --of that row must be set as well.  The agent
+      --will immediately set the value of this object to
+      --active(1) if the row is correct.  If not, the agent
+      --will refuse the SET request and return an
+      --error code.
+
+      --To modify an existing entry, it must be removed
+      --an another entry with the desired changes added. 
+                   
+      --To remove an entry, set the value of this object
+      --to destroy(6).
+
+
+
+
+      a3IPextMode  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                      multipleNet  (1),
+                      singleNet    (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object determines the mode the IP protocol layer
+              operates in.  When in multipleNet mode, the system will
+              accept different network addresses for each of its
+              interfaces.  Routing may be disabled (via ipForwarding), 
+              but the system will still be in routing mode, i.e., it 
+              will keep all of its assigned addresses and it may 
+              still participate in routing update protocols (if 
+              configured).  When in singleNet mode, the IP address
+              assigned to interfaces 1 is applied to all interfaces.  
+              ipForwarding can only be disabled, and all RIP parameters, 
+              other than those related to listening, will be ignored.
+              Note, when the value of this object is changed, the new
+              IP address must also be set in the same PDU.  This is 
+              required to ensure connectivity remains.
+
+              When this object transitions from multipleNet mode to singleNet 
+              mode, 
+                     1)  ipForwarding is automatically set to not-forwarding,
+
+                     2)  all RIP-IP parameters will be ignored except those
+                         related to listening on interface 1.  These parameters
+                         will be applied to all interfaces.
+
+                     3)  an IP address must be configured, in the same request,
+                         for interface 1.
+
+                         the agent removes all other IP addresses, and the 
+                         IP address assigned to interface 1 will apply to 
+                         all interfaces.
+
+
+              When this object transitions back to multipleNet mode, 
+
+                     1)  an IP address must be assigned, in the same request,
+                         to one of the ports, 
+
+                         that IP address will apply only to that port
+                         to which it is assigned.  
+
+                         The IP address for interface 1 will no longer apply 
+                         to all interfaces.
+         
+                     2)  ipForwarding will stay at not-forwarding, and 
+
+                     3)  all previously ignored RIP-IP parameters will take
+                         effect.  In order to actively route packets, 
+                         ipForwarding will need to be set to forwarding.
+
+              During this transition, there is the danger that no IP address
+              will have been configured for the interface that receives the 
+              SNMP requests, in which case, the device will no longer be
+              manageable.  For this reason, it is suggested that the IP 
+              addresses for the interface that receives the SNMP requests
+              be set in the same PDU that sets this object."
+          DEFVAL { multipleNet } 
+          ::= { a3ComIPextns 1 }
+
+      a3IPextFlushCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                      other       (1),
+                      flushRoutes (2),
+                      flushARP    (3)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "When set to 2, this object can be used to remove 
+              all dynamically learned entries from the IP routing table.  
+              When set to 3, this object can be used to remove dynamically 
+              learned entries from the Address Resolution Table."
+          ::= { a3ComIPextns 2 }
+
+      a3IPextRelaySrcRteCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                      relay   (1),
+                      discard (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object is used to control the relaying of packets
+              that contain the Loose or Strict source route option.
+              If this object is set to relay (1), those packets are
+              relayed.  If this object is set to discard (2), those
+              packets are discarded."
+          DEFVAL { discard }
+          ::= { a3ComIPextns 3 }
+
+      a3IPextSplitLoadCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                      split   (1),
+                      noSplit (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object is used to control load splitting.  If 
+              split (1), is specified, the traffic load is distributed
+              among a set of least-equal-cost paths.  These paths
+              are selected on a round-robin basis.  If a path is
+              unreachable, it is not considered a candidate for load
+              splitting."
+          DEFVAL { noSplit }
+          ::= { a3ComIPextns 4 }
+
+      a3IPicmpInfoCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                      info   (1),
+                      noInfo (2)
+                  }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object determines whether this system replies to 
+              ICMP Information request packets.  If this object is
+              set to info (1), replies are sent.  Otherwise, no replies
+              are sent."
+          DEFVAL { noInfo }
+          ::= { a3ComIPextns 5 }
+
+      a3IPicmpMaskCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                      mask (1),
+                      noMask (2)
+                  }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object determines whether this system replies
+              to ICMP Address Mask request packets.  If this object
+              is set to mask (1), replies are sent.  Otherwise, no
+              replies are sent."
+          DEFVAL { noMask }
+          ::= { a3ComIPextns 6 }
+
+--
+-- This next table contains extensions to the ipNetToMediaTable (ARP table)
+-- This table allows the specification of the header format to be used when
+-- sending packets over networks that support MAC addresses.  It also
+-- provides control over proxy ARP for each entry in the ARP table.
+--
+
+      a3IPntmExtTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF A3IPntmExtEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "This table is an extension of the ipNetToMediaTable
+              from mibII.  Currently, this table contains objects
+              for controlling MAC header formats and for controlling
+              proxy ARP for each entry."
+          ::= { a3ComIPextns 7 }
+
+      a3IPntmExtEntry  OBJECT-TYPE
+          SYNTAX  A3IPntmExtEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "Each entry in this table corresponds to an entry in the
+              ipNetToMediaTable.  Additional columnar objects are defined
+              in this table that are not in the original table."
+          INDEX { a3IPntmIfIndex, a3IPntmNetAddress }
+          ::= { a3IPntmExtTable 1 }
+
+      A3IPntmExtEntry ::=
+          SEQUENCE {
+              a3IPntmIfIndex     INTEGER,
+              a3IPntmNetAddress  IpAddress, 
+              a3IPntmHdrFormat   INTEGER,
+              a3IPntmProxyArp    INTEGER
+          }
+
+          a3IPntmIfIndex  OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "The interface on which this entry's equivalence
+                  is effective."
+              REFERENCE
+                  "RFC1213, p. 38, ipNetToMediaTable"
+              ::= { a3IPntmExtEntry 1 }
+    
+          a3IPntmNetAddress  OBJECT-TYPE
+              SYNTAX  IpAddress
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "The IpAddress corresponding to the media-dependent
+                  physical address."
+              REFERENCE
+                  "RFC1213, p. 38, ipNetToMediaTable"
+              ::= { a3IPntmExtEntry 2 }
+
+          a3IPntmHdrFormat  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         other    (1),
+                         ethernet (2),
+                         ieee     (3),
+                         snap     (4)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "The header format to be used when sending packets to
+                  the destination specified by this table entry.  This
+                  parameter only applies to networks that support MAC 
+                  addresses.  Entries that correspond to other network
+                  types have the value other (1)."
+              ::= { a3IPntmExtEntry 3 }
+    
+          a3IPntmProxyArp  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         proxy   (1),
+                         noProxy (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "If this object is set to proxy (1), the system will
+                  respond to ARP requests for the IP address of this
+                  entry.  If this object is set to noProxy (2), no
+                  response will be sent."
+              DEFVAL { noProxy }
+              ::= { a3IPntmExtEntry 4 }
+
+
+--
+-- This next table is used to configure IP addresses for each
+-- relevant port.  This table is needed because the ipAddrTable
+-- from MIB II is read-only, and cannot be used to configure
+-- IP addresses.
+--
+
+     a3IPaddrConfigTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF A3IPaddrConfigEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "This table contains the IP addresses assigned to each
+              IP port."
+          ::= { a3ComIPextns 8 }
+
+     a3IPaddrConfigEntry  OBJECT-TYPE
+          SYNTAX  A3IPaddrConfigEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "Each entry contains a single IP address and 
+              parameters relating to routing IP over a specific port."
+          INDEX { a3IPaddrConfigPort, a3IPaddrConfigAddr }
+          ::= { a3IPaddrConfigTable 1 }
+
+     A3IPaddrConfigEntry ::= 
+          SEQUENCE {
+              a3IPaddrConfigPort           INTEGER,
+              a3IPaddrConfigAddr           IpAddress,
+              a3IPaddrConfigType           INTEGER,
+              a3IPaddrConfigNetMask        IpAddress,
+              a3IPaddrConfigBcastAddr      INTEGER,
+              a3IPaddrConfigMtu            INTEGER (68..32767),
+              a3IPaddrConfigStatus         RowStatus
+          }
+
+          a3IPaddrConfigPort  OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "The port to which this entry applies."
+              ::= { a3IPaddrConfigEntry 1 }
+
+          a3IPaddrConfigAddr  OBJECT-TYPE
+              SYNTAX  IpAddress
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "The IP address to which this entry applies."
+              ::= { a3IPaddrConfigEntry 2 }
+
+          a3IPaddrConfigType  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         primary (1),
+                         secondary (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "When multiple IP addresses are configured for a single
+                  interface, this object is used to determine which address
+                  is the 'primary' address.  'Primary' addresses are used
+                  as the source IP address in packets sent from that
+                  interface.  When there is only one address configured for
+                  an interface, it will be the 'primary' address.  If there
+                  is an existing 'primary' address when this object is set
+                  to primary (1), the existing 'primary' address will be
+                  set to 'secondary' automatically."
+              DEFVAL { primary }
+              ::= { a3IPaddrConfigEntry 3 }
+
+          a3IPaddrConfigNetMask  OBJECT-TYPE
+              SYNTAX  IpAddress
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "The subnet mask associated with the IP address
+                  of this entry.  The value of the mask is an IP
+                  address with all the network bits set to 1 and
+                  all the host bits set to 0.
+  
+                  If this is not specified, the system will select
+                  a mask based on the IP address class."
+              ::= { a3IPaddrConfigEntry 4 }
+
+          a3IPaddrConfigBcastAddr  OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "The value of the least-significant bit in the
+                  IP broadcast address used for sending datagrams
+                  on the logical interface associated with the IP
+                  address of this entry."
+              DEFVAL { 1 }
+              ::= { a3IPaddrConfigEntry 5 }
+
+          a3IPaddrConfigMtu  OBJECT-TYPE
+              SYNTAX  INTEGER (68..32767)
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "The size of the largest IP datagram which is
+                  supported by the logical interface associated
+                  with the IP address of this entry.
+
+                  If this is not specified, the system will select
+                  a value based on the interface type."
+              ::= { a3IPaddrConfigEntry 6 }
+
+          a3IPaddrConfigStatus  OBJECT-TYPE
+              SYNTAX  RowStatus
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                   "This object is used to add and delete entries
+                   in this table.  See the notes describing
+                   RowStatus at the beginning of this MIB."
+              ::= { a3IPaddrConfigEntry 7 }  
+
+--
+-- This next table extends the ipForwardTable from RFC 1354.  An extension is 
+-- required in order to specify which routing entries may be overridden
+-- by a dynamic route.
+--
+
+     a3IPforwardExtTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF A3IPforwardExtEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+             "An extension to the ipForwardTable."
+          REFERENCE
+             "RFC 1354, ipForwardTable."
+          ::= { a3ComIPextns 9 }
+
+     a3IPforwardExtEntry  OBJECT-TYPE
+          SYNTAX  A3IPforwardExtEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "Each entry in this table corresponds to a single
+              entry in the ipForwardTable.  An additional columnar
+              object has been defined to indicate whether a dynamically
+              learned route may take precendence of a particular
+              static route."
+          INDEX {
+                 a3IPforwardExtDest,
+                 a3IPforwardExtProto,
+                 a3IPforwardExtPolicy,
+                 a3IPforwardExtNextHop
+                 }
+          ::= { a3IPforwardExtTable 1 }
+
+     A3IPforwardExtEntry ::= 
+          SEQUENCE {
+              a3IPforwardExtDest      IpAddress,
+              a3IPforwardExtProto     INTEGER,
+              a3IPforwardExtPolicy    INTEGER,
+              a3IPforwardExtNextHop   IpAddress,
+              a3IPforwardExtOverride  INTEGER
+          }
+
+          a3IPforwardExtDest  OBJECT-TYPE
+               SYNTAX  IpAddress
+               ACCESS  read-only
+               STATUS  mandatory
+               DESCRIPTION
+                   "The destination IP address of this route.  This is
+                   identical to ipForwardDest."
+               REFERENCE
+                  "RFC 1354, ipForwardTable."
+               ::= { a3IPforwardExtEntry 1 }
+
+          a3IPforwardExtProto  OBJECT-TYPE
+               SYNTAX  INTEGER {
+                              other     (1),  -- not specified
+                              local     (2),  -- local interface
+                              netmgmt   (3),  -- static route
+                              icmp      (4),  -- result of ICMP Redirect
+     
+                                      -- the following are all dynamic
+                                      -- routing protocols
+                              egp       (5),  -- Exterior Gateway Protocol
+                              ggp       (6),  -- Gateway-Gateway Protocol
+                              hello     (7),  -- FuzzBall HelloSpeak
+                              rip       (8),  -- Berkeley RIP or RIP-II
+                              is-is     (9),  -- Dual IS-IS
+                              es-is     (10), -- ISO 9542
+                              ciscoIgrp (11), -- Cisco IGRP
+                              bbnSpfIgp (12), -- BBN SPF IGP
+                              ospf      (13), -- Open Shortest Path First
+                              bgp       (14), -- Border Gateway Protocol
+                              idpr      (15)  -- InterDomain Policy Routing
+                           }
+               ACCESS   read-only
+               STATUS   mandatory
+               DESCRIPTION
+                   "The routing mechanism via which this route was learned."
+               REFERENCE
+                  "RFC 1354, ipForwardTable."
+               ::= { a3IPforwardExtEntry 2 }
+
+         --
+         -- The following convention is included for specification
+         -- of TOS Field contents.  
+         --
+         -- Currently, 3com only supports a TOS of zero
+         --
+
+          a3IPforwardExtPolicy  OBJECT-TYPE
+               SYNTAX  INTEGER
+               ACCESS  read-only
+               STATUS  mandatory
+               DESCRIPTION
+                "The general set of conditions that would cause
+                the  selection  of  one multipath route (set of
+                next hops for a given destination) is  referred
+                to as 'policy'.
+
+                Unless the mechanism indicated by ipForwardPro-
+                to specifies otherwise, the policy specifier is
+                the IP TOS Field.  The encoding of IP TOS is as
+                specified  by  rfc1354.  Zero indicates the default 
+                path if no more  specific policy applies.  Currently,
+                zero is the only TOS value supported by 3Com."
+               ::= { a3IPforwardExtEntry 3 }
+     
+          a3IPforwardExtNextHop  OBJECT-TYPE
+               SYNTAX  IpAddress
+               ACCESS  read-only
+               STATUS  mandatory
+               DESCRIPTION
+                   "On remote routes, the address of the next system
+                    en route.  Otherwise, 0.0.0.0"
+               ::= { a3IPforwardExtEntry 4 }
+     
+          a3IPforwardExtOverride  OBJECT-TYPE
+               SYNTAX  INTEGER {
+                      override   (1),
+                      noOverride (2)
+               }
+               ACCESS  read-write
+               STATUS  mandatory
+               DESCRIPTION
+                   "This object is used to identify those static routes
+                   that may be overridden by dynamically learned routes.
+                   For those entries in this table that represent dynamically
+                   learned routes, this object will have the value
+                   noOverride (2) at all times."
+               ::= { a3IPforwardExtEntry 5 }
+
+--
+-- ARP Group
+--   This group contains ARP specific information
+--
+
+    a3IParpOverBlocked  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                     enabled    (1),
+                     disabled   (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "When the system is in singleNet mode (ie, it is
+              in a bridge state), this parameter controls whether
+              or not ARP request and replies are allowed to be
+              sent or received over a non-forwarding bridged port.
+              If this is set enabled(1), then ARP requests and replies
+              are allowed over non-forwarding ports.  If this is
+              set disabled(2), they are not allowed.
+
+              This object corresponds to the UI parameter: -arp OverBlocked."
+          DEFVAL { disabled }
+          ::= { a3ComIPextns 10 }
+
+    a3IPrarpClientCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                     enabled  (1), 
+                     disabled (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This allows the RARP client function to be
+              enabled or disabled.  If enabled, this system
+              will send RARP requests.  If disabled, the system
+              will not send RARP requests.
+
+              This object corresponds to the UI parameter: -arp RarpCONTrol."
+          DEFVAL { disabled }
+          ::= { a3ComIPextns 11 }
+
+    a3IPrarpServerCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                     enabled  (1),
+                     disabled (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This allows the RARP server function to be
+              enabled or disabled.  If enabled, this system
+              will respond to RARP requests.  If disabled,
+              this system will not respond.
+
+              This object corresponds to the UI parameter: -arp RarpCONTrol."
+          DEFVAL { disabled }
+          ::= { a3ComIPextns 12 }
+
+--
+-- This table provides ARP information for each IP port
+--
+     a3IParpConfigTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF A3IParpConfigEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "This table contains ARP configuration information."
+          ::= { a3ComIPextns 13 }
+
+     a3IParpConfigEntry  OBJECT-TYPE
+          SYNTAX  A3IParpConfigEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "Each entry in this table contains port-specific
+              ARP configuration information."
+          INDEX { a3IParpPortIndex }
+          ::= { a3IParpConfigTable 1 }
+
+     A3IParpConfigEntry ::= 
+          SEQUENCE {
+              a3IParpPortIndex      INTEGER,
+              a3IParpProxyCtl       INTEGER,
+              a3IParpHoldTime       INTEGER,
+              a3IParpReqFormat      INTEGER,
+              a3IParpRemAddr        IpAddress,
+              a3IParpInvCtl         INTEGER
+          }
+
+     a3IParpPortIndex  OBJECT-TYPE
+          SYNTAX  INTEGER
+          ACCESS  read-only
+          STATUS  mandatory
+          DESCRIPTION
+              "The port index to which these entries apply."
+          ::= { a3IParpConfigEntry 1 }
+
+     a3IParpProxyCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                     proxy   (1),
+                     noProxy (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object applies to ARP requests for networks or
+              subnetworks that are in the IP routing table.  When
+              this is the case, this system will respond to the
+              request with the MAC address of this system's 
+              interface if the value of this object is proxy (1).
+              Otherwise, no ARP response is sent.
+
+              This object corresponds to the UI parameter: -arp control"
+          DEFVAL { noProxy }
+          ::= { a3IParpConfigEntry 2 }
+
+     a3IParpHoldTime  OBJECT-TYPE
+          SYNTAX  INTEGER (1..24)
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object determines the amount of time, in hours,
+              an entry can stay in the ARP table.  When the
+              specified time elapses, the entry is deleted.  When
+              one sixteenth of the time elapses, ARP considers
+              this entry aged.  When a packet is destined for
+              an entry that has become aged, the system sends
+              an ARP request, using a unicast address, to the 
+              destination to verify whether it is still operational.
+
+              This object corresponds to the UI parameter: -arp HoldTime."
+          DEFVAL { 24 }
+          ::= { a3IParpConfigEntry 3 }
+
+     a3IParpReqFormat  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                     ethernet  (1),
+                     snap      (2),
+                     both      (3),
+                     auto      (128),
+                     ethAuto   (129),
+                     snapAuto  (130),
+                     bothAuto  (131)
+                  }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This parameter specifies the Ethernet header format
+              used for ARP requests.  If this is set to ethernet (1),
+              ARP sends requests with an Ethernet Version 2 header.
+              If this is set to snap (2), ARP sends requests with the 
+              IEEE 802.2 and 802.3 headers, including the Snap extension.
+              If this is set to both (3), ARP sends two request packets,
+              one with Ethernet format and one with the Snap extensions.
+              If this is set to auto(128), the default request format is
+              based on the media type of the interface with which this
+              parameter is associated.
+
+              When GETting the value of this object, the first three
+              enumerations (ethernet, snap, and both) are returned if
+              this parmeter was explicitly set to one of these values.
+              If this parameter was set to auto(128), either ethAuto(129),
+              snapAuto(130), or bothAuto(131) will be returned, depending
+              on which header format is the most appropriate (which
+              is based on the media type of the associated interface).
+
+              This object corresponds to the UI parameter: -arp RequestFormat."
+          DEFVAL { auto }
+          ::= { a3IParpConfigEntry 4 }
+
+     a3IParpRemAddr  OBJECT-TYPE
+          SYNTAX  IpAddress
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "The value of this object reflects the IP address
+              that is assigned to the boundary router that is
+              attached to this port.  This address is used when
+              a RARP request is received from that boundary router.
+
+              For those ports that are not attached to a boundary 
+              router, this object will have no meaning and no 
+              affect on the system."
+          ::= { a3IParpConfigEntry 5 }
+
+     a3IParpInvCtl  OBJECT-TYPE
+          SYNTAX  INTEGER {
+              enabled  (1),
+              disabled (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object specifies whether inverse arp is
+              enabled on this port.  Note, this affects only
+              Frame Relay ports."
+          DEFVAL { enabled }
+          ::= { a3IParpConfigEntry 6 }
+
+
+--
+-- This table provides the mapping between IP network addresses
+-- and SMDS group addresses
+--
+
+     a3IPsmdsGaTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF A3IPsmdsGaEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "This table contains a set of IP network address
+              to SMDS Group Address pairings."
+          REFERENCE
+              "NETBuilder Ref. Guide, IP service Parameter:
+              GroupAddress."
+          ::= { a3ComIPextns 14 } 
+
+     a3IPsmdsGaEntry  OBJECT-TYPE
+          SYNTAX  A3IPsmdsGaEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "Each entry in this table contains a single
+              IP network address to SMDS Group Address
+              mapping.  This is used in applications running
+              IP over SMDS."
+          INDEX { a3IPsmdsGaIpNet }
+          ::= { a3IPsmdsGaTable 1 }
+
+     A3IPsmdsGaEntry ::= 
+          SEQUENCE { 
+              a3IPsmdsGaIpNet    IpAddress,
+              a3IPsmdsGa         SMDSAddress,
+              a3IPsmdsGaStatus   RowStatus
+          }
+
+     a3IPsmdsGaIpNet  OBJECT-TYPE
+          SYNTAX  IpAddress
+          ACCESS  read-only
+          STATUS  mandatory
+          DESCRIPTION
+              "This is an IP network address for which there is
+              a corresponding SMDS Group Address."
+          ::= { a3IPsmdsGaEntry 1 }
+
+     a3IPsmdsGa  OBJECT-TYPE
+          SYNTAX  SMDSAddress
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This is the SMDS Group Address that corresponds
+              to the IP network address identified by
+              a3IPsmdsGaIpNet."
+          ::= { a3IPsmdsGaEntry 2 }
+
+     a3IPsmdsGaStatus  OBJECT-TYPE
+              SYNTAX  RowStatus
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                   "This object is used to add and delete entries
+                   in this table.  See the notes describing
+                   RowStatus at the beginning of this MIB."
+          ::= { a3IPsmdsGaEntry 3}
+
+      
+--
+-- This next section applies to routing IP over X25 networks
+--
+
+     a3IPx25configTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF A3IPx25configEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "This table contains a set of X25 configuration
+              parameters relating to routing IP over x25 networks."
+          ::= { a3ComIPextns 15 }
+
+     a3IPx25configEntry  OBJECT-TYPE
+          SYNTAX  A3IPx25configEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "Each entry contains a set of x25 configuration
+              parameters relating to routing IP over a specific port."
+          INDEX { a3IPx25configPort }
+          ::= { a3IPx25configTable 1 }
+
+     A3IPx25configEntry ::= 
+          SEQUENCE {
+              a3IPx25configPort      INTEGER,
+              a3IPx25configPID       INTEGER,
+              a3IPx25configQueueSize INTEGER,
+              a3IPx25configVClimit   INTEGER,
+              a3IPx25configVCtimer   INTEGER,
+	      a3IPx25configProfID    INTEGER
+          }
+
+          a3IPx25configPort OBJECT-TYPE
+               SYNTAX INTEGER
+               ACCESS read-only
+               STATUS mandatory
+               DESCRIPTION
+                   "The port number to which this table entry applies."
+          ::= { a3IPx25configEntry 1 }
+ 
+          a3IPx25configPID OBJECT-TYPE
+               SYNTAX INTEGER (1..'ff'h)
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "The protocol ID that is included in all outgoing IP
+                    packets sent over the x25 port associated with this
+                    table entry."
+               DEFVAL { 'cc'h }
+          ::= { a3IPx25configEntry 2 }
+ 
+          a3IPx25configQueueSize OBJECT-TYPE
+               SYNTAX INTEGER (1..128)
+               ACCESS read-write
+               STATUS deprecated
+               DESCRIPTION
+                   "The maximum number of packets that can be queued
+                    for a specific DTE address when the virtual circuit
+                    or the x25 port is congested.
+
+                    NOTE: this object is no longer supported by NETBuilders
+                    running sw version 8.0 and greater."
+               DEFVAL { 2 }
+          ::= { a3IPx25configEntry 3 }
+     
+          a3IPx25configVClimit OBJECT-TYPE
+               SYNTAX INTEGER (0..15)
+               ACCESS read-write
+               STATUS deprecated
+               DESCRIPTION
+                   "The maximum number of virtual circuits that can
+                    be established concurrently for IP routing.
+                    NOTE: this object is no longer supported by NETBuilders
+                    running sw version 8.0 and greater."
+              DEFVAL { 2 }
+          ::= { a3IPx25configEntry 4 }
+ 
+          a3IPx25configVCtimer OBJECT-TYPE
+               SYNTAX INTEGER (1..512)
+               ACCESS read-write
+               STATUS deprecated
+               DESCRIPTION
+                   "The maximum amount of time, in minutes, that can elapse
+                    when there is no activity on the x25 virtual circuit
+                    before it is cleared.  This applies to the first virtual
+                    circuit established for a particular DTE address.  IF
+                    more than one virtual circuit is established for the same
+                    DTE address, all are cleared (except for the first one
+                    established) when the first virtual circuit is not
+                    experiencing congestion.
+
+                    NOTE: this object is no longer supported by NETBuilders
+                    running sw version 8.0 and greater."
+               DEFVAL { 2 }
+          ::= { a3IPx25configEntry 5 }
+
+          a3IPx25configProfID OBJECT-TYPE
+               SYNTAX INTEGER (0..255)
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                 "This object specifies the X25 User ProfileID to be used for
+                selecting a Virtual Circuit to send IP Packets. Range
+                is 0..255. If the value specified is 0 then use the DTE Profile
+                ID"
+              DEFVAL { 0 }
+          ::= { a3IPx25configEntry 6 }
+
+--
+-- This next group of objects contains misc IP parameters
+--
+--     This next object is used by the Multiple Priority Queue feature
+--
+
+      a3IPqueuePriority  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                      high    (1),
+                      medium  (2),
+                      low     (3),
+                      default (4),
+                      unknown (5)
+                  }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object, which is used by the Multiple Priority Queue
+              feature, specifies into which queue IP packets are placed.
+              If this object has the value default(4), then IP packets are
+              placed in the system default queue as specified by 
+              a3ComDefaultPriority."
+          DEFVAL { medium }
+          ::= { a3ComIPextns 16 }
+              
+      a3IPfwdSubnetBcast  OBJECT-TYPE
+          SYNTAX  INTEGER {
+                      fwdSubnetBcast   (1),
+                      noFwdSubnetBcast (2)
+                  }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              ""
+          DEFVAL { noFwdSubnetBcast }
+          ::= { a3ComIPextns 17 }
+
+--
+-- This table provides ICMP information for each IP port
+--
+
+     a3IPicmpGenTable  OBJECT-TYPE
+          SYNTAX  SEQUENCE OF A3IPicmpGenEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "This table contains ICMP configuration information."
+          ::= { a3ComIPextns 18 }
+
+     a3IPicmpGenEntry  OBJECT-TYPE
+          SYNTAX  A3IPicmpGenEntry
+          ACCESS  not-accessible
+          STATUS  mandatory
+          DESCRIPTION
+              "Each entry in this table contains port-specific
+              ICMP configuration information."
+          INDEX { a3IPicmpGenIfIndex }
+          ::= { a3IPicmpGenTable 1 }
+
+     A3IPicmpGenEntry ::= 
+          SEQUENCE {
+              a3IPicmpGenIfIndex      INTEGER,
+              a3IPicmpGenRedirect     INTEGER,
+              a3IPicmpGenDestUnreach  INTEGER,
+              a3IPicmpGenTimeExceed   INTEGER
+          }
+
+      a3IPicmpGenIfIndex  OBJECT-TYPE
+          SYNTAX  INTEGER 
+          ACCESS  read-only
+          STATUS  mandatory
+          DESCRIPTION
+              "The port to which this entry applies."
+          ::= { a3IPicmpGenEntry 1 }
+
+      a3IPicmpGenRedirect OBJECT-TYPE
+          SYNTAX  INTEGER {
+                redirect   (1),
+		noRedirect (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object controls whether ICMP issues ReDirect packets
+              on this port." 
+          REFERENCE
+              "NETBuilder Ref. Guide, IP service Parameter: ICMPGenerate."
+          ::= { a3IPicmpGenEntry 2 }
+
+      a3IPicmpGenDestUnreach OBJECT-TYPE
+          SYNTAX  INTEGER {
+                destUnreachable   (1),
+		noDestUnreachable (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object controls whether ICMP issues Destination
+              Unreachable packets on this port." 
+          REFERENCE
+              "NETBuilder Ref. Guide, IP service Parameter: ICMPGenerate."
+          ::= { a3IPicmpGenEntry 3 }
+
+      a3IPicmpGenTimeExceed OBJECT-TYPE
+          SYNTAX  INTEGER {
+                timeExceed   (1),
+		noTimeExceed (2)
+          }
+          ACCESS  read-write
+          STATUS  mandatory
+          DESCRIPTION
+              "This object controls whether ICMP issues Time
+              Exceeded packets on this port." 
+          REFERENCE
+              "NETBuilder Ref. Guide, IP service Parameter: ICMPGenerate."
+          ::= { a3IPicmpGenEntry 4 }
+END

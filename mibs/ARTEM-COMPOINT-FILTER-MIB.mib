@@ -1,0 +1,381 @@
+-- **********************************************************************
+-- * Artem private filter Management Information Base
+-- **********************************************************************
+ARTEM-COMPOINT-FILTER-MIB DEFINITIONS ::= BEGIN
+
+	IMPORTS
+		ifIndex
+			FROM RFC1213-MIB
+		OBJECT-GROUP, NOTIFICATION-GROUP
+			FROM SNMPv2-CONF
+		enterprises, IpAddress, Integer32, Counter32, OBJECT-TYPE, MODULE-IDENTITY, 
+		OBJECT-IDENTITY, NOTIFICATION-TYPE
+			FROM SNMPv2-SMI
+		TruthValue, MacAddress, RowStatus, TEXTUAL-CONVENTION
+			FROM SNMPv2-TC;
+			
+-- **********************************************************************
+-- *  MODULE IDENTITY
+-- **********************************************************************
+	artem MODULE-IDENTITY
+		LAST-UPDATED "200506101216Z"
+		ORGANIZATION
+			"Funkwerk Enterprise Communications."
+		CONTACT-INFO
+			"juergen.lachmann@funkwerk-ec.com."
+		DESCRIPTION
+			"Funkwerk Enterprise Communications MIB file that provides 
+			 additional attributes not covered by standard MIBs for 
+			 for layer-2 protocol and MAC address-based filtering
+			 functionality in artem products."
+
+		REVISION "200506101216Z"
+		DESCRIPTION
+			"Removed 200505251300Z from artemFilterGroup."
+			
+		REVISION "200505251300Z"
+		DESCRIPTION
+			"Changed max-access for artemFilterProtocolType 
+			 to not-accessible."
+			 
+		REVISION "200505241324Z"
+		DESCRIPTION
+			"Removed artemFilterProtocolIndex from artemFilterProtocolTable.
+			 Index is now artemFilterProtocolType.
+			 Removed artemFilterMACDestIfIndex and 
+			 artemFilterMACDestIfTableIndex from artemFilterMACDestIfTable. 
+			 Index is now ifIndex."
+						 
+		REVISION "200505100720Z"
+		DESCRIPTION
+			"Added missing index artemFilterMACIndex for 
+			 artemFilterMACDestIfTable."
+			 
+		REVISION "200504211400Z"
+		DESCRIPTION
+			"Initial version."
+		::= { enterprises 4280 }
+		
+
+-- **********************************************************************
+-- *  Textual conventions
+-- **********************************************************************
+	ArtemFilterProcessing ::= TEXTUAL-CONVENTION
+		STATUS current
+		DESCRIPTION
+			"This type represents the available method for 
+			 artem filter processing.
+			 forward(1) - All frames are forwarded (no 
+			 		filtering takes place).
+			 discard(2) - All frames are discarded and none 
+			 		are forwarded.
+			 filterMAC(3) - Frames are filtered by applying 
+			 		MAC filtering rules.
+			 arpProcess(4) - Special processing for ARP requests if 
+			 		artemFilterArpTranslation is enabled."
+		SYNTAX INTEGER
+			{
+			forward(1),
+			discard(2),
+			filterMAC(3),
+			arpProcess(4)
+			}
+
+-- **********************************************************************
+-- *   Node definitions
+-- **********************************************************************
+
+-- **********************************************************************
+-- *   artemFilter
+-- **********************************************************************
+	artemFilter OBJECT-IDENTITY
+		STATUS current
+		DESCRIPTION
+			"Definitions and attributes for layer-2 
+			 protocol and MAC address-based filtering."
+		::= { artem 7 }
+
+	artemFilterArpTranslation OBJECT-TYPE
+        SYNTAX TruthValue
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+            "This attribute reflects the enable state of special 
+             ARP processing for access point functionality.
+			 If ARP processing is enabled, all ARP packets from 
+			 associated clients are forwarded, disregarding all 
+			 other filterung rules.
+			 ARP requests for associated clients are translated 
+			 from MAC multicast to MAC unicast frames.
+			 All other ARP requests (not for associated 
+			 clients) are filtered.
+			 In the artemFilterProtocolTable, a special rule is created 
+			 with protocol of ARP (0x0806) and state 
+			 of arpProcess. This entry cannot be modified."
+        DEFVAL { false }
+    	::= { artemFilter 1 }
+
+	artemFilterDefaultProcessing OBJECT-TYPE
+        SYNTAX ArtemFilterProcessing
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+            "This attribute defines the default processing rule 
+             for all the protocols which have no specific 
+             actions defined."
+        DEFVAL { filterMAC }
+    	::= { artemFilter 2 }
+
+-- **********************************************************************
+-- *    artemFilterProtocolTable  TABLE
+-- **********************************************************************
+	artemFilterProtocolTable OBJECT-TYPE
+		SYNTAX SEQUENCE OF ArtemFilterProtocolEntry
+		MAX-ACCESS not-accessible
+		STATUS current
+		DESCRIPTION
+			"Table of protocol type based filtering rules."
+		::= {  artemFilter 3 }
+		
+	artemFilterProtocolEntry OBJECT-TYPE
+		SYNTAX ArtemFilterProtocolEntry
+		MAX-ACCESS not-accessible
+		STATUS current
+		DESCRIPTION
+			"An entry in artemFilterProtocolTable."
+		INDEX { artemFilterProtocolType }
+		::= { artemFilterProtocolTable 1 }
+
+	ArtemFilterProtocolEntry ::=
+		SEQUENCE {
+			artemFilterProtocolRowStatus	RowStatus,
+			artemFilterProtocolType			INTEGER,
+			artemFilterProtocolProcessing	ArtemFilterProcessing
+		}
+
+	artemFilterProtocolRowStatus OBJECT-TYPE
+        SYNTAX RowStatus
+        MAX-ACCESS read-create
+        STATUS current
+        DESCRIPTION
+            "Auxiliary variable for creation of new object instances 
+             and/or the deletion of existing object instances."
+    	::= { artemFilterProtocolEntry 1 }
+	
+	artemFilterProtocolType OBJECT-TYPE
+        SYNTAX INTEGER (0..65535)
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "This attribute holds the ethernet protocol type 
+             this rule matches.
+			 Protocol type examples: 
+					0x0800 IP
+					0x0806 ARP
+					0x0bad Banyan VINES IP"
+    	::= { artemFilterProtocolEntry 2 }
+
+	artemFilterProtocolProcessing OBJECT-TYPE
+        SYNTAX ArtemFilterProcessing
+        MAX-ACCESS read-create
+        STATUS current
+        DESCRIPTION
+            "This rule defines what to do with frames that match 
+             the rule in the current table row.
+			 forward(1) - All frames are forwarded (no filtering 
+					takes place).
+			 discard(2) - All frames are discarded and none are 
+			 		forwarded.
+			 filterMAC(3) - Frames are filtered by applying 
+			 		MAC filtering rules, according to artemFilterMACTable.
+			 arpProcess(4) - Special processing for ARP requests 
+			 		if artemFilterArpTranslation is enabled.
+			 		
+			 Note that rules with type arpProcess(4) are automatically 
+			 generated by the system according to artemFilterArpTranslation 
+			 and cannot be directly modified by the user in any form."
+        DEFVAL { filterMAC }
+    	::= { artemFilterProtocolEntry 3 }
+
+-- **********************************************************************
+-- *    End of artemFilterProtocolTable  TABLE
+-- **********************************************************************
+
+-- **********************************************************************
+-- *    artemFilterMACTable  TABLE
+-- **********************************************************************
+	artemFilterMACTable OBJECT-TYPE
+		SYNTAX SEQUENCE OF ArtemFilterMACEntry
+		MAX-ACCESS not-accessible
+		STATUS current
+		DESCRIPTION
+			"Table of MAC address based filtering rules."
+		::= {  artemFilter 4 }
+		
+	artemFilterMACEntry OBJECT-TYPE
+		SYNTAX ArtemFilterMACEntry
+		MAX-ACCESS not-accessible
+		STATUS current
+		DESCRIPTION
+			"An entry in artemFilterMACTable."
+		INDEX { artemFilterMACIndex }
+		::= { artemFilterMACTable 1 }
+
+	ArtemFilterMACEntry ::=
+		SEQUENCE {
+			artemFilterMACIndex			INTEGER,
+			artemFilterMACRowStatus		RowStatus,
+			artemFilterMACState 		INTEGER,
+			artemFilterMACSourceAddress	MacAddress,
+			artemFilterMACDestAddress	MacAddress
+		}
+
+	artemFilterMACIndex OBJECT-TYPE
+        SYNTAX INTEGER (1..2147483647)
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "The auxiliary variable used to identify instances of 
+             the columnar objects in the artemFilterMACTable."
+    	::= { artemFilterMACEntry 1 }
+
+	artemFilterMACRowStatus OBJECT-TYPE
+        SYNTAX RowStatus
+        MAX-ACCESS read-create
+        STATUS current
+        DESCRIPTION
+            "Auxiliary variable for creation of new object instances 
+             and/or the deletion of existing object instances."
+    	::= { artemFilterMACEntry 2 }
+    	
+	artemFilterMACState OBJECT-TYPE
+        SYNTAX INTEGER
+			{
+			disabled(0),
+			enabled(1),
+			conflict(2),
+			invalid(3)
+			}
+        MAX-ACCESS read-create
+        STATUS current
+        DESCRIPTION
+            "This attribute defines the state of the filtering 
+             rule in the corresponding table row.
+			 disabled(0) - This rule is inactive.
+			 enabled(1) - This rule is active and currrently 
+			 		in use for filtering.
+			 conflict(2) - This rule conflicts with another table 
+			 		row and has been inactivated. This state cannot 
+			 		be modified by writing this attribute, but 
+			 		rather is changed by the system to 'disabled(0)' 
+			 		as soon as the conflict has been resolved.
+			 invalid(3) - This rule has some invalid entries and 
+			 		has been inactivated. This state cannot be 
+			 		modified by writing this attribute, but rather 
+			 		is changed by the system to 'disabled(0)' as 
+			 		soon as the invalid entry has been corrected."
+        DEFVAL { disabled }
+    	::= { artemFilterMACEntry 3 }
+
+	artemFilterMACSourceAddress OBJECT-TYPE
+        SYNTAX MacAddress
+        MAX-ACCESS read-create
+        STATUS current
+        DESCRIPTION
+            "This attribute defines the source MAC address the 
+             filtering rule checks for.
+             The following MAC address values have special meaning:
+             0xff0000000000 - matches packets originating from the 
+             				  Compoint itself.
+             0x000000000000 - matches all packets.
+             0xffffff__0000 - matches packets originating from the 
+             				  interface with a given ifIndex that is 
+             				  encoded at the '_' marked places."
+    	::= { artemFilterMACEntry 4 }
+
+	artemFilterMACDestAddress OBJECT-TYPE
+        SYNTAX MacAddress
+        MAX-ACCESS read-create
+        STATUS current
+        DESCRIPTION
+            "This attribute defines the destination MAC address the 
+             filtering rule checks for.
+             The following MAC address values have special meaning:
+             0x010000000000 - matches any multicast packet.
+             0x01005E800000 - matches any IP multicast packet."
+    	::= { artemFilterMACEntry 5 }
+
+-- **********************************************************************
+-- *    End of artemFilterMACTable  TABLE
+-- **********************************************************************
+
+-- **********************************************************************
+-- *    artemFilterMACDestPortsTable  TABLE
+-- **********************************************************************
+	artemFilterMACDestIfTable OBJECT-TYPE
+		SYNTAX SEQUENCE OF ArtemFilterMACDestIfEntry
+		MAX-ACCESS not-accessible
+		STATUS current
+		DESCRIPTION
+			"This table contains the destination interfaces for 
+			 each rule in the artemFilterMACTable."
+		::= {  artemFilter 5 }
+
+	artemFilterMACDestIfEntry OBJECT-TYPE
+		SYNTAX ArtemFilterMACDestIfEntry
+		MAX-ACCESS not-accessible
+		STATUS current
+		DESCRIPTION
+			"An entry in artemFilterMACDestPortsTable."
+		INDEX { artemFilterMACIndex, ifIndex }
+		::= { artemFilterMACDestIfTable 1 }
+
+	ArtemFilterMACDestIfEntry ::=
+		SEQUENCE {
+			artemFilterMACDestIfRowStatus	RowStatus
+		}
+
+	artemFilterMACDestIfRowStatus OBJECT-TYPE
+        SYNTAX RowStatus
+        MAX-ACCESS read-create
+        STATUS current
+        DESCRIPTION
+            "Auxiliary variable for creation of new object instances 
+             and/or the deletion of existing object instances."
+    	::= { artemFilterMACDestIfEntry 1 }
+    	
+-- **********************************************************************
+-- *    End of artemFilterMACDestPortsTable  TABLE
+-- **********************************************************************
+
+-- ********************************************************************
+-- * Groups - artemFilterGroup
+-- ********************************************************************
+	artemFilterGroup OBJECT-GROUP
+		OBJECTS {
+				artemFilterArpTranslation, 
+				artemFilterDefaultProcessing, 
+				artemFilterProtocolProcessing, 
+				artemFilterMACState, 
+				artemFilterMACSourceAddress, 
+				artemFilterMACDestAddress, 
+				artemFilterProtocolRowStatus, 
+				artemFilterMACRowStatus, 
+				artemFilterMACDestIfRowStatus		
+				}
+		STATUS current
+		DESCRIPTION
+			"parameters not covered in 
+			 standard 802.11 MIB."
+		::= { artemFilter 7 }
+
+-- ********************************************************************
+-- * End of artemFilterGroup
+-- ********************************************************************
+
+-- **********************************************************************
+-- *   End of artemFilter
+-- **********************************************************************
+			
+
+END

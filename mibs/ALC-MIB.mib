@@ -1,0 +1,853 @@
+
+	ALC-MIB DEFINITIONS ::= BEGIN
+
+	IMPORTS
+		OBJECT-TYPE							FROM RFC-1212
+		Counter, enterprises				FROM RFC1155-SMI
+		DisplayString						FROM RFC1213-MIB
+		rs232PortIndex						FROM RS-232-MIB
+		TRAP-TYPE							FROM RFC-1215;
+
+
+--	alcMIB MODULE-IDENTITY
+--		LAST-UPDATED "9712230000Z"
+--		ORGANIZATION "Northrop Grumman-Canada, Ltd."
+--		CONTACT-INFO
+--			"		Fulko K. Hew
+--
+--			Postal:	Northrop Grumman-Canada, Ltd.
+--					777 Walkers Line
+--					Burlington, Ontario
+--					Canada
+--					L7N 2G1
+--
+--			Tel:	+1 905 333 6000
+--			Fax:	+1 905 333 6050
+--
+--			E-mail:	fulko@ngcan.com"
+--		DESCRIPTION
+--			"The MIB module to describe ALC Lines and Stations."
+
+	ngcan			OBJECT IDENTIFIER ::= { enterprises 1978 }	-- Northrop Grumman-Canada, Ltd.
+	tiger			OBJECT IDENTIFIER ::= { ngcan 2 }			-- Tiger (Network Access Device)
+
+	alcMIB			OBJECT IDENTIFIER ::= { tiger 10 }
+
+	alcLine			OBJECT IDENTIFIER ::= { alcMIB 1 }
+	alcTraps		OBJECT IDENTIFIER ::= { alcMIB 2 }
+
+	alcLineTraps	OBJECT IDENTIFIER ::= { alcTraps 1 }
+	alcCuTraps		OBJECT IDENTIFIER ::= { alcTraps 2 }
+
+	NonNegativeInteger ::= INTEGER (0..2147483647)
+
+		-- InterfaceIndex contains the semantics of ifIndex and
+		-- should be used for any objects defined on other mib
+		-- modules that need these semantics.
+
+	InterfaceIndex ::= INTEGER
+
+		-- A unique value, greater than zero, for each interface
+		-- or interface sub-layer in the managed system.  It is
+		-- recommended that values are assigned contiguously
+		-- starting from 1.  The value for each interface sub-
+		-- layer must remain constant at least from one re-
+		-- initialization of the entity's network management
+		-- system to the next re-initialization."
+
+	--
+	-- ALC Line Configuration Parameters
+	--
+
+	alcNumLines OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of lines/CU's in the table."
+	::= { alcLine 1 }
+
+	alcLineTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF AlcLineEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of line table entries.  The number of entries
+			is given by the value of alcNumLines."
+		::= { alcLine 2 }
+
+	alcLineEntry OBJECT-TYPE
+		SYNTAX		AlcLineEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a particular ALC line."
+		INDEX		{ alcLineIfIndex }
+		::= { alcLineTable 1 }
+
+	AlcLineEntry ::= SEQUENCE {
+		alcLineIfIndex				InterfaceIndex,
+		alcNumCuConfiged			NonNegativeInteger,
+		alcLineStationType			INTEGER,
+		alcDuplexOptions			INTEGER,
+		alcT3MinCycleTime			INTEGER,
+		alcT6SegmentedMsgTimer		INTEGER,
+		alcN5LiveDeadRatio			INTEGER,
+		alcSegmentOption			INTEGER,
+		alcReassembleOption			INTEGER,
+		alcWildIAPoll				INTEGER,
+		alcNumOfIdles				INTEGER,
+		alcInterMsgSync				INTEGER,
+		alcNIA						INTEGER,
+
+		-- Line Statistics
+		--
+		-- use ifOutUcastPkts, ifOutOctets, ifInUcastPkts,
+		--  ifInOctets for char and pkt counters
+		--
+
+		alcTxOverlengthFrames		Counter,
+		alcRxOverlengthFrames		Counter,
+		alcInvalidAddresses			Counter,
+		alcRxT2Expireds				Counter,
+		alcDroppedMsgs				Counter,
+
+		-- Line Trap Thresholds/Controls
+
+		alcRxOverlengthFramesThres	NonNegativeInteger,
+		alcInvalidAddressThres		NonNegativeInteger,
+		alcRxT2ExpiredThres			NonNegativeInteger,
+
+		alcTrapReason				INTEGER,
+		alcErrData					OCTET STRING
+		}
+
+	alcLineIfIndex OBJECT-TYPE
+		SYNTAX		InterfaceIndex
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The line identifier."
+		::= { alcLineEntry 1 }
+
+	alcLineStationType OBJECT-TYPE
+		SYNTAX		INTEGER {
+			primary					(1),
+			secondaryPointtopoint	(2),
+			secondaryMultidrop		(3)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Defines the mode of operation for this line:
+				Primary:				We poll terminals,
+				SecondaryPointtopoint:	They poll us, we are the only device on the line,
+				SecondaryMultidrop:		They poll us, we are sharing the line."
+			::= { alcLineEntry 2 }
+
+	alcNumCuConfiged OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of CUs configured on this line.
+			This count is incremented by one each time the a new CU is
+			added to an underlying structure."
+			::= { alcLineEntry 3 }
+
+	alcDuplexOptions OBJECT-TYPE
+		SYNTAX		INTEGER {
+			none			(1),
+			poll-immediate	(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"An option that defines how the protocol should handle polling:
+
+			poll-immediate:	don't wait for pad characters before sending the poll.
+			none:			as soon as the CCC is received, start sending the next poll."
+			::= { alcLineEntry 4 }
+
+	alcT3MinCycleTime OBJECT-TYPE
+		SYNTAX		INTEGER (0..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"time for a complete poll cycle.
+			(0..1000 millisec) (PRIMARY only)
+			This timer will delay the next live polling cycle if
+			the total polling time per cycle is less than this.
+			(default: 100).
+			UNITS: milliseconds"
+		DEFVAL		{ 100 }
+		::= { alcLineEntry 5 }
+
+	alcT6SegmentedMsgTimer OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(1..xx seconds) Segmented message timer.
+			UNITS: tenths of a second"
+		::= { alcLineEntry 6 }
+
+	alcN5LiveDeadRatio OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"polling ratio (1..xxx) (PRIMARY)
+			Number of live-site poll sequences before one dead site poll.
+			(default: 25).
+			UNITS: polls"
+		DEFVAL { 25 }
+		::= { alcLineEntry 7 }
+
+	alcSegmentOption OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This option allows outgoing messages to be split into multiple
+			segments of 'n' characters according to internal rules."
+		::= { alcLineEntry 8 }
+
+	alcReassembleOption OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This option allows incoming messages to be reassembled
+			into multiple a single message."
+		::= { alcLineEntry 9 }
+
+	alcWildIAPoll OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Wild card IA polling option enabled/disabled (SECONDARY).
+			Do we accept any IA when we are polled ?
+			(default: disabled)."
+		DEFVAL		{ disabled }
+		::= { alcLineEntry 10 }
+
+	alcNumOfIdles OBJECT-TYPE
+		SYNTAX		INTEGER (1..4)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"GA response with the number of idle pad character specified.  
+(SECONDARY)"
+		::= { alcLineEntry 11 }
+
+	alcInterMsgSync OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"add S1, S2 between concatenated messages for Tx (SECONDARY)"
+		::= { alcLineEntry 12 }
+
+	alcNIA OBJECT-TYPE
+		SYNTAX		INTEGER (1..64)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Next Interchange Address in the GA response
+			(default = 0x37) (SECONDARY)"
+		DEFVAL { 55 }
+		::= { alcLineEntry 13 }
+
+	--
+	-- Line Statistics
+	--
+
+	alcTxOverlengthFrames OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of overlength frames sent."
+		::= { alcLineEntry 14 }
+
+	alcRxOverlengthFrames OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of overlength messages received.
+			Where the size of any segment exceeded alcCuN1MaxMsgSize.
+			This is considered a garbled segment/message.
+			Note: a bad CCC was received is held in the RS232-like MIB."
+		::= { alcLineEntry 15 }
+
+	alcInvalidAddresses OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of times a Bad IA was received.
+			This is considered a garbled message."
+		::= { alcLineEntry 16 }
+
+	alcRxT2Expireds OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of times the T2 timer was exceeded.
+			Probably indicating a concatenated message sequence was too long.
+			This is considered a garbled message."
+		::= { alcLineEntry 17 }
+
+	alcDroppedMsgs OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of messages dropped due to the line
+			(eg. RS232 signals) being down."
+		::= { alcLineEntry 18 }
+
+	--
+	-- Trap Controls
+	--
+	-- when these thresholds are exceeded a trap is generated,
+	-- it is up to the management station to reset the count in order to
+	-- let another trap occur.
+	-- If the number is > 0, it means the trap is enabled.
+
+	alcRxOverlengthFramesThres OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The value of alcRxOverlengthFrames at which a alcRxOverlengthFramesTrap is generated.
+			(Overlength single message segments.)
+			UNITS: errors"
+		::= { alcLineEntry 19 }
+
+	alcInvalidAddressThres OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The value of alcInvalidAddress at which a alcInvalidAddressTrap is generated.
+			UNITS: errors"
+		::= { alcLineEntry 20 }
+
+	alcRxT2ExpiredThres OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The value of alcRxT2Expired at which a alcRxT2ExpiredTrap is generated.
+			(Overlength concatenated messages.)
+			UNITS: errors"
+		::= { alcLineEntry 21 }
+
+	alcTrapReason OBJECT-TYPE
+		SYNTAX		INTEGER {
+			none					(1),
+			rx-overlength-frames	(2),
+			invalid-address			(3),
+			rx-T2-expired			(4)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The reason that the alcLineError trap was generated.
+
+			rx-overlength-frames	- number of 'received data segments that exceeded N1' exceeded its threshold.
+									  (overlength single message segments)
+			invalid-address			- number of 'invalid addresses received' exceeded its threshold.
+			rx-T2-expired			- number of 'received messages that exceeded T2 timer'exceeded its threshold.
+									  (overlength concatenated messages)"
+		DEFVAL		{ none }
+		::= { alcLineEntry 23 }
+
+	alcErrData OBJECT-TYPE
+		SYNTAX		OCTET STRING
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"An octet string containing as much of the error packet as possible.
+			As a minimum, it must contain the address or as much as was delivered.
+			It is desirable to include all information up to the PDU."
+	::= { alcLineEntry 24 }
+
+	--
+	-- Traps
+	--
+	-- This section defines the well-known notifications sent by ALC Line agents.
+	-- These are sent when the corresponding threshold is exceeded.
+
+	alcLineError TRAP-TYPE
+		ENTERPRISE		alcLineTraps
+		VARIABLES		{ alcLineIfIndex, alcTrapReason, rs232PortIndex }
+		DESCRIPTION
+			"This trap signifies that one of the thresholds has been exceeded.
+			refer to 'alcTrapReason' for the actual cause."
+	::= 1
+
+	--
+	-- ALC Station (CU)
+	--
+
+	alcCuTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF AlcCuEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of Cu table entries.  The number of entries
+			is given by the value of alcNumCuConfiged."
+		::= { alcLine 3 }
+
+	alcCuEntry OBJECT-TYPE
+		SYNTAX		AlcCuEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a particular ALC line."
+		INDEX		{ alcCuIfIndex, alcCuIA }
+		::= { alcCuTable 1 }
+
+	AlcCuEntry ::= SEQUENCE {
+		alcCuIfIndex				INTEGER,
+		alcCuDescr					DisplayString,
+		alcCuIA						INTEGER,
+		alcCuStatus					INTEGER,
+		alcCuPollCmd				INTEGER,
+		alcCuOutQueueMsgSize		INTEGER,
+		alcCuOutQueueCharSize		INTEGER,
+		alcCuN1MaxMsgSize			INTEGER,
+		alcCuT1PollRspTimer			INTEGER,
+		alcCuT2MaxRxTimer			INTEGER,
+		alcCuT4NoPollTime			INTEGER,
+		alcCuC1UpCounter			INTEGER,
+		alcCuC2DownCounter			INTEGER,
+		alcCuN2MaxMsgPerPoll		INTEGER,
+		alcCuMaxCharPerPoll			INTEGER,
+		alcCuN3PollsTillAlive		INTEGER,
+		alcCuN4PollsTillDead		INTEGER,
+		alcCuIAResetOption			INTEGER,
+		alcCuIAValidationOption		INTEGER,
+		alcCuRxCCCOption			DisplayString,
+		alcCuMaxFrame				INTEGER,
+		alcCuSvcMsgHeader			DisplayString,
+		alcCuSvcMsgIndex			INTEGER,
+		alcCuSvcMsgTrailer			DisplayString,
+
+		-- ALC Cu Statistics
+
+		alcCuStatusChanges			Counter,
+		alcCuRxFrames				Counter,
+		alcCuTxFrames				Counter,
+		alcCuRxChars				Counter,
+		alcCuTxChars				Counter,
+
+		-- ALC Cu Trap Thresholds/Controls
+
+		alcCuStatusTrapControl		INTEGER,
+		alcCuDropped				Counter
+		}
+
+	alcCuIfIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The line interface identifier that can be used to locate this IA."
+		::= { alcCuEntry 1 }
+
+	alcCuDescr OBJECT-TYPE
+		SYNTAX		DisplayString (SIZE (0..255))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Name of this control unit."
+		::= { alcCuEntry 2 }
+
+	alcCuIA OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"this control units IA"
+		::= { alcCuEntry 3 }
+
+	alcCuStatus OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled		(1),
+			enabledUp		(2),
+			enabledDown		(3)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"What is this control units current status.
+				enabledUp:		responding to polls,
+				enabledDown:	not responding to polls."
+		::= { alcCuEntry 4 }
+
+	alcCuPollCmd OBJECT-TYPE
+		SYNTAX		INTEGER {
+			enable		(1),
+			disable		(2),
+			cascade		(3)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"  Mode		Function
+			Primary		Should we be polling this CU?
+						enabled		- polling & forwarding data,
+						disabled	- not polling & not forwarding.
+						cascade		- not polling but forwarding.
+			Secondary	Should we respond to polls?
+						enabled		- answer poll.
+						disabled	- don't answer poll."
+		::= { alcCuEntry 5 }
+
+	alcCuOutQueueMsgSize OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(1..100 messages)  default=xx
+			Defines the size of the queue (in messages) that holds
+			outgoing messages (Port bound).
+			UNITS: messages"
+		::= { alcCuEntry 6 }
+
+	alcCuOutQueueCharSize OBJECT-TYPE
+		SYNTAX		INTEGER (1..10000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(1..xx characters)  default=xx
+			Defines the size of the queue (in characters) that holds
+			outgoing messages (Port bound).
+			UNITS: characters"
+		::= { alcCuEntry 7 }
+
+	alcCuN1MaxMsgSize OBJECT-TYPE
+		SYNTAX		INTEGER (1..10000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(1..xx characters) default=960
+			Maximum length of a single message.
+			UNITS: characters"
+		DEFVAL		{ 1920 }
+		::= { alcCuEntry 8 }
+
+	alcCuT1PollRspTimer OBJECT-TYPE
+		SYNTAX		INTEGER (1..10000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Poll response timeout (default = 200 millisec) (PRIMARY)
+			No response to a poll was received before this timeout.
+			UNITS: milliseconds"
+		DEFVAL		{ 200 }
+		::= { alcCuEntry 9 }
+
+	alcCuT2MaxRxTimer OBJECT-TYPE
+		SYNTAX		INTEGER (1..65)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(1..65 seconds)  default=5 (PRIMARY)
+			Timeout to ensure that the received messages are not overlength.
+			Typically started at: start of poll, or receipt of first character,
+			stopped at receipt of end of message.
+			This is the maximum Rx time for a CU (including concatenated messages)
+			This is considered a garbled msg, if exceeded.
+			UNITS: seconds"
+		DEFVAL { 5 }
+		::= { alcCuEntry 10 }
+
+	alcCuT4NoPollTime OBJECT-TYPE
+		SYNTAX		INTEGER (1..10000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"No polls received within this time.
+			(default = 3000 millisecs) (SECONDARY)
+			UNITS: milliseconds"
+		DEFVAL		{ 3000 }
+		::= { alcCuEntry 11 }
+
+	alcCuC1UpCounter OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of answered DEAD polls to declare a CU up.
+			(default=1) (PRIMARY only)
+			Equivalent to the secondary variable: alcCuN3PollsTillAlive
+			UNITS: polls"
+		DEFVAL		{ 1 }
+		::= { alcCuEntry 12 }
+
+	alcCuC2DownCounter OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of missed LIVE polls to declare a CU down.
+			(default=3) (PRIMARY only)
+			Equivalent to the secondary variable: alcN4PollsTillDead.
+			UNITS: polls"
+		DEFVAL		{ 3 }
+		::= { alcCuEntry 13 }
+
+	alcCuN2MaxMsgPerPoll OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"maximum number of messages which can be sent to the ACS per POLL.
+			(SECONDARY - multidrop, default=10)
+			UNITS: messages"
+		DEFVAL { 10 }
+		::= { alcCuEntry 14 }
+
+	alcCuMaxCharPerPoll OBJECT-TYPE
+		SYNTAX		INTEGER (1..10000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"maximum number of characters which can be sent to the ACS per POLL.
+			(default=xx) (SECONDARY)
+			UNITS: characters"
+		::= { alcCuEntry 15 }
+
+	alcCuN3PollsTillAlive OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"number of consecutive POLL commands to declare the
+			CU/circuit available. (SECONDARY)
+			Equivalent to the primary variable: alcC1UpCounter.
+			UNITS: polls"
+		::= { alcCuEntry 16 }
+
+	alcCuN4PollsTillDead OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"number of consecutive polling time-outs to declare the CU unavailable. (SECONDARY)
+			Equivalent to the primary variable: alcC2DownCounter.
+			UNITS: polls"
+		::= { alcCuEntry 17 }
+
+	alcCuIAResetOption OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"IA reset message is sent when the IA comes alive. (PRIMARY)
+			The message is sent to the polled IA."
+		DEFVAL		{ disabled }
+		::= { alcCuEntry 18 }
+
+	alcCuIAValidationOption OBJECT-TYPE
+		SYNTAX		INTEGER {
+			none				(1),
+			responding-stream	(2),
+			garbled				(3)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"IA Validation: possibly two CUs responding to the same address (PRIMARY)
+			This flag is used with respect to the pollers point of view.
+
+				none	- the message is forwarded on the stream associated with the
+						  polled address, (such as for a Cascaded CU, which may send
+						  multiple IAs)
+				responding-stream	- the message is forwarded on the stream associated
+									  with the IA in the responding message,
+				garbled		- if the message has an IA that does not match the polled IA,
+							  it is counted as a garbled message (alcInvalidAddresses) and
+							  is dropped, otherwise it is forwarded on the stream associated
+							  with the polled address."
+		DEFVAL		{ garbled }
+		::= { alcCuEntry 19 }
+
+	alcCuRxCCCOption OBJECT-TYPE
+		SYNTAX		DisplayString (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(PRIMARY)
+			a) <null> entry means no is message sent
+			b) default is preconfigured IA Resend message
+				'<CMD1>=0x1F, <CMD2>=0x38,<EOMc>'
+			c) user can enter their own 'please re-enter' message response.
+				Message must be fully configured: '<IA><TA><CMD1><CMD2><text><EOMc>'"
+		::= { alcCuEntry 20 }
+
+	alcCuMaxFrame OBJECT-TYPE
+		SYNTAX		INTEGER (0..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of messages allowed to be sent to a given CU before
+			having to poll all the other CUs on the line (default: 0 = disabled)
+			UNITS: messages"
+		DEFVAL		{ 0 }
+		::= { alcCuEntry 21 }
+
+	alcCuSvcMsgHeader OBJECT-TYPE
+		SYNTAX		DisplayString (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The is is the header that is sent out whenever the protocol module
+			determines the need to send a service message.  This prefix is in the
+			native character set of the protocol.  If the value of alcCuSvcMsgIndex
+			is non-zero, then the prefix will be sent followed by the appropriate message
+			followed by the trailer.
+
+			Typically this header will be:
+				<IA><broadcast TA><CMD1><CMD2>
+			If applicable, the header must include the column and row
+			number where the message must appear."
+		::= { alcCuEntry 22 }
+
+	alcCuSvcMsgIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This provides the index into the service message table: 'svcmsgTable'.
+			If this index is non-zero, the protocol (when it determines a message is required)
+			will send the alcCuSvcMsgHeader followed by the appropriate message from this
+			row in the svcmsgTable, followed by the alcCuSvcMsgTrailer.
+
+			Both the header and the trailer are in the native character set of the protocol.
+			However it is the responsibility of the protocol module to translate the
+			text of the actual message into the native character set before transmission."
+		::= { alcCuEntry 23 }
+
+	alcCuSvcMsgTrailer OBJECT-TYPE
+		SYNTAX		DisplayString (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This is the trailer sent whenever a service message is sent.
+			It is in the native character set of the protocol.
+			It is only used if the value of alcCuSvcMsgIndex is non-zero.
+			It will typically be: <EOMc>"
+		::= { alcCuEntry 24 }
+
+	--
+	-- Control Unit Statistics
+	--
+
+	alcCuStatusChanges OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of times:
+			a) no response to a live poll was received (PRIMARY),
+			b) CU had polling stopped due to T1 timeouts."
+		::= { alcCuEntry 25 }
+
+	alcCuRxFrames OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of frames received for this CU."
+		::= { alcCuEntry 26 }
+
+	alcCuTxFrames OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of frames sent to this CU."
+		::= { alcCuEntry 27 }
+
+	alcCuRxChars OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of characters received from the CU."
+		::= { alcCuEntry 28 }
+
+	alcCuTxChars OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of characters sent to the CU."
+		::= { alcCuEntry 29 }
+
+	alcCuStatusTrapControl OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"If enabled, it allows the system to generate alcCuState traps,
+			when the CU's status (alcCuStatus) changes to enabled-up,
+			and enabled-down respectively."
+		DEFVAL		{ disabled }
+		::= { alcCuEntry 30 }
+
+	alcCuDropped OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"A count of the number of messages dropped due message sent
+			which is not being acknowledged by the CU."
+		::= { alcCuEntry 31 }
+
+	--
+	-- Traps
+	--
+	-- This section defines the well-known notifications sent by ALC Cu agents.
+	-- These are sent when the corresponding threshold is exceeded
+
+	alcCuState TRAP-TYPE
+		ENTERPRISE		alcCuTraps
+		VARIABLES		{ alcCuIfIndex, alcCuIA, alcCuStatus, rs232PortIndex }
+		DESCRIPTION
+			"A trap that indicates that the Cu has changed state.
+			When alcCuStatus is:
+
+			enabledUp	- the CU has exceeded the alcCuC1UpCounter and is now declared up.
+			enabledDown	- the CU has exceeded the alcCuC2DownCounter and is now declared down."
+		::= 1
+
+	END
+

@@ -1,0 +1,952 @@
+-- *****************************************************************
+-- REDSTONE-IP-MIB
+--
+-- Redstone Communications Inc. Enterprise MIB
+-- Extensions for IP Protocol Management
+--
+-- Copyright 1998-1999 Redstone Communications, Incorporated.
+-- All Rights Reserved.
+-- *****************************************************************
+
+REDSTONE-IP-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	MODULE-IDENTITY,
+	OBJECT-TYPE,
+    Integer32,
+    Unsigned32,
+	IpAddress
+		FROM SNMPv2-SMI
+
+	RowStatus
+		FROM SNMPv2-TC
+
+    MODULE-COMPLIANCE,
+    OBJECT-GROUP
+        FROM SNMPv2-CONF
+
+    InterfaceIndex, InterfaceIndexOrZero
+        FROM IF-MIB
+
+    ipCidrRouteEntry
+        FROM IP-FORWARD-MIB
+
+    rsMgmt
+		FROM REDSTONE-SMI
+
+    RsEnable,
+    RsIpAddrLessIf,
+    RsNextIfIndex
+		FROM REDSTONE-TC;
+
+rsIpMIB  MODULE-IDENTITY
+	LAST-UPDATED "9909160000Z"
+	ORGANIZATION "Redstone Communications, Inc."
+	CONTACT-INFO
+        "
+        Redstone Communications, Inc.
+		5 Carlisle Road
+        Westford MA 01886
+        USA
+
+        Tel:    +1-978-692-1999
+		Email:  mib@redstonecom.com
+        "
+	DESCRIPTION
+		"The IP Protocol MIB for the 
+		Redstone Communications Inc. enterprise."
+	REVISION      "9909160000Z"
+	DESCRIPTION
+		"In rsIpAddrTable, added rsIpAdEntUnnumLoopbackIfIndex, rsIpAdEntIrdpEnable,
+        rsIpAdEntAccessRouteEnable, rsIpAdEntAccessRouteHost."
+	REVISION      "9908130000Z"
+	DESCRIPTION
+		"In rsIpRouteStaticTable, changed Tos to Preference, and added Tag.
+        Added rsIpCidrRouteTable (proprietary extensions to standard ipCidrRouteTable."
+	REVISION      "9801010000Z"
+	DESCRIPTION
+		"Initial version of this MIB module."
+	::= { rsMgmt 12 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- No textual conventions are defined in this MIB.
+
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+rsIpObjects     OBJECT IDENTIFIER ::= { rsIpMIB 1 }
+
+rsIpInterface   OBJECT IDENTIFIER ::= { rsIpObjects 1 }
+rsIpAddress     OBJECT IDENTIFIER ::= { rsIpObjects 2 }
+rsIpRoute       OBJECT IDENTIFIER ::= { rsIpObjects 3 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Interface attributes
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- IfIndex selection for creating new IP interfaces
+--
+
+rsIpNextIfIndex OBJECT-TYPE
+    SYNTAX      RsNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries
+        in rsIpIfTable.
+
+        A GET of this object returns the next available ifIndex 
+        value to be used to create an entry in the associated
+        interface table; or zero, if no valid ifIndex value is
+        available. This object also returns a value of zero when 
+        it is the lexicographic successor of a varbind presented 
+        in an SNMP GETNEXT or GETBULK request, for which circumstance
+        it is assumed that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different
+        values, thus avoiding collisions among cooperating
+        management clients seeking to create table entries
+        simultaneously.
+        "
+    ::= { rsIpInterface 1 }
+
+--
+-- The IP Interface Table
+--
+
+rsIpIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsIpIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for IP interfaces present in the system."
+    ::= { rsIpInterface 2 }
+
+rsIpIfEntry OBJECT-TYPE
+    SYNTAX      RsIpIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of an IP interface. 
+        Creating/deleting entries in this table causes corresponding 
+        entries for be created /deleted in ifTable/ifXTable/rsIfTable."
+    INDEX   { rsIpIfIndex }
+    ::= { rsIpIfTable 1 }
+
+RsIpIfEntry ::= SEQUENCE {
+    rsIpIfIndex
+        InterfaceIndex,
+    rsIpIfRowStatus
+        RowStatus,
+    rsIpIfLowerIfIndex
+        InterfaceIndexOrZero,
+    rsIpIfType
+        INTEGER
+    }
+
+
+rsIpIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the IP interface. When 
+        creating entries in this table, suitable values
+        for this object are determined by reading
+        rsIpNextIfIndex."
+    ::= { rsIpIfEntry 1 }
+
+rsIpIfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table
+        according to the RowStatus textual convention, 
+        constrained to support the following values only:
+
+            createAndGo
+            destroy
+            
+        To create an entry in this table, the following 
+        entry objects MUST be explicitly configured:
+
+            rsIpIfRowStatus
+            rsIpIfLowerIfIndex
+
+        In addition, when creating an entry the following
+        conditions must hold:
+
+            A value for rsIpIfIndex must have been determined
+            previously, by reading rsIpNextIfIndex. 
+
+            The interface identified by a nonzero rsIpIfLowerIfIndex
+            must exist. 
+
+            If rsIpIfType is configured to be 'loopback', 
+            rsIpIfLowerIfIndex must be set to zero.
+
+            The selected value of rsIpIfType must be compatible
+            with the underlying media interface identified
+            by rsIpIfLowerIfIndex.
+
+        A corresponding entry in ifTable/ifXTable/rsIfTable is 
+        created/destroyed as a result of creating/destroying an entry 
+        in this table.
+        "
+    ::= { rsIpIfEntry 2 }
+
+rsIpIfLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of a media interface over which this IP interface 
+        is to be layered. A value of zero is used when rsIpIfType is 
+        specified to be loopback(4)."
+    ::= { rsIpIfEntry 3 }
+
+rsIpIfType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    other(0),
+                    broadcast(1),
+                    pointToPoint(2),
+                    nbma(3),
+                    loopback(4)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of network interface."
+    DEFVAL { pointToPoint }
+    ::= { rsIpIfEntry 4 }
+
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Address attributes
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- IP globals
+--
+rsIpAddrGlobals  OBJECT IDENTIFIER ::= { rsIpAddress 1 }
+
+rsIpArpTimeout OBJECT-TYPE
+    SYNTAX      Integer32(1..60)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Timeout, in seconds, for ARP requests issued by this entity."
+    ::= { rsIpAddrGlobals 1 }
+
+--
+-- IP Address management
+--		
+rsIpAddrTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsIpAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "IP addressing information for this entity's 
+        IP network interfaces. Representation of both
+        numbered and unnumbered IP interfaces is supported."
+    ::= { rsIpAddress 2 }
+
+rsIpAddrEntry OBJECT-TYPE
+    SYNTAX      RsIpAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "IP addressing information for one of this entity's IP 
+        network interfaces. This interface could be either numbered
+        or unnumbered.
+
+        The following objects correspond to (read-only) counterparts in the
+        IP-MIB ipAddrTable:
+
+            rsIpAdEntAddr
+            rsIpAdEntIfIndex
+            rsIpAdEntNetMask
+            rsIpAdEntBcastAddr
+            rsIpAdEntReasmMaxSize
+        "
+    INDEX   { rsIpAdEntAddr }
+    ::= { rsIpAddrTable 1 }
+
+RsIpAddrEntry ::= SEQUENCE {
+    rsIpAdEntAddr
+        RsIpAddrLessIf,
+    rsIpAdEntIfIndex
+        InterfaceIndex,
+    rsIpAdEntNetMask
+        IpAddress,
+    rsIpAdEntBcastAddr     
+        Integer32,
+    rsIpAdEntReasmMaxSize  
+        Integer32,
+    rsIpAdEntRowStatus
+        RowStatus,
+    rsIpAdEntAdminStatus
+        RsEnable,
+    rsIpAdEntArpRspEnable
+        RsEnable,
+    rsIpAdEntProxyArpRspEnable
+        RsEnable,
+    rsIpAdEntIgmpEnable
+        RsEnable,
+    rsIpAdEntDirectedBcastEnable
+        RsEnable,
+    rsIpAdEntIcmpRedirectEnable
+        RsEnable,
+    rsIpAdEntIcmpMaskReplyEnable
+        RsEnable,
+    rsIpAdEntIcmpUnreachEnable
+        RsEnable,
+    rsIpAdEntMtu
+        Integer32,
+    rsIpAdEntUnnumLoopbackIfIndex
+        InterfaceIndexOrZero,
+    rsIpAdEntIrdpEnable
+        RsEnable,
+    rsIpAdEntAccessRouteEnable
+        RsEnable,
+    rsIpAdEntAccessRouteHost
+        IpAddress
+}
+
+rsIpAdEntAddr OBJECT-TYPE
+    SYNTAX      RsIpAddrLessIf
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The IP address for a numbered IP network interface, if 
+        this object's value has the form 'a.b.c.d', where 'a' is
+        nonzero; or, the ifIndex (interpreting the low 24 bits of
+        this value as an integer) of an unnumbered ('address-less')
+        IP interface, if this object's value has the form '0.b.c.d'."
+    ::= { rsIpAddrEntry 1 }
+
+rsIpAdEntIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the network interface to which this
+        entry's IP addressing mode pertains."
+    ::= { rsIpAddrEntry 2 }
+
+rsIpAdEntNetMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP subnet mask associated with the IP address of
+        this entry. The network and host bit fields of the mask
+        are filled with 1's and 0's, respectively.
+
+        If this entry represents an unnumbered IP interface, this
+        object should have a value of all ones."
+    DEFVAL { 'ffffffff'H }
+    ::= { rsIpAddrEntry 3 }
+
+rsIpAdEntBcastAddr OBJECT-TYPE
+    SYNTAX      Integer32 (0..1)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The value of the least-significant bit in the IP broadcast
+            address used for sending datagrams on the IP network
+            interface associated with this entry.  For
+            example, when the Internet standard all-ones broadcast
+            address is used, the value will be 1.  This value applies to
+            both the subnet and network broadcasts addresses used by the
+            entity on this interface."
+    ::= { rsIpAddrEntry 4 }
+
+rsIpAdEntReasmMaxSize OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The size of the largest IP datagram which this entity can
+            re-assemble from incoming IP fragmented datagrams received
+            on this interface."
+    ::= { rsIpAddrEntry 5 }
+
+rsIpAdEntRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls the creation/deletion of entries in this
+        table according to the RowStatus textual convention,
+        constrained to support the following values only:
+        
+            createAndGo
+            destroy
+
+        To create entries for both numbered and unnumbered IP 
+        interfaces, the following entry objects MUST be 
+        explicitly configured:
+        
+            rsIpAdEntRowStatus
+            rsIpAdEntIfIndex
+
+        To create an entry for a numbered IP interface, the following 
+        conditions must also hold:
+
+            <none>
+
+        To create an entry for an unnumbered IP interface, the following 
+        conditions must also hold:
+
+            rsIpAdEntUnnumLoopbackIfIndex must be configured with
+            a nonzero ifIndex value of an IP loopback interface."
+    ::= { rsIpAddrEntry 6 }
+
+rsIpAdEntAdminStatus OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable operation of IP on this IP network interface."
+    DEFVAL { enable } 
+    ::= { rsIpAddrEntry 7 }
+
+rsIpAdEntArpRspEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable ARP response on this IP network interface."
+    DEFVAL { enable } 
+    ::= { rsIpAddrEntry 8 }
+
+rsIpAdEntProxyArpRspEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable proxy ARP response on this IP network interface."
+    DEFVAL { disable } 
+    ::= { rsIpAddrEntry 9 }
+
+rsIpAdEntIgmpEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable IGMP operation on this IP network interface."
+    DEFVAL { disable } 
+    ::= { rsIpAddrEntry 10 }
+
+rsIpAdEntDirectedBcastEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable forwarding of directed broadcasts on this 
+        IP network interface."
+    DEFVAL { disable } 
+    ::= { rsIpAddrEntry 11 }
+
+rsIpAdEntIcmpRedirectEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable transmission of ICMP Redirect messages on this
+        IP network interface."
+    DEFVAL { disable } 
+    ::= { rsIpAddrEntry 12 }
+
+rsIpAdEntIcmpMaskReplyEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable transmission of ICMP Mask Reply messages on this
+        IP network interface."
+    DEFVAL { disable } 
+    ::= { rsIpAddrEntry 13 }
+
+rsIpAdEntIcmpUnreachEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Enable/disable transmission of ICMP Unreachable messages on this
+        IP network interface."
+    DEFVAL { disable } 
+    ::= { rsIpAddrEntry 14 }
+
+rsIpAdEntMtu OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The configured MTU size for this IP network interface. If set to
+            zero, the default MTU size, as determined by the underlying 
+            network media, is used."
+    ::= { rsIpAddrEntry 15 }
+
+
+rsIpAdEntUnnumLoopbackIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "For unnumbered interfaces, the ifIndex of the IP loopback interface
+        whose IP address is used as the source IP address for IP packets
+        transmitted on the unnumbered network.
+
+        For numbered interfaces, this object has a value of zero."
+    DEFVAL { 0 }
+    ::= { rsIpAddrEntry 16 }
+
+rsIpAdEntIrdpEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls whether ICMP Router Discovery Protocol
+        operation is permitted to be sent on this network."
+    DEFVAL { enable }
+    ::= { rsIpAddrEntry 17 }
+
+rsIpAdEntAccessRouteEnable OBJECT-TYPE
+    SYNTAX      RsEnable
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "If enabled, then establishment/loss of a point-to-point network
+        connection causes a host route for the remote host to be created/deleted 
+        automatically."
+    DEFVAL { disable }
+    ::= { rsIpAddrEntry 18 }
+
+rsIpAdEntAccessRouteHost OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "If an access route has been established, the IP address
+        of the remote host is reported by this object; otherwise,
+        this object contains the value 0.0.0.0."
+    ::= { rsIpAddrEntry 19 }
+
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- IP Route
+-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- Route Globals
+-- 
+rsIpRouteGlobals  OBJECT IDENTIFIER ::= { rsIpRoute 1 }
+
+rsIpRouteLimit OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Maximum number of IP routes maintained by this entity.
+        
+        Setting a value lower than the current number of routes
+        prevents additional routes from being learned or configured, 
+        but does not cause existing excess routes to be deleted to
+        enforce the new limit."
+    ::= { rsIpRouteGlobals 1 }
+    
+
+--
+-- Static Route Table
+--     
+rsIpRouteStaticTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsIpRouteStaticEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table of static routes configured on this entity.
+
+        The object definitions and indexing for this table 
+        are chosen to closely align with RFC2096 IP-FORWARD-MIB's
+        ipCidrRouteTable.
+
+        This  table serves three purposes:
+
+        1. Provide the means for configuring static routes.
+        2. Provide an efficient view of static routes (otherwise
+           they must be observed by traversing the entire routing
+           table).
+        3. Provide view of static routes configured on network
+           interfaces that are currently inactive. (In this 
+           implementation, static routes configured on inactive
+           interfaces are not visible in the routing table.)"
+    ::= { rsIpRoute 2 }
+
+rsIpRouteStaticEntry OBJECT-TYPE
+    SYNTAX      RsIpRouteStaticEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A static route."
+    INDEX   { rsIpRouteStaticDest, 
+              rsIpRouteStaticMask,
+              rsIpRouteStaticPref, 
+              rsIpRouteStaticNextHop}
+    ::= { rsIpRouteStaticTable 1 }
+
+RsIpRouteStaticEntry ::=
+    SEQUENCE {
+        rsIpRouteStaticDest
+            IpAddress,
+        rsIpRouteStaticMask
+            IpAddress,
+        rsIpRouteStaticPref
+             Integer32,
+        rsIpRouteStaticNextHop
+            IpAddress,
+
+        rsIpRouteStaticRowStatus
+            RowStatus,
+
+        rsIpRouteStaticIfIndex
+            Integer32,
+        rsIpRouteStaticStatus
+            INTEGER,
+        rsIpRouteStaticNextHopAS
+            Integer32,
+        rsIpRouteStaticMetric
+            Integer32,
+        rsIpRouteStaticTag
+            Unsigned32
+    }
+
+rsIpRouteStaticDest OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "The destination IP address of this route.
+
+       This object may not take a Multicast (Class  D)
+       address value.
+
+       Any assignment (implicit or  otherwise)  of  an
+       instance  of  this  object to a value x must be
+       rejected if the bitwise logical-AND of  x  with
+       the  value of the corresponding instance of the
+       rsIpRouteStaticMask object is not equal to x."
+    ::= { rsIpRouteStaticEntry 1 }
+
+rsIpRouteStaticMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "Indicate the mask to be logical-ANDed with the
+       destination  address  before  being compared to
+       the value  in  the  rsIpRouteStaticDest  field.
+       For those  systems  that  do  not support arbitrary
+       subnet masks, an agent constructs the value  of
+       the  rsIpRouteStaticMask  by  reference to the IP 
+       Address Class.
+
+       Any assignment (implicit or  otherwise)  of  an
+       instance  of  this  object to a value x must be
+       rejected if the bitwise logical-AND of  x  with
+       the  value of the corresponding instance of the
+       rsIpRouteStaticDest object is not equal to 
+       rsIpRouteStaticDest."
+    ::= { rsIpRouteStaticEntry 2 }
+
+-- The following convention is included for specification
+-- of TOS Field contents.  At this time, the Host Requirements
+-- and the Router Requirements documents disagree on the width
+-- of the TOS field.  This mapping describes the Router
+-- Requirements mapping, and leaves room to widen the TOS field
+-- without impact to fielded systems.
+
+rsIpRouteStaticPref OBJECT-TYPE
+    SYNTAX      Integer32(0..255)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "The preference of this static route. Higher values
+       correspond to higher preference. A static route with
+       preference of zero will never be installed as an active
+       route."
+    ::= { rsIpRouteStaticEntry 3 }
+
+rsIpRouteStaticNextHop OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "The address of the next hop toward the destination."
+    ::= { rsIpRouteStaticEntry 4 }
+
+rsIpRouteStaticRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+       "The row status variable, used according to
+       row installation and removal conventions."
+    ::= { rsIpRouteStaticEntry 5 }
+
+rsIpRouteStaticIfIndex OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+       "The ifIndex value which identifies the local
+       interface through which the next hop of this
+       route should be reached. A value of zero means 
+       the router should automatically determine the 
+       interface through which the specified next-hop
+       address is reached.
+
+       An implementation may disallow non-zero values
+       from being configured."
+    DEFVAL { 0 }
+    ::= { rsIpRouteStaticEntry 6 }
+
+rsIpRouteStaticStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    active(0),  
+                    inactive(1),
+                    incomplete(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "The operational status of this static route.
+
+       active(0) indicates this route is currently being
+       used to reach the specified destination.
+
+       inactive(1) indicates this route is considered valid,
+       but currently is superseded by another routing table entry 
+       for the destination, having a higher preference value.
+
+       incomplete(2) indicates this route entry contains
+       information that is incomplete, or is inconsistent with
+       other system configuration (for example, the interface
+       specified in rsIpRouteStaticIfIndex does not exist)."
+    ::= { rsIpRouteStaticEntry 7 }
+
+rsIpRouteStaticNextHopAS OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+       "The Autonomous System Number of the Next  Hop.
+       The  semantics of this object are determined by
+       the routing-protocol specified in  the  route's
+       ipCidrRouteProto  value. When  this object is
+       unknown or not relevant its value should be set
+       to zero."
+    DEFVAL { 0 }
+    ::= { rsIpRouteStaticEntry 8 }
+
+rsIpRouteStaticMetric OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+       "The primary routing  metric  for  this  route.
+       The  semantics of this metric are determined by
+       the routing-protocol specified in  the  route's
+       ipCidrRouteProto  value.   If  this metric is not
+       used, its value should be set to -1."
+    DEFVAL { -1 }
+    ::= { rsIpRouteStaticEntry 9 }
+
+rsIpRouteStaticTag OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+       "A tag value for this static route."
+    DEFVAL { 0 }
+    ::= { rsIpRouteStaticEntry 10 }
+
+--
+-- Extensions to IP CIDR Route Table
+--     
+rsIpCidrRouteTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsIpCidrRouteEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table of routes active on this entity.
+
+        This table is an augmentation of RFC2096 IP-FORWARD-MIB's
+        ipCidrRouteTable."
+    ::= { rsIpRoute 3 }
+
+rsIpCidrRouteEntry OBJECT-TYPE
+    SYNTAX      RsIpCidrRouteEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Additional attributes of an active route."
+    AUGMENTS  { ipCidrRouteEntry }
+    ::= { rsIpCidrRouteTable 1 }
+
+RsIpCidrRouteEntry ::=
+    SEQUENCE {
+        rsIpCidrRoutePref
+            Integer32,
+        rsIpCidrRouteArea
+            IpAddress,
+        rsIpCidrRouteTag
+            Unsigned32
+    }
+
+rsIpCidrRoutePref OBJECT-TYPE
+    SYNTAX      Integer32(0..255)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "The preference of this route. Higher values
+       correspond to higher preference."
+    ::= { rsIpCidrRouteEntry 1 }
+
+rsIpCidrRouteArea OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "The Area to which this route pertains. A value
+       of 0.0.0.0 indicates no area is identified."
+    ::= { rsIpCidrRouteEntry 2 }
+
+rsIpCidrRouteTag OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+       "A tag value for this route."
+    ::= { rsIpCidrRouteEntry 3 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control 
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- No notifications are defined in this MIB. Placeholders follow.
+
+--rsIpTrapEnables OBJECT IDENTIFIER ::= { rsIpMIB 2 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- No notifications are defined in this MIB. Placeholders follow.
+
+-- The following two OBJECT IDENTIFIERS are used to define SNMPv2 
+-- Notifications that are easily translated into SNMPv1 Traps.
+
+-- rsIpTraps       OBJECT IDENTIFIER ::= { rsIpMIB 3 }
+-- rsIpTrapPrefix  OBJECT IDENTIFIER ::= { rsIpTraps 0 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+rsIpConformance     OBJECT IDENTIFIER ::= { rsIpMIB 4 }
+rsIpCompliances     OBJECT IDENTIFIER ::= { rsIpConformance 1 }
+rsIpGroups          OBJECT IDENTIFIER ::= { rsIpConformance 2 }
+
+-- compliance statements
+
+rsIpCompliance MODULE-COMPLIANCE
+        STATUS  current
+        DESCRIPTION
+                "The compliance statement for entities which implement
+                the Redstone Xxx MIB."
+        MODULE  -- this module
+                MANDATORY-GROUPS { rsIpInterfaceGroup, rsIpAddressGroup, rsIpRouteGroup }
+        ::= { rsIpCompliances 1 }
+
+-- units of conformance
+
+rsIpInterfaceGroup OBJECT-GROUP
+        OBJECTS {
+        rsIpNextIfIndex,
+
+        rsIpIfRowStatus,
+        rsIpIfLowerIfIndex,
+        rsIpIfType
+	}
+	STATUS  current
+	DESCRIPTION
+		"A collection of objects for managing general IP
+		capabilities in a Redstone product."
+        ::= { rsIpGroups 1 }
+
+rsIpAddressGroup OBJECT-GROUP
+        OBJECTS {
+        rsIpArpTimeout,
+
+        rsIpAdEntRowStatus,
+        rsIpAdEntIfIndex,
+        rsIpAdEntNetMask,
+        rsIpAdEntAdminStatus,
+        rsIpAdEntArpRspEnable,
+        rsIpAdEntProxyArpRspEnable,
+        rsIpAdEntIgmpEnable,
+        rsIpAdEntDirectedBcastEnable, 
+        rsIpAdEntIcmpRedirectEnable,
+        rsIpAdEntIcmpMaskReplyEnable,
+        rsIpAdEntIcmpUnreachEnable,
+        rsIpAdEntMtu,
+        rsIpAdEntUnnumLoopbackIfIndex,
+        rsIpAdEntIrdpEnable,
+        rsIpAdEntAccessRouteEnable,
+        rsIpAdEntAccessRouteHost
+	}
+	STATUS  current
+	DESCRIPTION
+		"A collection of objects for managing general IP
+		capabilities in a Redstone product."
+        ::= { rsIpGroups 2 }
+
+rsIpRouteGroup OBJECT-GROUP
+        OBJECTS {
+        rsIpRouteLimit,
+
+        rsIpRouteStaticDest,
+        rsIpRouteStaticMask,
+        rsIpRouteStaticPref,
+        rsIpRouteStaticNextHop,
+        rsIpRouteStaticRowStatus,
+        rsIpRouteStaticIfIndex,
+        rsIpRouteStaticStatus,
+        rsIpRouteStaticNextHopAS,
+        rsIpRouteStaticMetric,
+        rsIpRouteStaticTag,
+
+        rsIpCidrRoutePref,
+        rsIpCidrRouteArea,
+        rsIpCidrRouteTag
+	}
+	STATUS  current
+	DESCRIPTION
+		"A collection of objects for managing IP routing
+		capabilities in a Redstone product."
+        ::= { rsIpGroups 3 }
+
+END

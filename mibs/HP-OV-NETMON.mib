@@ -1,0 +1,302 @@
+HP-OV-NETMON DEFINITIONS ::= BEGIN
+
+-- First cut at HP OpenView Netmon MIB
+
+IMPORTS
+	enterprises FROM RFC1155-SMI
+	DisplayString FROM SNMPv2-TC
+	OBJECT-TYPE
+		FROM RFC-1212;
+
+hp		OBJECT IDENTIFIER ::= { enterprises 11 }
+nm		OBJECT IDENTIFIER ::= { hp 2 }
+openView	OBJECT IDENTIFIER ::= { nm 17 }
+hpOVDistribStation
+		OBJECT IDENTIFIER ::= { openView 4 }
+hpOVNetmon	OBJECT IDENTIFIER ::= { hpOVDistribStation 4 }
+
+nmStatus	OBJECT IDENTIFIER ::= { hpOVNetmon 1 }
+nmTest		OBJECT IDENTIFIER ::= { hpOVNetmon 2 }
+nmICMPStatus	OBJECT IDENTIFIER ::= { nmStatus 1 }
+nmSNMPStatus	OBJECT IDENTIFIER ::= { nmStatus 2 }
+
+
+
+-- ICMP polling objects
+
+nmICMPListLength OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+		"The length of netmon's ICMP polling list, indicating
+		the number of managed interfaces actively being status
+		polled."
+	::= { nmICMPStatus 1 }
+
+nmICMPPollsWithin1m OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+		"The number of interfaces scheduled to be polled by
+		netmon via ICMP with the next minute."
+	::= { nmICMPStatus 2 }
+
+nmICMPSecsUntilNextPoll OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+		"The number of seconds until the next scheduled ICMP
+		poll.  This may a negative number if netmon is behind in
+		ICMP polling."
+	::= { nmICMPStatus 3 }
+
+
+-- SNMP polling objects
+
+nmSNMPListLength OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+		"The length of netmon's SNMP polling list, indicating
+		the number of managed nodes actively being polled."
+	::= { nmSNMPStatus 1 }
+
+nmSNMPPollsWithin1m OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+		"The number of nodes scheduled to be polled by netmon
+		via SNMP with the next minute."
+	::= { nmSNMPStatus 2 }
+
+
+nmSNMPSecsUntilNextPoll OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+		"The number of seconds netmon until the next scheduled
+		SNMP poll.  It is calculated by subtracting the time of the
+		poll at the head of the list from the current time.  If
+		netmon is behind, this can be a negative value."
+	::= { nmSNMPStatus 3 }
+
+
+
+-- Netmon status poll testing table.
+--	This table allows a test engineer to specify the status value of
+--	an interface of a node in the network.  This value is normally 
+--	determined by netmon during the ICMP (ping) status poll.  When a
+--	test engineer sets this to a non-measure value, netmon will not
+--	perform the ping, instead it will use the user-specified value.
+
+nmStatPollTable OBJECT-TYPE
+              SYNTAX  SEQUENCE OF NmStatPollEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                      "A list of nmStatPollEntry's which contain user specified
+		       status values for node interfaces.  There is no scalar
+		       MIB that represents the number of entries."
+              ::= { nmTest 1 }
+
+nmStatPollEntry OBJECT-TYPE
+              SYNTAX  NmStatPollEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                      "The MIB objects in this entry contain the user
+		       specified value of the status poll for the particular
+	               interface and various support MIB variables which
+		       control when the new status takes affect and how
+		       many nodes will be changed by the action."
+              INDEX   { topoObjID }
+              ::= { nmStatPollTable 1 }
+
+NmStatPollEntry ::=
+	SEQUENCE {
+		topoObjID
+			INTEGER,
+		objStatus
+			INTEGER,
+		takeEffectWhen
+			INTEGER,
+		numCritRouteObjs
+			INTEGER,
+		criticalRoute
+			DisplayString
+		}
+          
+topoObjID OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The OpenView Network Node Manager ovwDB ID which
+		       corresponds to a particular internet interface object
+		       in the topology database.  This object can correspond
+		       to an ip, ipx, level 2 interface.  However, at first
+		       deployment only ip interfaces are supported."
+              ::= { nmStatPollEntry 1 }
+
+objStatus OBJECT-TYPE
+              SYNTAX  INTEGER {
+			ifStatusMeasureIt(0),	-- Measure status with ping.
+			ifStatusUnknown(1),	-- Other values obtained from 
+			ifStatusNormal(2),	-- ipdl/include/topo_dbdefs.h.
+			ifStatusMinor(3),
+			ifStatusCritical(4),
+			ifStatusUnmanaged(5),
+			ifStatusWarning(6),
+			ifStatusMajor(7),
+			ifStatusRestricted(8),
+			ifStatusTesting(9),
+			ifStatusDisabled(10)
+		      }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                      "The value of this MIB object is the value that netmon
+		       will use as the status of the object whenever the
+		       particular object comes to the top of the status
+		       polling queue.  If the value is different than what is
+		       currently in the OpenView Network Node Manager topology
+		       database, then netmon will process the change just like
+		       it does if the result came back from ping (e.g. netmon
+		       may change the status in the topoDB and send out various
+		       events).
+
+		       A value of D_ifStatus_measureIt(0) indicates that netmon
+		       should measure the status of the object (like it 
+		       normally does in the product) using ping or
+		       other techniques rather than using a value provided by
+		       a user.
+
+		       During a set operation, the user supplied value will be
+		       written immediately to an interface specific record in
+		       netmon.  The value will ripple through to the event
+		       system and topology database immediately if the
+		       <takeEffectWhen> MIB variable has a value of 
+		       immediately(1) or at netmon's next status poll if
+		       <takeEffectWhen> has a value of atNextStatusPoll(0).
+		       
+		       This object is intended to be used to provide a value
+		       for interfaces only.  For example, setting a value for
+		       a node will fail.
+
+		       The instance value for this object is the ovwDB ID
+		       (topoObjID) which corresponds to an interface in the
+		       topology DB.  The ovwDB ID is used instead of ipAddress
+		       because it works for level 2, ip, ipx and in general
+		       any kind of object in the topology database.
+
+		       REFINEMENT/CORRECTION:
+
+		       Instead of actually specifying a value that netmon must
+		       use for the node, we want to communicate which nodes
+		       are inaccessible and allow netmon to determine the
+		       exact status using it's router down analysis and
+		       configuration.  
+
+		       So the status values above will be mapped per the
+		       following table:
+
+                          ifStatusMeasureIt(0)
+				Maps to 'Measure status with ping just like 
+				normal operation'.
+  
+			  ifStatusNormal(2)
+				Maps to 'Up'.
+
+			  ifStatusUnknown(1),
+			  ifStatusMinor(3),
+			  ifStatusCritical(4),
+			  ifStatusUnmanaged(5),
+			  ifStatusWarning(6),
+			  ifStatusMajor(7),
+			  ifStatusRestricted(8),
+			  ifStatusTesting(9),
+			  ifStatusDisabled(10)
+				All others values map to inaccessible.  The 
+				actual status value used will be determined
+				by netmon using its Router Down algorithm
+				and configuration.
+		       "
+              ::= { nmStatPollEntry 2 }
+
+
+takeEffectWhen OBJECT-TYPE
+              SYNTAX  INTEGER {
+			atNextStatusPoll(0),
+			immediately(1)
+		      }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                      "This MIB object specifies when the user specified
+		       interface status will impact the Event System and the
+		       Topology database.  A value of atNextStatusPoll(0)
+		       indicates that the value will be recorded in netmon's
+		       process memory but will not impact the Event System and
+		       Topology database until netmon is ready to perform the
+		       next status poll on the specified interface.
+		       
+		       A value of immediately(1) causes netmon to move the
+		       specified node to the front of the status poll queue
+		       so that the new status impacts the Event System and
+		       Topology database immediately.
+		       
+		       A set with a value greater than immediately(1) is interpretted
+		       as a time to schedule a status poll for the selected interface.
+		       The interface is rescheduled at a time equal to 
+		       now + <takeEffectWhen> in seconds.  This is useful for automated
+		       tests for eliminating the possibility that netmon will status
+		       poll nodes that the test is working on before the test is set
+		       up or in a different order then the test expects.
+		       
+		       The structure of this MIB table suggests that the
+		       <takeEffectWhen> value is stored in netmon on a per
+		       interface basis.  This could happen at a later date but
+		       is initially implemented as a interface-independent
+		       global.  For reliable operation, this MIB variable 
+		       should be specified as a var-bind preceding objStatus
+		       in a multi-var-bind SNMP Set request."
+              ::= { nmStatPollEntry 3 }
+
+numCritRouteObjs OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                      "This object is currently not implemented."
+              ::= { nmStatPollEntry 4 }
+
+criticalRoute OBJECT-TYPE
+              SYNTAX  DisplayString (SIZE (0..255))
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                      "This MIB object's value is a space separated list of <ovwDbId>
+		       <hostname>.<ifNumber> tuple values which correspond to the specified
+		       interface's criticalRoute beginning with the netmon host/interface and 
+		       ending with the specified host/interface.  This value is normally computed 
+		       by netmon during the status poll of the specified interface.
+		       
+		       For automated test situations, you can imagine starting up
+		       the system from scratch (including netmon).  At the time the
+		       test runs, it's possible that netmon has not yet calculated
+		       criticalRoute for the nodes of interest.  
+		       
+		       Of course if you wait long enough, netmon will eventually get 
+		       around to computing a criticalRoute value.  To facilitate
+		       automated testing, a set to this object forces netmon to 
+		       compute the criticalRoute attribute for the specified 
+		       interface.  The user supplied value is ignored.
+		       "
+              ::= { nmStatPollEntry 5 }
+END

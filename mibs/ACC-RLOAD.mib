@@ -1,0 +1,618 @@
+ACC-RLOAD DEFINITIONS ::= BEGIN
+
+    IMPORTS
+		OBJECT-TYPE, IpAddress, TimeTicks, Gauge, Counter FROM RFC1155-SMI
+		TRAP-TYPE FROM RFC-1215
+      accTrapLogSeqNum FROM ACC-SYSTEM
+ accBRG, DisplayString, RowStatus, IfIndex, SmdsAddress
+             FROM ACC-MIB;
+-- Remote Loader Group
+      accRload         OBJECT IDENTIFIER ::= { accBRG 27 }
+	accRlSourceTable	OBJECT-TYPE
+			SYNTAX SEQUENCE OF AccRlSourceEntry
+			ACCESS not-accessible
+			STATUS mandatory
+			DESCRIPTION
+			 " Table of host/filenames for remote
+			   loading of system application code.
+			   To delete an entry, set the value of accRlPriority
+			    to NULL for the desired instance.
+			   Existing entries may be modified (overwritten)."
+			::= { accRload 1 }
+	accRlSourceEntry OBJECT-TYPE
+			SYNTAX AccRlSourceEntry
+			ACCESS not-accessible
+			STATUS mandatory
+			DESCRIPTION
+			 " Specific host/filename information "
+                        INDEX { accRlPriority }
+			::= { accRlSourceTable 1 }
+		AccRlSourceEntry ::= SEQUENCE {
+			accRlHostAddr		IpAddress,
+			accRlFilename		DisplayString,
+			accRlPriority		INTEGER
+			}
+		accRlHostAddr  OBJECT-TYPE
+			SYNTAX IpAddress
+			ACCESS read-write
+			STATUS mandatory
+			DESCRIPTION
+			 " IP address of host which contains the
+			     application file to be remote-loaded."
+			::= { accRlSourceEntry 1 }
+		accRlFilename  OBJECT-TYPE
+			SYNTAX  DisplayString 
+			ACCESS read-write
+			STATUS mandatory
+			DESCRIPTION
+			 " ASCII filename of application file to
+			    be remote-loaded to unit."
+			::= { accRlSourceEntry 2 }
+		accRlPriority  OBJECT-TYPE
+			SYNTAX INTEGER 
+			ACCESS read-write
+			STATUS mandatory
+			DESCRIPTION
+			 " Priority of this entry. Attempts will be made
+			   to download from host/filename with lowest
+			   numerical value of priority first, then next
+			   lowest, etc.  Range is limited to number of
+			   entries in the table."
+			::= { accRlSourceEntry 3 }
+	accNetload  OBJECT-TYPE
+		SYNTAX INTEGER {
+			initiate(1),
+			other(2)
+			}
+		ACCESS read-write
+		STATUS mandatory
+		DESCRIPTION
+		 " Setting this object to initiate causes the unit
+		   to attempt to load application code into local
+		   (execution) memory  from a file in the accRlSourceTable.
+		   This code will then be immediately executed."
+		::= { accRload 2 }
+	accDownload  OBJECT-TYPE
+		SYNTAX INTEGER {
+			initiate(1),
+			other(2)
+			}
+		ACCESS read-write
+		STATUS mandatory
+		DESCRIPTION
+		 " Setting this object to initiate causes the unit
+		   to load local EPROM with application code
+		   brought over the network from a file in the 
+		   accRlSourceTable."
+		::= { accRload 3 }
+	accPromload  OBJECT-TYPE
+		SYNTAX INTEGER {
+			initiate(1),
+			other(2)
+			}
+		ACCESS read-write
+		STATUS mandatory
+		DESCRIPTION
+		 " Setting this object to initiate causes the unit
+		   to load local EPROM with diagnostics and the
+		   remote loader application brought over the network 
+		   from a file called PROMLOAD from a host in the
+		   accRlSourceTable."
+		::= { accRload 4 }
+	accCfgLoad	OBJECT IDENTIFIER ::= { accRload 5 }
+	accCfgHost  OBJECT-TYPE
+		SYNTAX  IpAddress
+		ACCESS  read-write
+		STATUS  mandatory
+		DESCRIPTION
+		 " The IP address of the TFTP server to attempt a
+		   download from.  This object is used in conjunction
+		   with accCfgFile & accCfgDisp to download configurations."
+		::= { accCfgLoad 1 }
+	accCfgFile  OBJECT-TYPE
+		SYNTAX  DisplayString
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION
+		 " The filename (include pathname) of the file on the
+		   TFTP server to download.  This object is used in
+		   conjunction with accCfgHost & accCfgDisp to download
+		   configurations."
+		::= { accCfgLoad 2 }
+	accCfgDisp  OBJECT-TYPE
+		SYNTAX	INTEGER {
+			reset(1),
+			reload(2),
+			execute(3)
+			}
+		ACCESS	read-write
+		STATUS	mandatory
+		DESCRIPTION
+		 " The action to take following the successful TFTP
+		   download of a file.  
+		   reset specifies that the downloaded file is a binary 
+		   configuration file.  The configuration is overwritten 
+		   with the downloaded file, and the unit resets, using 
+		   the downloaded configuration on restart.
+		   reload specifies that the downloaded file is a binary 
+		   configuration file.  The configuration is overwritten 
+		   with the downloaded file, and the unit reloads, using 
+		   the downloaded configuration on restart.
+		   execute specifies that the downloaded file is a
+		   configuration script containing client commands.
+		   On download the script is parsed and the commands executed."
+		::= { accCfgLoad 3 }
+	accTftpStat	OBJECT IDENTIFIER ::= { accRload 6 }
+	accTftpStatus  OBJECT-TYPE
+		SYNTAX	INTEGER {
+			uploading(1),
+			downloading(2),
+			idle(3)
+			}
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION
+		 " The state of the remote loader (client of TFTP)."
+		::= { accTftpStat 1 }
+	accTftpLocalFile  OBJECT-TYPE
+		SYNTAX	DisplayString
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION
+		 " The local filename used in the last upload/download."
+		::= { accTftpStat 2 }
+	accTftpRemoteFile  OBJECT-TYPE
+		SYNTAX	DisplayString
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION
+		 " The remote filename used in the last download."
+		::= { accTftpStat 3 }
+	accTftpOctetsTransferred  OBJECT-TYPE
+		SYNTAX	INTEGER
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION
+		 " The number of octets transferred in the last/current
+		   upload/download."
+		::= { accTftpStat 4 }
+	accTftpLastMsg  OBJECT-TYPE
+		SYNTAX	DisplayString
+		ACCESS	read-only
+		STATUS	mandatory
+		DESCRIPTION
+		 " The contents of the last trap message generated by the
+		   remote loader."
+		::= { accTftpStat 5 }
+-- TFTP command group
+        accTftpCmd      OBJECT IDENTIFIER ::= { accRload 7 }
+        accTftpCmdReq  OBJECT-TYPE
+                SYNTAX  INTEGER {
+                        get(1)
+                        }
+                ACCESS  read-only
+                STATUS  mandatory
+		DESCRIPTION
+		" TFTP command request."
+                ::= { accTftpCmd 1 }
+        accTftpCmdHost  OBJECT-TYPE
+                SYNTAX  IpAddress
+                ACCESS  read-only
+                STATUS  mandatory
+		DESCRIPTION
+		" TFTP command host."
+                ::= { accTftpCmd 2 }
+        accTftpCmdRemote  OBJECT-TYPE
+                SYNTAX  DisplayString
+                ACCESS  read-only
+                STATUS  mandatory
+		DESCRIPTION
+		" TFTP remote file name."
+                ::= { accTftpCmd 3 }
+        accTftpCmdLocal  OBJECT-TYPE
+                SYNTAX  DisplayString
+                ACCESS  read-only
+                STATUS  mandatory
+		DESCRIPTION
+		" TFTP local file name."
+                ::= { accTftpCmd 4 }
+        accTftpCmdForce  OBJECT-TYPE
+                SYNTAX  INTEGER {
+                            overwrite (1),
+                            safe (2)
+                        }
+                ACCESS  read-write
+                STATUS  mandatory
+                DESCRIPTION
+                " set to overwrite to write new file over old file of the
+                  same name. Set to safe to prevent overwrite."
+                ::= { accTftpCmd 5 }
+-- START MANILA _NEW
+-- tftp traps
+        accTftpTraps      OBJECT IDENTIFIER ::= { accRload 8 }
+        accTftpTrapMsg     OBJECT-TYPE
+        SYNTAX          DisplayString
+        ACCESS          read-write
+        STATUS          mandatory
+        DESCRIPTION
+                 " Enterprise Trap Message for Tftp"
+        ::= { accTftpTraps 1 }
+-- END MANILA_NEW
+
+        accRlodFailTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                    "This is generated when a TFTP requested failed
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 2 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 46 " 
+ 
+        ::= 1
+        accRlodNofileTrap  TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                    "Trap is generated when a TFTP upload is requested 
+		    for non-existent file in the remote Filesystem.
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 7 " 
+ 
+        ::= 2
+        accRlodBusyTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "busy state 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 46 " 
+ 
+        ::= 3
+        accRlodStartTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "startup message 
+SEVERITY-DEFAULT: Indeterminate 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 0 " 
+ 
+        ::= 4
+        accRlodOpenFailTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION 
+                "file open failure 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 56 " 
+ 
+        ::= 5
+        accRlodWrFailTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                    "file write fail 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 6
+        accRlodRdTrap  TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                    "file read fail 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 7
+        accRlodDoneTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "all done 
+SEVERITY-DEFAULT: Indeterminate 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 0 " 
+ 
+        ::= 8
+        accRlodBadSumTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile, 
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                " bad chksum 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 253 " 
+ 
+        ::= 9
+        accRlodCkStartTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "startup message 
+SEVERITY-DEFAULT: Indeterminate 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 0 " 
+ 
+        ::= 10
+        accRlodInvFilsTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "file sys invalid 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 11
+        accRlodBadTypeTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "Bad file type message 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 12
+        accRlodBadImagTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "Bad file imag message 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 13
+        accRlodExceedTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "store exceeded 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 251 " 
+ 
+        ::= 14
+        accRlodNoHostTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "no download host entries 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 7 " 
+ 
+	::= 15
+        accRlodValSumTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "bad cksum validation hdr 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+	::= 16
+        accRlodFileSysTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpLocalFile ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "file system needs update 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 57 " 
+ 
+        ::= 17
+        accRlodSafeFileTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpLocalFile ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "safe opt and file cannot overwite 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 18
+        accRlodActiveFileTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION 
+                "active file cannot overwrite 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 19
+       accRlodNoVolTrap TRAP-TYPE
+       ENTERPRISE   accTftpTraps 
+       VARIABLES  { accTftpTrapMsg ,
+                     accTrapLogSeqNum}
+       DESCRIPTION
+                "file value cannot found 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+       ::= 20
+       accRlodBadFileTrap TRAP-TYPE
+       ENTERPRISE   accTftpTraps 
+       VARIABLES  { accTftpTrapMsg,
+                    accTftpLocalFile ,
+                     accTrapLogSeqNum}
+       DESCRIPTION
+                 "bad file ext. name cannot found 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+       ::= 21
+       accRlodLongFileNameTrap TRAP-TYPE
+       ENTERPRISE   accTftpTraps 
+       VARIABLES  { accTftpTrapMsg, 
+		    accTftpLocalFile ,
+       accTrapLogSeqNum}
+       DESCRIPTION
+                "file name too long 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+       ::= 22
+        accRlodNoFlashTrap TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                 "not a flash file system 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 23
+        accRlodFilSySBusyTrap  TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "file system busy, try again 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 24
+        accRlodInCompleteTrap  TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "file transfer incomplete 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 110 " 
+ 
+        ::= 25
+        accRlodAccDeniedTrap  TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg,
+                     accTftpRemoteFile,
+                     accRlHostAddr ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "Access denied for upload 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 110 " 
+ 
+        ::= 26
+        accRlodSameFileTrap  TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg, 
+		     accTftpLocalFile ,
+        accTrapLogSeqNum}
+        DESCRIPTION
+                "Source and dest files are same 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 27
+        accRlodAbortTrap  TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "DownLoad Aborted By user.
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 17 " 
+ 
+        ::= 29
+        accRlodTimedOutTrap  TRAP-TYPE
+        ENTERPRISE   accTftpTraps 
+        VARIABLES  { accTftpTrapMsg ,
+                      accTrapLogSeqNum}
+        DESCRIPTION
+                "Tftp timed out, retry in <time> seconds 
+SEVERITY-DEFAULT: Minor 
+EVENTTYPE-DEFAULT: 10 
+ADDITIONAL-TEXT-VARIABLES: { accTrapLogSeqNum,accTftpTrapMsg }
+PCAUSE-DEFAULT: 166 " 
+ 
+        ::= 30
+END

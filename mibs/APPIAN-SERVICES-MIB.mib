@@ -1,0 +1,1094 @@
+--
+--  Title:  Appian Services MIB
+--
+--  Dated:  11/7/99
+--  Author: D. Theriault
+--
+--  Description:
+--
+--  The service MIB definition. The service MIB is organized as a common
+--  service table, with several service type specific MIB tables. Currently
+--  there are three types of services:
+--  
+--      Internet Access Service (IAS)
+--      Transparent LAN Service (TLS)
+--      TDM service
+--
+--  The common service table:
+--
+--      1. this table is the common thread of all services. Every service,
+--         regardless of the service type, will have an entry in this table.
+--
+--      2. currently, this table is used to create and remove services.
+--
+--  IAS table:
+--
+--      1. this table contains only the IAS services.
+--
+--      2. the objects in this table are applicable only to IAS.
+--
+--  TLS table and TDM service table are similar to IAS table.
+--
+
+APPIAN-SERVICES-MIB DEFINITIONS ::= BEGIN
+
+    IMPORTS
+
+        acServices, AcSlotNumber, AcPortNumber, 
+        AcAdminStatus, AcOpStatus, AcNodeId             FROM APPIAN-SMI-MIB
+
+        acChassisCurrentTime, acChassisRingId           FROM APPIAN-CHASSIS-MIB
+
+        MODULE-IDENTITY,OBJECT-TYPE, IpAddress,
+        Counter64, NOTIFICATION-TYPE, Unsigned32        FROM SNMPv2-SMI
+
+        TEXTUAL-CONVENTION, MacAddress, 
+                DisplayString,TruthValue                FROM SNMPv2-TC;
+
+--
+-- Start Common Services MIB
+--
+acServicesCommon    
+    MODULE-IDENTITY
+        LAST-UPDATED    "0001310000Z"
+        ORGANIZATION    "Appian Communications, Inc."
+        CONTACT-INFO    "Douglas Theriault"
+        DESCRIPTION 
+                        "Appian Communications OSAP Services MIB contain the definitions
+                        for Internet Access (IAS) and Transparent LAN (TLS) services."
+
+        REVISION        "0001310000Z" 
+        DESCRIPTION     "Engineering draft version, not for release."
+        
+        ::= { acServices 1 }
+
+
+        AcQueueWeights   ::= TEXTUAL-CONVENTION
+                STATUS          current
+                DESCRIPTION
+                        "The weighted values control relative bandwidth for each queue of
+                        the four queues. Each byte represents the proportional weight out
+                        of 100 for a queue. The sum of these bytes must not exceed 100. 
+                
+                        For example, if 2 queues are used, and the relative
+                        weights (or priorities) are 90 and 10, then acQosQueueWeights should
+                        be set to '\0x5A\0x0A\0x00\0x00'. Another example, if we want a FIFO
+                        queueing, we would set acQosQueueWeights to '\0x64\0x00\0x00\0x00'."
+                SYNTAX OCTET STRING (SIZE(4))
+
+        AcQueueBufferingCapacity   ::= TEXTUAL-CONVENTION
+                STATUS          current
+                DESCRIPTION
+                        "The values control relative queue buffering capacity
+                        for each of the four queues. Each byte represents the proportional
+                        buffering capacity out of 100 for a queue. The sum of these bytes
+                        must not exceed 100. 
+                
+                        For example, if 2 queues are used, and the relative
+                        buffering capacities (or queue depths) are 90 and 10, then 
+                        acQosQueueBufferingCapacity should be set 
+                        to '\0x5A\0x0A\0x00\0x00'. Another example, if we want all the 
+                        buffering capacity to be allocated to a best effort queue
+                        we would set acQosQueueBufferingCapacity to '\0x64\0x00\0x00\0x00'."
+                SYNTAX OCTET STRING (SIZE(4))
+
+        AcClassMapping   ::= TEXTUAL-CONVENTION
+                STATUS          current
+                DESCRIPTION
+                        "This octet string defines a mapping between a field within a 
+                        packet payload and a 2-bit internal queue number.  The octet
+                        string is a list of queue numbers.  Each octet contains a
+                        single 2-bit queue number. In this product, 6-bits are wasted 
+                        in each octet. In the future we may support more queues per 
+                        service in which case we will extend the bit field in each octet.
+
+                        When this map is used for 802.1p and MPLS, it must be exactly 
+                        8-octets in length.  For IP TOS, it must be 256 octets in length."
+                SYNTAX OCTET STRING (SIZE (0..256))
+--
+-- Service Table
+--
+acServiceTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcServiceEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "This table is the common thread of all services, regardless of service
+    types, in other words, every service would have an entry in this table.
+
+    A service is identified by a tuple of {node, slot, port, channel}.
+    The {slot, port} pair identies the access port of a subscriber.
+    The port can support multiple services, and each such service is
+    identified by a 'service channel'.
+
+    To create a service, a row should be created in this table. When the 
+    service type is set, a row is automatically 'created' in the
+    appropriate service type specific table. For example, to create an IAS
+    service, one first creates a row in this common table, and then set 
+    acServiceType to IAS (which triggers the automatic creation of an
+    entry in the IAS service table), and then set the all necessary 
+    parameters.
+
+    To remove a service, remove the row in this common table only."
+    
+    ::= { acServicesCommon 1 }
+
+acServiceEntry  OBJECT-TYPE
+    SYNTAX  AcServiceEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "A row equates to a service defined on a particular port and channel."
+    
+    INDEX { acServiceNodeId, acServiceSlot, acServicePort, acServiceChannel }
+    
+    ::= { acServiceTable 1 }
+
+    AcServiceEntry ::=
+        SEQUENCE {
+            acServiceNodeId                     AcNodeId,
+            acServiceSlot                       AcSlotNumber,
+            acServicePort                       AcPortNumber,
+            acServiceChannel                    INTEGER,
+            acServiceAdminStatus                AcAdminStatus,
+            acServiceOpStatus                   AcOpStatus,
+            acServiceType                       INTEGER,
+            acServiceVlanId                     INTEGER,
+            acServiceTrunkNumber                INTEGER,
+            acServiceQosTemplate                INTEGER,
+            acServiceGBR                        INTEGER,
+            acServiceMBR                        INTEGER,
+            acServiceResetStats                 TruthValue,
+	    acServiceUpstreamBuffCapWeight      Unsigned32,
+            acServiceDownstreamBuffCapWeight    Unsigned32,
+            acServiceLocalBuffCapWeight         Unsigned32,
+            acServiceBufferPool                 Unsigned32
+        }
+
+acServiceNodeId   OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+    "A unique node identification number assigned by the EMS to uniquely 
+    identify a node within an Appian Ring."
+
+    ::= { acServiceEntry 1 }
+    
+acServiceSlot   OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+    "The slot number within the chassis where the physical i/o port can
+    be found for customer access."
+
+    ::= { acServiceEntry 2 }
+
+acServicePort   OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+    "The port number ranging from (1..8) where the physical i/o connection
+    for this customer service can be found."
+    
+    ::= { acServiceEntry 3 }
+
+acServiceChannel  OBJECT-TYPE
+    SYNTAX  INTEGER (1..255)                  
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+    "The service channel amongst the potentially multiple service channels on
+     a data access port.  If only one service channel is provisioned, this
+     channel number should be a value of 1.  If multiple service channels are
+     provisioned, the channel number should follow the ranges described below.
+
+     If multiple service channels are provisioned,each channel maps to a unique
+     802.1q VLAN tag used to effectively channalize the Ethernet.
+
+     4 service channels (1..4) are supported on the 100baseX Ethernet access
+     board.  255 service channels (1..255) are supported on the Gigabit,
+     1000baseX, Ethernet access board."
+           
+    ::= { acServiceEntry 4 }
+
+acServiceAdminStatus  OBJECT-TYPE
+    SYNTAX      AcAdminStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+    "The administrative or desired status."
+    ::= { acServiceEntry 5 }
+
+acServiceOpStatus  OBJECT-TYPE
+    SYNTAX      AcOpStatus
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The operational or actual status."
+    ::= { acServiceEntry 6 }
+
+
+acServiceType   OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(0),
+                ias(1),
+                tls(2)
+            }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the service type. Each row in this table has an associated
+        row in one of the service type specific tables. This object indicates
+        which table, IAS or TLS, has a row at the same index containing
+        additional parameters associated with this service."
+    DEFVAL  { unknown }
+    ::= { acServiceEntry 7 }
+
+acServiceVlanId OBJECT-TYPE
+    SYNTAX  INTEGER (0..4095)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The VLAN ID attribute is only used when the enetEnableMultiService
+        flag has been set to true.  The VLAN ID is a 12-bit VLAN ID and is 
+        used when the OSAP is processing packets to differentiate between the
+        four service channels. This object must set if an access port supports
+        multiple services. VLAN ID is a 12-bit value and therefore the
+        value range is 0 to 4095. However value 0 is not a VLAN ID per
+        se, but rather a value indicating VLAN tagging is not used."
+    DEFVAL  { 0 }
+    ::= { acServiceEntry 8 }
+
+acServiceTrunkNumber    OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "Identifies the trunk over which this access service is to be carried
+                onto the network.  Maps to a row in the trunk table."
+    DEFVAL  { 0 }
+    ::= { acServiceEntry 9 }
+
+acServiceQosTemplate    OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "This object specifies the QOS template to use. A QOS template 
+                dictates the QOS model assigned to this subscriber service.
+                If zero(0), no differentiation is done and packets flow through 
+                a single queue."
+    DEFVAL  { 1 }
+    ::= { acServiceEntry 10 }
+
+acServiceGBR    OBJECT-TYPE
+    SYNTAX  INTEGER (0..1000000)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The guaranteed bit rate in 1-kpbs increments. 
+        On the access side of the service, It should not exceed the
+        maximum bandwidth of the access port. On the network side, 
+        the sum of GBR's of all the services carried
+        by a trunk should not exceed the trunk capacity.
+	**NOADMINDOWN**"
+    DEFVAL  { 1 }
+    ::= { acServiceEntry 11 }
+
+acServiceMBR    OBJECT-TYPE
+    SYNTAX  INTEGER (1..1000000)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The maximum bit rate in 1-kbps increments. A service may
+        burst up to this rate, but there is no guarantee to the data
+        transmitted above the GBR. The MBR should not exceed the 
+        access port capacity nor the trunk capacity.
+	**NOADMINDOWN**"
+    DEFVAL  { 1 }
+    ::= { acServiceEntry 12 }
+
+acServiceResetStats OBJECT-TYPE
+    SYNTAX TruthValue
+    MAX-ACCESS read-create
+    STATUS current
+    DESCRIPTION
+        "Setting this varible to TRUE causes all service statistics counters
+        to reset. This variable always return FALSE as its value."
+    ::= { acServiceEntry 13 }
+
+acServiceUpstreamBuffCapWeight OBJECT-TYPE
+    SYNTAX  Unsigned32(1..10)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The weight associated with the upstream traffic on this service relating to
+        buffering capacity.  Upstream traffic is defined as traffic that enters the
+        system from an access port and exits the system on a trunk.  A value of 1
+        provides the least amount of buffering capacity while a value of 10 provides
+        the most buffering capacity.  This value is relative in that the number of
+        buffers actually assigned to the upstream traffic depends on how many services
+        share the buffer pool associated with this service."
+    DEFVAL  { 5 }
+    ::= { acServiceEntry 14 }
+
+acServiceDownstreamBuffCapWeight OBJECT-TYPE
+    SYNTAX  Unsigned32(1..10)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The weight associated with the downstream traffic on this service relating to
+        buffering capacity.  Downstream traffic is defined as traffic that enters the
+        system from a trunk and exits the system on an access port.  A value of 1
+        provides the least amount of buffering capacity while a value of 10 provides
+        the most buffering capacity.  This value is relative in that the number of
+        buffers actually assigned to the downstream traffic depends on how many services
+        share the buffer pool associated with this service."
+    DEFVAL  { 1 }
+    ::= { acServiceEntry 15 }
+
+acServiceLocalBuffCapWeight OBJECT-TYPE
+    SYNTAX  Unsigned32(1..10)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The weight associated with local traffic on this service relating to
+        buffering capacity.  Local traffic is defined as traffic which enters the system
+        on an access port and exits the system on an access port.  This value is therefore
+        only relevant for transparent LAN services with multiple local access ports.
+        This value is relative in that the number of buffers actually assigned to the 
+        local traffic depends on how many services share the buffer pool associated with 
+        this service."
+    DEFVAL  { 2 }
+    ::= { acServiceEntry 16 }
+
+acServiceBufferPool OBJECT-TYPE
+    SYNTAX  Unsigned32(1..4294967295)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The buffer pool associated with this service.  The default is 1 which 
+        indicates the default buffer pool will be used.  The value 0 is not
+        allowed and values greater than 1 are user defined buffer pools."
+    DEFVAL  { 1 }
+    ::= { acServiceEntry 17 }
+
+
+--
+-- Service Statistics Table
+--
+acServiceStatTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcServiceStatEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "The service statistics table.
+
+    Statistics is provided for each queue priority of a service. Consequently,
+    the table is composed of node, slot, port, channel, queue."
+
+    ::= { acServicesCommon 4 }
+
+acServiceStatEntry  OBJECT-TYPE
+    SYNTAX  AcServiceStatEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+		"A set of counters collected for a service queue priority."
+    INDEX {
+       acServiceStatNodeId,
+       acServiceStatSlot,
+       acServiceStatPort,
+       acServiceStatChannel,
+       acServiceStatQueue }
+    ::= { acServiceStatTable 1 }
+
+    AcServiceStatEntry ::=
+        SEQUENCE {
+            acServiceStatNodeId                     AcNodeId,
+            acServiceStatSlot                       AcSlotNumber,
+            acServiceStatPort                       AcPortNumber,
+            acServiceStatChannel                    INTEGER,
+            acServiceStatQueue                      INTEGER,
+            acServiceStatUpstreamFrames             Counter64,
+            acServiceStatUpstreamBytes              Counter64,
+            acServiceStatUpstreamDroppedFrames      Counter64,
+            acServiceStatUpstreamDroppedBytes       Counter64,
+            acServiceStatUpstreamUnexpectedFrames   Counter64,
+            acServiceStatDownstreamFrames           Counter64,
+            acServiceStatDownstreamBytes            Counter64,
+            acServiceStatDownstreamDroppedFrames    Counter64,
+            acServiceStatDownstreamDroppedBytes     Counter64,
+            acServiceStatDownstreamUnexpectedFrames Counter64
+        }
+
+acServiceStatNodeId   OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+    "A unique node identification number assigned by the EMS to uniquely 
+    identify a node within an Appian Ring."
+    ::= { acServiceStatEntry 1 }
+    
+acServiceStatSlot   OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+    "The slot number within the chassis where the physical i/o port can
+    be found for customer access."
+    ::= { acServiceStatEntry 2 }
+
+acServiceStatPort   OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+    "The port number ranging from (1..8) where the physical i/o connection
+    for this customer service can be found."
+    ::= { acServiceStatEntry 3 }
+
+acServiceStatChannel  OBJECT-TYPE
+    SYNTAX  INTEGER (1..4)                  
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+    "The service queue is one of 4 queues where a service is provisioned. 
+    Currently each (data) access port supports 4 service queues, each of 
+    which can support a service.
+
+    The first release of our Ethernet access card supports a max of 4 
+    services/port.  In the future this range may increase but will always 
+    be dependent upon the access card being provisioned ."
+    ::= { acServiceStatEntry 4 }
+
+acServiceStatQueue  OBJECT-TYPE
+    SYNTAX  INTEGER (1..4)                  
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+		"The service queuing priority. Service statistics is collected 
+		for each service queuing priority. Current OSAP supports up to
+		4 priorities. If a service doesn't use a priority, the 
+		corresponding entry has 0s for all counters."
+    ::= { acServiceStatEntry 5 }
+
+acServiceStatUpstreamFrames OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number frames transported from the access port to the network."
+    ::= { acServiceStatEntry 6 }
+
+acServiceStatUpstreamBytes OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number bytes transported from the access port to the network."
+    ::= { acServiceStatEntry 7 }
+
+acServiceStatUpstreamDroppedFrames OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number frames dropped in the direction of the access port to
+        the network."
+    ::= { acServiceStatEntry 8 }
+
+acServiceStatUpstreamDroppedBytes OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number bytes dropped in the direction of the access port to
+        the network."
+    ::= { acServiceStatEntry 9 }
+
+acServiceStatUpstreamUnexpectedFrames OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of frames that are unexpected. An example would a frame 
+		of wrong protocol type.
+
+		Such frames are silently dropped but not counted in the dropped
+		frames counter."
+
+    ::= { acServiceStatEntry 10 }
+
+acServiceStatDownstreamFrames OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number frames transported from the network to access port."
+    ::= { acServiceStatEntry 11 }
+
+acServiceStatDownstreamBytes OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number bytes transported from the network to the access port."
+    ::= { acServiceStatEntry 12 }
+
+acServiceStatDownstreamDroppedFrames OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number frames dropped in the direction of the network to the
+        access port."
+    ::= { acServiceStatEntry 13 }
+
+acServiceStatDownstreamDroppedBytes OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number bytes dropped in the direction of the network to the
+        access port."
+    ::= { acServiceStatEntry 14 }
+
+acServiceStatDownstreamUnexpectedFrames OBJECT-TYPE
+    SYNTAX  Counter64
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of frames that are unexpected. An example would a frame 
+		of wrong protocol type.
+
+		Such frames are silently dropped but not counted in the dropped
+		frames counter."
+
+    ::= { acServiceStatEntry 15 }
+
+
+--
+-- IAS Table
+--
+acIas    OBJECT IDENTIFIER ::= { acServices 2 }
+
+acIasTable  OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcIasEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+                "The Internet Access Service table."
+    ::= { acIas 1 }
+
+acIasEntry  OBJECT-TYPE
+    SYNTAX  AcIasEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+                "A row within the IAS provisioning table."
+
+    INDEX  { acIasNodeId, acIasSlot, acIasPort, acIasChannel }
+
+    ::= { acIasTable 1 }
+
+    AcIasEntry ::=
+        SEQUENCE {
+            acIasNodeId                             AcNodeId,
+            acIasSlot                               AcSlotNumber,
+            acIasPort                               AcPortNumber,
+            acIasChannel                            INTEGER,
+            acIasDlci                               INTEGER,
+            acIasRespondToArp                       TruthValue,
+            acIasRemoteIpAddress                    IpAddress,
+            acIasCpeIpAddress                       IpAddress,
+            acIasCpeMacAddress                      MacAddress,
+            acIasCpeEncapsMode                      INTEGER,
+            acIasPerformInverseArp                  TruthValue
+        }
+
+acIasNodeId   OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+        "The unique node identification number assigned by the EMS which 
+        identifies the node where the IAS service is being configured."
+    ::= { acIasEntry 1 }
+
+acIasSlot   OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+                "The slot number where the physical data i/o port is located in
+                the OSAP chassis, which will have the IAS service configured."
+    ::= { acIasEntry 2 }
+
+acIasPort   OBJECT-TYPE 
+    SYNTAX  AcPortNumber
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+                "The physical port number on the i/o slot where this customers data
+                interface will reside."
+    ::= { acIasEntry 3 }
+
+acIasChannel OBJECT-TYPE
+    SYNTAX  INTEGER (1..4)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+                "The service channel."
+    ::= { acIasEntry 4 }
+
+acIasDlci OBJECT-TYPE
+    SYNTAX  INTEGER (16..1022)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+                "When an IAS service is carried over a FrameRelay trunk, 
+                this attribute dictates the frame relay circuit (DLCI) to be used for
+                the service. When other types of trunks are used, this object has not
+                meaning and has the value of 0."
+    DEFVAL  { 16 }
+    ::= { acIasEntry 5 }
+
+acIasRespondToArp   OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+                "Flag to indicate we should respond to ARP requests."
+    DEFVAL  { true }
+    ::= { acIasEntry 6 }
+
+acIasRemoteIpAddress OBJECT-TYPE
+    SYNTAX  IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+                "The IP address of at the network side.
+                The object is optional. If set, ARP requests from the user
+				are responded if the target IP address matchs this object.
+				If this is object is not set, all ARP requests from the user 
+				are responded.
+				
+				If this object is not set, it may be learned from the inverse
+				ARP if the service is carried on a frame relay circuit."
+    ::= { acIasEntry 7 }
+
+acIasCpeIpAddress   OBJECT-TYPE
+    SYNTAX  IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+                "The IP address of the CPE device. This object is optional and if not
+                set, it will be learned by looking into traffic from the CPE device."
+    ::= { acIasEntry 8 }
+
+acIasCpeMacAddress  OBJECT-TYPE
+    SYNTAX  MacAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+                "The MAC Address of the CPE router."
+    ::= { acIasEntry 9 }
+
+acIasCpeEncapsMode  OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(0),
+                                learning (1),
+                enet(2),
+                snap(3)
+            }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+                "The type of encapsulation used for packets destined for the CPE.
+                unknown(0)  -  encapsulation mode is not set and is same as 
+                               learning(1) mode.
+                learning(1) -  learn the encapsulation mode from the packets
+                               generated by the CPE.
+                enet(2)     -  ethernet encapsulation.
+                snap(3)     -  SNAP encaspualtion mode."
+    DEFVAL  { learning }
+    ::= { acIasEntry 10 }
+
+acIasPerformInverseArp OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+                "Flag to indicate whether to perform Inverse ARP request to
+				learn the remote IP address. This is applicable if the service
+				is carried on a frame relay circuit.
+				**-DInitiate Inverse Arp**"
+    DEFVAL  { true }
+    ::= { acIasEntry 11 }
+
+
+--
+-- TLS Table
+--
+
+acTls       OBJECT IDENTIFIER ::= { acServices 3 }
+
+acTlsTable  OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcTlsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+                "The Transparent LAN Services table."
+    ::= { acTls 1 }
+
+acTlsEntry  OBJECT-TYPE
+    SYNTAX  AcTlsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+                "A row in the TLS table."
+    INDEX  { acTlsNodeId, acTlsSlot, acTlsPort, acTlsChannel }
+    ::= { acTlsTable 1 }
+
+    AcTlsEntry ::=
+        SEQUENCE {
+            acTlsNodeId             AcNodeId,
+            acTlsSlot               AcSlotNumber,
+            acTlsPort               AcPortNumber,
+            acTlsChannel            INTEGER,
+            acTlsTlanId             INTEGER,
+            acTlsServiceId          INTEGER,
+            acTlsPointToPointEnable     TruthValue,
+            acTlsServiceIdSharingEnable TruthValue
+        }
+
+acTlsNodeId   OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+           "The unique node number assigned by the EMS to uniquely 
+           identify this node within an Appian Ring of OSAP's which
+           is configured for TLS service."
+    ::= { acTlsEntry 1 }
+
+acTlsSlot   OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+           "The slot upon which the TLS service is being provisioned."
+    ::= { acTlsEntry 2 }
+
+acTlsPort   OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+           "The physical port number on the slot on which the TLS service is
+            provisioned."
+    ::= { acTlsEntry 3 }
+
+acTlsChannel  OBJECT-TYPE
+    SYNTAX  INTEGER (1..4)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+           "The service channel on which this TLS service is provisioned."
+    ::= { acTlsEntry 4 }
+
+acTlsTlanId OBJECT-TYPE
+    SYNTAX  INTEGER (16..4095)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+           "Identifies the Transparent LAN on which this virtual port,
+            subscriber port and channel, is participating.  This is a
+            12-bit value and is assigned by the EMS to ensure it is global
+            to all TLS services and TLS trunks which share any common
+            OSAPs or L2 switches.  Note:  It is prudent to keep the TlanId
+            unique within the carriers entire TLS service  offering until
+            the carrier starts another 'TLS service domain'.
+            WARNING: TLAN ID of zero(0) is invalid.  TlanId's 1..15 are
+            reserved for managment access.  TlanId's 16..4095 are legal
+            values."
+    ::= { acTlsEntry 5 }
+
+acTlsServiceId  OBJECT-TYPE
+    SYNTAX  INTEGER (0..1023)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+           "An ID which is used within a TLS service to identify which service
+            packets are associated with as they traverse the TLS trunks.
+            Each Tls service, virtual port, configured needs an Id assigned
+            to it.  Each packet received on this virtual port, subscriber port
+            and channel, is stamped with this value for its trip around a TLS
+            trunk. These tags are assigned by the EMS and must be unique on a
+            given TLS trunk.  This value is a 10-bit number providing a range
+            of 1k.  Values 1..15 are reserved.  Value 0 is used for TLS
+            services that are not provisioned over a TLS trunk. These trunkless
+            TLS services perform only local switching."  
+    ::= { acTlsEntry 6 }
+
+acTlsPointToPointEnable  OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+           "Flag to indicate whether or not the TLAN over which this Tls
+            service is provisioned is a point to point TLAN.  A point to
+            point TLAN is a TLAN with two and only two Tls services, virtual
+            ports."
+    DEFVAL  { false }
+    ::= { acTlsEntry 7 }
+
+acTlsServiceIdSharingEnable  OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+           "Flag to indicate whether or not the Tls Servive Id is shared
+            between this service and other Tls Services provisioned on the
+            same TLS trunk either on this OSAP or different OSAPs."
+    DEFVAL  { false }
+    ::= { acTlsEntry 8 }
+
+--
+-- QOS Template Table
+--
+acQosTable  OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcQosEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+                "Table of QOS templates."
+    ::= { acServicesCommon 2 }
+
+acQosEntry  OBJECT-TYPE
+    SYNTAX  AcQosEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+                "A row in the QOS template table."
+    INDEX  { acQosNodeId, acQosTemplateNumber }
+    ::= { acQosTable 1 }
+
+    AcQosEntry ::=
+        SEQUENCE {
+            acQosNodeId                         AcNodeId,
+            acQosTemplateNumber                 INTEGER,
+            acQosAdminStatus                    AcAdminStatus,
+            acQosTemplateName                   DisplayString,
+            acQosQueueWeights                   AcQueueWeights,
+            acQosClassMapping                   INTEGER,
+            acQosQueueBuffCaps                  AcQueueBufferingCapacity
+        }
+
+acQosNodeId   OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+		"A unique node identification number assigned by the EMS to uniquely 
+		identify a node within an Appian Ring."
+    ::= { acQosEntry 1 }
+
+acQosTemplateNumber OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+                "A number identifies a QOS template. Also used as the index
+                into the QOS template table."
+    ::= { acQosEntry 2 }
+
+acQosAdminStatus OBJECT-TYPE
+    SYNTAX      AcAdminStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "The administrative status."
+    ::= { acQosEntry 3 }
+    
+acQosTemplateName  OBJECT-TYPE  
+    SYNTAX  DisplayString (SIZE (0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+		"A textual string solely for easy identification of a template."
+    ::= { acQosEntry 4 }
+
+acQosQueueWeights  OBJECT-TYPE
+    SYNTAX  AcQueueWeights
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "The weighted values control relative bandwidth for each queue of the
+                four queues. Each byte represents the proportional weight out
+                of 100 for a queue. The sum of these bytes must equal to 100. 
+                
+                For example, if 2 queues are used, and the relative
+                weights (or priorities) are 90 and 10, then acQosQueueWeights should be
+                set to '\0x5A\0x0A\0x00\0x00'."
+    ::= { acQosEntry 5 }
+
+acQosClassMapping  OBJECT-TYPE
+    SYNTAX  INTEGER (1..12)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "The object identifies a row in the classification mapping table."
+    ::= { acQosEntry 6 }
+
+acQosQueueBuffCaps OBJECT-TYPE
+    SYNTAX  AcQueueBufferingCapacity
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "These values control the relative buffering capacities of the
+                four queues. Each byte represents the proportional buffering capacity out
+                of 100 for a queue. The sum of these bytes must equal to 100. 
+                
+                For example, if 2 queues are used, and the buffering capacities are 90 
+                and 10, then acQosQueueBuffCaps should be set to '\0x5A\0x0A\0x00\0x00'."
+    ::= { acQosEntry 7 }
+
+--
+-- Classification Mapping Table 
+--
+acClassMapTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcClassMapEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+                "Classification Map table."
+    ::= { acServicesCommon 3 }
+
+acClassMapEntry OBJECT-TYPE
+    SYNTAX  AcClassMapEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+                "A row in the class map provisioning table."
+    INDEX  { acClassMapNumber }
+    ::= { acClassMapTable 1 }
+
+    AcClassMapEntry ::=
+        SEQUENCE {
+            acClassMapNumber                    INTEGER,
+            acClassMapAdminStatus               AcAdminStatus,
+            acClassMapName                      DisplayString,
+            acClassMapType                      INTEGER,
+            acClassMapMapping                   AcClassMapping
+        }
+--
+-- Class Map Entry
+--
+acClassMapNumber    OBJECT-TYPE
+    SYNTAX  INTEGER (1..12)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+                "A number to identify a classification mapping. 
+                There can be at most four(4) rows for IP TOS based classification,
+                four(4) additional rows for MPLS experimental bits based classfication,
+                and four(4) additional rows for IEEE 802.1p based calssification.
+                This table can have at most 12 rows for this version of the Ethernet
+                access board."
+    ::= { acClassMapEntry 1 }
+
+acClassMapAdminStatus OBJECT-TYPE
+    SYNTAX      AcAdminStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "The administrative status."
+    ::= { acClassMapEntry 2 }
+    
+acClassMapName  OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..255))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "A textual string for easy naming of the classification mapping."
+    ::= { acClassMapEntry 3 }
+
+acClassMapType  OBJECT-TYPE
+    SYNTAX  INTEGER {
+                unknown(0),
+                iptos(1),
+                mpls(2),
+                dot1p(3)
+            }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "The type of classification used.  This parameter specifies what
+                fields in the packets are to be used for classification.
+                This in turn dictates the width of the mapping used in 
+                acClassMapMapping."
+    ::= { acClassMapEntry 4 }
+
+acClassMapMapping   OBJECT-TYPE     
+    SYNTAX  AcClassMapping
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+                "This octet string defines a mapping between a field within a packet
+                payload and a 2-bit internal queue number.  The octet string is a
+                list of queue numbers.  Each octet contains a single 2-bit queue 
+                number. In this product, 6-bits are wasted in each octet. In the 
+                future we may support more queues per service in which case we will
+                extend the bit field in each octet.
+
+                When this map is used for 802.1p and MPLS, it must be exactly 8-octets
+                in length.  For IP TOS, it must be 64-octets in length."
+    ::= { acClassMapEntry 5 }
+
+--
+-- Services Trap Definitions
+--
+
+acServiceTraps  OBJECT IDENTIFIER ::= { acServices 0 }
+
+acServiceUpTrap NOTIFICATION-TYPE
+    OBJECTS { 
+        acChassisCurrentTime, acChassisRingId,
+        acServiceNodeId, 
+        acServiceSlot, 
+        acServicePort, 
+        acServiceChannel,
+        acServiceType
+    }
+    STATUS  current
+    DESCRIPTION
+    "This trap indicates a service has become active."
+    
+    ::= { acServiceTraps 1 }
+    
+acServiceDownTrap NOTIFICATION-TYPE
+    OBJECTS {   
+        acChassisCurrentTime, acChassisRingId,
+        acServiceNodeId, 
+        acServiceSlot, 
+        acServicePort, 
+        acServiceChannel,
+        acServiceType
+    }
+    STATUS  current
+    DESCRIPTION
+    "This trap indicates a service has become deactivated.  The detailed code
+    indicates the reason why"
+--
+-- TODO:  Add in detailed code for reason why service went down.
+--    
+    ::= { acServiceTraps 2 }
+    
+END
+

@@ -1,0 +1,943 @@
+XEDIA-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, IpAddress, 
+	Integer32, Counter32
+        FROM SNMPv2-SMI
+    RowStatus, DisplayString
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    xedia
+        FROM XEDIA-REG
+    ;
+
+agentConfig MODULE-IDENTITY
+    LAST-UPDATED "9612200500Z" -- December 20, 1996
+    ORGANIZATION "Xedia Corp."
+    CONTACT-INFO
+        "support@xedia.com"
+    DESCRIPTION
+        "This MIB module is used to configure the community strings
+        and trap destinations for SNMPv1 and SNMPv2c agents for Xedia
+        products. It was originally written for the Xedia MADswitch
+        product (based on a MIB developed by Avatar Consulting). This
+        version of the MIB has been converted to SNMPv2 SMI but is
+        still semantically equivalent to the original version (meaning
+        the implementation of the MIB in the MADswitch is still
+        compliant with this version of the MIB).
+
+        Besides this conversion to the new SMI (MIB syntax) and many
+        editorial changes, this MIB has one new object:
+        trapSnmpVersion. See the DESCRIPTION clause for more
+        information. (Note that adding new objects is a 'legal' change
+        to make to new revisions of a MIB.)"
+    REVISION "9401010500Z" -- ?? Not sure when the original version
+                           -- was created
+    DESCRIPTION
+        "The original version of this MIB as shipped with the Xedia
+        MADswitch product."
+    ::= { xedia 1 }
+
+-- Note that this MIB's OID does not fall under the xediaMibs branch
+-- of the xedia enterprises tree since it predates that convention.
+
+-- ==================================================================
+-- Object Definitions
+-- ==================================================================
+
+configPassword OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This variable is a password that allows access to the
+        agentConfig group.  The password is really a community name
+        that must be used in order to view/modify objects on the
+        agentConfig group. For obvious reasons, noSuchName error is
+        returned on a GET/GET-NEXT request (for any object under
+        agentConfig), unless the community name used is the password."
+    DEFVAL      { ''H }
+    ::= { agentConfig 1 }
+
+-- 
+-- The community table
+-- 
+
+communityTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF CommunityEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This is the community table. Each entry is composed of a
+        community name, access based on network address, community
+        access and a table of community views. This table can only be
+        accessed if the community name matches configPassword. To
+        add any entry the community name communityName must be
+        created first. These defaults are assigned to the new entry
+        all hosts, read-only access and no restriction on view
+        (outside of agentConfig of course). To delete an entry, set
+        communityName to NULL.
+
+        Note that multiple rows can exist with the same
+        Name/NetAddress values. The access granted will be the highest
+        level of access. 
+
+        If two entries exist with the same Name but one with a
+        wildcarded NetAddress and the other with a specific
+        NetAddress, the specific address entry overrides the
+        wildcarded entry. This way, for example, read-only access can
+        be granted to everyone using the 'public' community string,
+        but notaccessible access (no access) can be given if they come
+        from IP address 1.2.3.4."
+    ::= { agentConfig 2 }
+
+communityEntry OBJECT-TYPE
+    SYNTAX      CommunityEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a specific community."
+    INDEX       { communityIndex }
+    ::= { communityTable 1 }
+
+CommunityEntry ::=
+    SEQUENCE {
+        communityIndex      Integer32, 
+        communityName       DisplayString, 
+        communityNetAddress IpAddress,
+        communityAccess     INTEGER,
+        communityNetMask    IpAddress,
+
+	communityAuthVersions BIT STRING,
+	communityAuthModels  BIT STRING,
+	communityAuthModes   BIT STRING,
+	communityAuthViews   BIT STRING,
+
+	communityAuthApp    INTEGER,
+	communityPrivApp    INTEGER,
+	communityPrivKeyApp INTEGER,
+
+	communityAuthKey    OCTET STRING,  -- set keys from Raw Octets 
+	communityPrivKey    OCTET STRING,
+
+        communityAuthKeyPW  DisplayString, -- set keys from given PassWord
+        communityPrivKeyPW  DisplayString,
+
+        communityAuthKeyUp  OCTET STRING,  -- update keys from given offset
+        communityPrivKeyUp  OCTET STRING,  --    of random + delta values
+
+	communityRowStatus  RowStatus
+    }
+
+communityIndex OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Unique number identifing this entry."
+    ::= { communityEntry 1 }
+      
+communityName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION 
+        "This is the community name for SNMPv1/v2 requests, or the 
+	 user name for SNMPv3 requests.  For SNMPv1/v2 access using the
+	 cli, the username/password combination specifies the community
+	 string.  When interpreted for SNMPv3, only the username portion
+	 of the string is used.
+
+	 Received snmp pdus determine a match with a table entry if the
+	 username/community name matches, AND the IP Address match is
+	 sufficient.  See the ip address below, and the network mask.
+	 
+	 Although it is not prohibited, named entries in the table should 
+	 not overlap.  During authentication, the first 'active' communityName
+	 match will be used.  Name overlap is only allowed since it may be 
+	 desirable in some environments to have some name overlap while 
+	 taking advantage of the notInService row status."
+    DEFVAL      { "public" }
+    ::= { communityEntry 2 }
+
+communityNetAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This restricts access to the agent using the above community/user
+        name to only the network host address or the host network that 
+	is given here, with the applied mask value. A value of 0 will 
+	allow access to all host networks."
+    DEFVAL      { '00000000'H }
+    ::= { communityEntry 3 }
+
+communityAccess OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    readonly(1),
+                    writeonly(2),       -- not very useful
+                    readwrite(3),       -- includes read-create for SNMPv2c
+                    notaccessible(4)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Sets the access permissions of the community/user name."
+    DEFVAL      { readonly }
+    ::= { communityEntry 4 }
+
+communityNetMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This mask associated with the community IP Address.  This value 
+	can be used to provide individual host, or host network 
+	restrictions to the agent."
+    DEFVAL      { '00000000'H }
+    ::= { communityEntry 5 }
+
+communityAuthVersions OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    snmpv1(0),
+                    snmpv2(1),
+                    snmpv3(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The acceptable SNMP versions for this community/user name."
+--  DEFVAL      { {snmpv1|snmpv2|snmpv3} }
+    ::= { communityEntry 6 }
+
+communityAuthModels OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    snmpv1(0),
+                    snmpv2(1),
+                    snmpv3(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The acceptable SNMPv3 authentication models for this community/user name."
+--  DEFVAL      { {snmpv1|snmpv2|snmpv3} }
+    ::= { communityEntry 7 }
+
+communityAuthModes OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    noAuthNoPriv(0),
+                    authNoPriv(1),
+                    authPriv(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The acceptable SNMPv3 security modes for this community/user."
+--    DEFVAL      { {noAuthNoPriv|authNoPriv|authPriv} }
+    ::= { communityEntry 8 }
+
+communityAuthViews OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    s10(0),
+                    s9(1),
+                    s8(2),
+                    s7(3),
+                    s6(4),
+                    s5(5),
+                    s4(6),
+                    s3(7),
+                    s2(8),
+                    s1(9)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This security view mask associated with this community/user name.
+	 By default, the entries relative index position bit is set."
+--    DEFVAL      { { } }
+    ::= { communityEntry 9 }
+
+communityAuthApp OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    authNone(1),
+                    authMd5(2),
+                    authSha(3)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of authentication being used for SNMPv3."
+    DEFVAL      { authNone }
+    ::= { communityEntry 10 }
+
+communityPrivApp OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    privNone(1),
+                    privDes(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of privacy algorithm being used for SNMPv3."
+    DEFVAL      { privNone }
+    ::= { communityEntry 11 }
+
+communityPrivKeyApp OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    privKeyAuthApp(1),
+                    privKeyMd5(2),
+                    privKeySha(3)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of hash algorithm used for key manipulation for the
+	 'password to key' or 'key update' actions.  The 'AuthApp' uses the
+	 existing authentication algorithm selected.  But, the Md5/Sha
+	 selections can be used to specify the exact method needed."
+    DEFVAL      { privKeyAuthApp }
+    ::= { communityEntry 12 }
+
+communityAuthKey OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE ( 0 | 16 | 20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The authentication key used for SNMPv3.  Use 16 bytes 
+        for MD5 keys and 20 bytes for SHA keys.  Typically, when this
+        object is read, a zero length value is returned, and setting
+        the key to a zero length string has no affect on the key value.
+        The contents of the key can be viewed if the top level
+        agent option 'displaySecretKeys'is set."
+    DEFVAL      { ''H }
+    ::= { communityEntry 13 }
+
+communityPrivKey OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE ( 0 | 16 ))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The privacy key used for SNMPv3.  Use 16 bytes for
+        DES keys.  Typically, when this object is read, a zero length 
+        value is returned, and setting the key to a zero length string 
+        has no affect on the key value.  The contents of the key can be 
+        viewed if the top level agent option 'displaySecretKeys'is set." 
+    DEFVAL      { ''H }
+    ::= { communityEntry 14 }
+
+communityAuthKeyPW OBJECT-TYPE
+    SYNTAX      DisplayString(SIZE ( 0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The password used to create the authentication key.  When
+        read, a null string will be returned.  The key will be generated
+        based on the value of the authentication application that is
+        specified at the time of the request.  The resulting key will
+        be of the proper length to match the authentication application.
+        Using a zero length password will result in no change being made
+        to the key."
+    DEFVAL      { ''H }
+    ::= { communityEntry 15 }
+
+communityPrivKeyPW OBJECT-TYPE
+    SYNTAX      DisplayString(SIZE ( 0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The password used to create the privacy key.  When
+        read, a null string will be returned.  The key will be generated
+        based on the value of the privacy application that is
+        specified at the time of the request.  The resulting key will
+        be of the proper length to match the privacy application.
+        Using a zero length password will result in no change being made
+        to the key."
+    DEFVAL      { ''H }
+    ::= { communityEntry 16 }
+
+communityAuthKeyUp OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (0 | 32 | 40))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The 'random'+'delta' offset used to re-calculate the privacy key. 
+        Both the random and delta components must be of 'key length' 
+        (16-md5, or 20-sha). Therefor, the length of the whole value 
+        must be 32 or 40 bytes.  Using a zero length offset will result 
+        in no change being made to the key."
+    DEFVAL      { ''H }
+    ::= { communityEntry 17 }
+
+communityPrivKeyUp OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (0 | 32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The random + delta offset used to re-calculate the privacy key. 
+        Both the random and delta components must be of 'key length' 16.
+        Therefor, the length of the whole value must be 32 bytes.
+        Using a zero length offset will result in no change being made 
+        to the key."
+    DEFVAL      { ''H }
+    ::= { communityEntry 18 }
+
+communityRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The status of the row."
+    ::= { communityEntry 19 }
+
+--
+-- The community view table
+--
+
+communityViewTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF CommunityViewEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This is the community view table. Each entry is the allowable
+        group that this community can view. To add a view, the
+        community entry must exist. To delete it set the view name to
+        NULL."
+    ::= { agentConfig 3 }
+
+communityViewEntry OBJECT-TYPE
+    SYNTAX      CommunityViewEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a specific community view."
+    INDEX       { communityIndex, communityViewIndex }
+    ::= { communityViewTable 1 }
+
+CommunityViewEntry ::=
+    SEQUENCE {
+        communityViewIndex Integer32,
+        communityViewName  DisplayString
+    }
+
+communityViewIndex OBJECT-TYPE
+    SYNTAX      Integer32 
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Unique number identifing this view."
+    ::= { communityViewEntry 1 }
+      
+communityViewName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The view name for this community. This value must be a MIB
+        variable that the agent will recognize (eg.  iso, ip,
+        interfaces). To delete this view, set value to NULL."
+    ::= { communityViewEntry 2 }
+
+--
+-- The trap destinations table
+--
+
+trapTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF TrapEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This is the trap table. Each entry is composed of a trap name
+        and the network address of where the trap is to be sent. This
+        table can only be accessed if the community name matches
+        configPassword. To add an entry the trap name trapName must be
+        created first. To delete an entry set trapName to NULL."
+    ::= { agentConfig 4 }
+
+trapEntry OBJECT-TYPE
+    SYNTAX      TrapEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a specific trap destination."
+    INDEX       { trapIndex }
+    ::= { trapTable 1 }
+
+TrapEntry ::=
+    SEQUENCE {
+        trapIndex       Integer32,
+        trapCommunity   DisplayString,
+        trapNetAddress  IpAddress,
+        trapSnmpVersion INTEGER,
+        trapPort        INTEGER,
+	trapAuthApp     INTEGER,
+	trapPrivApp     INTEGER,
+	trapPrivKeyApp  INTEGER,
+	trapAuthKey     OCTET STRING,  -- set keys from Raw Octets 
+	trapPrivKey     OCTET STRING,
+        trapAuthKeyPW   DisplayString, -- set keys from given PassWord
+        trapPrivKeyPW   DisplayString,
+        trapAuthKeyUp   OCTET STRING,  -- update keys from given offset
+        trapPrivKeyUp   OCTET STRING,  --    of random + delta values
+	trapRowStatus   RowStatus
+    }
+
+trapIndex OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Unique number identifing this trap destination entry."
+    ::= { trapEntry 1 }
+
+trapCommunity OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This is the trap community/user name used to format the trap."
+    DEFVAL      { "public" }
+    ::= { trapEntry 2 }
+
+trapNetAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The network address of the client to whom the trap is to be
+        sent."
+    DEFVAL      { '00000000'H }
+    ::= { trapEntry 3 }
+
+trapSnmpVersion OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    snmpv1(1),
+                    snmpv2c(2),
+                    snmpv3(3)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of Trap-PDU to send to this manager since the PDU
+        structure varies between the versions."
+    DEFVAL      { snmpv1 }
+    ::= { trapEntry 4 }
+
+trapPort OBJECT-TYPE
+    SYNTAX      INTEGER (1..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The udp port number of the client to whom the trap is to be sent."
+    DEFVAL      { 162 }
+    ::= { trapEntry 5 }
+
+trapAuthApp OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    authNone(1),
+                    authMd5(2),
+                    authSha(3)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of authentication being used for SNMPv3 traps."
+    DEFVAL      { authNone }
+    ::= { trapEntry 6 }
+
+trapPrivApp OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    privNone(1),
+                    privDes(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of privacy being used for SNMPv3 traps."
+    DEFVAL      { privNone }
+    ::= { trapEntry 7 }
+
+trapPrivKeyApp OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    privKeyAuthApp(1),
+                    privKeyMd5(2),
+                    privKeySha(3)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The type of hash algorithm used for key manipulation for the
+	 'password to key' or 'key update' actions.  The 'AuthApp' uses the
+	 existing authentication algorithm selected.  But, the Md5/Sha
+	 selections can be used to specify the exact method needed."
+    DEFVAL      { privKeyAuthApp }
+    ::= { trapEntry 8 }
+
+trapAuthKey OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE ( 0 | 16 | 20))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The authentication key used for SNMPv3.  Use 16 bytes for MD5 keys
+        and 20 bytes for SHA keys.  Typically, when this object is read, a
+        zero length value is returned, and setting the key to a zero length
+        string has no affect on the key value.  The contents of the key can
+        be viewed if the top level agent option 'displaySecretKeys'is set."
+    DEFVAL      { ''H }
+    ::= { trapEntry 9 }
+
+trapPrivKey OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE ( 0 | 16))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The privacy key used for SNMPv3.  Use 16 bytes for DES keys.  
+         Typically, when this object is read, a zero length value is returned,
+         and setting the key to a zero length string has no affect on the key 
+         value.  The contents of the key can be viewed if the top level agent 
+         option 'displaySecretKeys'is set."
+    DEFVAL      { ''H }
+    ::= { trapEntry 10 }
+
+trapAuthKeyPW OBJECT-TYPE
+    SYNTAX      DisplayString(SIZE ( 0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The password used to create the authentication key.  When
+        read, a null string will be returned.  The key will be generated
+        based on the value of the authentication application that is
+        specified at the time of the request.  The resulting key will
+        be of the proper length to match the authentication application.
+        Using a zero length password will result in no change being made
+        to the key."
+    DEFVAL      { ''H }
+    ::= { trapEntry 11 }
+
+trapPrivKeyPW OBJECT-TYPE
+    SYNTAX      DisplayString(SIZE ( 0..32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The password used to create the privacy key.  When
+        read, a null string will be returned.  The key will be generated
+        based on the value of the privacy application that is
+        specified at the time of the request.  The resulting key will
+        be of the proper length to match the privacy application.
+        Using a zero length password will result in no change being made
+        to the key."
+    DEFVAL      { ''H }
+    ::= { trapEntry 12 }
+
+trapAuthKeyUp OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (0 | 32 | 40))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The 'random'+'delta' offset used to re-calculate the authentication 
+        key.  Both the random and delta components must be of 'key length' 
+        (16-md5, or 20-sha). Therefor, the length of the whole value 
+        must be 32 or 40 bytes.  Using a zero length offset will result 
+        in no change being made to the key."
+    DEFVAL      { ''H }
+    ::= { trapEntry 13 }
+
+trapPrivKeyUp OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (0 | 32))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The random + delta offset used to re-calculate the privacy key. 
+        Both the random and delta components must be of 'key length' 16.
+        Therefor, the length of the whole value must be 32 bytes.  Using 
+        a zero length offset will result in no change being made to the key."
+    DEFVAL      { ''H }
+    ::= { trapEntry 14 }
+
+trapRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The status of the row."
+    ::= { trapEntry 15 }
+
+-- ================================================================
+-- Some global configs, 
+-- ================================================================
+
+agentConfiguration OBJECT IDENTIFIER ::= { agentConfig 6 }
+agentStats         OBJECT IDENTIFIER ::= { agentConfig 7 }
+
+agentEngineID OBJECT-TYPE
+    SYNTAX      DisplayString(SIZE(0..32))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The configured SNMP EngineID used for SNMPv3 packets.  This
+	 object can be used to override automatic engine id assignment.
+	 If this object is set, care must be taken to ensure its 
+	 uniqueness within the SNMP Domain.  Additionally, setting this
+	 object may result in the initialization of snmpEngineBoots.
+	 Normally, this has the desired affect, but if the engine ID is
+	 reset to an old value, previously captured PDUs may again apear
+	 to be valid, since the number of restarts has been reset.
+	 
+	 Setting this value results in the following:
+
+	   > a null EngineID results in the normal 'MAC address' 
+	     of the SNMP EngineID encoding as per rfc2271.  
+
+           > an ASCII string results in the normal 'Text' 
+	     administratively assigned value.
+ 
+           > an ASCII string beginning with a '-' results in a
+	     straight, display string implementation of only
+	     readable/printable bytes.  This does NOT abide by
+	     the recommendation in rfc2271.  Typically, this is
+	     only needed with primative manager stations that have
+	     trouble with non-ascii data."
+    DEFVAL      { "" }
+    ::= { agentConfiguration 1 }
+
+agentOptions  OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    v3ReportsOn(0),
+                    xediaSpecificErrors(1),
+		    suppressTrapsForUserInitial(2),
+		    suppressTrapsForTimeliness(3),
+		    displaySecretKeys(4)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object controls how the agent will behave, according
+	 to which flags are enable:
+
+           v3ReportsOn - allows the transmission of normal SNMPv3
+              reports when set.  If this bit is NOT set, no reports 
+              will be generated.
+ 
+           xediaSpecificErrors- allows the use of Xedia Specific
+              error counters for SNMPv1/v2/v3 when applicable.  This 
+              also results in the transmission of more specific v3 
+              error reports as defined by Xedia.  
+	      
+              If this bit is not set, a mapping will be made to less 
+              specific SNMPv1/v2/v3 statistics and SNMPv3 reports.  
+
+              Typically, these errors include community/user access
+              level, pdu level counters, that will be remapped to 
+              SNMP version specific bad 'community/name' error indicators.
+  
+           suppressTrapsForUserInitial - allows the suppression of 
+              authentication failure traps and events for the user name
+              'initial'.  This name may be used as part of the EngineID
+              discovery process as described in rfc274.
+  
+           suppressTrapsForTimeliness - allows the suppression of 
+  
+           authentication failure traps and events Time Synchronization.
+       
+           displaySecretKeys - allows the retrieval of the Authentication
+              and Privacy Keys to the super user.  Normally, viewing the
+              keys results in a NULL string .
+           "
+--  DEFVAL      { {v3ReportsOn} }
+    ::= { agentConfiguration 2 }
+
+agentInTimeWindowSize OBJECT-TYPE
+    SYNTAX      INTEGER(1..150)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The configured value for determining SNMPv3 packet timeliness.
+	 The standard 150 second window can be tuned below the standard
+	 value so that any replay attack will have even less impact on
+	 the nodes within the network.  But, setting it too low could
+	 cause out of window errors, and additional clock sync."
+    DEFVAL      { 150 }
+    ::= { agentConfiguration 3 }
+
+agentCfgTrapIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The configured IP address that will be used as the Agent's
+         IP address for all outbound traps.  If this object is left
+         at 0.0.0.0, then any one of the active IP address will be
+         used.  If there is a 'routerID' specified, that will be used
+         first.  
+
+         note: once the operational ID has been learned, it remains in
+         use until a node reset."
+    DEFVAL      { '00000000'H }
+    ::= { agentConfiguration 4 }
+
+agentOperTrapIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The operational IP address that will be used as the Agent's
+         IP address for all outbound traps.
+
+         note: once the operation ID has been learned, it remains in
+         use until a node reset."
+    ::= { agentConfiguration 5 }
+
+agentTrapOptions  OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    extendedLinkTrapInfo(0)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object controls how the agent will behave, according
+         to which flags are enable:
+
+           extendedLinkTrapInfo - provides additional link information in
+              the standard LinkUp/Down traps.  This info includes the
+              interface descritpions, as well as the interface name.
+           "
+--  DEFVAL      { }
+    ::= { agentConfiguration 6 }
+
+agentStatsBadUserNameUses OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+	"The number of SNMPv3 requests from a user that could not be 
+	 satisfied because of inadequeate access of the user."
+    ::= { agentStats 1 }
+
+agentStatsBadUserVersions OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+	"The number of SNMPv3 requests from a user that could not be 
+	 satisfied because of invalid user snmp-pdu-version configuration."
+    ::= { agentStats 2 }
+
+agentStatsBadCommunityVersions OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+	"The number of SNMPv1/v2 requests from a user that could not be 
+	 satisfied because of invalid user snmp-pdu-version configuration."
+    ::= { agentStats 3 }
+
+agentStatsBadUserAddress OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+	"The number of SNMPv3 requests from a user that could not be 
+	 satisfied because of invalid ip address/mask configuration."
+    ::= { agentStats 4 }
+
+agentStatsBadCommunityAddress OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+	"The number of SNMPv1/v2 requests from a user that could not be 
+	 satisfied because of invalid ip address/mask configuration."
+    ::= { agentStats 5 }
+
+-- ================================================================
+-- There are no notifications defined in this MIB.
+-- ================================================================
+
+-- ================================================================
+-- Conformance Information
+-- ================================================================
+
+agentConfigConformance OBJECT IDENTIFIER ::= { agentConfig 5 }
+agentConfigCompliances OBJECT IDENTIFIER ::= { agentConfigConformance 1 }
+agentConfigGroups      OBJECT IDENTIFIER ::= { agentConfigConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+agentConfigCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for all agents that support this
+        MIB. A compliant agent implements all objects defined in this
+        MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS {
+        agentConfigGeneralGroup
+    }
+    ::= { agentConfigCompliances 1 }
+
+--
+-- Object Groups
+--
+
+agentConfigGeneralGroup OBJECT-GROUP
+    OBJECTS {
+        configPassword,
+        communityIndex,
+        communityName,
+        communityNetAddress,
+        communityAccess,
+        communityViewIndex,
+        communityViewName,
+        communityNetMask,
+	communityAuthVersions,
+	communityAuthModels,
+	communityAuthModes,
+	communityAuthViews,
+	communityAuthApp,
+	communityPrivApp,
+	communityPrivKeyApp,
+	communityAuthKey,
+	communityPrivKey,
+        communityAuthKeyPW,
+        communityPrivKeyPW,
+        communityAuthKeyUp,
+        communityPrivKeyUp,
+	communityRowStatus,
+
+        trapIndex,
+        trapCommunity,
+        trapNetAddress,
+        trapSnmpVersion,
+        trapPort,
+	trapAuthApp,
+	trapPrivApp,
+	trapAuthKey,
+	trapPrivKey,
+	trapPrivKeyApp,
+        trapAuthKeyPW,
+        trapPrivKeyPW,
+        trapAuthKeyUp,
+        trapPrivKeyUp,
+	trapRowStatus,
+
+        agentEngineID, 
+        agentOptions,
+	agentInTimeWindowSize,
+        agentCfgTrapIpAddress,
+        agentOperTrapIpAddress,
+        agentTrapOptions,
+        agentStatsBadUserNameUses,
+        agentStatsBadUserVersions,
+        agentStatsBadCommunityVersions,
+        agentStatsBadUserAddress,
+        agentStatsBadCommunityAddress
+    }
+    STATUS      current
+    DESCRIPTION
+        "The set of all accessible objects in this MIB."
+    ::= { agentConfigGroups 1 }
+
+END
+

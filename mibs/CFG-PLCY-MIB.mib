@@ -1,0 +1,2176 @@
+--
+--
+-- Copyright (C) 2001 by Sitara Networks, Incorporated.
+--
+-- Sitara Policy Configuration MIB - used to configure 
+-- and manage policy objects on Sitara QosWorks/QosArray devices.
+--
+
+
+CFG-PLCY-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+				IpAddress, enterprises FROM RFC1155-SMI
+    TimeTicks, Gauge32, MODULE-IDENTITY, OBJECT-TYPE, Unsigned32, Integer32, 
+    NOTIFICATION-TYPE
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, DisplayString, TruthValue, RowStatus, DateAndTime 
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF;
+
+   sitara                      OBJECT IDENTIFIER ::= { enterprises 2302 }
+ 
+   sitaraCfg                   OBJECT IDENTIFIER ::= { sitara 1 }
+ 
+   sitaraCfgPlcy               OBJECT IDENTIFIER ::= { sitaraCfg 1 }
+ 
+   sitaraCfgPlcyGenlObjs       OBJECT IDENTIFIER ::= { sitaraCfgPlcy 2 }
+
+   sitaraCfgPlcyCrossGroup     OBJECT IDENTIFIER ::= { sitaraCfgPlcy 3 }
+
+   sitaraCfgPlcySchd           OBJECT IDENTIFIER ::= { sitaraCfgPlcy 4 }
+
+   sitaraCfgPlcyLink           OBJECT IDENTIFIER ::= { sitaraCfgPlcy 5 }
+
+   sitaraCfgPlcyGroup          OBJECT IDENTIFIER ::= { sitaraCfgPlcy 6 }
+
+   sitaraCfgPlcyAction         OBJECT IDENTIFIER ::= { sitaraCfgPlcy 7 }
+
+   sitaraCfgPlcyQClass         OBJECT IDENTIFIER ::= { sitaraCfgPlcyAction 1 }
+
+   sitaraCfgPlcyCbqClass       OBJECT IDENTIFIER ::= { sitaraCfgPlcyQClass 1 }
+
+   sitaraCfgPlcyFilter         OBJECT IDENTIFIER ::= { sitaraCfgPlcy 8 }
+
+   sitaraCfgPlcyNotifns        OBJECT IDENTIFIER ::= { sitaraCfgPlcy 9 }
+
+
+
+sitaraCfgPlcyMIB MODULE-IDENTITY
+    LAST-UPDATED "200203061600Z"
+    ORGANIZATION "Sitara, Incorporated"
+    CONTACT-INFO
+            "     Postal Address:
+                  Sitara Networks
+                  52 Second Avenue
+                  Suite 200
+                  Waltham MA 02451
+                  USA
+
+                  Tel:     +1 781 487 5900
+                  E-mail:  info@sitaranetworks.com
+                  WWW:     http://www.sitaranetworks.com"
+
+    DESCRIPTION
+            "
+              This version of MIB supports QoSWorks 1.9.2 or less
+              sitaraCfgPlcyMIB MIB module describes Sitara's QosWorks/QosArray 
+              policy configuration objects"
+
+    REVISION "200203061600Z"     --  March 06 2002
+
+    DESCRIPTION
+            " Min/Max burst support is added"
+  
+    REVISION "200111061600Z"     --  Nov 06 2001
+
+    DESCRIPTION
+            "This version of MIB module Sitara's QosWorks/QosArray 
+             policy configuration objects for Policy VERSION 3
+             Policy VERSION 3 has 
+             1. Customer ID in Link, Group and Class Tables
+             2. Filter TOS fields in Filter table "
+
+    ::= { sitaraCfgPlcy 1 }
+
+-- Textual Conventions
+
+AdmissionState ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+	    "Describes the admission rule for a new session under
+	    under policy control. If squeeze is in use, a session will
+	    be allowed when ; however, it may have reduced bandwidth
+	    allocated than configured for the class."
+    SYNTAX       INTEGER {
+                     none(0),             -- no rule
+                     squeeze(1),          -- squeeze in
+                     deny(2),             -- deny new session
+                     drop(3)              -- drop a session
+                 }
+
+PolicyStatus ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+            "Describes the status of policy information.  By default,
+             a row is created with an object with a PolicyStatus of
+             pending, Once policy is updated and the information
+             represented by objets with this syntax are saved in the
+             sys.policy file and the system has been reinitialized
+             with this information, the status is changed to
+             running. See the sitaraCfgPlcyPerRowUpdate and
+             sitaraCfgPlcyGlobalStorage objects."
+    SYNTAX       INTEGER {
+                     running(1), -- Contents of the row are 
+                                 -- running in the current policy
+                                 -- configuration 
+                     pending(2)  -- Contents of the row are 
+                                 -- not running in the curent policy
+				 -- configuration. 
+                 }
+
+PolicyPriority ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+            "Describes policy priority of the policy within a class."
+    SYNTAX       INTEGER {
+                     veryLow(1), 
+                     low(2),    
+                     medium(3),
+                     high(4), 
+                     veryHigh(5)               
+                 }
+
+DaysOfWeek ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+            "Days of week to enforce policy.
+             Monday (0x40), Tuesday (0x20), Wednesday (0x10),
+             Thursday (0x08), Friday (0x04), Saturday (0x02) and 
+             Sunday (0x01)
+
+            field  octets  contents                  range
+            -----  ------  --------                  -----
+              1      1     days                      1..127"
+    SYNTAX       OCTET STRING (SIZE (1))
+
+
+TimeAndZone ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "1d:1d,1a1d:1d"
+    STATUS       current
+    DESCRIPTION
+            "A time specification.
+
+            field  octets  contents                  range
+            -----  ------  --------                  -----
+              1       1    hour                      0..23
+              2       2    minutes                   0..59
+              3       3    direction from UTC        '+' / '-'
+              4       4    hours from UTC*           0..13
+              5       5    minutes from UTC          0..59
+
+            * Notes:
+            - daylight saving time in New Zealand is +13
+
+            For example,  1:30 PM EDT would be displayed as:
+
+                         13:30,-4:0                          
+
+            Note that if only local time is known, then timezone
+            information (fields 3-5) is not present."
+    SYNTAX       OCTET STRING (SIZE (2 | 5))
+        
+PolicyAlias ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "[A-Za-z0-9 _  not 'default' or any reserved Policy name
+                  like LINK, END , VERSION etc]. The 'default' alias  is 
+		  reserved for internal use. An alias is a short-hand
+		  name for a particular element of a policy. For
+		  example, a policy can have many links. One might
+		 have an alias of Boston and another San Francisco." 
+    SYNTAX       OCTET STRING (SIZE (1..30))  
+
+PolicyCustomerId ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "[A-Za-z0-9 _  not 'default' or any reserved Policy name
+                  like LINK, END , VERSION etc]. The 'default' alias  is
+                  reserved for internal use. For example, a Customer ID can be
+                  combination of Alpha numeric value GoldUser4527"
+    SYNTAX       OCTET STRING (SIZE (1..30))   
+
+PolicyPathName ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "[A-Za-z0-9 _ / ] 'default' Name  is reserved for
+                 internal use. Path is the full expression of the 
+		 part of the policy when an object with this textual
+		 convention is used. A path must be unique, within a 
+		 schedule and is to be read and understood very much 
+		 like a directory structure such as /usr/var where var
+		 is contained in usr. The format for path is 
+		 l_LinkAlias/g_GroupAlias/c_ClassAlias/f_FilterAlias.
+		 At any point in this hierarchy, there is one and only
+		 one unique path within a schedule."
+    SYNTAX       OCTET STRING (SIZE (1..512))  
+
+TrafficDirection ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+        "Describes the traffic direction associated with a particular
+	group or class."
+    SYNTAX       INTEGER {
+                     toLan(0),            -- into the Lan
+                     toWan(1),            -- into the Wan
+                     toLantoWan(2)        -- bi-directional
+                 }   
+
+PolicyDisplayString ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "1024a"
+    STATUS       current
+    DESCRIPTION
+            "Represents textual information taken from the NVT ASCII
+             character set, as defined in pages 4, 10-11 of RFC 854.
+             To summarize RFC 854, the NVT ASCII repertoire specifies:
+              - the use of character codes 0-127 (decimal)
+              - the graphics characters (32-126) are interpreted as
+                US ASCII
+              - NUL, LF, CR, BEL, BS, HT, VT and FF have the special
+                meanings specified in RFC 854
+              - the other 25 codes have no standard interpretation
+              - the sequence 'CR LF' means newline
+              - the sequence 'CR NUL' means carriage-return
+              - an 'LF' not preceded by a 'CR' means moving to the
+                same column on the next line.
+              - the sequence 'CR x' for any x other than LF or NUL is
+                illegal.  (Note that this also means that a string may
+                end with either 'CR LF' or 'CR NUL', but not with CR.)
+             Any object defined using this syntax may not exceed 1024
+             characters in length."
+    SYNTAX       OCTET STRING (SIZE (0..1024))
+
+ SitaraOwnerString ::= TEXTUAL-CONVENTION
+     STATUS current
+     DESCRIPTION
+         "This data type is used to model an administratively
+         assigned name of the owner of a resource. Implementations
+         must accept values composed of well-formed NVT ASCII
+         sequences. In addition, implementations should accept
+         values composed of well-formed UTF-8 sequences.
+
+         It is suggested that this name contain one or more of
+         the following: IP address, management station name,
+         network manager's name, location, or phone number.
+         In some cases the agent itself will be the owner of
+         an entry.  In these cases, this string shall be set
+         to a string starting with 'monitor'.
+
+         SNMP access control is articulated entirely in terms
+         of the contents of MIB views; access to a particular
+         SNMP object instance depends only upon its presence
+         or absence in a particular MIB view and never upon
+         its value or the value of related object instances.
+         Thus, objects of this type afford resolution of
+         resource contention only among cooperating
+         managers; they realize no access control function
+         with respect to uncooperative parties."
+     SYNTAX OCTET STRING (SIZE (0..127))
+
+-- General Group Objects 
+
+
+sitaraCfgPlcyVersion OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (1..32))
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+            "sitaraCfgPlcyVersion gives the policy version 
+             number, that policy agent supports.
+             Policy Version     Value
+                VERSION 1        1.5
+                VERSION 2        N/A
+                VERSION 3        3
+                VERSION 2        4  min/max/Buerst support"
+                   ::= { sitaraCfgPlcyGenlObjs 1 }
+
+sitaraCfgPlcyPerRowUpdate OBJECT-TYPE
+     SYNTAX   OCTET STRING (SIZE (1))
+     MAX-ACCESS  read-write
+     STATUS  current
+     DESCRIPTION
+           "sitaraCfgPlcyPerRowUpdate object gives the ability to automatically 
+            update the sys.policy file  when ever any row of the type specified by
+	    this object is moved to active. This object is checked
+	    when any of the rows in the following tables is moved to
+	    an active status:
+            . Schedule Table             : 0x01
+            . Link Table                 : 0x02
+            . Link Net Destination Table : 0x04
+            . Group Table                : 0x08
+            . Class Table                : 0x10
+            . Filter Table               : 0x20
+            E.g. When schedule table Row status changes to Active,
+                0x01 bit is checked, if that is set sys.policy is 
+                updated and CBQD will be restarted.
+           Care should be exercised when setting this object since the
+	   effect of enabling this automatic update of the sys.policy
+	   on a per row basis is that the sys.policy is written with
+	   each row's move to the active state. This also causes the
+	   queuing system to be restarted with the new parameters. For
+	   large change transactions, use the
+	   sitaraCfgPlcyGlobalStorage object."
+     DEFVAL { 0 }
+                  ::= { sitaraCfgPlcyGenlObjs 2 }
+
+sitaraCfgPlcyGlobalStorage OBJECT-TYPE
+     SYNTAX  INTEGER { unlock(0),
+                       saveToPerm(1),
+                       clearAllTables(2),
+                       syncRunningPlcy(3) }
+     MAX-ACCESS  read-write
+     STATUS  current
+     DESCRIPTION
+        "When this object value is set to: 
+         saveToPerm(1)     sys.policy is updated with information
+			   currently in all the objects in this subagent
+			   with the exception of the cross index table
+			   that is not part of the sys.policy
+			   information.  CBQD will be re-started with
+			   the new information.
+        clearAllTables(2)  All entries in all tables are cleared. The subagent 
+                           is reinitialized.
+        syncRunningPlcy(3) All entries in all tables are cleared. The subagent 
+                           is reinitialized and reads the currently
+			   saved sys.policy file. This ensures
+			   synchronization of the central policy
+			   manager with changes that have been made by
+			   the CLI or WEB interfaces."
+                  ::= { sitaraCfgPlcyGenlObjs 3 }
+
+sitaraCfgPlcyLastUpdateTime   OBJECT-TYPE
+     SYNTAX      DateAndTime
+     MAX-ACCESS  read-only
+     STATUS  current
+     DESCRIPTION
+       "sitaraCfgPlcyLastUpdateTime object contains the Date and Time when the
+        Last policy is loaded"
+                 ::= { sitaraCfgPlcyGenlObjs 4 }
+
+sitaraCfgPlcyApplyError OBJECT-TYPE
+    SYNTAX      PolicyDisplayString
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+       "sitaraCfgPlcyApplyError object stores the  message generated when 
+        sitaraCfgPlcyGlobalStorage is set to policy load/verify.
+        If policy load is success then Message is Policy Apply SUCCESSFUL.
+        If policy verify is success then Message is Policy Verify SUCCESSFUL.
+        Message is trunkated to 1024 charecters"
+                 ::= { sitaraCfgPlcyGenlObjs 5 }
+
+
+-- Following Table is not supported after Release Qosworks 1.5
+
+sitaraCfgPlcyCrossIndexTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SitaraCfgPlcyCrossIndexTableEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+            "Cross Index table entry objects are the indices
+             of the Schedule, Link, Link Network Destination,
+             Group, CBQ Class and Filter Tables."
+    ::= { sitaraCfgPlcyCrossGroup 1 }
+
+sitaraCfgPlcyCrossIndexTableEntry OBJECT-TYPE
+    SYNTAX      SitaraCfgPlcyCrossIndexTableEntry
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+            "All objects in this table, except the
+	    sitaraCfgPlcyCrossIndex specify active indices of the rest
+	    of the tables in this MIB Module.  All objects/indices in
+	    an entry need not be valid all the times.  That is, an row
+	    in this table might have only one or two valid objects.
+	    When an entry is created in this table, index objects are
+	    initialized with an invalid value '0xffffffff' and all
+	    Alias (Those are indices to this table) are initialized
+	    with Octet String value '0', i.e. length=1, value =0"
+    INDEX      { 
+                 sitaraCfgPlcyCrossSchdAlias,
+                 sitaraCfgPlcyCrossLinkAlias,
+                 sitaraCfgPlcyCrossGroupAlias,
+                 sitaraCfgPlcyCrossCbqClassAlias,
+                 sitaraCfgPlcyCrossFilterAlias,
+                 sitaraCfgPlcyCrossIndex 
+               } 
+               ::= { sitaraCfgPlcyCrossIndexTable 1 }
+
+SitaraCfgPlcyCrossIndexTableEntry ::=
+    SEQUENCE {
+        sitaraCfgPlcyCrossSchdAlias            PolicyAlias,
+        sitaraCfgPlcyCrossLinkAlias            PolicyAlias,
+        sitaraCfgPlcyCrossGroupAlias           PolicyAlias,
+        sitaraCfgPlcyCrossCbqClassAlias        PolicyAlias,
+        sitaraCfgPlcyCrossFilterAlias          PolicyAlias,
+        sitaraCfgPlcyCrossIndex                Unsigned32,
+        sitaraCfgPlcyCrossSchdIndex            Unsigned32,
+        sitaraCfgPlcyCrossLinkIndex            Unsigned32,
+        sitaraCfgPlcyCrossLinkNetDestIndex     Unsigned32,
+        sitaraCfgPlcyCrossGroupIndex           Unsigned32,
+        sitaraCfgPlcyCrossCbqClassIndex        Unsigned32,
+        sitaraCfgPlcyCrossFilterIndex          Unsigned32
+    }
+
+
+sitaraCfgPlcyCrossSchdAlias OBJECT-TYPE
+    SYNTAX      PolicyAlias 
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+    "This object is used as one of the indices for cross index
+    table. The value of this object will be the same as the values
+    found in the sitaraCfgPlcySchdAlias."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 1 }
+
+sitaraCfgPlcyCrossLinkAlias OBJECT-TYPE
+    SYNTAX      PolicyAlias 
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+    "This object is used as one of the indices for this table.  A
+     value of '0' indicates an as yet unassigned/created link in a
+     schedule. In all other cases this value will be the same as
+     values found in sitaraCfgPlcyLinkAlias."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 2 }
+
+sitaraCfgPlcyCrossGroupAlias OBJECT-TYPE
+    SYNTAX      PolicyAlias 
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+    "This object is used as one of the indices for this table.  A
+     value of '0' indicates an as yet unassigned/created group for a
+     particular link. In all other cases this value will be the same
+     as values found in sitaraCfgPlcyGroupAlias."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 3 }
+
+sitaraCfgPlcyCrossCbqClassAlias OBJECT-TYPE
+    SYNTAX      PolicyAlias 
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+    "This object is used as one of the indices for this table.  A
+     value of '0' indicates an as yet unassigned/created class for a
+     particular group or link. In all other cases this value will be the same
+     as values found in sitaraCfgPlcyCbqClassAlias."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 4 }
+
+sitaraCfgPlcyCrossFilterAlias OBJECT-TYPE
+    SYNTAX      PolicyAlias 
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+    "This object is used as one of the indices for this table.  A
+     value of '0' indicates an as yet unassigned/created filter for a
+     class. In all other cases this value will be the same as values
+     found in sitaraCfgPlcyFilterAlias."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 5 }
+
+sitaraCfgPlcyCrossIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      obsolete
+    DESCRIPTION
+            "This object specifies the serial number for this row of
+	    the table and ensures uniqueness for each row."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 6 }
+
+sitaraCfgPlcyCrossSchdIndex OBJECT-TYPE
+    SYNTAX      Unsigned32 
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+            "The value of this object is the same as that contained in
+	    sitaraCfgPlcySchdIndex."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 7 }
+
+sitaraCfgPlcyCrossLinkIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+            "The value of this object is the same as
+             sitaraCfgPlcySchdIndex.  '0xffffffff' is used to to
+             represent an as yet unassigned/created link in this
+             schedule."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 8 }
+
+sitaraCfgPlcyCrossLinkNetDestIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+            "The value of this object is the same as
+	    sitaraCfgPlcyLinkNetDestNextIndex.  '0xffffffff' is used
+	    to to represent as yet unassigned/created network
+	    destinations specifically targeted for this link as
+	    described in the sitaraCfgPlcyLinkNetDestTable."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 9 }
+
+sitaraCfgPlcyCrossGroupIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+            "The value of this object is the same as
+	    sitaraCfgPlcyGroupIndex.  '0xffffffff' is used
+	    to to represent as yet unassigned/created group
+	    for this link."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 10 }
+
+sitaraCfgPlcyCrossCbqClassIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+            "The value of this object is the same as
+	    sitaraCfgPlcyCbqClassIndex.  '0xffffffff' is used
+	    to to represent as yet unassigned/created class
+	    for this link or group."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 11 }
+
+
+sitaraCfgPlcyCrossFilterIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      obsolete
+    DESCRIPTION
+            "The value of this object is the same as
+	    sitaraCfgPlcyFilterIndex.  '0xffffffff' is used to to
+	    represent as yet unassigned/created filter for this
+	    class."
+                 ::= { sitaraCfgPlcyCrossIndexTableEntry 12 }
+
+-- Schedule Group Objects
+
+sitaraCfgPlcySchdNextIndex   OBJECT-TYPE
+      SYNTAX  Unsigned32
+      MAX-ACCESS  read-only
+      STATUS  current 
+      DESCRIPTION
+      "Next available Schedule Table index. This object contains the
+      value that a management application should use when creating a
+      new entry in the sitaraCfgPlcySchdTable. When a row is created
+      with this value, the sitaraCfgPlcySchdNextIndex increment by
+      one. In the boundary case where another manager has accessed the
+      value at the same time and attempted to create a row in
+      sitaraCfgPlcySchdNextIndex with the same index value, the second
+      manager will receive and error notification. The semantic for
+      this object is designed to avoid the problem of objects in other
+      MIB Modules that increment on each read causing a more rapid
+      wrap. In both cases the manager must be prepared to receive a
+      message from the agent that the row is already in use since some
+      rows may be long lived."
+                 ::= { sitaraCfgPlcySchd 1 }
+
+
+sitaraCfgPlcySchdTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SitaraCfgPlcySchdEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Schedule Table sits in the top of the policy
+             Management tree. Each entry of this table gives
+             schedule time interval at which the policy to be applied.
+             This table is linked to the Link table."
+    ::= { sitaraCfgPlcySchd 2 }
+
+sitaraCfgPlcySchdEntry OBJECT-TYPE
+    SYNTAX      SitaraCfgPlcySchdEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Each entry includes the Start-Time and 
+             End-Time of the days as specified by the DaysOfWeek
+             textual convention:
+             E.g.: Start-Time :09:00
+                 End-Time   :18:00
+                 DaysOfWeek  : 0x7c
+
+                The parameters above would describe a schedule that is
+                active between 9am to 6pm on week days Monday to
+                Friday inclusive."
+    INDEX      { sitaraCfgPlcySchdIndex }
+    ::= { sitaraCfgPlcySchdTable 1 }
+
+SitaraCfgPlcySchdEntry ::=
+    SEQUENCE {
+        sitaraCfgPlcySchdIndex                Unsigned32,
+        sitaraCfgPlcySchdAlias                PolicyAlias,     
+        sitaraCfgPlcySchdDaysOfWeek           DaysOfWeek,
+        sitaraCfgPlcySchdStartTime            TimeAndZone,
+        sitaraCfgPlcySchdEndTime              TimeAndZone,  
+        sitaraCfgPlcySchdOwner                SitaraOwnerString,
+        sitaraCfgPlcySchdPolicyStatus         PolicyStatus,
+        sitaraCfgPlcySchdStatus               RowStatus
+    }
+
+sitaraCfgPlcySchdIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "sitaraCfgPlcySchdIndex is a unique value for each schedule entry."
+                 ::= { sitaraCfgPlcySchdEntry 1 }
+
+sitaraCfgPlcySchdAlias OBJECT-TYPE
+       SYNTAX      PolicyAlias 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The schedule alias must be unique for every row of this
+       table. If an alias is 'foo' it would be allowed only in one row
+       of this table. It would also be allowed to exist once in the
+       respective alias fields of the other tables in this MIB Module,
+       specifically the link, group, class and filter tables."
+                 ::= { sitaraCfgPlcySchdEntry 2 }
+
+sitaraCfgPlcySchdDaysOfWeek OBJECT-TYPE
+       SYNTAX      DaysOfWeek 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Specifies the days of the week this schedule entry is to be active.
+       When a new schedule is created, the default is that it is not
+       active any time, meaning no days of the week."
+       DEFVAL { 0 }
+                 ::= { sitaraCfgPlcySchdEntry 3 }
+
+sitaraCfgPlcySchdStartTime OBJECT-TYPE
+       SYNTAX      TimeAndZone
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Object sitaraCfgPlcySchdStartTime gives the start time of the 
+        schedule identified by this row of the table for the days of the 
+        week the schedule is active as specified in the 
+        sitaraCfgPlcySchdDaysOfWeek object. If zone is information is not 
+        supplied, time is treated as Local time. If zone information is 
+        supplied with this object, the system will calculate the correct offset."
+                 ::= { sitaraCfgPlcySchdEntry 4 }
+
+sitaraCfgPlcySchdEndTime OBJECT-TYPE
+       SYNTAX      TimeAndZone
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Object sitaraCfgPlcySchdEndTime gives the end time of the schedule 
+        identified by this row of the table for the days of the week the schedule 
+        is active as specified in the sitaraCfgPlcySchdDaysOfWeek object.  If zone
+        is not supplied, time is treated as Local time. If zone
+        information is supplied with this object, the system will
+        calculate the correct offset."
+                 ::= { sitaraCfgPlcySchdEntry 5 }
+
+sitaraCfgPlcySchdOwner OBJECT-TYPE
+     SYNTAX     SitaraOwnerString
+     MAX-ACCESS  read-create
+     STATUS  current
+     DESCRIPTION
+     "Object sitaraCfgPlcySchdOwner should be set by the owner of this table row entry
+     immediately after creating the entry. The owner is the user or
+     management system that sent the commands to the system to create
+     this row."
+                 ::= { sitaraCfgPlcySchdEntry 6 }
+
+sitaraCfgPlcySchdPolicyStatus    OBJECT-TYPE
+       SYNTAX      PolicyStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The sitaraCfgPlcySchdPolicyStatus object can be set with the
+       following values:
+                     running(1), -- Contents of the row are 
+                                 -- running in the current policy
+                                 -- configuration.
+                     pending(2)  -- Contents of the row are 
+                                 -- not running in the curent policy
+				 -- configuration. 
+        When a row is created, the value of this object is initialized
+        with Pending.  When a policy is updated successfully and the
+        system is reinitialized with the new represented by this row
+        of the table, then value is changed from Pending to Running."
+        DEFVAL { pending }
+                 ::= { sitaraCfgPlcySchdEntry 7 }
+
+sitaraCfgPlcySchdStatus      OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Current status of the Schedule Table Entry.
+        When ever this status is set to active and the sitaraCfgPlcyPerRowUpdate 
+        object value bit 0x01 is set, the sys.policy file is updated and 
+        CBQD will be re-started with these new values."
+                 ::= { sitaraCfgPlcySchdEntry 8 }
+
+-- LINK Group Objects
+
+sitaraCfgPlcyLinkNextIndex   OBJECT-TYPE
+     SYNTAX  Unsigned32
+     MAX-ACCESS  read-only
+     STATUS  current 
+     DESCRIPTION
+     "Next available Link Table index. This object is used by
+     management applications to determine the value to use for
+     sitaraCfgPlcyLinkIndexindex when creating a new row in the
+     sitaraCfgPlcyLinkTable."
+                 ::= { sitaraCfgPlcyLink 1 }
+
+
+sitaraCfgPlcyLinkTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SitaraCfgPlcyLinkEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The Link Table contains information about links that have
+	    been defined to the QosWorks device. Each schedule will
+	    contain one or more active links. Each link can contain
+	    one or more groups which are in turn comprised of
+	    classes. Classes can also be directly contained in links."
+    ::= { sitaraCfgPlcyLink 2 }
+
+sitaraCfgPlcyLinkEntry OBJECT-TYPE
+    SYNTAX      SitaraCfgPlcyLinkEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A link alias such as Boston, may appear several times in this table
+             if it is used in several schedules. It is the combination
+             of  sitaraCfgPlcySchdIndex and sitaraCfgPlcyLinkIndex that
+             provide uniqueness. The indexing in this table does allow
+             the retrieval of all links associated with a schedule."
+    INDEX      { sitaraCfgPlcySchdIndex, sitaraCfgPlcyLinkIndex }
+    ::= { sitaraCfgPlcyLinkTable 1 }
+
+SitaraCfgPlcyLinkEntry ::=
+    SEQUENCE {
+        sitaraCfgPlcyLinkIndex                Unsigned32,
+        sitaraCfgPlcyLinkAlias                PolicyAlias,     
+        sitaraCfgPlcyLinkPathName             PolicyPathName, 
+        sitaraCfgPlcyLinkEnabled              INTEGER,
+        sitaraCfgPlcyLinkDscr                 PolicyDisplayString,
+        sitaraCfgPlcyLinkLanBandWidth         Gauge32,
+        sitaraCfgPlcyLinkLanBurst             Gauge32,  
+        sitaraCfgPlcyLinkLanAvlBandWidth      Gauge32,
+        sitaraCfgPlcyLinkWanBandWidth         Gauge32, 
+        sitaraCfgPlcyLinkWanBurst             Gauge32, 
+        sitaraCfgPlcyLinkWanAvlBandWidth      Gauge32, 
+        sitaraCfgPlcyLinkOwner                SitaraOwnerString,
+        sitaraCfgPlcyLinkPolicyStatus         PolicyStatus,
+        sitaraCfgPlcyLinkStatus               RowStatus
+    }
+
+sitaraCfgPlcyLinkIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A unique value for each Link Entry. A new index value will be
+            used each time a link is associated with a schedule. The
+            sitaraCfgPlcyLinkNextIndex is the object to be used to determine
+            what the next available Link Index should be."
+                 ::= { sitaraCfgPlcyLinkEntry 1 }
+
+sitaraCfgPlcyLinkAlias OBJECT-TYPE
+       SYNTAX      PolicyAlias 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The Link Alias is the name associated with the link identified
+       in this row of the table. Since a link may be used in several
+       schedules, it is possible that a link will appear in more than
+       one row of this table."
+                 ::= { sitaraCfgPlcyLinkEntry 2 }
+
+sitaraCfgPlcyLinkPathName OBJECT-TYPE
+       SYNTAX      PolicyPathName
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+       "Path Name gives the full specification of this link which
+       includes both the schedule and link information.  See the
+       PolicyPathName textual convention."
+                 ::= { sitaraCfgPlcyLinkEntry 3 }
+
+sitaraCfgPlcyLinkEnabled OBJECT-TYPE
+       SYNTAX      INTEGER { enabled (1), 
+			     disabled (2)
+                           } 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The current status of this link in this schedule."
+       DEFVAL { disabled  }
+                 ::= { sitaraCfgPlcyLinkEntry 4 }
+
+sitaraCfgPlcyLinkDscr  OBJECT-TYPE
+       SYNTAX      PolicyDisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Descriptive information about this link entry."
+                 ::= { sitaraCfgPlcyLinkEntry 5 }
+
+sitaraCfgPlcyLinkLanBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The bandwidth in kilobits per second allocated 
+       to this link in the LAN direction."
+                 ::= { sitaraCfgPlcyLinkEntry 6 }
+
+
+sitaraCfgPlcyLinkLanBurst OBJECT-TYPE
+       SYNTAX      Gauge32
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The bandwidth limit that traffic in the LAN direction is
+       allowed to burst to on this link. This is measured in kilobits
+       per second."
+                 ::= { sitaraCfgPlcyLinkEntry 7 }
+
+sitaraCfgPlcyLinkLanAvlBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+       "Available bandwidth in the LAN direction for this
+       link. Available bandwidth is the amount of capacity that
+       remains after all the bandwidth that has been configured for
+       all child groups and classes has been subtracted."
+                 ::= { sitaraCfgPlcyLinkEntry 8 }
+
+sitaraCfgPlcyLinkWanBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Link bandwidth in the WAN direction."
+                 ::= { sitaraCfgPlcyLinkEntry 9 }
+
+
+sitaraCfgPlcyLinkWanBurst OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Link Burst bandwidth in the WAN direction."
+                 ::= { sitaraCfgPlcyLinkEntry 10 }
+
+sitaraCfgPlcyLinkWanAvlBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+       "Available link bandwidth in the WAN direction. Available
+       bandwidth is the amount of capacity that remains after all the
+       bandwidth that has been configured for all child groups and
+       classes has been subtracted."
+                 ::= { sitaraCfgPlcyLinkEntry 11 }
+
+sitaraCfgPlcyLinkOwner OBJECT-TYPE
+     SYNTAX     SitaraOwnerString
+     MAX-ACCESS  read-create
+     STATUS  current
+     DESCRIPTION
+     "sitaraCfgPlcyLinkOwner object is used to identify the Owner of the row
+     which will usually be the identity of the management software or
+     user that created this link. 
+     Formate of the Owner string as follows:
+     Owner String = ScheduleAlias(PolicyName):LinkPathName:LinkCustomerID"
+                 ::= { sitaraCfgPlcyLinkEntry 12 }
+
+sitaraCfgPlcyLinkPolicyStatus    OBJECT-TYPE
+       SYNTAX      PolicyStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The sitaraCfgPlcyLinkPolicyStatus object can be set with the
+       following values:
+                     running(1), -- Contents of the row are 
+                                 -- running in the current policy
+                                 -- configuration.
+                     pending(2)  -- Contents of the row are 
+                                 -- not running in the curent policy
+				 -- configuration. 
+        When a row is created, the value of this object is initialized
+        with Pending.  When a policy is updated successfully and the
+        system is reinitialized with the new represented by this row
+        of the table, then value is changed from Pending to Running."
+        DEFVAL { pending }
+                 ::= { sitaraCfgPlcyLinkEntry 13 }
+
+sitaraCfgPlcyLinkStatus      OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The current status of this row of the link table."
+                 ::= { sitaraCfgPlcyLinkEntry 14 }
+
+
+sitaraCfgPlcyLinkNetDestNextIndex   OBJECT-TYPE
+     SYNTAX  Unsigned32
+     MAX-ACCESS  read-only
+     STATUS  current 
+     DESCRIPTION
+     "The next available Link Network Destination Address Table index
+     to be used to create a new entry in the network destination
+     address table."
+                 ::= { sitaraCfgPlcyLink 3 }
+
+-- Link Network Destination Address Table
+
+sitaraCfgPlcyLinkNetDestTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SitaraCfgPlcyLinkNetDestEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The Link Network Destination Address table gives the 
+             IP Addresses and network masks for links that are
+             intended to carry traffic only to specfic destination
+             networks."
+    ::= { sitaraCfgPlcyLink 4 }
+
+sitaraCfgPlcyLinkNetDestEntry OBJECT-TYPE
+    SYNTAX      SitaraCfgPlcyLinkNetDestEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Each entry consists of a destination IP Address and
+             corresponding network mask. Each new link created should
+             have at least one destination network specified for IP
+             traffic. See the policy filter table for additional
+             detail."
+    INDEX      {sitaraCfgPlcyLinkNetDestIndex, sitaraCfgPlcyLinkIndex}
+    ::= { sitaraCfgPlcyLinkNetDestTable 1 }
+
+SitaraCfgPlcyLinkNetDestEntry ::=
+    SEQUENCE {
+        sitaraCfgPlcyLinkNetDestIndex        Unsigned32,
+        sitaraCfgPlcyLinkNetDestAddr         IpAddress, 
+        sitaraCfgPlcyLinkNetDestMask         IpAddress,
+        sitaraCfgPlcyLinkNetDestOwner        SitaraOwnerString,
+        sitaraCfgPlcyLinkNetDestStatus       RowStatus
+    }
+
+sitaraCfgPlcyLinkNetDestIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A unique value for each network destination entry. A new
+            index value must be used each time a row is created in
+            this table to associate a network destination with a
+            link. The sitaraCfgPlcyLinkNetDestNextIndex is the object
+            to be used to determine what the next available Link Net
+            Dest Index should be."
+                 ::= { sitaraCfgPlcyLinkNetDestEntry 1 }
+
+sitaraCfgPlcyLinkNetDestAddr OBJECT-TYPE
+       SYNTAX IpAddress
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "IP address of the destination network."
+                 ::= { sitaraCfgPlcyLinkNetDestEntry 2 }
+
+
+sitaraCfgPlcyLinkNetDestMask OBJECT-TYPE
+       SYNTAX      IpAddress
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The network mask to be used in association with the
+       sitaraCfgPlcyLinkNetDestAddr."
+                 ::= {  sitaraCfgPlcyLinkNetDestEntry 3 }
+
+sitaraCfgPlcyLinkNetDestOwner OBJECT-TYPE
+     SYNTAX     SitaraOwnerString
+     MAX-ACCESS  read-create
+     STATUS  current
+     DESCRIPTION
+     "Object sitaraCfgPlcyLinkNetDestOwner is used to identify the Owner 
+      of the row. This will usually be the management system or user that 
+      created this row of the table."
+                 ::= {  sitaraCfgPlcyLinkNetDestEntry 4 }
+
+sitaraCfgPlcyLinkNetDestStatus      OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Current status of status information identified by the table
+       row entry."
+                 ::= { sitaraCfgPlcyLinkNetDestEntry 5 }
+
+-- Policy Class Group Objects 
+
+sitaraCfgPlcyGroupNextIndex  OBJECT-TYPE
+      SYNTAX  Unsigned32
+      MAX-ACCESS  read-only
+      STATUS  current
+      DESCRIPTION
+      "Next available index to be used to create an entry in the
+      sitaraCfgPlcyGroupTable."
+                 ::= {  sitaraCfgPlcyGroup 1 }
+
+
+sitaraCfgPlcyGroupTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SitaraCfgPlcyGroupEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Class groups provide a parent level for two or more
+	     classes. This makes it possible to enforce bandwidth and bursting
+             restrictions by group as well as individual class."
+    ::= { sitaraCfgPlcyGroup 2 }
+
+sitaraCfgPlcyGroupEntry OBJECT-TYPE
+    SYNTAX      SitaraCfgPlcyGroupEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Each entry contains the information about the bandwidth,
+            burst and name of the group.  When an entry is created,
+            resources (Bandwidth, Burst..) should be less than the
+            available resources at the parent which could either be a
+            link or a group since the system allows creation of groups
+            that contain groups."
+    INDEX      { sitaraCfgPlcySchdIndex, sitaraCfgPlcyLinkIndex, sitaraCfgPlcyGroupIndex }
+    ::= { sitaraCfgPlcyGroupTable 1 }
+
+SitaraCfgPlcyGroupEntry ::=
+    SEQUENCE {
+        sitaraCfgPlcyGroupIndex                Unsigned32,
+        sitaraCfgPlcyGroupAlias                PolicyAlias,  
+        sitaraCfgPlcyGroupPathName             PolicyPathName, 
+        sitaraCfgPlcyGroupEnabled              INTEGER,
+        sitaraCfgPlcyGroupDscr                 PolicyDisplayString,
+        sitaraCfgPlcyGroupLanBandWidth         Gauge32,
+        sitaraCfgPlcyGroupLanBurst             Gauge32,  
+        sitaraCfgPlcyGroupLanAvlBandWidth      Gauge32,
+        sitaraCfgPlcyGroupWanBandWidth         Gauge32, 
+        sitaraCfgPlcyGroupWanBurst             Gauge32, 
+        sitaraCfgPlcyGroupWanAvlBandWidth      Gauge32,
+        sitaraCfgPlcyGroupDirection            TrafficDirection, 
+        sitaraCfgPlcyGroupParentIndex          Unsigned32,
+        sitaraCfgPlcyGroupOwner                SitaraOwnerString,
+        sitaraCfgPlcyGroupPolicyStatus         PolicyStatus,
+        sitaraCfgPlcyGroupStatus               RowStatus
+    }
+
+sitaraCfgPlcyGroupIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+           "Unique value for each entry. A new index value must be
+            used each time a row is created in this table to associate
+            a group with a Link. The sitaraCfgPlcyGroupNextIndex is
+            the object to be used to determine what the next available
+            Group Index should be."
+                 ::= { sitaraCfgPlcyGroupEntry 1 }
+
+sitaraCfgPlcyGroupAlias OBJECT-TYPE
+       SYNTAX      PolicyAlias 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The group alias is unique identifier in the Group Table. See
+       the PolicyAlias and PolicyPathName textual conventions for
+       additional details."
+                 ::= { sitaraCfgPlcyGroupEntry 2 }
+
+sitaraCfgPlcyGroupPathName OBJECT-TYPE
+       SYNTAX      PolicyPathName 
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+       "The fully qualified unique path to this policy element. See
+       the PolicyAlias and PolicyPathName textual conventions for
+       additional information."
+                 ::= { sitaraCfgPlcyGroupEntry 3 }
+
+sitaraCfgPlcyGroupEnabled OBJECT-TYPE
+       SYNTAX      INTEGER {
+			    enabled (1), 
+			    disabled (2)
+			   } 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyGroupEnabled is to specify whether this entry is enabled or disabled."
+       DEFVAL { disabled  }
+                 ::= { sitaraCfgPlcyGroupEntry 4 }
+
+sitaraCfgPlcyGroupDscr  OBJECT-TYPE
+       SYNTAX      PolicyDisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "A description of the group defined in the table row entry."
+                 ::= { sitaraCfgPlcyGroupEntry 5 }
+
+sitaraCfgPlcyGroupLanBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Group bandwidth in the LAN direction. This should be less than
+       the parent available bandwidth."
+                 ::= { sitaraCfgPlcyGroupEntry 6 }
+
+
+sitaraCfgPlcyGroupLanBurst OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Group Burst bandwidth in the LAN direction.
+       This should be less than the parent group/link available
+       burst bandwidth."
+                 ::= { sitaraCfgPlcyGroupEntry 7 }
+
+sitaraCfgPlcyGroupLanAvlBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+       "Available bandwidth in LAN direction for this group. Available
+       bandwidth is the amount of capacity that remains after all the
+       bandwidth that has been configured for all child groups and
+       classes in a link has been subtracted."
+                 ::= { sitaraCfgPlcyGroupEntry 8 }
+
+sitaraCfgPlcyGroupWanBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Group bandwidth in WAN direction.
+        This should be less than the parent available Band width"
+                 ::= { sitaraCfgPlcyGroupEntry 9 }
+
+
+sitaraCfgPlcyGroupWanBurst OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Group Burst bandwidth in WAN direction.
+       This should be less than the parent available Burst
+       bandwidth."
+                 ::= { sitaraCfgPlcyGroupEntry 10 }
+
+sitaraCfgPlcyGroupWanAvlBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+       "Available bandwidth in WAN direction for this group. Available
+       bandwidth is the amount of capacity that remains after all the
+       bandwidth that has been configured for all child groups and
+       classes has been subtracted."
+                 ::= { sitaraCfgPlcyGroupEntry 11 }
+
+sitaraCfgPlcyGroupDirection OBJECT-TYPE
+       SYNTAX      TrafficDirection
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The policy group traffic direction object indicates the
+       directionality of this flow. Based on the value of this object,
+       the LAN and WAN bandwidth paramerts will be filled in. If this
+       is a bi-directional flow, values for both the LAN and WAN
+       objects should be supplied."
+                 ::= { sitaraCfgPlcyGroupEntry 12 }
+
+sitaraCfgPlcyGroupParentIndex OBJECT-TYPE
+       SYNTAX      Unsigned32          
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Object sitaraCfgPlcyGroupParentIndex contains the value of a parent 
+        group is this group is desired to be a child of another group. 
+        If the value of this object is 0 then this group is not a member of 
+        another group and is a direct child of the link specified in the index 
+        of this table."
+       DEFVAL { 0 }
+                 ::= { sitaraCfgPlcyGroupEntry 13 }
+
+sitaraCfgPlcyGroupOwner OBJECT-TYPE
+     SYNTAX     SitaraOwnerString
+     MAX-ACCESS  read-create
+     STATUS  current
+     DESCRIPTION
+     "Object sitaraCfgPlcyGroupOwner is used to identify the owner of the 
+      information identified in this row of the table.
+     Formate of the Owner string as follows:
+     Owner String = ScheduleAlias(PolicyName):GroupPathName"
+                 ::= { sitaraCfgPlcyGroupEntry 14 }
+
+sitaraCfgPlcyGroupPolicyStatus    OBJECT-TYPE
+       SYNTAX      PolicyStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The sitaraCfgPlcyGroupPolicyStatus PolicyStatus object can be set with the
+       following values:
+                     running(1), -- Contents of the row are 
+                                 -- running in the current policy
+                                 -- configuration.
+                     pending(2)  -- Contents of the row are 
+                                 -- not running in the curent policy
+				 -- configuration. 
+        When a row is created, the value of this object is initialized
+        with Pending.  When a policy is updated successfully and the
+        system is reinitialized with the new represented by this row
+        of the table, then value is changed from Pending to Running."
+        DEFVAL { pending }
+                 ::= { sitaraCfgPlcyGroupEntry 15 }
+
+sitaraCfgPlcyGroupStatus      OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Current status of this table row."
+                 ::= { sitaraCfgPlcyGroupEntry 16 }
+
+-- The Policy Action group. Contains information about CBQ
+-- configuration parameters. It contains a table and a scalar objects
+-- to assist management systems in the generation of additional
+-- entries in the sitaraCfgPlcyCbqClassTable.
+
+sitaraCfgPlcyCbqClassNextIndex   OBJECT-TYPE
+      SYNTAX  Unsigned32
+      MAX-ACCESS  read-only
+      STATUS  current 
+      DESCRIPTION
+      "The next available CBQ class table index."
+                 ::= { sitaraCfgPlcyCbqClass 1 }
+
+sitaraCfgPlcyCbqClassTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SitaraCfgPlcyCbqClassEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The sitaraCfgPlcyCbqClassTable contains an entry for each
+            CBQ policy associated with a particular service. Classes
+	    provide the finest resolution available for bandwidth
+            allocation. A single class is typically shared by several
+            categories of traffic which each category defined as a
+	    filter. See the sitaraCfgPlcyFilterTable."
+    ::= {  sitaraCfgPlcyCbqClass 2 }
+
+sitaraCfgPlcyCbqClassEntry OBJECT-TYPE
+    SYNTAX      SitaraCfgPlcyCbqClassEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Locally held information about a particular
+             CBQ policy."
+    INDEX      { sitaraCfgPlcySchdIndex, sitaraCfgPlcyLinkIndex, 
+                 sitaraCfgPlcyGroupIndex, sitaraCfgPlcyCbqClassIndex }
+    ::= { sitaraCfgPlcyCbqClassTable 1 }
+
+SitaraCfgPlcyCbqClassEntry ::=
+    SEQUENCE {
+             sitaraCfgPlcyCbqClassIndex               Unsigned32,
+             sitaraCfgPlcyCbqClassAlias               PolicyAlias,
+             sitaraCfgPlcyCbqClassPathName            PolicyPathName,
+             sitaraCfgPlcyCbqClassEnabled             INTEGER,
+             sitaraCfgPlcyCbqClassLanBandWidth        Gauge32,
+             sitaraCfgPlcyCbqClassLanBurst            Gauge32,
+             sitaraCfgPlcyCbqClassLanPriority         PolicyPriority,
+             sitaraCfgPlcyCbqClassLanSessionBw        Gauge32,
+             sitaraCfgPlcyCbqClassLanAdminCtrl        AdmissionState,
+             sitaraCfgPlcyCbqClassLanHttpCaching      INTEGER,
+             sitaraCfgPlcyCbqClassLanTosEnabled       INTEGER,
+             sitaraCfgPlcyCbqClassLanTosValue         INTEGER, 
+             sitaraCfgPlcyCbqClassLanTosMask          INTEGER,
+             sitaraCfgPlcyCbqClassLanMtuValue         Unsigned32,
+             sitaraCfgPlcyCbqClassLanMaxDelay         TimeTicks,
+             sitaraCfgPlcyCbqClassWanBandWidth        Gauge32,
+             sitaraCfgPlcyCbqClassWanBurst            Gauge32,
+             sitaraCfgPlcyCbqClassWanPriority         PolicyPriority,
+             sitaraCfgPlcyCbqClassWanSessionBw        Gauge32,
+             sitaraCfgPlcyCbqClassWanAdminCtrl        AdmissionState,
+             sitaraCfgPlcyCbqClassWanHttpCaching      INTEGER,
+             sitaraCfgPlcyCbqClassWanTosEnabled       INTEGER,
+             sitaraCfgPlcyCbqClassWanTosValue         INTEGER,
+             sitaraCfgPlcyCbqClassWanTosMask          INTEGER,
+             sitaraCfgPlcyCbqClassWanMtuValue         Unsigned32,
+             sitaraCfgPlcyCbqClassWanMaxDelay         TimeTicks,
+             sitaraCfgPlcyCbqClassDirection           TrafficDirection,
+             sitaraCfgPlcyCbqClassOwner               SitaraOwnerString,
+             sitaraCfgPlcyCbqClassDscr                PolicyDisplayString,
+             sitaraCfgPlcyCbqClassPolicyStatus        PolicyStatus,
+             sitaraCfgPlcyCbqClassStatus              RowStatus,
+             sitaraCfgPlcyCbqClassLanMinBurst         INTEGER,
+             sitaraCfgPlcyCbqClassLanMaxBurst         INTEGER,
+             sitaraCfgPlcyCbqClassWanMinBurst         INTEGER,
+             sitaraCfgPlcyCbqClassWanMaxBurst         INTEGER
+}
+
+
+sitaraCfgPlcyCbqClassIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A unique value for each CbqClass Entry. A new index value
+             will be used each time a CbqClass is associated with a
+             Link/Group creating a new row in this table . The
+             sitaraCfgPlcyCbqClassNextIndex is the object to be used
+             to determine what the next available CbqClass Index
+             should be."
+                 ::= { sitaraCfgPlcyCbqClassEntry 1 }
+
+sitaraCfgPlcyCbqClassAlias OBJECT-TYPE
+       SYNTAX      PolicyAlias 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The class Alias is unique identifier in the Class Table,
+        for a schedule. See the textual convention information at the
+       beginning of this module for PolicyAlias and PolicyPathName for
+       correct usage information."
+                 ::= { sitaraCfgPlcyCbqClassEntry 2 }
+
+sitaraCfgPlcyCbqClassPathName OBJECT-TYPE
+       SYNTAX      PolicyPathName 
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyCbqClassPathName object contains the fully specified path to this policy
+       element. The last node in the path is the alias described in
+       this row of the table."
+                 ::= { sitaraCfgPlcyCbqClassEntry 3 }
+
+sitaraCfgPlcyCbqClassEnabled OBJECT-TYPE
+       SYNTAX      INTEGER {
+			    enabled (1), 
+			    disabled (2)
+                           } 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The current status of this policy element."
+       DEFVAL { disabled }
+                 ::= { sitaraCfgPlcyCbqClassEntry 4 }
+
+sitaraCfgPlcyCbqClassLanBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Class bandwidth in LAN direction.  This object should be set
+        to less than the parent available bandwidth."
+                 ::= { sitaraCfgPlcyCbqClassEntry 5 }
+
+sitaraCfgPlcyCbqClassLanBurst OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Class burst bandwidth in LAN direction.  This should be less
+        than the parent link or group's available burst bandwidth."
+                 ::= { sitaraCfgPlcyCbqClassEntry 6 }
+
+sitaraCfgPlcyCbqClassLanPriority OBJECT-TYPE
+       SYNTAX      PolicyPriority 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyCbqClassLanPriority gives the priority of the Class in the LAN direction."
+                 ::= { sitaraCfgPlcyCbqClassEntry 7 }
+
+sitaraCfgPlcyCbqClassLanSessionBw OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyCbqClassLanSessionBw specifies the minimum session bandwidth in the LAN
+       direction for TCP/IP traffic."
+                 ::= { sitaraCfgPlcyCbqClassEntry 8 }
+
+sitaraCfgPlcyCbqClassLanAdminCtrl OBJECT-TYPE
+       SYNTAX      AdmissionState 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Describes the admission rule for a session. The purpose of
+       this object is to allow the system to determine the action to
+       take when new requests are recieved by the system for sessions
+       when the allocated limit for this class has been
+       reached. Depending on the value of this object, new requests
+       can be granted with reduced bandwith, rejected, etc. See the
+       AdmissionState textual convention for more information."
+                 ::= { sitaraCfgPlcyCbqClassEntry 9 }
+
+sitaraCfgPlcyCbqClassLanHttpCaching OBJECT-TYPE
+       SYNTAX      INTEGER {
+			    enabled (1), 
+			    disabled (2)
+                           } 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyCbqClassLanHttpCaching gives the status whether HTTP caching i.e. enabled 
+        or not in the LAN direction. This class-level attribute
+       applies only for HTTP traffic. It enables caching WEB pages
+       that are handeled by the class."
+                 ::= { sitaraCfgPlcyCbqClassEntry 10 }
+
+sitaraCfgPlcyCbqClassLanTosEnabled OBJECT-TYPE
+       SYNTAX      INTEGER {
+			    enabled (1), 
+			    disabled (2)
+			   } 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Used to enable or disable type of service remarking in the LAN
+       direction."
+                 ::= { sitaraCfgPlcyCbqClassEntry 11 }
+
+sitaraCfgPlcyCbqClassLanTosValue OBJECT-TYPE
+       SYNTAX      INTEGER (0..255) 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Type of service value that will be written to packets in this
+       class when they exit the QosWorks device."
+                 ::= { sitaraCfgPlcyCbqClassEntry 12 }
+
+sitaraCfgPlcyCbqClassLanTosMask OBJECT-TYPE
+       SYNTAX      INTEGER (0..255)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Mask applied to the TOS value above."
+                 ::= { sitaraCfgPlcyCbqClassEntry 13 }
+
+sitaraCfgPlcyCbqClassLanMtuValue OBJECT-TYPE
+       SYNTAX      Unsigned32 (64..1518)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "MTU value in the Lan direction specified in units 'bytes'"
+                 ::= { sitaraCfgPlcyCbqClassEntry 14 }
+
+sitaraCfgPlcyCbqClassLanMaxDelay OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyCbqClassLanMaxDelay specifies maximum delay in the Lan direction in 'milli sec'.
+        Lower and upper limits for the delay is calulated from the following formulas
+        lower bound delay = roundUp   (  4 * 8 * MTU / BW (in kbps))
+        upper bound delay = roundDown (200 * 8 * MTU / BW (in kbps))"
+                 ::= { sitaraCfgPlcyCbqClassEntry 15 }             
+
+sitaraCfgPlcyCbqClassWanBandWidth OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Class bandwidth in WAN direction. This should be less than the
+       available bandwidth of the parent group or link."
+                 ::= { sitaraCfgPlcyCbqClassEntry 16 }
+
+sitaraCfgPlcyCbqClassWanBurst OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Class Burst bandwidth in WAN direction. This should be less
+       than the available burst bandwidth for the parent group or
+       link."
+                 ::= { sitaraCfgPlcyCbqClassEntry 17 }
+
+sitaraCfgPlcyCbqClassWanPriority OBJECT-TYPE
+       SYNTAX      PolicyPriority
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyCbqClassWanPriority gives the priority this class should receive relative to all
+       other traffic in the WAN direction."
+                 ::= { sitaraCfgPlcyCbqClassEntry 18 }
+
+sitaraCfgPlcyCbqClassWanSessionBw OBJECT-TYPE
+       SYNTAX      Gauge32 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyCbqClassWanSessionBw specifies the minimum session bandwidth in the WAN
+       direction for TCP/IP traffic."
+                 ::= { sitaraCfgPlcyCbqClassEntry 19 }
+
+sitaraCfgPlcyCbqClassWanAdminCtrl OBJECT-TYPE
+       SYNTAX      AdmissionState 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyCbqClassWanAdminCtrl allows the system to determine the action to take
+       when new requests are recieved by the system for sessions in
+       the WAN direction when the allocated limit for this class has
+       been reached. Depending on the value of this object, new
+       requests can be granted with reduced bandwith, rejected,
+       etc. See the AdmissionState textual convention for more
+       information."
+                 ::= { sitaraCfgPlcyCbqClassEntry 20 }
+
+sitaraCfgPlcyCbqClassWanHttpCaching OBJECT-TYPE
+       SYNTAX      INTEGER { 
+			    enabled (1), 
+			    disabled (2)}
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Used to enable or disable WEB caching. This is applicable for
+       classes that handle HTTP traffic. The value should be 2 -
+       disabled for those clases that do not handle HTTP traffic or
+       for those classes that do, but for which caching is not desired." 
+                 ::= { sitaraCfgPlcyCbqClassEntry 21 }
+
+sitaraCfgPlcyCbqClassWanTosEnabled OBJECT-TYPE
+       SYNTAX      INTEGER { 
+			    enabled (1), 
+			    disabled (2)}
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Used to control type of service remarking in the WAN
+       direction."
+                 ::= { sitaraCfgPlcyCbqClassEntry 22 }
+
+sitaraCfgPlcyCbqClassWanTosValue OBJECT-TYPE
+       SYNTAX      INTEGER (0..255)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "New TOS value to be applied to traffic in this class in the
+       WAN direction."
+                 ::= { sitaraCfgPlcyCbqClassEntry 23 }
+
+sitaraCfgPlcyCbqClassWanTosMask OBJECT-TYPE
+       SYNTAX      INTEGER (0..255)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Mask for the TOS value in the WAN direction."
+                 ::= { sitaraCfgPlcyCbqClassEntry 24 }
+
+sitaraCfgPlcyCbqClassWanMtuValue OBJECT-TYPE
+       SYNTAX      Unsigned32 (64..1518)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "MTU value in the Wan direction specified in units 'bytes'"
+                 ::= { sitaraCfgPlcyCbqClassEntry 25 }
+
+sitaraCfgPlcyCbqClassWanMaxDelay OBJECT-TYPE
+       SYNTAX      TimeTicks
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "This object specifies maximum delay in the Wan direction in 'milli sec'.
+        Lower and upper limits for the delay is calulated from the following formulas
+        lower bound delay = roundUp   (  4 * 8 * MTU / BW (in kbps))
+        upper bound delay = roundDown (200 * 8 * MTU / BW (in kbps))"
+                 ::= { sitaraCfgPlcyCbqClassEntry 26 }                 
+
+sitaraCfgPlcyCbqClassDirection OBJECT-TYPE
+       SYNTAX      TrafficDirection
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Cbq Class Traffic direction. Note that the value of this
+       object will determine whether the LAN, WAN or both sets of
+       objects for LAN and WAN parameters are relevant for this class
+       of traffic."
+                 ::= { sitaraCfgPlcyCbqClassEntry 27 }
+
+sitaraCfgPlcyCbqClassOwner OBJECT-TYPE
+     SYNTAX     SitaraOwnerString
+     MAX-ACCESS  read-create
+     STATUS  current
+     DESCRIPTION
+     "sitaraCfgPlcyCbqClassOwner is used to identify the table row owner for this
+     class. Usually this will either be a user or the management
+     system that created the row in the table.
+     Formate of the Owner string as follows:
+     Owner String = ScheduleAlias(PolicyName):ClassPathName"
+                 ::= { sitaraCfgPlcyCbqClassEntry  28 }
+
+sitaraCfgPlcyCbqClassDscr  OBJECT-TYPE
+       SYNTAX      PolicyDisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "A textual description for this class."
+                 ::= { sitaraCfgPlcyCbqClassEntry  29}
+
+sitaraCfgPlcyCbqClassPolicyStatus    OBJECT-TYPE
+       SYNTAX      PolicyStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The sitaraCfgPlcyCbqClassPolicyStatus PolicyStatus object can be set with the
+       following values:
+                     running(1), -- Contents of the row are 
+                                 -- running in the current policy
+                                 -- configuration.
+                     pending(2)  -- Contents of the row are 
+                                 -- not running in the curent policy
+				 -- configuration. 
+        When a row is created, the value of this object is initialized
+        with Pending.  When a policy is updated successfully and the
+        system is reinitialized with the new represented by this row
+        of the table, then value is changed from Pending to Running."
+        DEFVAL { pending }
+                 ::= { sitaraCfgPlcyCbqClassEntry 30 }
+
+sitaraCfgPlcyCbqClassStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Current status of the sitaraCfgPlcyCbqClass entry."
+                 ::= { sitaraCfgPlcyCbqClassEntry  31 }
+
+
+--  Objects IDs 33-36 are reserved for Thresholds
+
+sitaraCfgPlcyCbqClassLanMinBurst OBJECT-TYPE
+       SYNTAX      INTEGER (0..8)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Class Minmum Burst bandwidth in LAN direction.
+        Value 0 specified invalid or not defined"
+                 ::= { sitaraCfgPlcyCbqClassEntry 37 }
+
+
+sitaraCfgPlcyCbqClassLanMaxBurst OBJECT-TYPE
+       SYNTAX      INTEGER (0..16)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Class Maxmum Burst bandwidth in LAN direction.
+        Value 0 specified invalid or not defined"
+                 ::= { sitaraCfgPlcyCbqClassEntry 38 }
+
+
+
+sitaraCfgPlcyCbqClassWanMinBurst OBJECT-TYPE
+       SYNTAX      INTEGER (0..8)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Class Minmum Burst bandwidth in WAN direction.
+        Value 0 specified invalid or not defined"
+                 ::= { sitaraCfgPlcyCbqClassEntry 39 }
+
+
+sitaraCfgPlcyCbqClassWanMaxBurst OBJECT-TYPE
+       SYNTAX      INTEGER (0..16)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Class Maxmum Burst bandwidth in WAN direction.
+        Value 0 specified invalid or not defined"
+                 ::= { sitaraCfgPlcyCbqClassEntry 40 }
+
+
+
+-- The Filter Group
+
+sitaraCfgPlcyFilterNextIndex  OBJECT-TYPE
+      SYNTAX  Unsigned32
+      MAX-ACCESS  read-only
+      STATUS  current
+      DESCRIPTION
+      "Next available Filter Table index value."
+                 ::= { sitaraCfgPlcyFilter 1 }
+
+sitaraCfgPlcyFilterTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SitaraCfgPlcyFilterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The sitaraCfgPlcyFilterTable contains an entry for each
+             filter associated with a particular CBQ Class. Each Class
+             defined in the sitaraCfgPlcyCbqClassTable may have one or
+             more filters associated with it."
+    ::= { sitaraCfgPlcyFilter 2 }
+
+sitaraCfgPlcyFilterEntry OBJECT-TYPE
+    SYNTAX      SitaraCfgPlcyFilterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Locally held information about a particular
+             policy filter."
+    INDEX      { sitaraCfgPlcyCbqClassIndex, sitaraCfgPlcyFilterIndex }
+    ::= { sitaraCfgPlcyFilterTable 1 }
+
+SitaraCfgPlcyFilterEntry ::=
+    SEQUENCE {
+        sitaraCfgPlcyFilterIndex                Unsigned32,
+        sitaraCfgPlcyFilterAlias                PolicyAlias,
+        sitaraCfgPlcyFilterPathName             PolicyPathName,
+        sitaraCfgPlcyFilterProtocolType         INTEGER,
+        sitaraCfgPlcyFilterLanIpStartPort       INTEGER,
+        sitaraCfgPlcyFilterLanIpEndPort         INTEGER,
+        sitaraCfgPlcyFilterLanIpAddr            IpAddress,
+        sitaraCfgPlcyFilterLanNetMask           IpAddress,
+        sitaraCfgPlcyFilterWanIpStartPort       INTEGER,
+        sitaraCfgPlcyFilterWanIpEndPort         INTEGER,
+        sitaraCfgPlcyFilterWanIpAddr            IpAddress,
+        sitaraCfgPlcyFilterWanNetMask           IpAddress,
+        sitaraCfgPlcyFilterOrder                INTEGER,
+        sitaraCfgPlcyFilterOwner                SitaraOwnerString,
+        sitaraCfgPlcyFilterDscr                 PolicyDisplayString,
+        sitaraCfgPlcyFilterPolicyStatus         PolicyStatus,
+        sitaraCfgPlcyFilterStatus               RowStatus,
+        sitaraCfgPlcyFilterTosEnabled           INTEGER,
+        sitaraCfgPlcyFilterTosValue             INTEGER,
+        sitaraCfgPlcyFilterTosMask              INTEGER  
+    }
+
+sitaraCfgPlcyFilterIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A unique value for each filter entry. A new index value
+             will be used each time a Filter is associated with a
+             Class. The sitaraCfgPlcyFilterNextIndex is the object to
+             be used to determine what the next available filter index
+             should be."
+                ::= { sitaraCfgPlcyFilterEntry 1 }
+
+sitaraCfgPlcyFilterAlias OBJECT-TYPE
+       SYNTAX      PolicyAlias 
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "The filter alias is unique identifier in the Filter Table
+       for a schedule. See the textual convention information at the
+       beginning of this module for PolicyAlias and PolicyPathName for
+       correct usage information."
+                 ::= { sitaraCfgPlcyFilterEntry 2 }
+
+sitaraCfgPlcyFilterPathName OBJECT-TYPE
+       SYNTAX      PolicyPathName 
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+       "sitaraCfgPlcyFilterPathName contains the fully specified path to this policy
+       element. The last node in the path is the alias described in
+       this row of the table."
+                 ::= { sitaraCfgPlcyFilterEntry 3 }
+
+sitaraCfgPlcyFilterProtocolType OBJECT-TYPE
+    SYNTAX      INTEGER (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Protocol identifier associated with a particular filter."
+                ::= { sitaraCfgPlcyFilterEntry 4 }
+
+sitaraCfgPlcyFilterLanIpStartPort OBJECT-TYPE
+    SYNTAX      INTEGER (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The starting IP port number of a range of port numbers
+            for the filter in the LAN direction. When the
+            sitaraCfgPlcyFilterLanIpEndPort is less than
+            sitaraCfgPlcyFilterLanIpStartPort, then the range contains
+            only one port number, the
+            sitaraCfgPlcyFilterLanIpStartPort number."
+                ::= { sitaraCfgPlcyFilterEntry 5 }
+
+sitaraCfgPlcyFilterLanIpEndPort OBJECT-TYPE
+    SYNTAX      INTEGER (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The ending IP port number of the port range in the LAN
+            direction. To specify a range this value should be more
+            then the Start port number. If the end port number is less
+            than the start port number, then the range will contain
+            only one port number, the starting port number."
+                ::= { sitaraCfgPlcyFilterEntry 6 }
+
+sitaraCfgPlcyFilterLanIpAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "IP address associated with the policy filter if the
+            filter address is on the LAN side of the QosWorks device."
+                ::= { sitaraCfgPlcyFilterEntry 7 }
+
+sitaraCfgPlcyFilterLanNetMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Network mask associated with the policy filter if the
+	    filter address is on the LAN side of the QosWorks device."
+                ::= { sitaraCfgPlcyFilterEntry 8 }
+
+sitaraCfgPlcyFilterWanIpStartPort OBJECT-TYPE
+    SYNTAX      INTEGER (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Starting IP port number of a port range in the WAN
+            direction. The sitaraCfgPlcyFilterWanIpStartPort,
+            sitaraCfgPlcyFilterWanIpEndPort,
+            sitaraCfgPlcyFilterWanIpAddr, and
+            sitaraCfgPlcyFilterWanNetMask have the same semanitcs as
+            their LAN based equivalents only they control behavior for
+            addresses, ports, and network masks for filters on the WAN
+            side of the QosWorks device."
+                ::= { sitaraCfgPlcyFilterEntry 9 }
+
+sitaraCfgPlcyFilterWanIpEndPort OBJECT-TYPE
+    SYNTAX      INTEGER (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Ending IP port number of the Port range in the WAN
+            direction."
+                ::= { sitaraCfgPlcyFilterEntry 10 }
+
+sitaraCfgPlcyFilterWanIpAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "IP source address associated with the policy filter in
+	    the WAN direction."
+                ::= { sitaraCfgPlcyFilterEntry 11 }
+
+sitaraCfgPlcyFilterWanNetMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Network mask associated with the policy filter IP address
+	    on the WAN side of the QosWorks device."
+                ::= { sitaraCfgPlcyFilterEntry 12 }
+
+sitaraCfgPlcyFilterOrder   OBJECT-TYPE
+    SYNTAX      INTEGER (1..2147483647) 
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The order in which the filters are to be evaluated."
+                ::= { sitaraCfgPlcyFilterEntry  13 }
+
+sitaraCfgPlcyFilterOwner OBJECT-TYPE
+     SYNTAX     SitaraOwnerString
+     MAX-ACCESS  read-create
+     STATUS  current
+     DESCRIPTION
+     "Used to identify the owner of this row in the table."
+                 ::= { sitaraCfgPlcyFilterEntry 14 }
+
+sitaraCfgPlcyFilterDscr  OBJECT-TYPE
+       SYNTAX      PolicyDisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "A textual description of this filter entry."
+                 ::= { sitaraCfgPlcyFilterEntry  15 }
+
+sitaraCfgPlcyFilterPolicyStatus    OBJECT-TYPE
+       SYNTAX      PolicyStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Policy status takes following values. See the PolicyStatus
+       textual convention."
+        DEFVAL { pending }
+                 ::= { sitaraCfgPlcyFilterEntry 16 }
+
+sitaraCfgPlcyFilterStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Current status of the sitaraCfgPlcyFilter entry."
+                 ::= { sitaraCfgPlcyFilterEntry 17}
+
+
+
+
+sitaraCfgPlcyFilterTosEnabled OBJECT-TYPE
+       SYNTAX      INTEGER {
+                            enabled (1),
+                            disabled (2)
+                           }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Used to enable or disable TOS type of service of this filter. The
+        TOS value is only applied to IP traffic so for nonIP, this should
+        not be used."
+                 ::= { sitaraCfgPlcyFilterEntry 18}
+
+sitaraCfgPlcyFilterTosValue OBJECT-TYPE
+       SYNTAX      INTEGER (0..255)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Type of service value that will be written to packets in this
+       class when they exit the Sitara QoS device."
+                 ::= { sitaraCfgPlcyFilterEntry 19}    
+
+sitaraCfgPlcyFilterTosMask OBJECT-TYPE
+       SYNTAX      INTEGER (0..255)
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+       "Mask applied to the TOS value above."
+                 ::= { sitaraCfgPlcyFilterEntry 20}
+                                                    
+
+-- Notifications for Sitara Configuration Policy Management MIB Module
+
+sitaraCfgPlcyNotifnsPlcyUpdate NOTIFICATION-TYPE
+   OBJECTS     { sitaraCfgPlcyLastUpdateTime }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsPlcyUpdate notification is generated when 
+        sitaraCfgPlcyGlobalStorage object is set.
+        This notification could be generated when policy is successfuly 
+        Loaded/Verified"
+   ::= {  sitaraCfgPlcyNotifns  1 }
+
+
+sitaraCfgPlcyNotifnsCbqdReStart NOTIFICATION-TYPE
+   OBJECTS     { sitaraCfgPlcyLastUpdateTime }
+   STATUS      obsolete
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsCbqdReStart notification is generated when 
+        CBQD is restarted."
+   ::= {  sitaraCfgPlcyNotifns  2 }
+
+sitaraCfgPlcyNotifnsFailToReStart NOTIFICATION-TYPE
+   STATUS      obsolete
+   DESCRIPTION    
+       "sitaraCfgPlcyNotifnsFailToReStart, failure notification, is 
+        generated when there is failure to Restart the Cbqd based on 
+        a restart request initiated by the sub agent that realizes this 
+        MIB Module."
+   ::= {  sitaraCfgPlcyNotifns  3 }
+
+sitaraCfgPlcyNotifnsFailToUpdatePolicy  NOTIFICATION-TYPE
+   OBJECTS     { sitaraCfgPlcyApplyError }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsFailToUpdatePolicy notification is generated when 
+        there has been a failure to load/Verify the policy"
+   ::= {  sitaraCfgPlcyNotifns  4 }
+
+
+sitaraCfgPlcyNotifnsFailToXlatePolicy  NOTIFICATION-TYPE
+   STATUS      obsolete
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsFailToXlatePolicy failure notification is generated 
+        when there has been a failure to translate the policy to cbqd conf file."
+   ::= {  sitaraCfgPlcyNotifns  5 }
+
+sitaraCfgPlcyNotifnsInvalidPolicy  NOTIFICATION-TYPE
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsInvalidPolicy notification is generated when a row 
+        in any of the policy tables becomes invalid due to deletion of some of 
+        the objects/rows in the valid policy.
+        This notification could be generated when agent detects invalid policy"
+   ::= {  sitaraCfgPlcyNotifns  6 }
+
+
+sitaraCfgPlcyNotifnsSchdEntryUpdate NOTIFICATION-TYPE
+   OBJECTS     {
+                sitaraCfgPlcySchdAlias,     
+                sitaraCfgPlcySchdDaysOfWeek,
+                sitaraCfgPlcySchdStartTime,
+                sitaraCfgPlcySchdEndTime,
+                sitaraCfgPlcySchdOwner,
+                sitaraCfgPlcySchdPolicyStatus,
+                sitaraCfgPlcySchdStatus
+               }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsSchdEntryUpdate notification is generated when  the 
+        sitaraCfgPlcySchdStatus object's status is changed from/to active. 
+        This notification message contains SitaraCfgPlcySchdEntry objects"
+   ::= {  sitaraCfgPlcyNotifns  7 }
+
+sitaraCfgPlcyNotifnsLinkEntryUpdate NOTIFICATION-TYPE
+   OBJECTS     { 
+                sitaraCfgPlcyLinkAlias,
+                sitaraCfgPlcyLinkPathName,
+                sitaraCfgPlcyLinkEnabled,
+                sitaraCfgPlcyLinkDscr,
+                sitaraCfgPlcyLinkLanBandWidth,
+                sitaraCfgPlcyLinkLanBurst,
+                sitaraCfgPlcyLinkLanAvlBandWidth,
+                sitaraCfgPlcyLinkWanBandWidth,
+                sitaraCfgPlcyLinkWanBurst,
+                sitaraCfgPlcyLinkWanAvlBandWidth, 
+                sitaraCfgPlcyLinkOwner,
+                sitaraCfgPlcyLinkPolicyStatus,
+                sitaraCfgPlcyLinkStatus
+               }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsLinkEntryUpdate notification is generated when the 
+        sitaraCfgPlcyLinkStatus object's status is changed from/to active.
+        This notification message contains SitaraCfgPlcyLinkEntry objects"
+   ::= {  sitaraCfgPlcyNotifns  8 }
+
+sitaraCfgPlcyNotifnsNetDestEntryUpdate  NOTIFICATION-TYPE
+   OBJECTS     { 
+                 sitaraCfgPlcyLinkNetDestAddr,
+                 sitaraCfgPlcyLinkNetDestMask,
+                 sitaraCfgPlcyLinkNetDestOwner,
+                 sitaraCfgPlcyLinkNetDestStatus
+               }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsNetDestEntryUpdate notification is generated when 
+        the sitaraCfgPlcyLinkNetDestStatus object's status is changed from/to active.
+        This notification message contains SitaraCfgPlcyLinkNetDestEntry objects"
+   ::= {  sitaraCfgPlcyNotifns  9 }
+
+
+sitaraCfgPlcyNotifnsGroupEntryUpdate  NOTIFICATION-TYPE
+   OBJECTS     {  
+                sitaraCfgPlcyGroupAlias,
+                sitaraCfgPlcyGroupPathName,
+                sitaraCfgPlcyGroupEnabled,
+                sitaraCfgPlcyGroupDscr,
+                sitaraCfgPlcyGroupLanBandWidth,
+                sitaraCfgPlcyGroupLanAvlBandWidth,
+                sitaraCfgPlcyGroupLanBurst,
+                sitaraCfgPlcyGroupWanBandWidth,
+                sitaraCfgPlcyGroupWanAvlBandWidth,
+                sitaraCfgPlcyGroupWanBurst,
+                sitaraCfgPlcyGroupDirection, 
+                sitaraCfgPlcyGroupParentIndex,
+                sitaraCfgPlcyGroupOwner,
+                sitaraCfgPlcyGroupPolicyStatus,
+                sitaraCfgPlcyGroupStatus
+               }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsGroupEntryUpdate notification is generated when the
+        sitaraCfgPlcyGroupStatus object's status is changed from/to active.
+        This notification message contains SitaraCfgPlcyGroupEntry objects"
+   ::= {  sitaraCfgPlcyNotifns  10 }
+
+
+sitaraCfgPlcyNotifnsClassEntryUpdate  NOTIFICATION-TYPE
+   OBJECTS     {  
+           sitaraCfgPlcyCbqClassAlias,         
+           sitaraCfgPlcyCbqClassPathName,         
+           sitaraCfgPlcyCbqClassEnabled,          
+           sitaraCfgPlcyCbqClassLanBandWidth,     
+           sitaraCfgPlcyCbqClassLanBurst,         
+           sitaraCfgPlcyCbqClassLanPriority,      
+           sitaraCfgPlcyCbqClassLanSessionBw,     
+           sitaraCfgPlcyCbqClassLanAdminCtrl,     
+           sitaraCfgPlcyCbqClassLanHttpCaching,   
+           sitaraCfgPlcyCbqClassLanTosEnabled,    
+           sitaraCfgPlcyCbqClassLanTosValue,      
+           sitaraCfgPlcyCbqClassLanTosMask,       
+           sitaraCfgPlcyCbqClassLanMtuValue,
+           sitaraCfgPlcyCbqClassLanMaxDelay,        
+           sitaraCfgPlcyCbqClassWanBandWidth,     
+           sitaraCfgPlcyCbqClassWanBurst,         
+           sitaraCfgPlcyCbqClassWanPriority,      
+           sitaraCfgPlcyCbqClassWanSessionBw,     
+           sitaraCfgPlcyCbqClassWanAdminCtrl,     
+           sitaraCfgPlcyCbqClassWanHttpCaching,   
+           sitaraCfgPlcyCbqClassWanTosEnabled,    
+           sitaraCfgPlcyCbqClassWanTosValue,      
+           sitaraCfgPlcyCbqClassWanTosMask,       
+           sitaraCfgPlcyCbqClassWanMtuValue,
+           sitaraCfgPlcyCbqClassWanMaxDelay,              
+           sitaraCfgPlcyCbqClassDirection, 
+           sitaraCfgPlcyCbqClassOwner,
+           sitaraCfgPlcyCbqClassDscr,
+           sitaraCfgPlcyCbqClassPolicyStatus,
+           sitaraCfgPlcyCbqClassStatus
+          }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsClassEntryUpdate notification is generated when the
+        sitaraCfgPlcyCbqClassStatus object's status is changed from/to active.
+        This notification message contains SitaraCfgPlcyCbqClassEntry objects"
+   ::= {  sitaraCfgPlcyNotifns  11 }
+
+sitaraCfgPlcyNotifnsFilterEntryUpdate  NOTIFICATION-TYPE
+   OBJECTS     {
+            sitaraCfgPlcyFilterAlias,    
+            sitaraCfgPlcyFilterPathName,    
+            sitaraCfgPlcyFilterProtocolType,
+            sitaraCfgPlcyFilterLanIpStartPort,
+            sitaraCfgPlcyFilterLanIpEndPort,
+            sitaraCfgPlcyFilterLanIpAddr,   
+            sitaraCfgPlcyFilterLanNetMask,  
+            sitaraCfgPlcyFilterWanIpStartPort,
+            sitaraCfgPlcyFilterWanIpEndPort,
+            sitaraCfgPlcyFilterWanIpAddr,   
+            sitaraCfgPlcyFilterWanNetMask,
+            sitaraCfgPlcyFilterOrder,  
+            sitaraCfgPlcyFilterOwner,
+            sitaraCfgPlcyFilterDscr,
+            sitaraCfgPlcyFilterPolicyStatus,
+            sitaraCfgPlcyFilterStatus,
+            sitaraCfgPlcyFilterTosEnabled,
+            sitaraCfgPlcyFilterTosValue,
+            sitaraCfgPlcyFilterTosMask
+           }  
+   STATUS      current
+   DESCRIPTION    
+       "sitaraCfgPlcyNotifnsFilterEntryUpdate notification is generated when 
+        the sitaraCfgPlcyFilterstatus object's status is changed from/to active. 
+        This notification message contains SitaraCfgPlcyFilterEntry objects"
+   ::= {  sitaraCfgPlcyNotifns  12 }
+                  
+sitaraCfgPlcyNotifnsPlcySyncUp NOTIFICATION-TYPE
+   OBJECTS     { sitaraCfgPlcyLastUpdateTime }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsPlcySyncUp notification is generated when 
+        Policy agent Sync up with the policy updated by other than SNMP 
+        policy agent (Policy update could be from CLI/WebUI)"
+   ::= {  sitaraCfgPlcyNotifns  13 }
+
+
+sitaraCfgPlcyNotifnsPlcySyncUpFailure  NOTIFICATION-TYPE
+   OBJECTS     { sitaraCfgPlcyLastUpdateTime }
+   STATUS      current
+   DESCRIPTION
+       "sitaraCfgPlcyNotifnsPlcySyncUp notification is generated when 
+        Policy agent Failed to Sync up with the policy updated by other 
+        than SNMP policy agent (Policy update could be from CLI/WebUI)"
+   ::= {  sitaraCfgPlcyNotifns  14 }
+
+
+END
+

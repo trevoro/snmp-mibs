@@ -1,0 +1,2828 @@
+-- extracted from draft-ietf-ipfc-fcmgmt-int-mib-06.txt
+-- at Thu Mar  1 06:04:29 2001
+
+FIBRE-CHANNEL-MGMT-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    OBJECT-TYPE,
+    NOTIFICATION-TYPE,
+    MODULE-IDENTITY,
+    Integer32,
+    Unsigned32,
+    Counter64,
+    IpAddress,
+    TimeTicks,
+    mib-2               FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION,
+    DisplayString,
+    RowStatus           FROM SNMPv2-TC
+    MODULE-COMPLIANCE,
+    OBJECT-GROUP,
+    NOTIFICATION-GROUP  FROM SNMPv2-CONF
+    SnmpAdminString     FROM SNMP-FRAMEWORK-MIB;
+
+fcMgmtMIB MODULE-IDENTITY
+    LAST-UPDATED "200101150000Z"
+    ORGANIZATION "IETF IPFC Working Group"
+    CONTACT-INFO "S. Blumenau
+                  EMC Corporation
+                  171 South Street
+                  Hopkinton, MA 01748-9103
+                  U.S.A
+                  Tel: +1 508 435 1000
+                  Fax: +1 508 435 4657
+                  Email: blumenau_steven@emc.com"
+    DESCRIPTION "The fibre channel management MIB module."
+    REVISION    "200101150000Z"
+    DESCRIPTION "Made the following edits:
+                    - Made all '<xxx>Index' objects read-only
+                      (some were not-accessible).
+                    - Added all '<xxx>Index' objects to their
+                      appropriate group in the Conformance
+                      section (those which had been not-accessible
+                      had been excluded)."
+    REVISION    "200012040000Z"
+    DESCRIPTION "Made the following edits:
+                    - Used FcPortFCClass as the type for the
+                      fcConnUnitPortFCClassCap and fcConnUnitPortFCClassOp
+                      objects in the FcConnUnitPortEntry SEQUENCE statement.
+                    - Used fcConnUnitGlobalId instead of fcConnUnitId as
+                      notification objects in the fcConnUnitDeletedTrap and
+                      fcConnUnitEventTrap NOTIFICATION-TYPE macros."
+    REVISION    "200011260000Z"
+    DESCRIPTION "The goal of this version was to re-write into SMIv2."
+    REVISION    "200004120000Z"
+    DESCRIPTION "Initial revision, published as RFC XXXX."
+    ::= { mib-2 8888 } -- TO BE ASSIGNED by IANA
+
+fcMgmtNotifications OBJECT IDENTIFIER ::= { fcMgmtMIB 0 }
+fcMgmtObjects       OBJECT IDENTIFIER ::= { fcMgmtMIB 1 }
+fcMgmtConformance   OBJECT IDENTIFIER ::= { fcMgmtMIB 2 }
+
+fcMgmtConfig        OBJECT IDENTIFIER ::= { fcMgmtObjects 1 }
+fcMgmtNotifyFilter  OBJECT IDENTIFIER ::= { fcMgmtObjects 2 }
+fcMgmtStatistics    OBJECT IDENTIFIER ::= { fcMgmtObjects 3 }
+fcMgmtSNS           OBJECT IDENTIFIER ::= { fcMgmtObjects 4 }
+
+fcMgmtCompliances   OBJECT IDENTIFIER ::= { fcMgmtConformance 1 }
+fcMgmtGroups        OBJECT IDENTIFIER ::= { fcMgmtConformance 2 }
+
+--
+-- Textual conventions for this MIB
+--
+
+FcNameId ::= TEXTUAL-CONVENTION
+    STATUS         current
+    DESCRIPTION    "Represents the Worldwide Name (WWN; IEEE 60-bit
+                    variety; standard part of T11 definitions for
+                    fibre channel) associated with a Fibre Channel
+                    (FC) entity."
+    SYNTAX         OCTET STRING (SIZE (8))
+
+FcGlobalId ::= TEXTUAL-CONVENTION
+    STATUS    current
+    DESCRIPTION    "Represents the Worldwide Name (WWN; IEEE 124-bit
+                    variety) associated with a Fibre Channel (FC)
+                    entity."
+    SYNTAX    OCTET STRING (SIZE(16))
+
+FcEventSeverity ::= TEXTUAL-CONVENTION
+    STATUS    current
+    DESCRIPTION    "The set of values which define the event severity
+                    that will be logged by this connectivity unit.
+                    Values unknown (1) through debug (9) are essentially
+                    self-explanatory; mark (10) means that all messages
+                    are logged."
+    SYNTAX    INTEGER {
+      unknown   (1),
+      emergency (2),
+      alert     (3),
+      critical  (4),
+      error     (5),
+      warning   (6),
+      notify    (7),
+      info      (8),
+      debug     (9),
+      mark     (10) }
+
+FcUnitType ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+      "unknown           (1) cannot be determined
+       other             (2) none of the following
+       hub               (3) passive connectivity unit supporting loop
+                             protocol.
+       switch            (4) active connectivity unit supporting multiple
+                             protocols.
+       gateway           (5) unit that converts not only the interface
+                             but also encapsulates the frame into another
+                             protocol.  The assumption is that there are
+                             always two gateways connected together.  For
+                             example, FC <-> ATM.
+       converter         (6) unit that converts from one interface to
+                             another.  For example, FC <-> SCSI.
+       hba               (7) host bus adapter
+
+       proxyAgent        (8) software proxy-agent
+       storageDevice     (9) disk,cd,tape,etc
+       host             (10) host computer
+       storageSubsystem (11) raid, library, etc
+       module           (12) subcomponent of a system
+       swDriver         (13) software driver
+       storageAccessDevice (14) provides storage management and access
+                                for hetergeneous hosts and heterogeneous
+                                devices."
+    SYNTAX INTEGER {
+                    unknown(1),
+                    other(2),
+                    hub(3),
+                    switch(4),
+                    gateway(5),
+                    converter(6),
+                    hba(7),
+                    proxyAgent(8),
+                    storageDevice(9),
+                    host(10),
+                    storageSubsystem(11),
+                    module(12),
+                    swDriver(13),
+                    storageAccessDevice(14) }
+
+FcPortFCClass ::= TEXTUAL-CONVENTION
+    STATUS         current
+    DESCRIPTION    "Represents the class(es) of service represented on a
+                    given port, in a given operational context."
+    SYNTAX      BITS {
+                   unknown (0),
+                   classF  (1),
+                   class1  (2),
+                   class2  (3),
+                   class3  (4),
+                   class4  (5),
+                   class5  (6),
+                   class6  (7)
+                }
+
+--
+-- the connectivity unit group
+--
+
+fcConnUnitNumber OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The number of connectivity units present on this
+       system. May be a count of the boards in a chassis
+       or the number of full boxes in a rack."
+    ::= { fcMgmtConfig 1 }
+
+fcConnURL OBJECT-TYPE
+    SYNTAX DisplayString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The top-level URL of the system. If it does not exist
+       the value is an empty string. The URL format is
+       implementation dependent and can have keywords embedded
+       that are preceeded by a percent sign (eg, %USER).
+       The following are the defined keywords that will
+       be recognized and replaced with data during a launch:
+              USER        - replace with username
+              PASSWORD    - replace with password
+              GLOBALID    - replace with globalid
+              SERIALNO    - replace with serial number
+       A management application will read this object from the
+       MIB, provide values for any of the keywords listed above
+       that are present in the string, and then use the URL to
+       invoke or launch the program referenced."
+    ::= { fcMgmtConfig 2 }
+
+--
+-- The connectivity table contains general information on the
+-- system's connectivity units.
+--
+
+fcConnUnitTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF FcConnUnitEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "The connectivity table contains general information
+       on the system's units. The number of entries is given
+       by the value of fcConnUnitNumber. It is 1 for stand-alone
+       systems."
+    ::= { fcMgmtConfig 3 }
+
+fcConnUnitEntry OBJECT-TYPE
+    SYNTAX FcConnUnitEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "A connectivity unit entry containing objects for a
+       particular unit."
+    INDEX { fcConnUnitId }
+    ::= { fcConnUnitTable 1 }
+
+FcConnUnitEntry ::= SEQUENCE {
+    fcConnUnitId OCTET STRING,
+    fcConnUnitGlobalId FcGlobalId,
+    fcConnUnitType FcUnitType,
+    fcConnUnitNumPorts Unsigned32,
+    fcConnUnitNumLinks Unsigned32,
+    fcConnUnitState INTEGER,
+    fcConnUnitStatus INTEGER,
+    fcConnUnitProduct SnmpAdminString,
+    fcConnUnitSerialNo SnmpAdminString,
+    fcConnUnitUpTime TimeTicks,
+    fcConnUnitUrl DisplayString,
+    fcConnUnitDomainId OCTET STRING,
+    fcConnUnitProxyMaster INTEGER,
+    fcConnUnitPrincipal INTEGER,
+    fcConnUnitNumSensors Unsigned32,
+    fcConnUnitNumRevs Unsigned32,
+    fcConnUnitModuleId OCTET STRING,
+    fcConnUnitName SnmpAdminString,
+    fcConnUnitInfo SnmpAdminString,
+    fcConnUnitControl INTEGER,
+    fcConnUnitContact SnmpAdminString,
+    fcConnUnitLocation SnmpAdminString,
+    fcConnUnitEventFilter FcEventSeverity,
+    fcConnUnitNumEvents Unsigned32,
+    fcConnUnitMaxEvents Unsigned32,
+    fcConnUnitEventCurrID Unsigned32,
+    fcConnUnitFabricID FcGlobalId
+   }
+
+fcConnUnitId OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (16))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The unique identification for this connectivity
+       unit among those within this proxy domain.
+       The value MUST be unique within the proxy domain
+       because it is the index variable for fcConnUnitTable.
+       The value assigned to a given conectivity unit
+       SHOULD be persistent across agent and unit resets.
+       It SHOULD be the same as fcConnUnitGlobalId
+       if fcConnUnitGlobalId is known and stable."
+    ::= { fcConnUnitEntry 1 }
+
+fcConnUnitGlobalId OBJECT-TYPE
+    SYNTAX FcGlobalId
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "An optional global-scope identifier for this connectivity
+       unit. It MUST be a WWN for this connectivity unit or 16
+       octets of value zero.
+
+       WWN formats requiring fewer than 16 octets MUST be extended
+       to 16 octets with trailing zero octets. If a WWN is used for
+       fcConnUnitId, the same WWN MUST be used for fcConnUnitGlobalId.
+
+       When a non-zero value is provided, it SHOULD be persistent
+       across agent and unit resets. It SHOULD be globally unique.
+       It SHOULD be one of these FC-PH/PH3 formats:
+            IEEE (NAA=1)
+            IEEE Extended (NAA=2)
+            IEEE Registered (NAA=5).
+            IEEE Registered extended (NAA=6).
+
+       Use of the IEEE formats allows any IEEE-registered vendor to
+       assure global uniqueness independently. The following are
+       some references on IEEE WWN formats:
+
+       http://standards.ieee.org/regauth/oui/tutorials/fibreformat.html
+       http://standards.ieee.org/regauth/oui/tutorials/fibrecomp_id.html
+
+       If one or more WWNs are associated with the connectivity unit
+       via other management methods, one of them SHOULD be used for
+       fcConnUnitGlobalId. If there is not a WWN assigned specifically
+       to the connectivity unit, there is some merit, though not a
+       requirement, to using a WWN assigned to (one of) its
+       permanently attached FC/LAN interface(s). This can not risk
+       uniqueness, though. As a counterexample, if your agent runs
+       in a host and the host has an HBA, it is quite possible that
+       agent, host, and HBA will all be distinct connectivity units,
+       so the host and agent can not use the WWN of the HBA.
+
+       Another example: If your hub has a built-in Ethernet port,
+       it might be reasonable for the hub to use its LAN address
+       (prefixed with the appropriate NAA) as its fcConnUnitId. But
+       if the Ethernet were a replaceable PCCard, the hub should
+       have an independent ID."
+    ::= { fcConnUnitEntry 2 }
+
+fcConnUnitType OBJECT-TYPE
+    SYNTAX FcUnitType
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The type of this connectivity unit."
+    ::= { fcConnUnitEntry 3 }
+
+fcConnUnitNumPorts OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The number of physical ports in the connectivity
+       unit (internal/embedded, external)."
+    ::= { fcConnUnitEntry 4 }
+
+fcConnUnitNumLinks OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The number of links in the link table."
+    ::= { fcConnUnitEntry 5 }
+
+fcConnUnitState OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    online(2),
+    offline(3)
+}
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This object reports the overall state of the
+       connectivity unit.  The meaning of all values
+       is essentially self-explanatory.  Any of these
+       values may occur with any of the fcConnUnitStatus
+       values."
+    ::= { fcConnUnitEntry 6 }
+
+fcConnUnitStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    unused(2),
+    ok(3),
+    warning(4),
+    failed(5)
+}
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This object reports the overall status of the
+       connectivity unit.  The warning (4) value means
+       that the connectivity unit needs attention; all
+       other values are essentially self-explanatory.
+       Any of these values may occur with any of the
+       fcConnUnitState values."
+    ::= { fcConnUnitEntry 7 }
+
+fcConnUnitProduct OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The connectivity unit vendor's product model name."
+    ::= { fcConnUnitEntry 8 }
+
+fcConnUnitSerialNo OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The serial number identification for this connectivity
+       unit."
+    ::= { fcConnUnitEntry 9 }
+
+fcConnUnitUpTime OBJECT-TYPE
+    SYNTAX TimeTicks
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The number of centiseconds since the last unit
+       initialization."
+    ::= { fcConnUnitEntry 10 }
+
+fcConnUnitUrl OBJECT-TYPE
+    SYNTAX DisplayString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "URL to launch a management application, if applicable.
+       Otherwise empty string. In a standalone unit, this would be
+       the same as the top-level URL. This has the same definition
+       as fcConnURL for keywords."
+    ::= { fcConnUnitEntry 11 }
+
+fcConnUnitDomainId OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(3))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "24 bit Fibre Channel address ID of this connectivity unit.
+       Following the fibre channel standard, the right-most bit of
+       the right-most octet is for the least significant bit of the
+       address value; the left-most bit of the left-most octet, if
+       needed, is for the most significant bit of the address value.
+        If this value is not applicable, all bits set to 1."
+    ::= { fcConnUnitEntry 12 }
+
+fcConnUnitProxyMaster OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    no(2),
+    yes(3)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "A value of 'yes' means this is the proxy master unit for a
+       set of managed units. For example, this could be the only
+       unit with a management card in it for a set of units. A
+       standalone unit should return 'yes' for this object."
+    ::= { fcConnUnitEntry 13 }
+
+fcConnUnitPrincipal OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    no(2),
+    yes(3)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Whether this connectivity unit is the principal unit within
+       the group of fabric elements. If this value is not applicable,
+       return unknown."
+     ::= { fcConnUnitEntry 14 }
+
+fcConnUnitNumSensors OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Number of sensors in the fcConnUnitSensorTable."
+    ::= { fcConnUnitEntry 15 }
+
+fcConnUnitNumRevs OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The number of revisions in the fcConnUnitRevsTable."
+    ::= { fcConnUnitEntry 16 }
+
+fcConnUnitModuleId OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(16))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This is a unique id, persistent between boots, that can be
+       used to group a set of connectivity units together into a
+       module. The intended use would be to create a connectivity
+       unit with a fcConnUnitType of 'module' to represent a
+       physical or logical group of connectivity units. Then the
+       members of the group would set the value of fcConnUnitId
+       for this 'container' connectivity unit. fcConnUnitModuleId
+       should be zeros if this connectivity unit is not part of
+       a module."
+    ::= { fcConnUnitEntry 17 }
+
+fcConnUnitName OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+      "A name for this connectivity unit.
+       This object value should be persistent between boots."
+    ::= { fcConnUnitEntry 18 }
+
+fcConnUnitInfo OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+      "Information about this connectivity unit.
+       This object value should be persistent between boots."
+    ::= { fcConnUnitEntry 19 }
+
+fcConnUnitControl OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    invalid(2),
+    resetConnUnitColdStart(3),
+    resetConnUnitWarmStart(4),
+    offlineConnUnit(5),
+    onlineConnUnit(6)
+   }
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+      "This object is used to control the addressed connectivity
+       unit.
+
+       NOTE: 'ColdStart' and 'WarmStart' are as defined in mib-2
+       and are not meant to be a factory reset.
+
+       resetConnUnitColdStart:
+         the addressed unit performs a 'ColdStart' reset.
+
+       resetConnUnitWarmStart:
+         the addressed unit performs a 'WarmStart' reset.
+
+       offlineConnUnit:
+         the addressed unit puts itself into an implementation
+         dependant 'offline' state. In general,if a unit is in
+         an offline state, it cannot be used to perform meaningful
+         Fibre Channel work.
+
+       onlineConnUnit:
+         the addressed unit puts itself into an implementation
+         dependant 'online' state. In general, if a unit is in
+         an online state, it is capable of performing meaningful
+         Fibre Channel work.
+
+       NOTE: Each implementation may chose not to support SNMP Set
+         operations for any or all of these values.  For Sets
+         specifying varbinds for instances of this object and
+         values not supported by a given implementation, the
+         agent will return the SNMP WrongValue PDU error code."
+    ::= { fcConnUnitEntry 20 }
+
+fcConnUnitContact OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+      "Contact information for this connectivity unit.
+       The contact information is intended to facilitate contacting
+       someone in case of problems, questions, etc. (e.g., the
+       a help desk internal to a company)."
+    ::= { fcConnUnitEntry 21 }
+
+fcConnUnitLocation OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+      "Location information for this connectivity unit."
+    ::= { fcConnUnitEntry 22 }
+
+fcConnUnitEventFilter OBJECT-TYPE
+    SYNTAX FcEventSeverity
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+      "This value defines the event severity that will be logged
+       by this connectivity unit. All events of severity less
+       than or equal to fcConnUnitEventFilter are logged in the
+       fcConnUnitEventTable."
+    ::= { fcConnUnitEntry 23 }
+
+fcConnUnitNumEvents OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Number of events currently in the fcConnUnitEventTable."
+    ::= { fcConnUnitEntry 24 }
+
+fcConnUnitMaxEvents OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Max number of events that can be recorded at any one
+       time in the fcConnUnitEventTable."
+    ::= { fcConnUnitEntry 25 }
+
+fcConnUnitEventCurrID OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The last used event ID (fcConnUnitEventId) recorded in
+       the fcConnUnitEventTable.  When no events are presently
+       recorded in the fcConnUnitEventTable, the value of this
+       object MUST be zero."
+    ::= { fcConnUnitEntry 26 }
+
+fcConnUnitFabricID OBJECT-TYPE
+    SYNTAX FcGlobalId
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "A globally unique value to identify the fabric that this
+       ConnUnit belongs to, otherwise empty string. This would
+       typically be equal to the connUnitGlobalID of the
+       primary switch in a Fibre Channel fabric."
+    ::= { fcConnUnitEntry 27 }
+
+--
+-- The revisions table lists the revisions supported by the
+-- associated connectivity units.
+--
+
+fcConnUnitRevsTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF FcConnUnitRevsEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "Table of the revisions of components (e.g., firmware,
+       hardware, etc.) supported by the connectivity units
+       managed by this agent."
+    ::= { fcMgmtConfig 4 }
+
+fcConnUnitRevsEntry OBJECT-TYPE
+    SYNTAX FcConnUnitRevsEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "A row in the fcConnUnitRevsTable."
+    INDEX { fcConnUnitId, fcConnUnitRevsIndex }
+    ::= { fcConnUnitRevsTable 1 }
+
+FcConnUnitRevsEntry ::= SEQUENCE {
+    fcConnUnitRevsIndex Unsigned32,
+    fcConnUnitRevsRevision SnmpAdminString,
+    fcConnUnitRevsDescription SnmpAdminString
+   }
+
+fcConnUnitRevsIndex OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "A unique value among all fcConnUnitRevsEntrys with the same
+       value of fcConnUnitId, in the range between 1 and
+       fcConnUnitNumRevs[fcConnUnitId]."
+    ::= { fcConnUnitRevsEntry 1 }
+
+fcConnUnitRevsRevision OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "A vendor-specific value identifying a revision of a
+       component of the connectivity unit."
+    ::= { fcConnUnitRevsEntry 2 }
+
+fcConnUnitRevsDescription OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Description of a component in the ConnUnit to which the
+       revision corresponds."
+    ::= { fcConnUnitRevsEntry 3 }
+
+--
+-- The sensor table list the sensors supported by each
+-- connectivity unit.
+--
+
+fcConnUnitSensorTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF FcConnUnitSensorEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "Table of the sensors supported by each connectivity unit."
+    ::= { fcMgmtConfig 5 }
+
+fcConnUnitSensorEntry OBJECT-TYPE
+    SYNTAX FcConnUnitSensorEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "Each entry contains the information for a specific sensor."
+    INDEX { fcConnUnitId, fcConnUnitSensorIndex }
+    ::= { fcConnUnitSensorTable 1 }
+
+FcConnUnitSensorEntry ::= SEQUENCE {
+    fcConnUnitSensorIndex Unsigned32,
+    fcConnUnitSensorName SnmpAdminString,
+    fcConnUnitSensorStatus INTEGER,
+    fcConnUnitSensorInfo SnmpAdminString,
+    fcConnUnitSensorMessage SnmpAdminString,
+    fcConnUnitSensorType INTEGER,
+    fcConnUnitSensorCharacteristic INTEGER
+   }
+
+fcConnUnitSensorIndex OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "A unique value among all fcConnUnitSensorEntrys with
+       the same value of fcConnUnitId, in the range between
+       1 and fcConnUnitNumSensors[fcConnUnitId]."
+    ::= { fcConnUnitSensorEntry 1 }
+
+fcConnUnitSensorName OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "A textual identification of the sensor intended
+       primarily for operator use."
+    ::= { fcConnUnitSensorEntry 2 }
+
+fcConnUnitSensorStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    other(2),
+    ok(3),
+    warning(4),
+    failed(5)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The status indicated by the sensor.
+       unknown (1) = the unit cannot determine the status
+       other   (2) = the status does not fit any of the
+                     remaining values
+       ok      (3) = indicates good status
+       warning (4) = indicates the unit needs attention
+       failed  (5) = indicates the unit is non-functional"
+    ::= { fcConnUnitSensorEntry 3 }
+
+fcConnUnitSensorInfo OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Miscellaneous static information about the sensor such
+       as its serial number."
+    ::= { fcConnUnitSensorEntry 4 }
+
+fcConnUnitSensorMessage OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This describes the status of the sensor as a message. It may
+       also provide more resolution on the sensor indication, for
+       example 'Cover temperature 1503K, above nominal operating
+       range'"
+    ::= { fcConnUnitSensorEntry 5 }
+
+fcConnUnitSensorType OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    other(2),
+    battery(3),
+    fan(4),
+    powerSupply(5),
+    transmitter(6),
+    enclosure(7),
+    board(8),
+    receiver(9)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The type of component being monitored by this sensor.
+       The unknown (1) and other (2) values meanings analogous
+       to those for the fcConnUnitSensorStatus object; all other
+       values are essentially self-explanatory."
+    ::= { fcConnUnitSensorEntry 6 }
+
+fcConnUnitSensorCharacteristic OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    other(2),
+    temperature(3),
+    pressure(4),
+    emf(5),
+    currentValue(6),
+    airflow(7),
+    frequency(8),
+    power(9)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The characteristics being monitored by this sensor.
+       The unknown (1) and other (2) values meanings analogous
+       to those for the fcConnUnitSensorStatus object; emf (5)
+       refers to electro-magnetic field; all other values are
+       essentially self-explanatory."
+    ::= { fcConnUnitSensorEntry 7 }
+
+--
+-- The port table contains generic information on ports for a
+-- specific connectivity unit.
+--
+
+fcConnUnitPortTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF FcConnUnitPortEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "Generic information on ports for a specific connectivity
+       unit."
+    ::= { fcMgmtConfig 6 }
+
+fcConnUnitPortEntry OBJECT-TYPE
+    SYNTAX FcConnUnitPortEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "Each entry contains the information for a specific port."
+    INDEX { fcConnUnitId, fcConnUnitPortIndex }
+    ::= { fcConnUnitPortTable 1 }
+
+FcConnUnitPortEntry ::= SEQUENCE {
+    fcConnUnitPortIndex             Unsigned32,
+    fcConnUnitPortType              INTEGER,
+    fcConnUnitPortFCClassCap        FcPortFCClass,
+    fcConnUnitPortFCClassOp         FcPortFCClass,
+    fcConnUnitPortState             INTEGER,
+    fcConnUnitPortStatus            INTEGER,
+    fcConnUnitPortTransmitterType   INTEGER,
+    fcConnUnitPortModuleType        INTEGER,
+    fcConnUnitPortWwn               FcGlobalId,
+    fcConnUnitPortFCId              OCTET STRING,
+    fcConnUnitPortSerialNo          SnmpAdminString,
+    fcConnUnitPortRevision          SnmpAdminString,
+    fcConnUnitPortVendor            SnmpAdminString,
+    fcConnUnitPortSpeed             Unsigned32,
+    fcConnUnitPortControl           INTEGER,
+    fcConnUnitPortName              SnmpAdminString,
+    fcConnUnitPortPhysicalNumber    Unsigned32,
+    fcConnUnitPortProtocolCap       OCTET STRING,
+    fcConnUnitPortProtocolOp        OCTET STRING,
+    fcConnUnitPortNodeWwn           FcNameId,
+    fcConnUnitPortHWState           INTEGER
+   }
+
+fcConnUnitPortIndex OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "A unique value among all fcConnUnitPortEntrys on this
+       connectivity unit, between 1 and fcConnUnitNumPorts."
+    ::= { fcConnUnitPortEntry 1 }
+
+fcConnUnitPortType OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown (1),
+    other (2),
+    notPresent (3),
+    hubPort (4),
+    nPort (5),
+    lPort (6),
+    flPort (7),
+    fPort (8),
+    ePort (9),
+    gPort (10),
+    domainController (11),
+    hubController (12),
+    scsi (13),
+    escon (14),
+    lan (15),
+    wan (16),
+    wdm (17),
+    ib(18),
+    ipstore(19)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The port type refers to the protocol active on the port and
+       can take one of the following values:
+            unknown    (1) - cannot be determined
+            other      (2) - none of the following:
+            notPresent (3) - no port
+            hubPort    (4) - hub port
+            nPort      (5) - end port for fabric
+            lPort      (6) - end port for loop
+            flPort     (7) - public loop
+            fPort      (8) - fabric port
+            ePort      (9) - fabric expansion port
+            gPort     (10) - generic fabric port
+            domainController (11) - domain controller
+            hubController    (12) - hub controller
+            scsi      (13) - parallel SCSI port
+            escon     (14) - escon port
+            lan       (15) - LAN port
+            wan       (16) - WAN port
+            wdm       (17) - optical wave division multiplex
+            ib        (18) - Infiniband
+            ipstore   (19) - storage over IP"
+    ::= { fcConnUnitPortEntry 2 }
+
+fcConnUnitPortFCClassCap OBJECT-TYPE
+    SYNTAX      FcPortFCClass
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Bit mask that specifies the classes of service capability of
+       this port. If this object is not applicable, the agent MUST
+       return all bits set to zero."
+    ::= { fcConnUnitPortEntry 3 }
+
+fcConnUnitPortFCClassOp OBJECT-TYPE
+    SYNTAX      FcPortFCClass
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Bit mask that specifies the classes of service that are
+       currently operational at this port.  If this object is not
+       applicable, the agent MUST return all bits set to zero."
+    ::= { fcConnUnitPortEntry 4 }
+
+fcConnUnitPortState OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    online(2),
+    offline(3),
+    bypassed(4)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The current state of the port hardware.  The bypassed
+       value (4) means that the port is online but is currently
+       being isolated from the loop or fabric for some reason;
+       the other values are essentially self-explanatory.  Any
+       value for this object may co-exist with any value for the
+       fcConnUnitPortStatus object."
+    ::= { fcConnUnitPortEntry 5 }
+
+fcConnUnitPortStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown          (1),
+    unused           (2),
+    ok               (3),
+    warning          (4),
+    failure          (5),
+    notParticipating (6),
+    initializing     (7),
+    bypassed         (8)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The current overall protocol status for the port.  The
+       warning value (4) means that the port needs attention;
+       the notParticipating value (6) means that protocol is not
+       being processed; the initializing value (7) means that the
+       port is in the process of coming into service; the bypassed
+       value (8) means that the port has been manually or
+       automatically isolated from the loop or fabric; the other
+       values are essentially self-explanatory.  Any value for this
+       object may co-exist with any value for the fcConnUnitPortState
+       object."
+    ::= { fcConnUnitPortEntry 6 }
+
+fcConnUnitPortTransmitterType OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    other(2),
+    unused(3),
+    shortwave(4),
+    longwave(5),
+    copper(6),
+    scsi(7),
+    longwaveNoOFC(8),
+    shortwaveNoOFC(9),
+    longwaveLED(10)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The technology of the port transceiver."
+    ::= { fcConnUnitPortEntry 7 }
+
+fcConnUnitPortModuleType OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown(1),
+    other(2),
+    gbic(3),
+    embedded(4),
+    glm(5),
+    gbicSerialId(6),
+    gbicNoSerialId(7),
+    gbicNotInstalled(8),
+    smallFormFactor(9)
+   }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The module type of the port connector.  This object
+       refers to the hardware implementation of the port.
+       The embedded value (4) means 'fixed' (e.g., oneXnine)."
+    ::= { fcConnUnitPortEntry 8 }
+
+fcConnUnitPortWwn OBJECT-TYPE
+    SYNTAX FcGlobalId
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The World Wide Name of the port if applicable, otherwise
+       empty string."
+    ::= { fcConnUnitPortEntry 9 }
+
+fcConnUnitPortFCId OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(3))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This is the assigned Fibre Channel ID of this port.  This
+       value is expected to be a Big Endian value of 24 bits. If
+       this is loop, then it is the ALPA that is connected. If this
+       is an eport, then it will only contain the domain ID left
+       justified, zero filled. If this port does not have a Fibre
+       Channel address, return all bits set to 1."
+    ::= { fcConnUnitPortEntry 10 }
+
+fcConnUnitPortSerialNo OBJECT-TYPE
+    SYNTAX     SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS     current
+    DESCRIPTION
+      "The serial number identification of the unit (e.g.,
+       for a GBIC). If this is not applicable, return a
+       zero-length string."
+    ::= { fcConnUnitPortEntry 11 }
+
+fcConnUnitPortRevision OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The port revision (e.g., for a GBIC)."
+    ::= { fcConnUnitPortEntry 12 }
+
+fcConnUnitPortVendor OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The port vendor (e.g., for a GBIC)."
+    ::= { fcConnUnitPortEntry 13 }
+
+fcConnUnitPortSpeed OBJECT-TYPE
+    SYNTAX Unsigned32
+    UNITS "kilobytes per second"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The speed of the port in kilobytes per second."
+    ::= { fcConnUnitPortEntry 14 }
+
+fcConnUnitPortControl OBJECT-TYPE
+    SYNTAX INTEGER {
+    unknown (1),
+    invalid (2),
+    resetConnUnitPort (3),
+    bypassConnUnitPort (4),
+    unbypassConnUnitPort (5),
+    offlineConnUnitPort (6),
+    onlineConnUnitPort (7)
+   }
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+      "This object is used to control the addressed fcConnUnit's
+       port. Valid commands are:
+
+       unknown and invalid are only used as values that are read.
+
+       resetConnUnitPort (3): If the addressed connectivity unit
+         allows this operation to be performed on this port,
+         the addressed port performs a vendor-specific 'reset'
+         operation.  Examples of these operations are: the Link
+         Reset protocol, the Loop Initialization protocol, or a
+         resynchronization occurring between the transceiver in
+         the addressed port to the transceiver that the port is
+         connected to.
+
+       bypassConnUnitPort (4): If the addressed connectivity unit
+         allows this operation to be performed to this  port,
+         the addressed port performs a vendor-specific 'bypass'
+         operation.  Examples of these operations are:
+         transitioning from online to offline, a request (NON-
+         PARTICIPATING) command to the Loop Port state machine,
+         or removal of the port from an arbitrated loop by a hub.
+
+       unbypassConnUnitPort (5): If the addressed connectivity unit
+         allows this operation to be performed to this port, the
+         addressed port performs a vendor-specific 'unbypass'
+         operation.  Examples of these operations are:  the Link
+         Failure protocol, a request (PARTICIPATING) command to
+         the Loop Port state machine, or addition of the port to
+         an arbitrated loop by a hub.
+
+       offlineConnUnitPort (6): If the addressed connectivity unit
+         allows this operation to be performed to this port, the
+         addressed port performs a vendor-specific 'offline'
+         operation. Examples of these operations are: disabling
+         a port's transceiver, the Link Failure protocol, request
+         (NON-PARTICIPATING) command to the Loop Port state machine,
+         or removal of the port from an arbitrated loop by a hub.
+
+       onlineConnUnitPort (7): If the addressed connectivity unit
+         allows this operation to be performed to this port, the
+         addressed port performs a vendor-specific 'online'
+         operation.  Examples of these operations are:  enabling
+         a port's transceiver, the Link Failure protocol, request
+         (PARTICIPATING) command to the Loop Port state machine,
+         or addition of the port from an arbitrated loop by a hub.
+       
+       NOTE: Each implementation may chose not to support SNMP Set
+         operations for any or all of these values.  For Sets
+         specifying varbinds for instances of this object and
+         values not supported by a given implementation, the
+         agent will return the SNMP WrongValue PDU error code."
+    ::= { fcConnUnitPortEntry 15 }
+
+fcConnUnitPortName OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+      "A string describing the addressed port."
+    ::= { fcConnUnitPortEntry 16 }
+
+fcConnUnitPortPhysicalNumber OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This is the internal port number this port is known by. In
+       many implementations, this should be the same as
+       fcConnUnitPortIndex.  Some implementations may have an internal
+       port representation not compatible with the rules for table
+       indices. In that case, provide the internal representation of
+       this port in this object.  This value may also be used in the
+       fcConnUnitLinkPortNumberX or fcConnUnitLinkPortNumberY objects
+       of the fcConnUnitLinkTable."
+    ::= { fcConnUnitPortEntry 17 }
+
+fcConnUnitPortProtocolCap OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (2))
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "Bit mask that specifies the driver level protocol
+       capability of this port. If this is not applicable,
+       return all bits set to zero. The bits have the
+       following definition:
+                    unknown      - 0
+                    Loop         - 1
+                    Fabric       - 2
+                    SCSI         - 4
+                    TCP/IP       - 8
+                    VI           - 16
+                    FICON        - 32"
+    ::= { fcConnUnitPortEntry 18 }
+
+fcConnUnitPortProtocolOp OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (2))
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "Bit mask that specifies the driver level
+       protocol(s) that are currently operational.
+       If this is not applicable, return all bits
+       set to zero.  This object has the same
+       definition as fcConnUnitPortProtocolCap"
+    ::= { fcConnUnitPortEntry 19 }
+
+fcConnUnitPortNodeWwn OBJECT-TYPE
+    SYNTAX FcNameId
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "The Node World Wide Name of the port
+       if applicable, otherwise all zeros.
+       This should have the same value for a
+       group of related ports. The container is
+       defined as the largest physical entity.
+       For example, all ports on HBAs on a host
+       will have the same Node WWN. All ports on
+       the same storage subsystem will have the
+       ame Node WWN."
+    ::= { fcConnUnitPortEntry 20 }
+
+fcConnUnitPortHWState OBJECT-TYPE
+    SYNTAX INTEGER {
+                unknown     (1),
+                failed      (2), -- port failed diagnostics
+                bypassed    (3),  -- FCAL bypass, loop only
+                active      (4), -- connected to a device
+                loopback    (5), -- Port in ext loopback
+                txfault     (6), -- Transmitter fault
+                noMedia     (7), -- media not installed
+                linkDown    (8)  -- waiting for activity (rx sync)
+            }
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "The hardware detected state of the port."
+    ::= { fcConnUnitPortEntry 21 }
+
+--
+-- event group
+--
+
+fcConnUnitEventTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF FcConnUnitEventEntry
+    MAX-ACCESS  not-accessible
+    STATUS current
+    DESCRIPTION
+      "The table of connectivity unit events. Errors,
+       warnings, and information should be reported
+       in this table."
+    ::= { fcMgmtConfig 7 }
+
+fcConnUnitEventEntry OBJECT-TYPE
+    SYNTAX FcConnUnitEventEntry
+    MAX-ACCESS  not-accessible
+    STATUS current
+    DESCRIPTION
+      "Each entry contains information on
+       a specific event for the given
+       connectivity unit."
+    INDEX { fcConnUnitId, fcConnUnitEventIndex }
+    ::= { fcConnUnitEventTable 1 }
+
+FcConnUnitEventEntry ::=
+    SEQUENCE {
+       fcConnUnitEventIndex Unsigned32,
+       fcConnUnitREventTime DisplayString,
+       fcConnUnitSEventTime TimeTicks,
+       fcConnUnitEventSeverity FcEventSeverity,
+       fcConnUnitEventType INTEGER,
+       fcConnUnitEventObject OBJECT IDENTIFIER,
+       fcConnUnitEventDescr SnmpAdminString}
+
+fcConnUnitEventIndex OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "Each connectivity unit has its own event buffer.
+       As it wraps, it may write over previous events.
+       This object is an index into the buffer.
+       It is recommended that this table be read using
+       'getNext's to retrieve the initial table.
+       The management application should read the event
+       table at periodic intervals and then determine if
+       any new entries were added by comparing the last
+       known index value with the current highest index
+       value. The management application should then update
+       its copy of the event table. If the read interval is
+       too long, it is possible that there may be events
+       that may not be contained in the agent's internal
+       event buffer.  For example, an agent may read events
+       50-75.  At the next read interval, fcConnUnitEventCurrID
+       is 189.  If the management app tries to read event index
+       76, and the agent's internal buffer is 100 entries max,
+       event index 76 will no longer be available.
+       The index value is an incrementing integer starting
+       from one every time there is a table reset.  On table
+       reset, all contents are emptied and all indeces are set
+       to zero. When an event is added to the table, the event
+       is assigned the next higher integer value than the last
+       item entered into the table. If the index value reaches
+       its maximum value, the next item entered will cause the
+       index value to roll over and start at one again."
+    ::= { fcConnUnitEventEntry 1 }
+
+fcConnUnitREventTime OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (15))
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "This is the real time when the event occurred.
+       It has the following format.
+           DDMMYYYY HHMMSS
+           DD=day number
+           MM=month number
+           YYYY=year number
+           HH=hour number
+           MM=minute number
+           SS=seconds number
+        If not applicable, return a NULL string."
+    ::= { fcConnUnitEventEntry 2 }
+
+fcConnUnitSEventTime OBJECT-TYPE
+    SYNTAX TimeTicks
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "This is the sysuptime timestamp when the event occurred."
+    ::= { fcConnUnitEventEntry 3 }
+
+fcConnUnitEventSeverity OBJECT-TYPE
+    SYNTAX FcEventSeverity
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "The event severity level."
+    ::= { fcConnUnitEventEntry 4 }
+
+fcConnUnitEventType OBJECT-TYPE
+    SYNTAX INTEGER {
+                    unknown(1),
+                    other(2),
+                    status(3),
+                    configuration(4),
+                    topology(5)
+                   }
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+      "The type of this event."
+    ::= { fcConnUnitEventEntry 5 }
+
+fcConnUnitEventObject OBJECT-TYPE
+    SYNTAX OBJECT IDENTIFIER
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This is used with the fcConnUnitEventType to identify
+       which object the event refers to.  It can be the OID
+       of a connectivity unit or of another object like
+       fcConnUnitPortStatus[...]"
+    ::= { fcConnUnitEventEntry 6 }
+
+fcConnUnitEventDescr OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The description of the event."
+    ::= { fcConnUnitEventEntry 7 }
+
+--
+-- The link table is intended to organize and communicate
+-- any information the agent possesses which would assist a
+-- management application to discover the CONNECTIVITY UNITS
+-- in the framework and the TOPOLOGY of their interconnect.
+-- That is, the goal is to assist a management application
+-- to both LIST and MAP the elements of the framework.
+--
+-- With this goal in mind, the agent SHOULD include as much
+-- information as it possesses about any links from its own
+-- connectivity units to others, including links among its
+-- own units.
+--
+-- An agent SHOULD include partial information about links if
+-- it is not able to fully define them in accord with the
+-- following structure; however, the information MUST include
+-- either a nonzero fcConnUnitNodeId OR a nonzero
+-- fcConnUnitPortWwn for each end of the link.
+--
+-- If the agent is able to discover links which do not directly
+-- attach to members of its agency and its discovery algorithm
+-- gives some assurance the links are recently valid, it MAY
+-- include these links.
+--
+-- Link information entered by administrative action MAY be
+-- included even if not validated directly if the link has at
+-- least one endpoint in this agency, but SHOULD NOT be included
+-- otherwise.
+--
+-- A connectivity unit should fill the table in as best it can.
+-- One of the methods to fill this in would be to use the RNID
+-- ELS (ANSI document 99-422v0). This allows one to query a
+-- port for the information needed for the link table.
+--
+-- This table is MAX-ACCESSed either directly if the management
+-- software has an index value or via GetNexts. The value of
+-- the indexes are not required to be contiguous. Each entry
+-- created in this table will be assigned an index. This
+-- relationship is kept persistent until the entry is removed
+-- from the table or the system is reset. The total number of
+-- entries are defined by the size of the table
+
+-- For an entry to be considered to be valid, both the X (local)
+-- and the Y (remote) need to have one valid value.
+
+fcConnUnitLinkTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF FcConnUnitLinkEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "A list of links know to this agent from this
+       connectivity unit to other connectivity units."
+    ::= { fcMgmtConfig 8 }
+
+fcConnUnitLinkEntry OBJECT-TYPE
+    SYNTAX FcConnUnitLinkEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "An entry describing a particular link to another."
+    INDEX { fcConnUnitId, fcConnUnitLinkIndex }
+    ::= { fcConnUnitLinkTable 1 }
+
+FcConnUnitLinkEntry ::=
+    SEQUENCE {
+              fcConnUnitLinkIndex             Unsigned32,
+              fcConnUnitLinkNodeIdX           OCTET STRING,
+              fcConnUnitLinkPortNumberX       Integer32,
+              fcConnUnitLinkPortWwnX          OCTET STRING,
+              fcConnUnitLinkNodeIdY           OCTET STRING,
+              fcConnUnitLinkPortNumberY       Integer32,
+              fcConnUnitLinkPortWwnY          OCTET STRING,
+              fcConnUnitLinkAgentAddressY     OCTET STRING,
+              fcConnUnitLinkAgentAddressTypeY Unsigned32,
+              fcConnUnitLinkAgentMask         OCTET STRING,
+              fcConnUnitLinkAgentPortY        Unsigned32,
+              fcConnUnitLinkUnitTypeY         FcUnitType,
+              fcConnUnitLinkConnIdY           OCTET STRING
+            }
+
+fcConnUnitLinkIndex OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This value is used to create a unique value for each entry
+       in the link table with the same fcConnUnitId. The value can
+       only be reused if it is not currently in use and the value
+       is the next candidate to be used.  This value is allowed
+       to wrap at the highest value represented by the number of
+       bits.  This value is reset to zero when the system is reset
+       and the first value to be used is 1."
+    ::= { fcConnUnitLinkEntry 1 }
+
+fcConnUnitLinkNodeIdX OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(64))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The node WWN of the unit at one end of the link.
+       If the node WWN is unknown and the node is an
+       fcConnUnit in the responding agent then the value
+       of this object MUST be equal to its fcConnUnitId."
+     ::= { fcConnUnitLinkEntry 2 }
+
+fcConnUnitLinkPortNumberX OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The port number on the unit specified by
+       fcConnUnitLinkNodeIdX if known, otherwise -1. If the
+       value is non-negative then it will be equal to
+       fcConnUnitPortPhysicalNumber."
+    ::= { fcConnUnitLinkEntry 3 }
+
+fcConnUnitLinkPortWwnX OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(16))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The port WWN of the unit specified by
+       fcConnUnitLinkNodeIdX if known, otherwise 16 octets
+       of binary 0."
+    ::= { fcConnUnitLinkEntry 4 }
+
+fcConnUnitLinkNodeIdY OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(64))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The node WWN of the unit at the other end of the link.
+       If the node WWN is unknown and the node is an fcConnUnit
+       in the responding agent, then the value of this object
+       MUST be equal to its fcConnUnitId."
+    ::= { fcConnUnitLinkEntry 5 }
+
+fcConnUnitLinkPortNumberY OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The port number on the unit specified by
+       fcConnUnitLinkNodeIdY if known, otherwise -1.  
+       If the value is non-negative then it will
+       be equal to fcConnUnitPortPhysicalNumber."
+    ::= { fcConnUnitLinkEntry 6 }
+
+fcConnUnitLinkPortWwnY OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(16))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The port WWN on the unit specified by
+       fcConnUnitLinkNodeIdY if known, otherwise
+       16 octets of binary 0."
+    ::= { fcConnUnitLinkEntry 7 }
+
+fcConnUnitLinkAgentAddressY OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(16))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The address of an FCMGMT MIB agent for the node
+       identified by fcConnUnitLinkNodeIdY, if known;
+       otherwise 16 octets of binary 0."
+    ::= { fcConnUnitLinkEntry 8 }
+
+fcConnUnitLinkAgentAddressTypeY OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "If fcConnUnitLinkAgentAddressY is non-zero, then it is a
+       protocol address.  fcConnUnitLinkAgentAddressTypeY is the
+       the 'address family number' assigned by IANA to identify
+       the address format (eg, 1 is Ipv4, 2 is Ipv6)."
+    ::= { fcConnUnitLinkEntry 9 }
+
+fcConnUnitLinkAgentMask OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(16))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The mask to use for the address specified."
+    ::= { fcConnUnitLinkEntry 10 }
+
+fcConnUnitLinkAgentPortY OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The IP port number for the agent. This is provided
+       in case the agent is at a non-standard SNMP port."
+    ::= { fcConnUnitLinkEntry 11 }
+
+fcConnUnitLinkUnitTypeY OBJECT-TYPE
+    SYNTAX FcUnitType
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "Type of the FC connectivity unit as defined in
+       fcConnUnitType."
+    ::= { fcConnUnitLinkEntry 12 }
+
+fcConnUnitLinkConnIdY OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(3))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "This is the Fibre Channel ID of this port.  If the
+       connectivity unit is a switch, this is expected to
+       be a 24-bit Big Endian value.  If this is loop,
+       then it is the ALPA that is connected. If this is
+       an e-port, then it will only contain the domain ID.
+       If not any of those, unknown or cascaded loop,
+       return all bits set to 1."
+    ::= { fcConnUnitLinkEntry 13 }
+
+-- There is one and only one statistics table for each
+-- individual port. For all objects in statistics table,
+-- if the object  is not supported by the conn unit then
+-- the high order bit is set to 1 with all other bits set
+-- to zero. The high order bit is reserved  to indicate if
+-- the object if supported or not. All objects start at
+-- a value of zero at hardware initialization and continue
+-- incrementing till end of 63 bits and then wrap to zero.
+
+-- Port Statistics
+
+fcConnUnitPortStatTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF FcConnUnitPortStatEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "A list of statistics for the ports."
+    ::= { fcMgmtStatistics 1 }
+
+fcConnUnitPortStatEntry OBJECT-TYPE
+    SYNTAX FcConnUnitPortStatEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "An entry describing port statistics."
+    INDEX { fcConnUnitId, fcConnUnitPortStatIndex }
+    ::= { fcConnUnitPortStatTable 1 }
+
+FcConnUnitPortStatEntry ::=
+    SEQUENCE {
+            fcConnUnitPortStatIndex            Unsigned32,
+            fcConnUnitPortStatErrs             Counter64,
+            fcConnUnitPortStatTxObjects        Counter64,
+            fcConnUnitPortStatRxObjects        Counter64,
+            fcConnUnitPortStatTxElements       Counter64,
+            fcConnUnitPortStatRxElements       Counter64,
+            fcConnUnitPortStatBBCreditZero     Counter64,
+            fcConnUnitPortStatInputBuffsFull   Counter64,
+            fcConnUnitPortStatFBSYFrames       Counter64,
+            fcConnUnitPortStatPBSYFrames       Counter64,
+            fcConnUnitPortStatFRJTFrames       Counter64,
+            fcConnUnitPortStatPRJTFrames       Counter64,
+            fcConnUnitPortStatC1RxFrames       Counter64,
+            fcConnUnitPortStatC1TxFrames       Counter64,
+            fcConnUnitPortStatC1FBSYFrames     Counter64,
+            fcConnUnitPortStatC1PBSYFrames     Counter64,
+            fcConnUnitPortStatC1FRJTFrames     Counter64,
+            fcConnUnitPortStatC1PRJTFrames     Counter64,
+            fcConnUnitPortStatC2RxFrames       Counter64,
+            fcConnUnitPortStatC2TxFrames       Counter64,
+            fcConnUnitPortStatC2FBSYFrames     Counter64,
+            fcConnUnitPortStatC2PBSYFrames     Counter64,
+            fcConnUnitPortStatC2FRJTFrames     Counter64,
+            fcConnUnitPortStatC2PRJTFrames     Counter64,
+            fcConnUnitPortStatC3RxFrames       Counter64,
+            fcConnUnitPortStatC3TxFrames       Counter64,
+            fcConnUnitPortStatC3Discards       Counter64,
+            fcConnUnitPortStatRxMcastObjects   Counter64,
+            fcConnUnitPortStatTxMcastObjects   Counter64,
+            fcConnUnitPortStatRxBcastObjects   Counter64,
+            fcConnUnitPortStatTxBcastObjects   Counter64,
+            fcConnUnitPortStatRxLinkResets     Counter64,
+            fcConnUnitPortStatTxLinkResets     Counter64,
+            fcConnUnitPortStatLinkResets       Counter64,
+            fcConnUnitPortStatRxOfflineSeqs    Counter64,
+            fcConnUnitPortStatTxOfflineSeqs    Counter64,
+            fcConnUnitPortStatOfflineSeqs      Counter64,
+            fcConnUnitPortStatLinkFailures     Counter64,
+            fcConnUnitPortStatInvalidCRC       Counter64,
+            fcConnUnitPortStatInvalidTxWords   Counter64,
+            fcConnUnitPortStatPSPErrs          Counter64,
+            fcConnUnitPortStatLossOfSignal     Counter64,
+            fcConnUnitPortStatLossOfSync       Counter64,
+            fcConnUnitPortStatInvOrderedSets   Counter64,
+            fcConnUnitPortStatFramesTooLong    Counter64,
+            fcConnUnitPortStatFramesTooShort   Counter64,
+            fcConnUnitPortStatAddressErrs      Counter64,
+            fcConnUnitPortStatDelimiterErrs    Counter64,
+            fcConnUnitPortStatEncodingErrs     Counter64
+            }
+
+fcConnUnitPortStatIndex OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+         "A unique value among all entrys
+         in this table, between 0 and
+         fcConnUnitNumPort[fcConnUnitPortUnitId]."
+    ::= { fcConnUnitPortStatEntry 1 }
+
+fcConnUnitPortStatErrs OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+          "A count of the errors that have occured
+           on this port."
+    ::= { fcConnUnitPortStatEntry 2 }
+
+fcConnUnitPortStatTxObjects OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+         "The number of frames/packets/IOs/etc that have been
+          transmitted by this port. Note: A Fibre Channel frame
+          starts with SOF and ends with EOF. FC loop devices
+          should not count frames passed through. This value
+          represents the sum total for all other Tx objects."
+    ::= { fcConnUnitPortStatEntry 3 }
+
+fcConnUnitPortStatRxObjects OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+          "The number of frames/packets/IOs/etc that have been
+           received by this port. Note: A Fibre Channel frame
+           starts with SOF and ends with EOF. FC loop devices
+           should not count frames passed through. This value
+           represents the sum total for all other Rx objects."
+     ::= { fcConnUnitPortStatEntry 4 }
+
+fcConnUnitPortStatTxElements OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+              "The number of octets or bytes that have been
+               transmitted by this port. One second periodic
+               polling of the port. This value is saved and
+               compared with the next polled value to compute
+               net throughput. Note, for Fibre Channel, ordered
+               sets are not included in the count."
+     ::= { fcConnUnitPortStatEntry 5 }
+
+fcConnUnitPortStatRxElements OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+          "The number of octets or bytes that have been
+          received by this port. One second periodic
+          polling of the port. This value is saved and
+          compared with the next polled value to compute
+          net throughput. Note, for Fibre Channel, ordered
+          sets are not included in the count."
+     ::= { fcConnUnitPortStatEntry 6 }
+
+fcConnUnitPortStatBBCreditZero OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+          "Count of transitions in/out of BBcredit zero
+          state. The other side is not providing any
+          credit. Note, this is a Fibre Channel stat
+          only."
+     ::= { fcConnUnitPortStatEntry 7 }
+
+fcConnUnitPortStatInputBuffsFull OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+          "Count of occurrences when all input buffers of
+          a port were full and outbound buffer-to-buffer
+          credit transitioned to zero. There is no credit
+          to provide to other side. Note, this is a Fibre
+          Channel stat only."
+    ::= { fcConnUnitPortStatEntry 8 }
+
+fcConnUnitPortStatFBSYFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+         "Count of times that FBSY was returned to this
+         port as a result of a frame that could not be
+         delivered to the other end of the link. This
+         occurs if either the Fabric or the destination
+         port is temporarily busy.  Port can only occur
+         on SOFc1 frames (the frames that establish a
+         connection). Note, this is a Fibre Channel only
+         stat. This is the sum of all classes. If you
+         cannot keep the by class counters, then keep
+         the sum counters."
+    ::= { fcConnUnitPortStatEntry 9 }
+
+fcConnUnitPortStatPBSYFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+         "Count of times that PBSY was returned to this
+         port as a result of a frame that could not be
+         delivered to the other end of the link. This
+         occurs if the destination port is temporarily
+         busy.  PBSY can only occur on SOFc1 frames (the
+         frames that establish a connection). Note, this
+         is a Fibre Channel only stat.This is the sum
+         of all classes. If you cannot keep the by class
+         counters, then keep the sum counters."
+    ::= { fcConnUnitPortStatEntry 10 }
+
+fcConnUnitPortStatFRJTFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+         "Count of times that FRJT was returned to this
+         port as a result of a Frame that was rejected
+         by the fabric. Note, this is the total for all
+         classes and is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 11 }
+
+fcConnUnitPortStatPRJTFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of times that FRJT was returned to this
+        port as a result of a Frame that was rejected
+        at the destination N_Port. Note, this is the
+        total for all classes and is a Fibre Channel
+        only stat."
+    ::= { fcConnUnitPortStatEntry 12 }
+
+fcConnUnitPortStatC1RxFrames OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+         "Count of Class 1 Frames received at this port.
+         Note, this is a Fibre Channel only stat."
+     ::= { fcConnUnitPortStatEntry 13 }
+
+fcConnUnitPortStatC1TxFrames OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+         "Count of Class 1 Frames transmitted out
+         this port. Note, this is a Fibre Channel
+         only stat."
+     ::= { fcConnUnitPortStatEntry 14 }
+
+fcConnUnitPortStatC1FBSYFrames OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+         "Count of times that FBSY was returned to
+         this port as a result of a Class 1 Frame
+         that could not be delivered to the other
+         end of the link. This occurs if either
+         the Fabric or the destination port is
+         temporarily busy.  FBSY can only occur on
+         SOFc1 frames (the frames that establish a
+         connection). Note, this is a Fibre Channel
+         only stat."
+     ::= { fcConnUnitPortStatEntry 15 }
+
+fcConnUnitPortStatC1PBSYFrames OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+         "Count of times that PBSY was returned to
+         this port as a result of a Class 1 Frame
+         that could not be delivered to the other
+         end of the link. This occurs if the
+         destination N_Port is temporarily busy.
+         PBSY can only occur on SOFc1 frames (the
+         frames that establish a connection). Note,
+         this is a Fibre Channel only stat."
+     ::= { fcConnUnitPortStatEntry 16 }
+
+fcConnUnitPortStatC1FRJTFrames OBJECT-TYPE
+     SYNTAX Counter64
+     MAX-ACCESS read-only
+     STATUS current
+     DESCRIPTION
+          "Count of times that FRJT was returned to
+          this port as a result of a Class 1 Frame
+          that was rejected by the fabric. Note, this
+          is a Fibre Channel only stat."
+      ::= { fcConnUnitPortStatEntry 17 }
+
+fcConnUnitPortStatC1PRJTFrames OBJECT-TYPE
+      SYNTAX Counter64
+      MAX-ACCESS read-only
+      STATUS current
+      DESCRIPTION
+         "Count of times that FRJT was returned to
+         this port as a result of a Class 1 Frame
+         that was rejected at the destination N_Port.
+         Note, this is a Fibre Channel only stat."
+      ::= { fcConnUnitPortStatEntry 18 }
+
+fcConnUnitPortStatC2RxFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Class 2 Frames received at this
+         port. Note, this is a Fibre Channel only
+         stat."
+    ::= { fcConnUnitPortStatEntry 19 }
+
+fcConnUnitPortStatC2TxFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Class 2 Frames transmitted out
+         this port. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 20 }
+
+fcConnUnitPortStatC2FBSYFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of times that FBSY was returned to
+         this port as a result of a Class 2 Frame
+         that could not be delivered to the other
+         end of the link. This occurs if either
+         the Fabric or the destination port is
+         temporarily busy.  FBSY can only occur on
+         SOFc1 frames (the frames that establish a
+         connection). Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 21 }
+
+fcConnUnitPortStatC2PBSYFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of times that PBSY was returned to
+         this port as a result of a Class 2 Frame
+         that could not be delivered to the other
+         end of the link. This occurs if the
+         destination N_Port is temporarily busy.  
+         PBSY can only occur on SOFc1 frames (the
+         frames that establish a connection). Note,
+         this is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 22 }
+
+fcConnUnitPortStatC2FRJTFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of times that FRJT was returned to
+         this port as a result of a Class 2 Frame
+         that was rejected by the fabric. Note, this
+         is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 23 }
+
+fcConnUnitPortStatC2PRJTFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of times that FRJT was returned to
+         this port as a result of a Class 2 Frame
+         that was rejected at the destination N_Port.
+         Note, this is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 24 }
+
+fcConnUnitPortStatC3RxFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Class 3 Frames received at this
+         port. Note, this is a Fibre Channel only
+         stat."
+    ::= { fcConnUnitPortStatEntry 25 }
+
+fcConnUnitPortStatC3TxFrames OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Class 3 Frames transmitted out
+         of this port. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 26 }
+
+fcConnUnitPortStatC3Discards OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Class 3 Frames that were discarded
+         upon reception at this port.  There is no
+         FBSY or FRJT generated for Class 3 Frames.  
+         They are simply discarded if they cannot
+         be delivered. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 27 }
+
+fcConnUnitPortStatRxMcastObjects OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Multicast Frames or Packets
+         received at this port."
+    ::= { fcConnUnitPortStatEntry 28 }
+
+fcConnUnitPortStatTxMcastObjects OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Multicast Frames or Packets
+         transmitted out this port."
+    ::= { fcConnUnitPortStatEntry 29 }
+
+fcConnUnitPortStatRxBcastObjects OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Broadcast Frames or Packets
+         received at this port."
+    ::= { fcConnUnitPortStatEntry 30 }
+
+fcConnUnitPortStatTxBcastObjects OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Broadcast Frames or Packets
+         transmitted out this port. On a Fibre
+         Channel loop, count only OPNr frames
+         generated."
+    ::= { fcConnUnitPortStatEntry 31 }
+
+fcConnUnitPortStatRxLinkResets OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Link resets. This is the number
+         of LRs received. Note, this is a Fibre
+         Channel only stat."
+    ::= { fcConnUnitPortStatEntry 32 }
+
+fcConnUnitPortStatTxLinkResets OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Link resets. This is the number
+         LRs  transmitted. Note, this is a Fibre
+         Channel only stat."
+    ::= { fcConnUnitPortStatEntry 33 }
+
+fcConnUnitPortStatLinkResets OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Link resets and LIPs detected at
+         this port. The number times the reset link
+         protocol is initiated. These are the count
+         of the logical resets, a count of the number
+         of primatives. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 34 }
+
+fcConnUnitPortStatRxOfflineSeqs OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Offline Primitive OLS received at
+         this port. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 35 }
+
+fcConnUnitPortStatTxOfflineSeqs OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Offline Primitive OLS transmitted
+         by this port. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 36 }
+
+fcConnUnitPortStatOfflineSeqs OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of Offline Primitive sequence received
+         at this port. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 37 }
+
+fcConnUnitPortStatLinkFailures OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of link failures. This count is part
+         of the Link Error Status Block (LESB).
+         (FC-PH 29.8). Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 38 }
+
+fcConnUnitPortStatInvalidCRC OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of frames received with invalid CRC.
+         This count is part of the Link Error Status
+         Block (LESB). (FC-PH 29.8). Loop ports
+         should not count CRC errors passing through
+         when monitoring. Note, this is a Fibre
+         Channel only stat."
+    ::= { fcConnUnitPortStatEntry 39 }
+
+fcConnUnitPortStatInvalidTxWords OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of invalid transmission words
+         received at this port. This count is part
+         of the Link Error Status Block (LESB).
+         (FC-PH 29.8). Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 40 }
+
+fcConnUnitPortStatPSPErrs OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of primitive sequence protocol (PSP) errors
+         detected at this port. This count is part of the
+         Link Error Status Block (LESB) FC-PH 29.8). Note,
+         this is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 41 }
+
+fcConnUnitPortStatLossOfSignal OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of instances of signal loss detected
+         at port. This count is part of the Link
+         Error Status Block (LESB). (FC-PH 29.8).
+         Note, this is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 42 }
+
+fcConnUnitPortStatLossOfSync OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of instances of synchronization loss
+         detected at port. This count is part of the
+         Link Error Status Block (LESB). (FC-PH 29.8).
+         Note, this is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 43 }
+
+fcConnUnitPortStatInvOrderedSets OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of invalid ordered sets received
+         at port. This count is part of the Link
+         Error Status Block (LESB). (FC-PH 29.8).
+         Note, this is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 44 }
+
+fcConnUnitPortStatFramesTooLong OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of frames received at this port
+         where the frame length was greater than
+         what was agreed to in FLOGI/PLOGI. This
+         could be caused by losing the end of frame
+         delimiter. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 45 }
+
+fcConnUnitPortStatFramesTooShort OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of frames received at this port where
+         the frame length was less than the minimum
+         indicated by the frame header - normally 24
+         bytes, but it could be more if the DFCTL
+         field indicates an optional header should
+         have been present. Note, this is a Fibre
+         Channel only stat."
+    ::= { fcConnUnitPortStatEntry 46 }
+
+fcConnUnitPortStatAddressErrs OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of frames received with unknown
+         addressing. e.g. unknown SID or DID. The
+         SID or DID is not known to the routing
+         algorithm. Note, this is a Fibre Channel
+         only stat."
+    ::= { fcConnUnitPortStatEntry 47 }
+
+fcConnUnitPortStatDelimiterErrs OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of invalid frame delimiters received
+         at this port. An example is a frame with a
+         class 2 start and and a class 3 at the end.
+         Note, this is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 48 }
+
+fcConnUnitPortStatEncodingErrs OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Count of disparity errors received at this
+         port. Note, this is a Fibre Channel only stat."
+    ::= { fcConnUnitPortStatEntry 49 }
+
+--
+-- the Fibre Channel Simple Name Server table
+--
+-- The Fibre Channel Simple Name Server table contains an entry
+-- for each device presently known to this fcConnUnit. There will
+-- not be any version on this since FC-GS3 does not define a
+-- version today.
+--
+-- This table is accessed either directly if the management
+-- software has an index value or via GetNexts. The value of
+-- the indexes are not required to be contiguous. Each entry
+-- created in this table will be assigned an index. This
+-- relationship is kept persistent until the entry is removed
+-- from the table or the system is reset. The total number of
+-- entries are defined by the size of the table
+
+fcConnUnitSnsMaxRows OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS   read-only
+    STATUS   current
+    DESCRIPTION
+         "The maximum number of rows in the
+          fcConnUnitSnsTable table."
+    ::= { fcMgmtConfig 9 }
+
+fcConnUnitSnsTable OBJECT-TYPE
+    SYNTAX       SEQUENCE OF FcConnUnitSnsEntry
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+          "This table contains an entry for each object
+           registered with this port in the switch."
+    ::= { fcMgmtSNS 1 }
+
+fcConnUnitSnsEntry OBJECT-TYPE
+    SYNTAX       FcConnUnitSnsEntry
+    MAX-ACCESS   not-accessible
+    STATUS       current
+    DESCRIPTION
+          "The Simple Name Server table for the port
+           represented by fcConnUnitSnsPortName ."
+    INDEX { fcConnUnitId, fcConnUnitSnsPortName }
+    ::= { fcConnUnitSnsTable 1 }
+
+FcConnUnitSnsEntry ::=
+    SEQUENCE {
+        fcConnUnitSnsPortIdentifier    FcGlobalId,   -- was FcAddressId (undefined)
+        fcConnUnitSnsPortName          FcNameId,
+        fcConnUnitSnsNodeName          FcNameId,
+        fcConnUnitSnsClassOfSvc        OCTET STRING,
+        fcConnUnitSnsNodeIPAddress     OCTET STRING,
+        fcConnUnitSnsProcAssoc         OCTET STRING,
+        fcConnUnitSnsFC4Type           OCTET STRING,
+        fcConnUnitSnsPortType          OCTET STRING,
+        fcConnUnitSnsPortIPAddress     OCTET STRING,
+        fcConnUnitSnsFabricPortName    FcNameId,
+        fcConnUnitSnsHardAddress       FcGlobalId,   -- was FcAddressId (undefined)
+        fcConnUnitSnsSymbolicPortName  DisplayString,
+        fcConnUnitSnsSymbolicNodeName  DisplayString
+     }
+
+fcConnUnitSnsPortIdentifier OBJECT-TYPE
+    SYNTAX       FcGlobalId   -- was FcAddressId (undefined)
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+          "The Port Identifier for this entry in the SNS table."
+    ::= { fcConnUnitSnsEntry 1 }
+
+fcConnUnitSnsPortName OBJECT-TYPE
+    SYNTAX       FcNameId
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+          "The Port WWN for this entry in the SNS table."
+    ::= { fcConnUnitSnsEntry 2 }
+
+fcConnUnitSnsNodeName OBJECT-TYPE
+    SYNTAX       FcNameId
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+          "The Node Name for this entry in the SNS table."
+    ::= { fcConnUnitSnsEntry 3 }
+
+fcConnUnitSnsClassOfSvc OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (1))
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+          "The Classes of Service offered by this entry in
+           the SNS table."
+    ::= { fcConnUnitSnsEntry 4 }
+
+fcConnUnitSnsNodeIPAddress OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(16))
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+          "The IPv6 formatted address of the Node for this
+           entry in the SNS table."
+    ::= { fcConnUnitSnsEntry 5 }
+
+fcConnUnitSnsProcAssoc OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (8))
+    MAX-ACCESS      read-only
+    STATUS       current
+    DESCRIPTION
+          "The Process Associator for this entry in the
+           SNS table."
+    ::= { fcConnUnitSnsEntry 6 }
+
+fcConnUnitSnsFC4Type OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (32))
+    MAX-ACCESS      read-only
+    STATUS       current
+    DESCRIPTION
+          "The FC-4 Types supported by this entry in the
+           SNS table."
+    ::= { fcConnUnitSnsEntry 7 }
+
+fcConnUnitSnsPortType OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (1))
+    MAX-ACCESS      read-only
+    STATUS       current
+    DESCRIPTION
+          "The Port Type of this entry in the SNS table."
+    ::= { fcConnUnitSnsEntry 8 }
+
+fcConnUnitSnsPortIPAddress OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(16))
+    MAX-ACCESS      read-only
+    STATUS       current
+    DESCRIPTION
+          "The IPv6 formatted address of this entry in
+           the SNS table."
+    ::= { fcConnUnitSnsEntry 9 }
+
+fcConnUnitSnsFabricPortName OBJECT-TYPE
+    SYNTAX       FcNameId
+    MAX-ACCESS      read-only
+    STATUS       current
+    DESCRIPTION
+          "The Fabric Port name of this entry in the SNS
+           table."
+    ::= { fcConnUnitSnsEntry 10 }
+
+fcConnUnitSnsHardAddress OBJECT-TYPE
+    SYNTAX       FcGlobalId   -- was FcAddressId (undefined)
+    MAX-ACCESS      read-only
+    STATUS       current
+    DESCRIPTION
+          "The Hard ALPA of this entry in the SNS table."
+    ::= { fcConnUnitSnsEntry 11 }
+
+fcConnUnitSnsSymbolicPortName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..79))
+    MAX-ACCESS      read-only
+    STATUS       current
+    DESCRIPTION
+          "The Symbolic Port Name of this entry in the SNS
+           table."
+    ::= { fcConnUnitSnsEntry 12 }
+
+fcConnUnitSnsSymbolicNodeName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..79))
+    MAX-ACCESS      read-only
+    STATUS       current
+    DESCRIPTION
+          "The Symbolic Node Name of this entry in the SNS
+           table."
+    ::= { fcConnUnitSnsEntry 13 }
+
+--
+-- SNMP trap registration group
+--
+
+fcTrapMaxClients OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The maximum number of SNMP trap recipients supported
+       by the connectivity unit."
+    ::= { fcMgmtNotifyFilter 1 }
+
+fcTrapClientCount OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+      "The current number of rows in the trap table."
+    ::= { fcMgmtNotifyFilter 2 }
+
+fcTrapRegTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF FcTrapRegEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "A table containing a row for each IP address/port
+       number that traps will be sent to."
+    ::= { fcMgmtNotifyFilter 3 }
+
+fcTrapRegEntry OBJECT-TYPE
+    SYNTAX FcTrapRegEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+      "Ip/Port pair for a specific client."
+    INDEX { fcTrapRegIpAddress, fcTrapRegPort }
+    ::= { fcTrapRegTable 1 }
+
+FcTrapRegEntry ::=
+    SEQUENCE {
+              fcTrapRegIpAddress IpAddress,
+              fcTrapRegPort      Unsigned32,
+              fcTrapRegFilter    FcEventSeverity,
+              fcTrapRegRowState  RowStatus
+             }
+
+fcTrapRegIpAddress OBJECT-TYPE
+    SYNTAX IpAddress
+    MAX-ACCESS read-create
+    STATUS current
+    DESCRIPTION
+      "The Ip address of a client registered for traps."
+    ::= { fcTrapRegEntry 1 }
+
+fcTrapRegPort OBJECT-TYPE
+    SYNTAX Unsigned32 (1..2147483647)
+    MAX-ACCESS read-create
+    STATUS current
+    DESCRIPTION
+      "The UDP port to send traps to for this host.
+       Normally this would be the standard trap port
+       (UDP/162)."
+    ::= { fcTrapRegEntry 2 }
+
+fcTrapRegFilter OBJECT-TYPE
+    SYNTAX FcEventSeverity
+    MAX-ACCESS read-create
+    STATUS current
+    DESCRIPTION
+      "This value defines the trap severity filter for
+       this trap host.  The fcConnUnit will send to the
+       designated target entity traps that have a severity
+       level less than or equal to this value."
+    ::= { fcTrapRegEntry 3}
+
+fcTrapRegRowState OBJECT-TYPE
+    SYNTAX RowStatus
+    MAX-ACCESS read-create
+    STATUS current
+    DESCRIPTION
+      "Specifies the operational status of the row.
+
+       A RowStatus object may take any of six defined values:
+
+       - active: traps may be sent as specified in this row;
+         a management application may change the value of any
+         objects in the row when the status is active.
+
+       - notInService: traps will not be sent using this row.
+
+       - notReady: the conceptual row exists in the agent, but
+         is missing information necessary to send traps (i.e.,
+         if any of the other objects in the row are not present
+         or contain invalid values); this value may not be
+         supplied by a management application.
+
+       - createAndGo: supplied by a management application
+         wishing to create a new instance of a conceptual row,
+         supplying valid values for the all the other objects
+         in the row, and have its status automatically set to
+         active, making it available for use in sending traps.
+
+       - createAndWait: supplied by a management application
+         wishing to create a new instance of a conceptual row
+         but not make it available for use in sending traps
+         at that time; and,
+
+       - destroy: supplied by a management application
+         wishing to delete an existing conceptual row."
+
+    ::= { fcTrapRegEntry 4}
+
+--
+-- Related traps
+--
+
+fcConnUnitStatusChange NOTIFICATION-TYPE
+    OBJECTS { fcConnUnitStatus, fcConnUnitState }
+    STATUS current
+    DESCRIPTION
+      "The overall status of the connectivity unit has changed.
+       Recommended severity level (for filtering): alert"
+    ::= { fcMgmtNotifications 1 }
+
+fcConnUnitDeletedTrap NOTIFICATION-TYPE
+    OBJECTS { fcConnUnitGlobalId }
+    STATUS current
+    DESCRIPTION
+      "An fcConnUnit has been deleted from this agent.
+       Recommended severity level (for filtering): warning"
+    ::= { fcMgmtNotifications 2 }
+
+fcConnUnitEventTrap NOTIFICATION-TYPE
+    OBJECTS    { fcConnUnitGlobalId,
+                  fcConnUnitEventType,
+                  fcConnUnitEventObject,
+                  fcConnUnitEventDescr }
+    STATUS current
+    DESCRIPTION
+      "An event has been generated by the connectivity unit.
+       Recommended severity level (for filtering): info"
+    ::= { fcMgmtNotifications 3 }
+
+fcConnUnitSensorStatusChange NOTIFICATION-TYPE
+    OBJECTS { fcConnUnitSensorStatus }
+    STATUS current
+    DESCRIPTION
+      "The overall status of the connectivity unit has changed.
+       Recommended severity level (for filtering): alert"
+    ::= { fcMgmtNotifications 4 }
+
+fcConnUnitPortStatusChange NOTIFICATION-TYPE
+    OBJECTS { fcConnUnitPortStatus, fcConnUnitPortState }
+    STATUS current
+    DESCRIPTION
+      "The overall status of the connectivity unit has changed.
+       Recommended severity level (for filtering): alert"
+    ::= { fcMgmtNotifications 5 }
+
+-- Conformance definitions
+-- (Repeated here from beginning of MIB for ease of reference below.)
+-- fcMgmtNotifications OBJECT IDENTIFIER ::= { fcMgmtMIB 0 }
+-- fcMgmtObjects       OBJECT IDENTIFIER ::= { fcMgmtMIB 1 }
+-- fcMgmtConformance   OBJECT IDENTIFIER ::= { fcMgmtMIB 2 }
+-- fcMgmtConfig        OBJECT IDENTIFIER ::= { fcMgmtObjects 1 }
+-- fcMgmtNotifyFilter  OBJECT IDENTIFIER ::= { fcMgmtObjects 2 }
+-- fcMgmtStatistics    OBJECT IDENTIFIER ::= { fcMgmtObjects 3 }
+-- fcMgmtSNS           OBJECT IDENTIFIER ::= { fcMgmtObjects 4 }
+-- fcMgmtCompliances   OBJECT IDENTIFIER ::= { fcMgmtConformance 1 }
+-- fcMgmtGroups        OBJECT IDENTIFIER ::= { fcMgmtConformance 2 }
+
+-- Compliance statements
+   fcMgmtCompliance MODULE-COMPLIANCE
+       STATUS  current
+       DESCRIPTION
+         "The compliance statement for Fibre Channel entities
+          which implement this MIB module."
+       MODULE  -- this module
+           MANDATORY-GROUPS {
+                 -- support for these groups is mandatory
+                 -- for all agents implementing this MIB
+                 fcConnUnitGroup,
+                 fcCuEventGroup,
+                 fcCuLinkGroup,
+                 fcCuPortStatsGroup,
+                 fcCuTrapFiltersGroup,
+                 fcCuNotificationsGroup }
+
+           GROUP fcCuSNSGroup
+           DESCRIPTION
+             "This group is mandatory for agents supporting
+              fibre channel connectivity units that support switch
+              protocol."
+       ::= { fcMgmtCompliances 1 }
+
+-- Conformance units
+-- the fibre channel connectivity unit group
+
+fcConnUnitGroup OBJECT-GROUP
+    OBJECTS {
+       -- scalars
+                 fcConnUnitNumber,
+                 fcConnURL,
+       -- fcConnUnitTable
+                 fcConnUnitId,
+                 fcConnUnitGlobalId,
+                 fcConnUnitType,
+                 fcConnUnitNumPorts,
+                 fcConnUnitNumLinks,
+                 fcConnUnitState,
+                 fcConnUnitStatus,
+                 fcConnUnitProduct,
+                 fcConnUnitSerialNo,
+                 fcConnUnitUpTime,
+                 fcConnUnitUrl,
+                 fcConnUnitDomainId,
+                 fcConnUnitProxyMaster,
+                 fcConnUnitPrincipal,
+                 fcConnUnitNumSensors,
+                 fcConnUnitNumRevs,
+                 fcConnUnitModuleId,
+                 fcConnUnitName,
+                 fcConnUnitInfo,
+                 fcConnUnitControl,
+                 fcConnUnitContact,
+                 fcConnUnitLocation,
+                 fcConnUnitEventFilter,
+                 fcConnUnitNumEvents,
+                 fcConnUnitMaxEvents,
+                 fcConnUnitEventCurrID,
+                 fcConnUnitFabricID,
+       -- fcConnUnitRevsTable
+                 fcConnUnitRevsIndex,
+                 fcConnUnitRevsRevision,
+                 fcConnUnitRevsDescription,
+       -- fcConnUnitSensorTable
+                 fcConnUnitSensorIndex,
+                 fcConnUnitSensorName,
+                 fcConnUnitSensorStatus,
+                 fcConnUnitSensorInfo,
+                 fcConnUnitSensorMessage,
+                 fcConnUnitSensorType,
+                 fcConnUnitSensorCharacteristic,
+
+       -- fcConnUnitPortTable
+                 fcConnUnitPortIndex,
+                 fcConnUnitPortType,
+                 fcConnUnitPortFCClassCap,
+                 fcConnUnitPortFCClassOp,
+                 fcConnUnitPortState,
+                 fcConnUnitPortStatus,
+                 fcConnUnitPortTransmitterType,
+                 fcConnUnitPortModuleType,
+                 fcConnUnitPortWwn,
+                 fcConnUnitPortFCId,
+                 fcConnUnitPortSerialNo,
+                 fcConnUnitPortRevision,
+                 fcConnUnitPortVendor,
+                 fcConnUnitPortSpeed,
+                 fcConnUnitPortControl,
+                 fcConnUnitPortName,
+                 fcConnUnitPortPhysicalNumber,
+                 fcConnUnitPortProtocolCap,
+                 fcConnUnitPortProtocolOp,
+                 fcConnUnitPortNodeWwn,
+                 fcConnUnitPortHWState}
+    STATUS  current
+    DESCRIPTION
+      "The collection of objects providing Fibre Channel
+       connectivity unit instrumentation and control."
+    ::= { fcMgmtGroups 1 }
+
+-- event group
+fcCuEventGroup OBJECT-GROUP
+    OBJECTS {
+       -- fcConnUnitEventTable
+                fcConnUnitEventIndex,
+                fcConnUnitREventTime,
+                fcConnUnitSEventTime,
+                fcConnUnitEventSeverity,
+                fcConnUnitEventType,
+                fcConnUnitEventObject,
+                fcConnUnitEventDescr }
+    STATUS current
+    DESCRIPTION
+      "The collection of objects providing Fibre Channel
+       connectivity unit event information."
+    ::= { fcMgmtGroups 2 }
+
+-- link group
+fcCuLinkGroup OBJECT-GROUP
+    OBJECTS {
+       -- fcConnUnitLinkTable
+              fcConnUnitLinkIndex,
+              fcConnUnitLinkNodeIdX,
+              fcConnUnitLinkPortNumberX,
+              fcConnUnitLinkPortWwnX,
+              fcConnUnitLinkNodeIdY,
+              fcConnUnitLinkPortNumberY,
+              fcConnUnitLinkPortWwnY,
+              fcConnUnitLinkAgentAddressY,
+              fcConnUnitLinkAgentAddressTypeY,
+              fcConnUnitLinkAgentMask,
+              fcConnUnitLinkAgentPortY,
+              fcConnUnitLinkUnitTypeY,
+              fcConnUnitLinkConnIdY }
+    STATUS current
+    DESCRIPTION
+      "The collection of objects providing Fibre Channel
+       connectivity unit link (topology) information."
+    ::= { fcMgmtGroups 3 }
+
+-- Port statistics group
+fcCuPortStatsGroup OBJECT-GROUP
+    OBJECTS {
+       -- fcConnUnitPortStatTable
+            fcConnUnitPortStatIndex,
+            fcConnUnitPortStatErrs,
+            fcConnUnitPortStatTxObjects,
+            fcConnUnitPortStatRxObjects,
+            fcConnUnitPortStatTxElements,
+            fcConnUnitPortStatRxElements,
+            fcConnUnitPortStatBBCreditZero,
+            fcConnUnitPortStatInputBuffsFull,
+            fcConnUnitPortStatFBSYFrames,
+            fcConnUnitPortStatPBSYFrames,
+            fcConnUnitPortStatFRJTFrames,
+            fcConnUnitPortStatPRJTFrames,
+            fcConnUnitPortStatC1RxFrames,
+            fcConnUnitPortStatC1TxFrames,
+            fcConnUnitPortStatC1FBSYFrames,
+            fcConnUnitPortStatC1PBSYFrames,
+            fcConnUnitPortStatC1FRJTFrames,
+            fcConnUnitPortStatC1PRJTFrames,
+            fcConnUnitPortStatC2RxFrames,
+            fcConnUnitPortStatC2TxFrames,
+            fcConnUnitPortStatC2FBSYFrames,
+            fcConnUnitPortStatC2PBSYFrames,
+            fcConnUnitPortStatC2FRJTFrames,
+            fcConnUnitPortStatC2PRJTFrames,
+            fcConnUnitPortStatC3RxFrames,
+            fcConnUnitPortStatC3TxFrames,
+            fcConnUnitPortStatC3Discards,
+            fcConnUnitPortStatRxMcastObjects,
+            fcConnUnitPortStatTxMcastObjects,
+            fcConnUnitPortStatRxBcastObjects,
+            fcConnUnitPortStatTxBcastObjects,
+            fcConnUnitPortStatRxLinkResets,
+            fcConnUnitPortStatTxLinkResets,
+            fcConnUnitPortStatLinkResets,
+            fcConnUnitPortStatRxOfflineSeqs,
+            fcConnUnitPortStatTxOfflineSeqs,
+            fcConnUnitPortStatOfflineSeqs,
+            fcConnUnitPortStatLinkFailures,
+            fcConnUnitPortStatInvalidCRC,
+            fcConnUnitPortStatInvalidTxWords,
+            fcConnUnitPortStatPSPErrs,
+            fcConnUnitPortStatLossOfSignal,
+            fcConnUnitPortStatLossOfSync,
+            fcConnUnitPortStatInvOrderedSets,
+            fcConnUnitPortStatFramesTooLong,
+            fcConnUnitPortStatFramesTooShort,
+            fcConnUnitPortStatAddressErrs,
+            fcConnUnitPortStatDelimiterErrs,
+            fcConnUnitPortStatEncodingErrs }
+    STATUS  current
+    DESCRIPTION
+      "The collection of objects providing Fibre Channel
+       connectivity unit port statistics."
+    ::= { fcMgmtGroups 4 }
+
+-- Fibre Channel Simple Name Server group
+fcCuSNSGroup OBJECT-GROUP
+    OBJECTS {
+       -- scalars
+                fcConnUnitSnsMaxRows,
+       -- fcConnUnitSnsTable
+                fcConnUnitSnsPortIdentifier,
+                fcConnUnitSnsPortName,
+                fcConnUnitSnsNodeName,
+                fcConnUnitSnsClassOfSvc,
+                fcConnUnitSnsNodeIPAddress,
+                fcConnUnitSnsProcAssoc,
+                fcConnUnitSnsFC4Type,
+                fcConnUnitSnsPortType,
+                fcConnUnitSnsPortIPAddress,
+                fcConnUnitSnsFabricPortName,
+                fcConnUnitSnsHardAddress,
+                fcConnUnitSnsSymbolicPortName,
+                fcConnUnitSnsSymbolicNodeName }
+    STATUS  current
+    DESCRIPTION
+      "The collection of objects providing Fibre Channel
+       connectivity unit simple name server information."
+    ::= { fcMgmtGroups 5 }
+
+-- SNMP trap filter group
+fcCuTrapFiltersGroup OBJECT-GROUP
+    OBJECTS {
+       -- scalars   
+              fcTrapMaxClients,
+              fcTrapClientCount,
+       -- fcTrapRegTable
+              fcTrapRegIpAddress,
+              fcTrapRegPort,
+              fcTrapRegFilter,
+              fcTrapRegRowState }
+    STATUS  current
+    DESCRIPTION
+      "The collection of objects controlling SNMP notification
+       (i.e., trap) destinations."
+    ::= { fcMgmtGroups 6 }
+
+-- FC-MGMT-MIB notifications group
+fcCuNotificationsGroup NOTIFICATION-GROUP
+    NOTIFICATIONS {
+                   fcConnUnitStatusChange,
+                   fcConnUnitDeletedTrap,
+                   fcConnUnitEventTrap,
+                   fcConnUnitSensorStatusChange,
+                   fcConnUnitPortStatusChange }
+    STATUS   current
+    DESCRIPTION
+      "The set of SNMP notifications which an agent is required
+       to implement."
+    ::= { fcMgmtGroups 7 }
+--
+END

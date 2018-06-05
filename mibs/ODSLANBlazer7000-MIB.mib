@@ -1,0 +1,5255 @@
+-- ODS LANBLAZER 7000 MIB
+
+-- ODS LANBlazer 7000 Enterprise Specific Management Information Base for SNMP version 1
+
+-- Copyright (c) 1997, ODS Networks Inc.
+-- This MIB document is provided "as-is".  ODS reserves the right to make
+-- changes without prior notification.  An explicit right to copy this document is provided
+-- to all.  However, the intellectual content of this document is the exclusive property
+-- of ODS.
+
+-- For technical assistance, please contact ODS at:
+
+-- email: 
+-- phone: 
+-- fax: 
+
+
+
+-- INTRODUCTION
+--
+-- Welcome to the ODS LANBlazer 7000 Enterprise-Specific MIB.
+--
+-- This MIB is supplied to enhance the management capability of the LANBlazer 7000 System.
+-- It provides managed objects that supplement those capabilities supported by the standard
+-- IETF MIBs.
+--
+-- The MIB has the following main sections:
+--
+-- General Agent Support: Manages the SNMP agent.
+-- Communications:
+-- Resource Management: The Resource Manager is the focal point for managing dynamic resources.
+-- Chassis: Objects related to the management of the physical enclosure and environment.
+-- Switching: Management of the layer II switching functions and Virtual LANs.
+-- Event Management: RMON Events on steroids.
+-- File System: Provides access to the embedded file system.
+
+
+
+-- MODULE DEFINITION
+
+   ODSLANBlazer7000-MIB DEFINITIONS ::= BEGIN
+
+   IMPORTS
+      enterprises,
+      Gauge,
+      NetworkAddress,
+      IpAddress,Counter,
+      TimeTicks
+         FROM RFC1155-SMI
+      OBJECT-TYPE
+         FROM RFC-1212
+      TRAP-TYPE
+         FROM RFC-1215;
+
+-- Textual Conventions
+
+-- The Data Type returned in event log value
+
+   EventValueType ::= 
+      INTEGER {
+         none(1),
+         integer(2),
+         longInteger(3),
+         string(4),
+         octets(5),
+         ipAddress(6),
+         macAddress(7),
+         timeTicks(8)
+         }
+         
+-- the resources managed by the LANBlazer 7000 Switch
+   ResourceType ::=
+      INTEGER {
+         system(1),
+         module(2),
+         fan(3),
+         temperatureSensor(4),
+         interface(5),
+         powerSupply(6),
+         display(7),
+         switchPort(8),
+         bridge(9),
+         vlan(10),
+         aft(11),
+         inboundGroupTable(12),
+         outboundGroupTable(13),
+         threeComMappingTable(14),
+         event(15),
+         alarm(16)
+         }
+
+-- This data type is used to uniquely identify a resource within the LANBlazer 7000 Switch.
+-- It encodes the Resource ID into an OID, using 2 as the first component.
+-- Using a 2 works around the OID encoding restrictions of the first component (ASN.1)
+
+   ResourceId ::= OBJECT IDENTIFIER
+
+   DisplayString ::= OCTET STRING
+-- This data type is used to model textual information taken
+-- from the NVT ASCII character set.  By convention, objects
+-- with this syntax are declared as having
+--
+--      SIZE (0..255)
+
+   RowStatus ::= INTEGER {
+-- the following two values are states:
+-- these values may be read or written
+
+         active(1),
+         notInService(2),
+
+-- the following value is a state:
+-- this value may be read, but not written
+
+         notReady(3),
+
+-- the following three values are
+-- actions: these values may be written,
+-- but are never read
+
+         createAndGo(4),
+         createAndWait(5),
+         destroy(6)
+         }
+
+-- All representations of MAC addresses in this MIB Module
+-- use, as a textual convention (i.e. this convention does
+-- not affect their encoding), the data type:
+
+   MacAddress ::= OCTET STRING (SIZE (6))
+
+-- a 6 octet address in the "canonical" order
+-- defined by IEEE 802.1a, i.e., as if it were transmitted
+-- least significant bit first, even though 802.5 (in
+-- contrast to other n802.x protocols) requires MAC
+-- addresses to be transmitted most significant bit first.
+--
+-- 16-bit addresses, if needed, are represented by setting
+-- their upper 4 octets to all 0's, i.e., AAFF would be
+-- represented as 00000000AAFF.
+
+
+-- Similarly, all representations of Bridge-Id in this MIB
+-- Module use, as a textual convention (i.e. this
+-- convention does not affect their encoding), the data
+-- type:
+
+   BridgeId ::= OCTET STRING (SIZE (8))
+
+-- the Bridge-Identifier as used in the Spanning Tree
+-- Protocol to uniquely identify a bridge.  Its first two
+-- octets (in network byte order) contain a priority
+-- value and its last 6 octets contain the MAC address
+-- used to refer to a bridge in a unique fashion
+-- (typically, the numerically smallest MAC address
+-- of all ports on the bridge).
+
+-- Several objects in this MIB module represent values of
+-- timers used by the Spanning Tree Protocol.  In this
+-- MIB, these timers have values in units of hundredths of
+-- a second (i.e. 1/100 secs).
+-- These timers, when stored in a Spanning Tree Protocol's
+-- BPDU, are in units of 1/256 seconds.  Note, however,
+-- that 802.1D-1990 specifies a settable granularity of
+-- no more than 1 second for these timers.  To avoid
+-- ambiguity, a data type is defined here as a textual
+-- convention and all representation of these timers
+-- in this MIB module are defined using this data type.  An
+-- algorithm is also defined for converting between the
+-- different units, to ensure a timer's value is not
+-- distorted by multiple conversions.
+-- The data type is:
+
+-- a STP timer in units of 1/100 seconds
+   Timeout ::= INTEGER
+
+-- To convert a Timeout value into a value in units of
+-- 1/256 seconds, the following algorithm should be used:
+--
+--      b  = floor( (n * 256) / 100)
+--
+-- where:
+--      floor   =  quotient [ignore remainder]
+--      n is the value in 1/100 second units
+--      b is the value in 1/256 second units
+--
+-- To convert the value from 1/256 second units back to
+-- 1/100 seconds, the following algorithm should be used:
+--
+--      n = ceiling( (b * 100) / 256)
+--
+-- where:
+--      ceiling =  quotient [if remainder is 0], or
+--                 quotient + 1 [if remainder is non-zero]
+--      n is the value in 1/100 second units
+--      b is the value in 1/256 second units
+--
+-- Note: it is important that the arithmetic operations are
+-- done in the order specified (i.e., multiply first, divide
+-- second).
+
+-- Event Category Macro
+--
+-- Indicates the type of event:
+-- - coldstart is generated at system bootup
+-- - warmstart is generated when the software system (only) resets
+-- - system error is generated for a variety of reasons including running out of memory, OS errors, and H/W faults
+-- - status change indicates a change in the status value e.g. a port status change
+-- - configuration indicates a change in the configuration value e.g. a port mode change
+-- - scheduled events are triggered based on a calendar event
+-- - authentication indicates attempted access to a restricted resource without the proper credentials, e.g. SNMP
+-- authentication failure.
+-- - threshold is generated by alarms
+
+   EventCategory ::= INTEGER {
+         userDefined(1),
+         coldstart(2),
+         warmstart(3),
+         linkUp(4),
+         linkDown(5),
+         newResource(6),
+         deletedResource(7),
+         tempStatus(8),
+         configuration(9),
+         scheduled(10),
+         authentication(11),
+         system(12),
+         risingThreshold(13),
+         fallingThreshold(14),
+         fanStatus(15),
+         powerStatus(16),
+         status(17),
+         bridgeNewRoot(18),
+         bridgeTopChange(19),
+         switchFabricStatus(20)
+         }
+
+   ods OBJECT IDENTIFIER ::= { enterprises 50 }
+
+   odsTPS OBJECT IDENTIFIER ::= { ods 8 }
+
+   odsLANBlazer OBJECT IDENTIFIER ::= { odsTPS 1 }
+
+   odsLANBlazerMibs OBJECT IDENTIFIER ::= { odsLANBlazer 2 }
+
+   odsLANBlazer7000Mib OBJECT IDENTIFIER ::= { odsLANBlazerMibs 1 }
+
+
+-- v2 STUFF
+--   odsLANBlazer7000MIB   MODULE-IDENTITY
+--      LAST-UPDATED      "9701030000Z"
+--      ORGANIZATION    "ODS"
+--      CONTACT-INFO
+--         "   Technical Support
+--
+--         Postal: TBD
+--            
+--            
+--
+--         Tel: TBD
+--         Fax: TBD
+--
+--         E-mail: 
+--      DESCRIPTION
+--         "ODS LANBlazer 7000 Enterprise Specific MIB Module"
+--      ::= {}
+
+
+
+-- AGENT
+
+   lanBlazer7000Agent OBJECT IDENTIFIER ::= { odsLANBlazer7000Mib 1 }
+
+-- GENERAL AGENT
+
+   lanBlazer7000AgentGen OBJECT IDENTIFIER ::= { lanBlazer7000Agent 1 }
+
+   lanBlazer7000AgentMIBVersion OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..32))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The version of the LANBlazer 700 Enterprise Specific MIB that this
+              agent supports."
+      ::= { lanBlazer7000AgentGen 1 }
+
+   lanBlazer7000AgentMgrIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of this object represents the index into the community table that
+              is used to authenticate SNMP requests for this manager."
+      ::= { lanBlazer7000AgentGen 2 }
+
+
+-- COMMUNITY TABLE
+
+   lanBlazer7000AgentCommunity OBJECT IDENTIFIER ::= { lanBlazer7000Agent 2 }
+
+--
+-- The community table is the database used by the agent to authenticate SNMP requests
+-- and to generate SNMP traps.  This table is only accessible for users with security clearance.
+--
+
+   lanBlazer7000CommunityTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000CommunityEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000AgentCommunity 1 }
+
+   lanBlazer7000CommunityEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000CommunityEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      INDEX   { lanBlazer7000CommunityIndex }
+      ::= { lanBlazer7000CommunityTable 1 }
+
+   LanBlazer7000CommunityEntry ::=
+      SEQUENCE {
+         lanBlazer7000CommunityIndex
+            INTEGER,
+         lanBlazer7000CommunityString
+            DisplayString,
+         lanBlazer7000CommunityAddressType
+            INTEGER,
+         lanBlazer7000CommunityAddress
+            NetworkAddress,
+         lanBlazer7000CommunityAccess
+            INTEGER,
+         lanBlazer7000CommunityTrapReceiver
+            INTEGER,
+         lanBlazer7000CommunitySecurityLevel
+            INTEGER,
+         lanBlazer7000CommunityStatus
+            RowStatus
+      }
+
+   lanBlazer7000CommunityIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this entry."
+      ::= { lanBlazer7000CommunityEntry 1 }
+
+   lanBlazer7000CommunityString OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..32))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The community string included in the SNMP PDU used for authentication
+               purposes."
+      ::= { lanBlazer7000CommunityEntry 2 }
+
+   lanBlazer7000CommunityAddressType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 any(1),
+                 ipv4(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The type of address associated with this community.  If set to any(1), only
+              the community string is authenticated."
+      ::= { lanBlazer7000CommunityEntry 3 }
+
+   lanBlazer7000CommunityAddress OBJECT-TYPE
+      SYNTAX  NetworkAddress
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "If the address type is any, then the value of this object is a null string.  If
+              the type is ipv4(2), then this value represents a 4 byte IP address."
+      ::= { lanBlazer7000CommunityEntry 4 }
+
+   lanBlazer7000CommunityAccess OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 none(1),
+                 readOnly(2),
+                 readWrite(3),
+                 moreSpecific(4)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The MIB access supported for this community entry.
+
+              A Get or GetNext SNMP PDU is authenticated if the value of this object
+              is read-only(2) or read-write(3).  A Set request will be honored if the value
+              of this object is read-write(3).
+
+              If more granular access control is desired, then the value of this object is set
+              to more-specific(4), and the view table should be consulted.  This enables
+              the capability to set different access rights to different branches of the MIB
+              for a particular community. "
+      ::= { lanBlazer7000CommunityEntry 5 }
+
+   lanBlazer7000CommunityTrapReceiver OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 disable(1),
+                 enable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "If set to enable(1), this community entry is considered a trap receiver.
+              When the agent generates an SNMP trap, a copy will be sent to this host
+              using this community string."
+      ::= { lanBlazer7000CommunityEntry 6 }
+
+   lanBlazer7000CommunitySecurityLevel OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 normal(1),
+                 administrator(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Secure tables are only accessible from users with security clearance.  For
+              example, this table (the community table) is only accessible by parties that
+              have the security clearance."
+      ::= { lanBlazer7000CommunityEntry 7 }
+
+   lanBlazer7000CommunityStatus OBJECT-TYPE
+      SYNTAX  RowStatus
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000CommunityEntry 8 }
+
+
+-- WEB SERVER
+
+   lanBlazer7000AgentWeb OBJECT IDENTIFIER ::= { lanBlazer7000Agent 3 }
+
+   lanBlazer7000AgentWebServerURL OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..31))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The URL of where the document server software is
+              installed. The switch uses this location to find online
+              help and bimapped graphics.  Enter the host name or IP
+              address of the HTTP server at the HTTP Server Location
+              prompt, followed by ':2010'. For example, for a host
+              named 'phantom,', enter 'http://phantom:2010'.  If no
+              server is desired or installed, set this object to the
+              empty string."  
+      ::= { lanBlazer7000AgentWeb 1 }
+
+   lanBlazer7000AgentWebServerHelpDirectory OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..31))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The subdirectory that contains the help files on the
+              document server.  Typically, this directory is 'help'."  
+      ::= { lanBlazer7000AgentWeb 2 }
+   
+   
+-- CHASSIS
+
+-- Chassis Family
+
+   lanBlazer7000Chassis OBJECT IDENTIFIER ::= { odsLANBlazer7000Mib 3 }
+
+-- Chassis family of objects help manage modular devices, and their environmental
+-- parameters.
+
+   lanBlazer7000ChassisGen OBJECT IDENTIFIER ::= { lanBlazer7000Chassis 1 }
+
+   lanBlazer7000ChassisType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 p550(1),
+                 p220(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The model of the chassis that this agent is managing."
+      ::= { lanBlazer7000ChassisGen 1 }
+
+   lanBlazer7000ChassisSlots OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The number of slots available in this chassis.  If this chassis is a stackable
+              chassis, the total capacity of stacking units."
+      ::= { lanBlazer7000ChassisGen 2 }
+
+
+
+-- INVENTORY
+
+   lanBlazer7000Inventory OBJECT IDENTIFIER ::= { lanBlazer7000Chassis 2 }
+
+-- The inventory table contains manufacturing identification information of the
+-- components contained within the system.
+
+   lanBlazer7000InventoryTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000InventoryEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of inventory information."
+      ::= { lanBlazer7000Inventory 1 }
+
+   lanBlazer7000InventoryEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000InventoryEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "Inventory information related to this device."
+      INDEX   { lanBlazer7000InventoryResourceType,
+                lanBlazer7000InventoryResourceIndex }
+      ::= { lanBlazer7000InventoryTable 1 }
+
+   LanBlazer7000InventoryEntry ::=
+      SEQUENCE {
+         lanBlazer7000InventoryResourceType
+            ResourceType,
+         lanBlazer7000InventoryResourceIndex
+            ResourceId,
+         lanBlazer7000InventoryModelNumber
+            DisplayString,
+         lanBlazer7000InventorySerialNumber
+            DisplayString,
+         lanBlazer7000InventoryVersion
+            DisplayString,
+         lanBlazer7000InventoryManufactureInfo
+            DisplayString,
+         lanBlazer7000InventoryScratchPad
+            DisplayString
+      }
+
+
+   lanBlazer7000InventoryResourceType OBJECT-TYPE
+      SYNTAX  ResourceType
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The resource class of this inventory item."
+      ::= { lanBlazer7000InventoryEntry 1 }
+
+   lanBlazer7000InventoryResourceIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The resource identifier of this inventory item."
+      ::= { lanBlazer7000InventoryEntry 2 }
+
+   lanBlazer7000InventoryModelNumber OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..32))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The model number of this device."
+      ::= { lanBlazer7000InventoryEntry 3 }
+
+   lanBlazer7000InventorySerialNumber OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..32))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The serial number of this device."
+      ::= { lanBlazer7000InventoryEntry 4 }
+
+   lanBlazer7000InventoryVersion OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..32))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The revision number of this device."
+      ::= { lanBlazer7000InventoryEntry 5 }
+
+   lanBlazer7000InventoryManufactureInfo OBJECT-TYPE
+      SYNTAX  DisplayString   (SIZE(0..128))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "Information related to the manufacturing of this device."
+      ::= { lanBlazer7000InventoryEntry 6 }
+
+   lanBlazer7000InventoryScratchPad OBJECT-TYPE
+      SYNTAX  DisplayString   (SIZE(0..128))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "A scratch pad area available for keeping user-supplied inventory
+              information. "
+      ::= { lanBlazer7000InventoryEntry 7 }
+
+--
+-- Power Systems
+
+   lanBlazer7000PowerSystems OBJECT IDENTIFIER ::= { lanBlazer7000Chassis 3 }
+
+-- POWER SUPPLY TABLE
+
+   lanBlazer7000PowerSupplies OBJECT IDENTIFIER ::= { lanBlazer7000PowerSystems 1 }
+
+-- A table providing information about each power supply.
+-- The index to the table is the power supply resource index.
+--
+-- Information in this table includes the status of the power supply
+-- and how much power this supply generates.
+
+   lanBlazer7000PowerSupplyTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PowerSupplyEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of information related to each power supply in the system."
+      ::= { lanBlazer7000PowerSupplies 1 }
+
+   lanBlazer7000PowerSupplyEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PowerSupplyEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "An entry providing information about a particular power supply in the
+              system."
+      INDEX   { lanBlazer7000PowerSupplyIndex }
+      ::= { lanBlazer7000PowerSupplyTable 1 }
+
+   LanBlazer7000PowerSupplyEntry ::=
+      SEQUENCE {
+         lanBlazer7000PowerSupplyIndex
+            ResourceId,
+         lanBlazer7000PowerSupplyType
+            INTEGER,
+         lanBlazer7000PowerSupplyStatus
+            INTEGER,
+         lanBlazer7000PowerSupplyInputStatus
+            INTEGER,
+         lanBlazer7000PowerSupplyOutputStatus
+            INTEGER,
+         lanBlazer7000PowerSupplyOutputCapacity
+            INTEGER
+      }
+
+
+   lanBlazer7000PowerSupplyIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this power supply.  This index
+              corresponds to the lanBlazer7000ResourceIndex of the power supply type
+              resource."
+      ::= { lanBlazer7000PowerSupplyEntry 1 }
+
+   lanBlazer7000PowerSupplyType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 unknown(1),
+                 psA(2),
+                 psB(3)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An enumerated integer describing the type of power supply.  "
+      ::= { lanBlazer7000PowerSupplyEntry 2 }
+
+
+   lanBlazer7000PowerSupplyStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 okay(1),
+                 faulty(2),
+                 unknown(3)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of this power supply.  Okay(1) indicates the power supply is
+              operating properly. Faulty(2) indicates that the power supply is not
+              functioning properly.  In this case, more information can be determined
+              from the other power supply attributes."
+      ::= { lanBlazer7000PowerSupplyEntry 3 }
+
+
+   lanBlazer7000PowerSupplyInputStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 okay(1),
+                 faulty(2),
+                 unknown(3)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of the input power feed (e.g. the AC power cord) to this
+              power supply."
+      ::= { lanBlazer7000PowerSupplyEntry 4 }
+
+   lanBlazer7000PowerSupplyOutputStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 okay(1),
+                 faulty(2),
+                 unknown(3)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of the output power from this power supply."
+      ::= { lanBlazer7000PowerSupplyEntry 5 }
+
+   lanBlazer7000PowerSupplyOutputCapacity OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The total capacity of power supplied by this supply in Watts."
+      ::= { lanBlazer7000PowerSupplyEntry 6 }
+
+
+
+-- POWER MANAGEMENT
+
+   lanBlazer7000PowerMgmtGen OBJECT IDENTIFIER ::= { lanBlazer7000PowerSystems 2 }
+
+   lanBlazer7000PowerCapacity OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The total capacity (in Watts) of power available (currently) in the system."
+      ::= { lanBlazer7000PowerMgmtGen 1 }
+
+   lanBlazer7000PowerUsed OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The total power (in Watts) currently being consumed in the system."
+      ::= { lanBlazer7000PowerMgmtGen 2 }
+
+-- POWER MANAGEMENT CONTROL
+
+   lanBlazer7000PowerMgmtCtl OBJECT IDENTIFIER ::= { lanBlazer7000PowerSystems  3 }
+
+   lanBlazer7000PowerControlTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PowerControlEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "This table manages the power attributes associated with each module."
+      ::= { lanBlazer7000PowerMgmtCtl 1 }
+
+   lanBlazer7000PowerControlEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PowerControlEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "An entry in the power control table manages the power attributes of the
+              specified module."
+      INDEX   { lanBlazer7000ModuleIndex }
+      ::= { lanBlazer7000PowerControlTable 1 }
+
+   LanBlazer7000PowerControlEntry ::=
+      SEQUENCE {
+         lanBlazer7000PowerControlUsed
+            INTEGER,
+         lanBlazer7000PowerControlPriority
+            INTEGER,
+         lanBlazer7000PowerControlMode
+            INTEGER
+      }
+
+   lanBlazer7000PowerControlUsed OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The total power (in Watts) used by this module."
+      ::= { lanBlazer7000PowerControlEntry 1 }
+
+   lanBlazer7000PowerControlPriority OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 high(1),
+                 normal(2),
+                 low(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The priority of this module to be considered in the event of a power
+              supply failure where the amount of power used exceeds the system
+              capacity.  Low priority modules will be powered down before higher
+              priority modules."
+      ::= { lanBlazer7000PowerControlEntry 2 }
+
+   lanBlazer7000PowerControlMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2),
+                 poweredDown(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Normally, a module power mode is enable(1).
+
+              In the event of a power supply failure resulting in a power shortage, or in
+              the event of this module being inserted without enough available power,
+              the mode will be poweredDown(3).    Setting this object to the value of
+              poweredDown(3) will result in an error.
+
+              When enough power is available, the module will power back up when in
+              this mode.  A module may be powered down through administrative
+              action by setting the value of this object to disable(2). In this mode, the
+              module will remain powered down until the mode is set back to enable."
+      ::= { lanBlazer7000PowerControlEntry 3 }
+
+
+
+-- TEMPERATURE
+
+   lanBlazer7000Temperature OBJECT IDENTIFIER ::= { lanBlazer7000Chassis 4 }
+
+   lanBlazer7000TempTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000TempEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of information related to the temperature within the system."
+      ::= { lanBlazer7000Temperature 1 }
+
+   lanBlazer7000TempEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000TempEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "An entry providing temperature information related to a specific
+              temperature probe in the system."
+      INDEX   { lanBlazer7000TempIndex }
+      ::= { lanBlazer7000TempTable 1 }
+
+   LanBlazer7000TempEntry ::=
+      SEQUENCE {
+         lanBlazer7000TempIndex
+            ResourceId,
+         lanBlazer7000TempValue
+            INTEGER,
+         lanBlazer7000TempUpperLimit
+            INTEGER,
+         lanBlazer7000TempUpperWarning
+            INTEGER,
+         lanBlazer7000TempLowerWarning
+            INTEGER,
+         lanBlazer7000TempLowerLimit
+            INTEGER
+      }
+
+   lanBlazer7000TempIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "A unique index that identifies this temperature probe.  This index
+              corresponds to the lanBlazer7000ResourceIndex for temperature probe type
+              resources."
+      ::= { lanBlazer7000TempEntry 1 }
+
+   lanBlazer7000TempValue OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The current temperature reading of this temperature probe in degrees
+              Celsius."
+      ::= { lanBlazer7000TempEntry 2 }
+
+   lanBlazer7000TempUpperLimit OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The upper temperature limit of this temperature probe in degrees
+              Celsius."
+      ::= { lanBlazer7000TempEntry 3 }
+
+   lanBlazer7000TempUpperWarning OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The upper temperature warning of this temperature probe in degrees
+              Celsius."
+      ::= { lanBlazer7000TempEntry 4 }
+
+   lanBlazer7000TempLowerWarning OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The lower temperature warning of this temperature probe in degrees
+              Celsius."
+      ::= { lanBlazer7000TempEntry 5 }
+
+   lanBlazer7000TempLowerLimit OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The lower temperature limit of this temperature probe in degrees
+              Celsius."
+      ::= { lanBlazer7000TempEntry 6 }
+
+
+
+-- MODULE MANAGEMENT
+
+   lanBlazer7000Modules OBJECT IDENTIFIER ::= { lanBlazer7000Chassis 5 }
+
+   lanBlazer7000ModuleTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000ModuleEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of information related to the modules in the system."
+      ::= { lanBlazer7000Modules 1 }
+
+   lanBlazer7000ModuleEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000ModuleEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "Attributes related to managing this module."
+      INDEX   { lanBlazer7000ModuleIndex }
+      ::= { lanBlazer7000ModuleTable 1 }
+
+   LanBlazer7000ModuleEntry ::=
+      SEQUENCE {
+         lanBlazer7000ModuleIndex
+            ResourceId,
+         lanBlazer7000ModuleName
+            DisplayString,
+         lanBlazer7000ModuleType
+            INTEGER,
+         lanBlazer7000ModuleBaseType
+            INTEGER,
+         lanBlazer7000ModuleSlotWidth
+            INTEGER,
+         lanBlazer7000ModuleSlotOffset
+            INTEGER,
+         lanBlazer7000ModulePorts
+            INTEGER
+      }
+
+   lanBlazer7000ModuleIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this module.  This index corresponds to
+              the lanBlazer7000ResourceIndex associated with module type resources."
+      ::= { lanBlazer7000ModuleEntry 1 }
+
+   lanBlazer7000ModuleName OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE (0..31))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "A user-assignable name for this module."
+      ::= { lanBlazer7000ModuleEntry 2 }
+
+
+   lanBlazer7000ModuleType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 unknown(1),         -- unknown module
+                 m5502-1000(2),      -- 2 Port Gigabit
+                 m2206-1000(3),      -- 6 Port Gigabit
+                 m5520-100TX-QS(4),  -- 20 Port 10/100: Quality Phy's
+                 m5510-100FX(5),     -- 10 Port Fast Ethernet Fiber
+                 m5500-SUP(6),       -- Supervisor (5500)
+                 m5504-1000(7),      -- 4 Port Gigabit
+                 m2201-1000(8),      -- 1 Port Gigabit Option
+                 m5520-100TX-I(9),   -- 20 Port 10/100: Intel Phy's
+                 m2202-100FX(10),    -- 2 Port Fast Ethernet Fiber Option
+                 m5510R-100FX(11),   -- 10 Port Routing Fast Ethernet Fiber
+                 m5512R-100TX(12),   -- 12 Port Routing 10/100
+                 m5500R-SUP(13),     -- Routing Supervisor
+                 m5502R-1000(14),    -- 2 Port Routing Gigabit
+                 m2200-SUP(15),      -- Supervisor (2200)
+                 m2204-100TX(16),    -- 4 Port 10/100 Option
+                 m2224-100TX(17)     -- 24 Port 10/100 Option
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An enumerated integer that is unique for each module model. "
+      ::= { lanBlazer7000ModuleEntry 3 }
+
+   lanBlazer7000ModuleBaseType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 gigabit(1),        -- Gigabit Ethernet Modules
+                 fastEthernet(2),   -- Fast Ethernet Modules
+                 supervisor(3)      -- Supervisor Modules
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The base type of this module.  This object is used to describe the core
+              functions of the module.  Often, base designs are derived into multiple
+              module types which are typically just packaging variations (e.g. changing the
+              connector types).  The  value of this object corresponds to the value of
+              lanBlazer7000ResourceBaseType."
+      ::= { lanBlazer7000ModuleEntry 4 }
+
+   lanBlazer7000ModuleSlotWidth OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The number of slots that this module occupies."
+      ::= { lanBlazer7000ModuleEntry 5 }
+
+   lanBlazer7000ModuleSlotOffset OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The slot offset (one based) that identifies, along with the slot width and
+              slot location, the actual slots that this module occupies.  The offset identifies
+              which slot within the width of the module that this module reports as its
+              slot number."
+      ::= { lanBlazer7000ModuleEntry 6 }
+
+   lanBlazer7000ModulePorts OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The total number of ports associated with this module."
+      ::= { lanBlazer7000ModuleEntry 7 }
+
+
+
+-- PORT MANAGEMENT
+
+   lanBlazer7000Ports OBJECT IDENTIFIER ::= { lanBlazer7000Chassis 6 }
+
+-- PORT MANAGEMENT DISCUSSION
+--
+--    This section manages the physical ports within the system.
+--
+--    There are attributes that are generic to the physical port class and every
+-- physical port in the system supports these attributes.  These attributes are
+-- represented in the generic port management section.
+--
+--    Note, however, that the following operations WILL EACH RESULT IN AN ERROR:
+--       Setting lanBlazer7000PortMode to disable(2) for an internal(1) port
+--       Setting lanBlazer7000PortName for an internal(1)) port
+--
+--    Each type of port may also support other lanBlazer7000PortType-specific attributes.
+-- If a port supports a particular attribute, there is an instance of that port
+-- in the table that manages that attribute.  These attributes are represented
+-- in the port tables that follow the generic port management section.
+--
+--    internal(1) ports do not support any type-specific attributes.
+--
+--    ether-ten-oneHundred(2) ports support:
+--       lanBlazer7000PortFlowControlMode
+--       lanBlazer7000PortDuplexMode
+--       lanBlazer7000PortSpeedMode
+--       lanBlazer7000PortAutoNegotiationMode
+--       lanBlazer7000PortAutoNegotiationSpeedAdvertisement
+--       lanBlazer7000PortAutoNegotiationDuplexAdvertisement
+--       lanBlazer7000PortRateLimitMode
+--       lanBlazer7000PortRateLimitRate
+--       lanBlazer7000PortRateLimitBurstSize
+--       lanBlazer7000PortPacePriorityMode
+--
+--    ether-oneHundred(3) ports support:
+--       lanBlazer7000PortFlowControlMode
+--       lanBlazer7000PortDuplexMode
+--       lanBlazer7000PortRateLimitMode
+--       lanBlazer7000PortRateLimitRate
+--       lanBlazer7000PortRateLimitBurstSize
+--       lanBlazer7000PortPacePriorityMode
+--
+--    ether-gigabit(4) ports (pre-standard) support:
+--       lanBlazer7000PortFlowControlMode
+--          (setting to enable-with-aggressive-backoff(3) RESULTS IN AN ERROR)
+--       lanBlazer7000PortPacePriorityMode
+
+-- GENERIC PORT MANAGEMENT
+
+   lanBlazer7000PortMgt OBJECT IDENTIFIER ::= { lanBlazer7000Ports 1 }
+
+   lanBlazer7000PortTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of information related to every data port in this data networking
+              system."
+      ::= { lanBlazer7000PortMgt 1 }
+
+   lanBlazer7000PortEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A data port associated with this data networking system."
+      INDEX   { lanBlazer7000PortIndex }
+      ::= { lanBlazer7000PortTable 1 }
+
+   LanBlazer7000PortEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortIndex
+            ResourceId,
+         lanBlazer7000PortName
+            DisplayString,
+         lanBlazer7000PortType
+            INTEGER,
+         lanBlazer7000PortBaseType
+            INTEGER,
+         lanBlazer7000PortMode
+            INTEGER,
+         lanBlazer7000PortStatus
+            INTEGER,
+         lanBlazer7000PortConnector
+            INTEGER,
+         lanBlazer7000PortSpeedState
+            INTEGER,
+         lanBlazer7000PortDuplexState
+            INTEGER,
+         lanBlazer7000PortGroupBinding
+            ResourceId
+      }
+
+   lanBlazer7000PortIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this port.  Typically, ports are child
+              resources of the module that contains them.  In these cases, ports are
+              identified by their module and their relative physical position on that
+              module."
+      ::= { lanBlazer7000PortEntry 1 }
+
+   lanBlazer7000PortName OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..31))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The user-assigned name for this port.
+
+              Note that setting this object for an internal(1) port results in an error."
+      ::= { lanBlazer7000PortEntry 2 }
+
+   lanBlazer7000PortType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 internal(1),
+                 ether-ten-oneHundred(2),
+                 ether-oneHundred(3),
+                 ether-gigabit(4)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An internal(1) port does not have an external connection.
+
+              An ether-ten-oneHundred(2) port is an Ethernet port which can be switched between
+              10 and 100 megabits per second.
+
+              An ether-oneHundred(3) port is a 100 megabits per second Fast Ethernet port.
+
+              An ether-gigabit(4) port is a 1000 megabits per second Gigabit Ethernet port."
+      ::= { lanBlazer7000PortEntry 3 }
+
+   lanBlazer7000PortBaseType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 internal(1),
+                 ether-ten-oneHundred(2),
+                 ether-oneHundred(3),
+                 ether-gigabit(4)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The base type of this port.  This object may be useful to help manage new
+              port types that are similar in nature to legacy port types."
+      ::= { lanBlazer7000PortEntry 4 }
+
+   lanBlazer7000PortMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The mode of this port.  When set to enable(1), this port passes data.
+              When set to disable(2), the port does not receive or transmit data, nor does
+              it generate port-level signaling e.g. link integrity pulses.
+
+              Note that setting an internal(1) port to disable(2) results in an error."
+      ::= { lanBlazer7000PortEntry 5 }
+
+   lanBlazer7000PortStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 disabled(1),
+                 okay(2),
+                 warning(3),
+                 disabledButOkay(4),
+                 linkFailure(5)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of this port.  Disabled(1) means that this port has been disabled
+              through management action.  Okay(2) indicates that this port is operating
+              properly.  Warning(3) indicates that this port is encountering an abnormal
+              condition that, however, allows it to continue to pass data.  LinkFailure(5)
+              means that this port is unable to pass data."
+      ::= { lanBlazer7000PortEntry 6 }
+
+   lanBlazer7000PortConnector OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 internal(1),
+                 rj45(2),
+                 fiber-ST(3),
+                 fiber-SC(4),
+                 rs-232(5),
+                 aui(6)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The connector type associated with this port."
+      ::= { lanBlazer7000PortEntry 7 }
+
+   lanBlazer7000PortSpeedState OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 ten-megabits-per-second(1),
+                 one-hundred-megabits-per-second(2),
+                 one-gigabit-per-second(3),
+                 under-negotiation(4)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The data rate of this port in bits per second.  For example, a standard
+              Ethernet port (e.g. 10BASE-T) would indicate a value of ten-megabits-per-second((1)
+              indicating that the port supports a data rate of 10Mb/s.  For ports that can
+              change their data rate (e.g. 10/100 ports), the value of this object indicates
+              the current state of the port's speed capability."
+      ::= { lanBlazer7000PortEntry 8 }
+
+   lanBlazer7000PortDuplexState OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 half-duplex(1),
+                 full-duplex(2),
+                 under-negotiation(3)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of this object indicates whether this port is operating in full- or
+              half-duplex mode.
+
+              The value under-negotiation(3) indicates that the port has not selected an
+              operational duplex setting yet."
+      ::= { lanBlazer7000PortEntry 9 }
+
+   lanBlazer7000PortGroupBinding OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "Each port is associated with a port group.  Typically, a port will belong to
+              a port group of one and the value of this object will be the same as the
+              port index for this instance.  That is, this port will point to itself.
+
+              The intent of this object is to help manage ports that  have hierarchical
+              relationships.  For example, an ATM port typically has a physical port and
+              multiple logical ports (e.g. each logical port corresponding to an instance of
+              an emulated LAN).  In this case, each LANE instance would refer to the
+              instance of the physical port associated with the ATM front-end.
+
+              Another example is an FDDI DAS type port.  In this case, there is a logical
+              port associated with the FDDI switch port which is connected to the two
+              FDDI physical port connectors.  The physical FDDI ports both point to
+              the logical instance of an FDDI port."
+      ::= { lanBlazer7000PortEntry 10 }
+
+
+
+-- PORT FLOW CONTROL
+
+   lanBlazer7000PortFlowControlMgt OBJECT IDENTIFIER ::= { lanBlazer7000Ports 2 }
+
+-- Flow Control
+--
+--  Flow control is used by ports to slow down the incoming flow of data.  It has been
+--  shown to be a very effective mechanism for improving network efficiency when used
+--  in conjunction with an end-station.
+
+   lanBlazer7000PortFlowControlTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortFlowControlEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of ports that support flow control."
+      ::= { lanBlazer7000PortFlowControlMgt 1 }
+
+   lanBlazer7000PortFlowControlEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortFlowControlEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "Configuration objects related to port based flow control."
+      INDEX   { lanBlazer7000PortIndex }
+      ::= { lanBlazer7000PortFlowControlTable 1 }
+
+   LanBlazer7000PortFlowControlEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortFlowControlMode
+            INTEGER
+      }
+
+   lanBlazer7000PortFlowControlMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2),
+                 enable-with-aggressive-backoff(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Flow control is used to prevent or reduce the dropping of frames due to
+              the lack of buffer space.  Overall, networks are more efficient when a
+              sending station is asked to pause in its sending process, rather than having
+              the transmitted frames dropped.
+
+              Flow control is not as efficient when used in conjunction with a shared
+              ports, i.e. when used with a repeater.  Therefore, flow control is not
+              recommended for a port connected to shared topologies.
+
+              Flow control is most effective when the port is directly connected to an
+              end-station, especially when connected to a server.  Flow control is
+              recommended for ports connected directly to end-stations.
+
+              When the port is in half-duplex mode, back pressure is used to control
+              the incoming flow.  Back pressure essentially forces collisions for short
+              periods of time.
+
+              When the port is in full-duplex mode, IEEE 802.3 standard pause frames
+              are used to control the incoming flow.
+
+              Note that setting an ether-gigabit(4) port to enable-with-aggressive-backoff(3)
+              results in an error."
+      ::= { lanBlazer7000PortFlowControlEntry 21 }
+
+
+
+-- DUPLEX MODE
+
+   lanBlazer7000PortDuplexMgt OBJECT IDENTIFIER ::= { lanBlazer7000Ports 3 }
+
+-- A table that manages each port that supports the ability to switch
+-- between full- and half- duplex mode.
+
+   lanBlazer7000PortDuplexTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortDuplexEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of ports that support full- and half-duplex data communications."
+      ::= { lanBlazer7000PortDuplexMgt 1 }
+
+   lanBlazer7000PortDuplexEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortDuplexEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A port device configuration that controls the duplex mode of this port."
+      INDEX   { lanBlazer7000PortIndex }
+      ::= { lanBlazer7000PortDuplexTable 1 }
+
+
+   LanBlazer7000PortDuplexEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortDuplexMode
+            INTEGER
+      }
+
+
+   lanBlazer7000PortDuplexMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 half-duplex(1),
+                 full-duplex(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "A point-to-point Ethernet port may be configured to support half or full
+              duplex communications.
+
+              A full-duplex(2) port transmits and receives data concurrently,  effectively
+              doubling the data rate of the port.
+
+              Half-duplex(1) ports transmit or receive data, but not at the same time.
+              Half-duplex ports use CSMA/CD as the access  method to the network.
+              Ports that are connected to shared segments (i.e. connected to a repeater),
+              should always be configured to be in half-duplex mode.
+
+              This object indicates the desired duplexity of this port.  If
+              auto-negotiation is turned on for this port, then this value is ignored."
+      ::= { lanBlazer7000PortDuplexEntry 31 }
+
+
+
+--  SPEED MODE
+
+--  The Speed Table manages the speed mode for ports that can switch speeds.
+
+   lanBlazer7000PortSpeedMgt OBJECT IDENTIFIER ::= { lanBlazer7000Ports 4 }
+
+   lanBlazer7000PortSpeedTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortSpeedEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of port devices that support multiple speeds."
+      ::= { lanBlazer7000PortSpeedMgt 1 }
+
+   lanBlazer7000PortSpeedEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortSpeedEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A port that supports multiple speeds."
+      INDEX   { lanBlazer7000PortIndex }
+      ::= { lanBlazer7000PortSpeedTable 1 }
+
+   LanBlazer7000PortSpeedEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortSpeedMode
+            INTEGER
+      }
+
+
+   lanBlazer7000PortSpeedMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 ten-megabits-per-second(1),
+                 one-hundred-megabits-per-second(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Some of these values may not be applicable to certain types of ports.
+
+              This object indicates the desired data rate of this port.  If
+              auto-negotiation is turned on for this port, then this value is ignored."
+      ::= { lanBlazer7000PortSpeedEntry 41 }
+
+
+
+-- AUTO NEGOTIATION
+
+   lanBlazer7000PortAutoNegotiationMgt OBJECT IDENTIFIER ::= { lanBlazer7000Ports  5 }
+
+   lanBlazer7000PortAutoNegotiationTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortAutoNegotiationEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of ports that support auto-negotiation."
+      ::= { lanBlazer7000PortAutoNegotiationMgt 1 }
+
+   lanBlazer7000PortAutoNegotiationEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortAutoNegotiationEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "Attributes associated with a port that supports auto-negotiation."
+      INDEX   { lanBlazer7000PortIndex }
+      ::= { lanBlazer7000PortAutoNegotiationTable 1 }
+
+   LanBlazer7000PortAutoNegotiationEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortAutoNegotiationMode
+            INTEGER,
+         lanBlazer7000PortAutoNegotiationSpeedAdvertisement
+            INTEGER,
+         lanBlazer7000PortAutoNegotiationDuplexAdvertisement
+            INTEGER
+      }
+
+
+   lanBlazer7000PortAutoNegotiationMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 autoNegotiate(1),
+                 manualConfiguration(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Setting this object to autoNegotiate(1) causes this port to negotiate the
+              duplex mode and the port speed, subject to the port's capabilities."
+      ::= { lanBlazer7000PortAutoNegotiationEntry 51 }
+
+   lanBlazer7000PortAutoNegotiationSpeedAdvertisement OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 ten-and-one-hundred-megabits-per-second(1),
+                 one-hundred-megabits-per-second(2),
+                 ten-megabits-per-second(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The speed to advertise while auto-negotiating."
+      ::= { lanBlazer7000PortAutoNegotiationEntry 52 }
+
+   lanBlazer7000PortAutoNegotiationDuplexAdvertisement OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 full-and-half-duplex(1),
+                 half-duplex(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The duplexity to advertise while auto-negotiating."
+      ::= { lanBlazer7000PortAutoNegotiationEntry 53 }
+
+
+
+-- RATE LIMITING
+
+   lanBlazer7000PortRateLimitMgt OBJECT IDENTIFIER ::= { lanBlazer7000Ports 6 }
+
+--  Rate Limiting
+--
+--  This table manages the rate limiting for ports that support this feature.  Rate Limiting
+-- prevents floods from overwhelming a port (typically, a slower port).
+
+   lanBlazer7000PortRateLimitTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortRateLimitEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of ports that support the ability to limit the rate of floods."
+      ::= { lanBlazer7000PortRateLimitMgt 1 }
+
+   lanBlazer7000PortRateLimitEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortRateLimitEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "The rate limit configuration associated with this port."
+      INDEX   { lanBlazer7000PortIndex }
+      ::= { lanBlazer7000PortRateLimitTable 1 }
+
+   LanBlazer7000PortRateLimitEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortRateLimitMode
+            INTEGER,
+         lanBlazer7000PortRateLimitRate
+            INTEGER,
+         lanBlazer7000PortRateLimitBurstSize
+            INTEGER
+      }
+
+
+   lanBlazer7000PortRateLimitMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2),
+                 enableIncludeKnownMulticast(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "This object configures whether rate limiting is enabled for this port (the
+              factory default is enable(1)).  Enabling rate limiting for this port prevents
+              floods from overwhelming the output buffer associated with this port.
+
+              Normally, rate limiting will only consider frames that are flooded to this
+              port.  This typically does not include known multicasts.  However, known
+              multicasts can be included in the flood limiting by setting the value of this
+              object to enableIncludeKnownMulticast(3)."
+      ::= { lanBlazer7000PortRateLimitEntry 61 }
+
+   lanBlazer7000PortRateLimitRate OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 one-percent(1),
+                 two-percent(2),
+                 five-percent(3),
+                 ten-percent(4),
+                 twenty-percent(5),
+                 forty-percent(6),
+                 eighty-percent(7)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The percentage of the port's transmitted data allowed to be floods (or floods
+              and known multicasts).  For example, the factory default setting of
+              twenty-percent(4) indicates that 20% of the data rate can be floods.  For 10 Mb/s
+              ports, this is equivalent to a maximum rate of approximately 3000 flooded pps;
+              for 100 Mb/s ports, a maximum rate of approximately 30,000 flooded pps."
+      ::= { lanBlazer7000PortRateLimitEntry 62 }
+
+   lanBlazer7000PortRateLimitBurstSize OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 rateLimit1(1),
+                 rateLimit2(2),
+                 rateLimit4(3),
+                 rateLimit8(4),
+                 rateLimit16(5),
+                 rateLimit32(6),
+                 rateLimit64(7),
+                 rateLimit128(8),
+                 rateLimit256(9),
+                 rateLimit1024(10),
+                 rateLimit2048(11)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The maximum number of consecutive transmitted flooded (or flooded and known
+              multicasted) packets.  Typically, the burst size is set so as to not overflow the
+              port's buffer."
+      ::= { lanBlazer7000PortRateLimitEntry 63 }
+
+
+
+--  PACE PRIORITY
+
+   lanBlazer7000PortPacePriorityMgt OBJECT IDENTIFIER ::= { lanBlazer7000Ports 7 }
+
+--  Pace Priority
+--
+-- This table manages all ports that support classification of frame priority via
+-- 3Com's Pace(r) Prioritization.
+--
+
+   lanBlazer7000PortPacePriorityTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortPacePriorityEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of ports that support the ability to classify frame priority based on
+              3Com Pace(r) Prioritization."
+      ::= { lanBlazer7000PortPacePriorityMgt 1 }
+
+   lanBlazer7000PortPacePriorityEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortPacePriorityEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A port that supports 3Com Pace(r) priority."
+      INDEX   { lanBlazer7000PortIndex }
+      ::= { lanBlazer7000PortPacePriorityTable 1 }
+
+   LanBlazer7000PortPacePriorityEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortPacePriorityMode
+            INTEGER
+      }
+
+
+   lanBlazer7000PortPacePriorityMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When Pace priority is enabled, this port will detect frames that use 3Com
+              Corporation's Pace(r) Priority signaling.  Frames signaled with priority in
+              this manner are mapped to traffic priority level 4 (on scale of 0-7)."
+      ::= { lanBlazer7000PortPacePriorityEntry 71 }
+
+--  PORT CATEGORY
+
+   lanBlazer7000PortCategoryMgt OBJECT IDENTIFIER ::= { lanBlazer7000Ports 8 }
+
+   lanBlazer7000PortCategoryTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortCategoryEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of ports that support the port category feature.  Currently, all
+              ports support this capability."
+      ::= { lanBlazer7000PortCategoryMgt 1 }
+
+   lanBlazer7000PortCategoryEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortCategoryEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A port that supports port categorization."
+      INDEX   { lanBlazer7000PortIndex }
+      ::= { lanBlazer7000PortCategoryTable 1 }
+
+   LanBlazer7000PortCategoryEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortCategoryMode
+            INTEGER
+      }
+
+
+   lanBlazer7000PortCategoryMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 userPort(1),
+                 servicePort(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "By default, all ports are considered service ports.  A
+              service port is a port that provides a networks service
+              such as a connection to a server, other switches, or
+              the like.  A service port will trigger the service port
+              event for status changes with the alarm severity and
+              will trigger an alarm in the alarm table on link
+              failure. 
+
+              In contrast, user ports trigger the user link event
+              with warning severity.  They do not trigger an alarm
+              upon link failures.  User ports are useful to prevent
+              floods of traps or entries in the alarm table.  This is
+              especially true for ports connected to user hosts that
+              power up in the morning and power down again at the end
+              of the work day."
+      ::= { lanBlazer7000PortCategoryEntry 81 }
+
+
+-- BUFFER MANAGEMENT
+--
+-- This section is dedicated to managing any buffers that exist in the system.
+-- Buffers are used to store network traffic.  They are indexed by the module
+-- that contains the buffer and a unique index within the buffer.
+
+   lanBlazer7000BufferMgt OBJECT IDENTIFIER ::= { lanBlazer7000Chassis 7 }
+
+   lanBlazer7000BufferTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000BufferEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of frame buffers in the system."
+      ::= { lanBlazer7000BufferMgt 1 }
+
+   lanBlazer7000BufferEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000BufferEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "Objects related to the management of this frame buffer."
+      INDEX   { lanBlazer7000BufferIndex }
+      ::= { lanBlazer7000BufferTable 1 }
+
+   LanBlazer7000BufferEntry ::=
+      SEQUENCE {
+         lanBlazer7000BufferIndex
+            ResourceId,
+         lanBlazer7000BufferFabricPort
+            ResourceId,
+         lanBlazer7000BufferFabricPortDirection
+            INTEGER,
+         lanBlazer7000BufferSwitchPort
+            ResourceId,
+         lanBlazer7000BufferMemory
+            INTEGER,
+         lanBlazer7000BufferAgeTimer
+            INTEGER,
+         lanBlazer7000BufferPriorityServicing
+            INTEGER,
+         lanBlazer7000BufferPriorityAllocation
+            INTEGER,
+         lanBlazer7000BufferPriorityThreshold
+            INTEGER,
+         lanBlazer7000BufferCongestion
+            INTEGER,
+         lanBlazer7000BufferHighOverflowDrops
+            Counter,
+         lanBlazer7000BufferLowOverflowDrops
+            Counter,
+         lanBlazer7000BufferHighStaleDrops
+            Counter,
+         lanBlazer7000BufferLowStaleDrops
+            Counter,
+         lanBlazer7000BufferCongestionDrops
+            Counter
+      }
+
+
+   lanBlazer7000BufferIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The unique index that identifies this buffer within the system.  Buffers are
+              indexed first by their module association and then a unique index within
+              that module."
+      ::= { lanBlazer7000BufferEntry 1 }
+
+   lanBlazer7000BufferFabricPort OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The switch fabric port associated with this buffer."
+      ::= { lanBlazer7000BufferEntry 2 }
+
+   lanBlazer7000BufferFabricPortDirection OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 in(1),
+                 out(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of this object indicates whether the buffer is used for buffering
+              frames going into the switching fabric or coming out of the fabric."
+      ::= { lanBlazer7000BufferEntry 3 }
+
+   lanBlazer7000BufferSwitchPort OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The switch port associated with this frame buffer.  Some buffers are not
+              associated with any one switch port.  In those cases, the value of the
+              resource ID returned will be the null resource ID."
+      ::= { lanBlazer7000BufferEntry 4 }
+
+   lanBlazer7000BufferMemory OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The amount of memory available for frame buffering in Kilobytes (KB)."
+      ::= { lanBlazer7000BufferEntry 5 }
+
+   lanBlazer7000BufferAgeTimer OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 disable(1),
+                 quarter-second(2),
+                 one-second(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Configures the timer used for aging frames in this buffer.  If the timer
+              expires for a frame, the frame is dropped and the event is counted in the
+              stale drop counter.  By default, the age timer is set to a 0.25 seconds
+              (quarter of a second).
+
+              The actual time that a frame may be aged out may vary.  When set to a
+              quarter of a second (250ms), the actual time may vary between 160ms and
+              320ms.  When set to a second (1000ms), the time may vary between 640ms
+              and 1.28 seconds (1028ms)."
+      ::= { lanBlazer7000BufferEntry 6 }
+
+   lanBlazer7000BufferPriorityServicing OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 strictPriority(1),
+                 everyTenThousand(2),
+                 everyThousand(3),
+                 everyHundred(4),
+                 everyFour(5)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of this object configures how often the normal priority queue is
+              serviced relative to the high priority queue.  By default, the normal priority
+              queue is serviced every thousand frames(3).  This means that the normal
+              priority queue is guaranteed to be serviced after servicing, at most, one
+              thousand high priority frames.
+
+              It is important to service the normal priority queue for two reasons.  One is
+              to prevent starvation for frames on the normal priority queue.  The other
+              reason is that frames cannot be aged if they are not serviced (see the age
+              timer)."
+      ::= { lanBlazer7000BufferEntry 7 }
+
+   lanBlazer7000BufferPriorityAllocation OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 none(1),
+                 tenPercent(2),
+                 twentyPercent(3),
+                 thirtyPercent(4),
+                 fortyPercent(5),
+                 fiftyPercent(6)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "This object controls how much of the total buffer space should be
+              allocated to high priority queue.  Please be warned that setting this object to
+              a different value causes the associated buffer to reset, causing a short loss of
+              data.
+
+              Setting the value of this object to none(1) not only allocates the entire buffer
+              space to normal traffic, but also has the side effect of disabling the priority
+              threshold.  In other words, all traffic will be considered as normal priority
+              traffic."
+      ::= { lanBlazer7000BufferEntry 8 }
+
+   lanBlazer7000BufferPriorityThreshold OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 none(1),
+                 one(2),
+                 two(3),
+                 three(4),
+                 four(5),
+                 five(6),
+                 six(7),
+                 seven(8)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "This object configures the threshold for which frames are considered high
+              priority.  Frames may have a priority classification ranging from 0-7, 7
+              being the highest.  By default, every frame that has priority 4 (four(5)) or
+              above is considered a high priority frame and is buffered accordingly.
+
+              If this buffer does not have any buffer space allocated for high priority
+              frames, then the buffer threshold will be none(1).  Setting this object to a
+              different value without allocating buffer space to high priority traffic will
+              result in an error."
+      ::= { lanBlazer7000BufferEntry 9 }
+
+   lanBlazer7000BufferCongestion OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 informationNotAvailable(1),
+                 notCongested(2),
+                 congested(3)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "This object indicates whether this buffer is in a congested state.."
+      ::= { lanBlazer7000BufferEntry 10 }
+
+   lanBlazer7000BufferHighOverflowDrops OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The count of the number of high priority frames dropped due to the high
+              priority queue overflowing."
+      ::= { lanBlazer7000BufferEntry 11 }
+
+   lanBlazer7000BufferLowOverflowDrops OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The count of the number of low priority frames dropped due to the low
+              priority queue overflowing."
+      ::= { lanBlazer7000BufferEntry 12 }
+
+   lanBlazer7000BufferHighStaleDrops OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The count of the number of high priority frames dropped due to being in
+              the high priority queue too long (the frame aged out)."
+      ::= { lanBlazer7000BufferEntry 13 }
+
+   lanBlazer7000BufferLowStaleDrops OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The count of the number of low priority frames dropped due to being in
+              the low priority queue too long (the frame aged out)."
+      ::= { lanBlazer7000BufferEntry 14 }
+
+   lanBlazer7000BufferCongestionDrops OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The count of the number of frames dropped due to the destination
+              (output) buffer being congested. "
+      ::= { lanBlazer7000BufferEntry 16 }
+
+
+
+-- SWITCHING
+
+   lanBlazer7000Switching OBJECT IDENTIFIER ::= { odsLANBlazer7000Mib 5 }
+
+-- LAYER II SWITCHING
+
+   lanBlazer7000SwitchingLayerII OBJECT IDENTIFIER ::= { lanBlazer7000Switching 1 }
+
+-- SWITCH MANAGEMENT
+
+   lanBlazer7000SwitchGen OBJECT IDENTIFIER ::= { lanBlazer7000SwitchingLayerII 1 }
+
+   lanBlazer7000SwitchSTPConfig OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 ieee8021dStp(1),    -- simple bridge
+                 stpPerVlan(2),      -- virtual bridging
+                 twoLayerStp(3),     -- separate planes
+                 disable(4)          -- STP disabled 
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When set to ieee8021dStp(1), the switch executes spanning tree conformant
+              to the IEEE 802.1D bridging standard.  The switch runs one instance of
+              spanning tree.
+
+              When set to stpPerVlan(2), the switch executes a separate instance of spanning
+              tree for each virtual LAN.  This configuration conforms to the model that
+              instances of virtual LANs within the switch are separate virtual bridging
+              functions.  This method may not work well with bridge/routers that are also
+              running spanning tree.
+
+              When set to twoLayerStp(3), the switch executes a two-layer spanning tree to prevent loops.  Two layer
+              spanning tree creates a higher 'plane' of spanning tree between VLAN devices.  This method of running
+              spanning tree is 'plug and play' with bridge/router type devices and also scales better than the other
+              two methods for large environments. 
+              
+              When set to disable(4), spanning tree is disabled in the switch."
+      ::= { lanBlazer7000SwitchGen 1 }
+
+   lanBlazer7000SwitchAgingTime OBJECT-TYPE
+	SYNTAX  INTEGER (10..1000000)
+	ACCESS  read-write 
+	STATUS  mandatory
+	DESCRIPTION
+		"The timeout period in seconds for aging dynamically learned forwarding 
+             information.  A default of 300 seconds is recommended. An aged entry is 
+		 marked invalid, but is not removed from the Address Forwarding Table, 
+             because it is assumed that it will be relearned to the same location within
+             the table."
+	::= { lanBlazer7000SwitchGen 2 }
+
+   lanBlazer7000SwitchSuperAgingTime OBJECT-TYPE
+	SYNTAX  INTEGER (1..30)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+		"The timeout period in days for removing stale invalid entries from the Address 
+             Forwarding Table.  A superaged entry is removed completely from the Address
+             Forwarding Table, because it is assumed that the entry will never be relearned."
+	::= { lanBlazer7000SwitchGen 3 }
+
+-- LAYERII
+
+-- BRIDGE MANAGEMENT
+
+   lanBlazer7000BridgeMgmt OBJECT IDENTIFIER ::= { lanBlazer7000SwitchingLayerII 2 }
+
+-- Bridge Table
+
+   lanBlazer7000BridgeTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000BridgeEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of Spanning Tree information for every bridge in the system."
+      ::= { lanBlazer7000BridgeMgmt 1 }
+
+   lanBlazer7000BridgeEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000BridgeEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      INDEX   { lanBlazer7000BridgeIndex }
+      ::= { lanBlazer7000BridgeTable 1 }
+
+   LanBlazer7000BridgeEntry ::=
+      SEQUENCE {
+         lanBlazer7000BridgeIndex
+            ResourceId,
+         lanBlazer7000BridgeType
+            INTEGER,
+         lanBlazer7000BridgeMode
+            INTEGER,
+         lanBlazer7000BridgeStatus
+            INTEGER,
+         lanBlazer7000BridgeStpPriority
+            INTEGER,
+         lanBlazer7000BridgeStpTimeSinceTopologyChange
+            TimeTicks,
+         lanBlazer7000BridgeStpTopChanges
+            Counter,
+         lanBlazer7000BridgeStpDesignatedRoot
+            BridgeId,
+         lanBlazer7000BridgeStpRootCost
+            INTEGER,
+         lanBlazer7000BridgeStpRootPort
+            INTEGER,
+         lanBlazer7000BridgeStpMaxAge
+            Timeout,
+         lanBlazer7000BridgeStpHelloTime
+            Timeout,
+         lanBlazer7000BridgeStpHoldTime
+            INTEGER,
+         lanBlazer7000BridgeStpForwardDelay
+            Timeout,
+         lanBlazer7000BridgeStpBridgeMaxAge
+            Timeout,
+         lanBlazer7000BridgeStpBridgeHelloTime
+            Timeout,
+         lanBlazer7000BridgeStpBridgeForwardDelay
+            Timeout
+      }
+
+   lanBlazer7000BridgeIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this bridge."
+      ::= { lanBlazer7000BridgeEntry 1 }
+
+   lanBlazer7000BridgeType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 dot1d(1),
+                 virtual(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "Indicates whether this is a legacy dot1d bridge consisting of all switch
+              ports or a virtual bridge consisting of all virtual subports for a particular
+              Vlan."
+      ::= { lanBlazer7000BridgeEntry 2 }
+
+   lanBlazer7000BridgeMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Used to enable or disable Spanning Tree for this bridge.  When set to
+              disable(2), all BPDUs are forwarded like regular multicast packets.  The
+              default value is enable(1)."
+      ::= { lanBlazer7000BridgeEntry 3 }
+
+   lanBlazer7000BridgeStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enabled(1),
+                 disabled(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The enable/disable status of this bridge.  This object incorporates the
+              setting of the lanBlazer7000SwitchSTPConfig object.  When
+              lanBlazer7000SwitchSTPConfig is set such that this bridge will not be active,
+              lanBlazer7000BridgeStatus returns disabled(2).  If  lanBlazer7000SwitchSTPConfig is set
+              such that this bridge will be active, and lanBlazer7000BridgeMode is enable(1), this
+              object returns enabled(2)."
+      ::= { lanBlazer7000BridgeEntry 4 }
+
+   lanBlazer7000BridgeStpPriority OBJECT-TYPE
+      SYNTAX  INTEGER (0..65535)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The priority value of the Bridge Identifier.  See dot1dStpPriority."
+      ::= { lanBlazer7000BridgeEntry 5 }
+
+   lanBlazer7000BridgeStpTimeSinceTopologyChange OBJECT-TYPE
+      SYNTAX  TimeTicks
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The time since the last topology change was detected.  See
+              dot1dStpTimeSinceTopologyChange."
+      ::= { lanBlazer7000BridgeEntry 6 }
+
+   lanBlazer7000BridgeStpTopChanges OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The total number of topology changes.  See dot1dStpTopChanges"
+      ::= { lanBlazer7000BridgeEntry 7 }
+
+   lanBlazer7000BridgeStpDesignatedRoot OBJECT-TYPE
+      SYNTAX  BridgeId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The bridge considered to be root by this node.  See
+              dot1dStpDesignatedRoot."
+      ::= { lanBlazer7000BridgeEntry  8 }
+
+   lanBlazer7000BridgeStpRootCost OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The cost of the path to the root from this node.  See dot1dStpRootCost."
+      ::= { lanBlazer7000BridgeEntry 9 }
+
+   lanBlazer7000BridgeStpRootPort OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The port number with the lowest cost path to the root bridge.  See
+              dot1dStpRootPort."
+      ::= { lanBlazer7000BridgeEntry 10 }
+
+   lanBlazer7000BridgeStpMaxAge OBJECT-TYPE
+      SYNTAX  Timeout
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The maximum age used by this bridge to hold onto STP information
+              before discarding.  See dot1dStpMaxAge."
+      ::= { lanBlazer7000BridgeEntry 11 }
+
+   lanBlazer7000BridgeStpHelloTime OBJECT-TYPE
+      SYNTAX  Timeout
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The amount of time between configuration BPDUs.  See
+              dot1dStpHelloTime."
+      ::= { lanBlazer7000BridgeEntry 12 }
+
+   lanBlazer7000BridgeStpHoldTime OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The time value that indicates the interval during which no more than two
+              configuration BPDUs will be sent by this node.  See dot1dStpHoldTime."
+      ::= { lanBlazer7000BridgeEntry 13 }
+
+   lanBlazer7000BridgeStpForwardDelay OBJECT-TYPE
+      SYNTAX  Timeout
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The amount of time that this node stays in each of the Listening and
+              Learning states.  See dot1dStpForwardDelay."
+      ::= { lanBlazer7000BridgeEntry 14 }
+
+   lanBlazer7000BridgeStpBridgeMaxAge OBJECT-TYPE
+      SYNTAX  Timeout (600..4000)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of MaxAge when this bridge is the root. See
+              dot1dStpBridgeMaxAge."
+      ::= { lanBlazer7000BridgeEntry 15 }
+
+   lanBlazer7000BridgeStpBridgeHelloTime OBJECT-TYPE
+      SYNTAX  Timeout (100..1000)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of HelloTime to use when this bridge is the root.  See
+              dot1dStpBridgeHelloTime."
+      ::= { lanBlazer7000BridgeEntry 16 }
+
+   lanBlazer7000BridgeStpBridgeForwardDelay OBJECT-TYPE
+      SYNTAX  Timeout (400..3000)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of FowardDelay to use when this bridge is the root.  See
+              dot1dStpBridgeForwardDelay."
+      ::= { lanBlazer7000BridgeEntry 17 }
+
+
+
+-- Bridge Port Table
+
+   lanBlazer7000BridgePortMgmt OBJECT IDENTIFIER ::= { lanBlazer7000SwitchingLayerII 3 }
+
+   lanBlazer7000BridgePortTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000BridgePortEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              " A table of Spanning Tree information for every port that supports
+              Spanning Tree in every bridge in the system "
+      ::= { lanBlazer7000BridgePortMgmt 1 }
+
+   lanBlazer7000BridgePortEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000BridgePortEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      INDEX   { lanBlazer7000BridgePortIndex }
+      ::= { lanBlazer7000BridgePortTable 1 }
+
+   LanBlazer7000BridgePortEntry ::=
+      SEQUENCE {
+         lanBlazer7000BridgePortIndex
+            ResourceId,
+         lanBlazer7000BridgePortPriority
+            INTEGER,
+         lanBlazer7000BridgePortState
+            INTEGER,
+         lanBlazer7000BridgePortEnable
+            INTEGER,
+         lanBlazer7000BridgePortPathCost
+            INTEGER,
+         lanBlazer7000BridgePortDesignatedRoot
+            BridgeId,
+         lanBlazer7000BridgePortDesignatedCost
+            INTEGER,
+         lanBlazer7000BridgePortDesignatedBridge
+            BridgeId,
+         lanBlazer7000BridgePortDesignatedPort
+            OCTET STRING,
+         lanBlazer7000BridgePortForwardTransitions
+            Counter,
+         lanBlazer7000BridgePortFastStart
+            INTEGER,
+         lanBlazer7000BridgePortSetDefault
+            INTEGER,
+         lanBlazer7000BridgePortEnableChangeDetection
+            INTEGER
+      }
+
+   lanBlazer7000BridgePortIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this bridge port.  This index corresponds
+              to the lanBlazer7000ResourceIndex for bridge port type resources."
+      ::= { lanBlazer7000BridgePortEntry  1 }
+
+
+   lanBlazer7000BridgePortPriority OBJECT-TYPE
+      SYNTAX  INTEGER (0..255)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of the priority field in the port ID.  See dot1dStpPortPriority.
+              The default value is 128."
+      ::= { lanBlazer7000BridgePortEntry  2 }
+
+   lanBlazer7000BridgePortState OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 disabled(1),
+                 blocking(2),
+                 listening(3),
+                 learning(4),
+                 forwarding(5),
+                 broken(6)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The port's current state as defined by the Spanning Tree Protocol.  See
+              dot1dStpPortState.
+              The virtual port is considered broken if its switch port is blocked."
+      ::= { lanBlazer7000BridgePortEntry  3 }
+
+   lanBlazer7000BridgePortEnable OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enabled(1),
+                 disabled(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The enabled/disabled status of this port.  See dot1dStpPortEnable. The
+              default is enabled(2)."
+      ::= { lanBlazer7000BridgePortEntry  4 }
+
+   lanBlazer7000BridgePortPathCost OBJECT-TYPE
+      SYNTAX  INTEGER (1..65535)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The contribution of this port to the path cost of the paths towards the
+              spanning tree root.  See dot1dStpPortPathCost. The default value is
+              dependent on the port speed, trunking mode, and duplexity."
+      ::= { lanBlazer7000BridgePortEntry  5 }
+
+   lanBlazer7000BridgePortDesignatedRoot OBJECT-TYPE
+      SYNTAX  BridgeId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The bridge recorded as root for this port's segment.  See
+              dot1dStpPortDesignatedRoot."
+      ::= { lanBlazer7000BridgePortEntry  6 }
+
+   lanBlazer7000BridgePortDesignatedCost OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The path cost of the designated root of the segment connected to this
+              port.  See dot1dStpPortDesignatedCost."
+      ::= { lanBlazer7000BridgePortEntry 7 }
+
+   lanBlazer7000BridgePortDesignatedBridge OBJECT-TYPE
+      SYNTAX  BridgeId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The bridge identifier of the bridge that is considered the designated bridge
+              for this port's segment.  See dot1dStpPortDesignatedBridge."
+      ::= { lanBlazer7000BridgePortEntry 8 }
+
+   lanBlazer7000BridgePortDesignatedPort OBJECT-TYPE
+      SYNTAX  OCTET STRING (SIZE (2))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The port identifier of the port on the Designated Bridge for this port's
+              segment.  See dot1dStpPortDesignatedPort."
+      ::= { lanBlazer7000BridgePortEntry 9 }
+
+   lanBlazer7000BridgePortForwardTransitions OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The number of times this port has transitioned from the learning state to
+              the forwarding state.  See dot1dStpPortForwardTransitions."
+      ::= { lanBlazer7000BridgePortEntry 10 }
+
+   lanBlazer7000BridgePortFastStart OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  deprecated
+      DESCRIPTION
+              "This object is being replaced by the switch port object 
+              lanBlazer7000SwitchPortFastStart.  When this bridge port object is set to 
+              enable(1), the bridge port and all other bridge ports on the same switch port,
+              transition right from blocking to forwarding, skipping the listening and 
+              learning states.  When this bridge port object is set to disable(2), the bridge
+              port and all other bridge ports on the same switch port have this option 
+              disabled.  The user should be warned that using the fast start feature greatly
+              increases the likelihood of unintended network loops that would otherwise be
+              prevented by participating in the normal spanning tree algorithm.
+
+              The factory default value for this object is disable(2)."
+      ::= { lanBlazer7000BridgePortEntry 11 }
+
+   lanBlazer7000BridgePortSetDefault OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 useCurrentValues(1),
+                 setDefault(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When set to setDefault(2), the lanBlazer7000BridgePortPriority,
+              lanBlazer7000BridgePortEnable, and lanBlazer7000BridgePortPathCost
+              will be set to the factory default values."
+      ::= { lanBlazer7000BridgePortEntry 12 }
+
+   lanBlazer7000BridgePortEnableChangeDetection OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When this object is set to enable(1), a Topology Change Notification
+              will be generated when this port goes to Blocking or Forwarding (if
+              the port is a designated port).  When set to disable(2), no 
+              Topology Change Notification will be generated for this port.  The
+              default is enable(1)."
+      ::= { lanBlazer7000BridgePortEntry 13 }
+
+
+-- ADDRESS MANAGEMENT
+
+   lanBlazer7000L2AddrMgmt OBJECT IDENTIFIER ::= { lanBlazer7000SwitchingLayerII 4 }
+
+-- Address Database
+
+   lanBlazer7000L2AddrDatabaseMgt OBJECT IDENTIFIER ::= { lanBlazer7000L2AddrMgmt 1 }
+
+-- Address Database
+--
+-- The address table provides data that would normally be available from the standard
+-- bridge MIB.  The standard bridge MIB has a few short comings, however.
+--
+-- 1. It is indexed by MACAddress, forcing the bridge to sort a table that is normally
+-- hashed.  When the address table is quite large, this sorting can become quite a drag on
+-- the processor.
+--
+-- 2. The bridge MIB address table does not extend well to devices that support virtual
+-- LANs.
+--
+-- 3. There are other objects that are desirable to be managed that the standard MIB does
+-- not support.
+--
+-- This address database  is indexed by address entry  index.  Each address entry has the
+-- traditional layer II MAC Address and port binding for that address, as well as some
+-- other value added fields such as address priority.
+--
+-- Each address entry is logically contained by a separate address filtering table (AFT).
+-- Separate address tables are important to the support of Virtual LANs (VLANs).  For
+-- frames that are explicitly bound to a VLAN either by explicit tagging or by source
+-- port association (port-based VLANs), separate AFTs enable a host to
+-- appear on different VLANs with different port bindings.  Also, for frames that are
+-- implicitly bound to VLANs based on protocol type and/or host address, separate
+-- AFTs enable layer III VLANs for client systems.
+--
+-- In the case where the AFT is supporting a VLAN with a host or host, protocol policy,
+-- the VLAN index indicated is the VLAN classification for that host or host, protocol
+-- combination.
+--
+-- Note, it is the default to create separate AFTs for each VLAN and for each protocol
+-- type.  In some cases, this may not be desirable and in these cases, multiple VLANs
+-- and/or protocols may point to the same AFTs.
+
+   lanBlazer7000L2AddressTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000L2AddressEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of address table entries.  The address table is used by the bridging
+              function to perform forwarding and filtering decisions.  An address may
+              appear multiple times in different entries corresponding to the different
+              logical address tables."
+      ::= { lanBlazer7000L2AddrDatabaseMgt 1 }
+
+   lanBlazer7000L2AddressEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000L2AddressEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A particular address table entry."
+      INDEX   { lanBlazer7000L2AddressIndex }
+      ::= { lanBlazer7000L2AddressTable 1 }
+
+   LanBlazer7000L2AddressEntry ::=
+      SEQUENCE {
+         lanBlazer7000L2AddressIndex
+            INTEGER,
+         lanBlazer7000L2AddressTableIndex
+            INTEGER,
+         lanBlazer7000L2AddressMacAddress
+            MacAddress,
+         lanBlazer7000L2AddressPortBinding
+            ResourceId,
+         lanBlazer7000L2AddressBindingValid
+            INTEGER,
+         lanBlazer7000L2AddressVlanID
+            INTEGER,
+         lanBlazer7000L2AddressPriority
+            INTEGER,
+         lanBlazer7000L2AddressForward
+            INTEGER,
+         lanBlazer7000L2AddressCopy
+            INTEGER,
+         lanBlazer7000L2AddressPersistence
+            INTEGER,
+         lanBlazer7000L2AddressStatus
+            INTEGER
+      }
+
+   lanBlazer7000L2AddressIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this address entry."
+      ::= { lanBlazer7000L2AddressEntry 1 }
+
+   lanBlazer7000L2AddressTableIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The address table that this entry is associated with."
+      ::= { lanBlazer7000L2AddressEntry 2 }
+
+   lanBlazer7000L2AddressMacAddress OBJECT-TYPE
+      SYNTAX  MacAddress
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The IEEE 802 MAC Address associated with this database entry."
+      ::= { lanBlazer7000L2AddressEntry 3 }
+
+   lanBlazer7000L2AddressPortBinding OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The switch port that this address is associated with. "
+      ::= { lanBlazer7000L2AddressEntry 4 }
+
+   lanBlazer7000L2AddressBindingValid OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 valid(1),
+                 invalid(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The port binding of an address entry is aged out in conformance with the
+              specifications laid out in the IEEE 802.1D standard.   When the address is
+              aged out, the port binding becomes invalid."
+      ::= { lanBlazer7000L2AddressEntry 5 }
+
+   lanBlazer7000L2AddressVlanID OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The VLAN ID of the VLAN that this address entry corresponds to."
+      ::= { lanBlazer7000L2AddressEntry 6 }
+
+   lanBlazer7000L2AddressPriority OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 priorityZero(1),
+                 priorityFour(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "If set to high(2), frames destined to this address are classified with priority
+              value 4."
+      ::= { lanBlazer7000L2AddressEntry 7 }
+
+   lanBlazer7000L2AddressForward OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 normalForward(1),
+                 specialDelivery(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "When set to specialDelivery(2), frames sent to this address are treated to
+              special delivery where the spanning tree state of the inbound port is
+              ignored.  Typically, special delivery is only used for Bridge PDUs such as
+              spanning tree frames."
+      ::= { lanBlazer7000L2AddressEntry 8 }
+
+   lanBlazer7000L2AddressCopy OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 normalForward(1),
+                 copyCPU(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "It is sometimes useful for the switch processor to eavesdrop on traffic to
+              certain destinations.   This is especially useful in supporting the intelligent
+              multicasting function."
+      ::= { lanBlazer7000L2AddressEntry 9 }
+
+   lanBlazer7000L2AddressPersistence OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 other(1),
+                 invalid(2),
+                 permanent(3),
+                 deleteOnReset(4),
+                 deleteOnTimeout(5)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "This object indicates the persistence of this entry:
+
+              other(1) - This entry is currently in use but the conditions under which it
+              will remain so are different from each of the following values.
+
+              invalid(2) - Writing this value to the object removes the corresponding
+              entry.
+
+              permanent(3) -  Address is not aged out. Additionally, if the address is seen
+              as a source on a different port for this VLAN, the frame is filtered and the
+              filter event is counted.  Static address entries are stored in non-volatile
+              memory and are restored to the address table following each system reset.
+
+              deleteOnReset(4) - Indicates that the entry is not aged out, however the
+              entry is not stored in non-volatile memory.  Therefore, when the device is
+              reset, the entry will not be restored.
+
+              deleteOnTimeout(5) - Typically, address entries are learned dynamically by
+              the switch.  These entries are aged out of the table if they are not active on
+              the network.  This value
+              correlates to this state."
+      ::= { lanBlazer7000L2AddressEntry 10 }
+
+   lanBlazer7000L2AddressStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 other(1),
+                 learned(2),
+                 self(3),
+                 mgmt(4)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "This object indicates the status of the entry:
+
+              other(1) - None of the following.
+
+              learned(2) - This entry was learned dynamically.
+
+              self(3) - The value of the corresponding instance of
+              lanBlazer7000AddressMacAddress represents one of the bridge's addresses.
+
+              mgmt(4) - This entry was added or modified by management.  Entries
+              that have been added by management and made permanent"
+      ::= { lanBlazer7000L2AddressEntry 11 }
+
+
+
+-- Address Summary Table
+
+   lanBlazer7000L2AddrSummaryMgt OBJECT IDENTIFIER ::= { lanBlazer7000L2AddrMgmt 2 }
+
+   lanBlazer7000L2AddrSummaryTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000L2AddrSummaryEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "This summary table packs the address entries in the address database into
+              summary objects.  The goal is to optimize the upload of the large amount
+              of data stored therein.
+
+              Typically, a management station would use getNext requests to retrieve the
+              next logical summary object.  The returned object value contains the next n
+              entries of the address database packed into one PDU.  The instance of the
+              object returned is the index of the last address entry packed in the
+              summary, thereby optimizing for the next getNext request.
+
+              [ Fix this? What about gets?] "
+      ::= { lanBlazer7000L2AddrSummaryMgt 1 }
+
+   lanBlazer7000L2AddrSummaryEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000L2AddrSummaryEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A summary object that packs as many address entries possible into a
+              summary object."
+      INDEX   { lanBlazer7000L2AddressIndex }
+      ::= { lanBlazer7000L2AddrSummaryTable 1 }
+
+   LanBlazer7000L2AddrSummaryEntry ::=
+      SEQUENCE {
+         lanBlazer7000L2AddrSummary
+            OCTET STRING
+      }
+
+   lanBlazer7000L2AddrSummary OBJECT-TYPE
+      SYNTAX  OCTET STRING (SIZE(20..4096))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of this object is a packed opaque structure representing an array
+              of address entries.  The format of this structure is:
+
+              struct L2AddressEntry {
+                 UNS32 index;
+                 UNS8  addr[6];     // mac address
+                 UNS8  fabricPort;  //fabricPort and subPort == lanBlazer7000L2AddressPortBinding
+                 UNS8  subPort;
+                 UNS16 vlanID,      //the global vlan id
+                 UNS8 portBindingValidFlag;
+                 UNS8 addressForwardFlag;
+                 UNS8 addressCopyFlag;
+                 UNS8 addressPersistence;
+                 UNS8 addressStatus;
+              };
+
+              struct L2AddressSummary{
+                 UNS8 numberOfEntries;  // Number of entries that follow
+                 UNS8 version;             // version == 1
+                 UNS16 endianFlag;
+                 L2AddressEntry entryArray[numberOfEntries];
+              };"
+      ::= { lanBlazer7000L2AddrSummaryEntry 1 }
+
+
+
+-- Address Control
+
+   lanBlazer7000L2AddrControlMgt OBJECT IDENTIFIER ::= { lanBlazer7000L2AddrMgmt 3 }
+
+   lanBlazer7000L2AddressControlTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000L2AddressControlEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "This table provides the network manager the ability to create new, static
+              address entries.  Entries added through this table are added to the specified
+              address table as a static entry and are save in non-volatile memory for
+              reconfiguration upon system restart.
+
+              This table is indexed by the lanBlazer7000AgentMgrIndex value which provides a
+              separate instance for each manager."
+      ::= { lanBlazer7000L2AddrControlMgt  1 }
+
+   lanBlazer7000L2AddressControlEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000L2AddressControlEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A control entry enables this manager to add a new entry to the specified
+              address table.  When the entry is written to, the control index value is reset
+              to 0.  When the actual entry is created, the index value will read as non-zero,
+              reporting the actual entry created."
+      INDEX   { lanBlazer7000AgentMgrIndex }
+      ::= { lanBlazer7000L2AddressControlTable 1 }
+
+   LanBlazer7000L2AddressControlEntry ::=
+      SEQUENCE {
+         lanBlazer7000L2AddressControlIndex
+            INTEGER,
+         lanBlazer7000L2AddressControlMacAddress
+            MacAddress,
+         lanBlazer7000L2AddressControlPortBinding
+            ResourceId,
+         lanBlazer7000L2AddressControlVlanID
+            INTEGER,
+         lanBlazer7000L2AddressControlPriority
+            INTEGER,
+         lanBlazer7000L2AddressControlPersistence
+            INTEGER,
+         lanBlazer7000L2AddressControlStatus
+            INTEGER
+      }
+
+   lanBlazer7000L2AddressControlIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The index of the address entry that was created for this address."
+      ::= { lanBlazer7000L2AddressControlEntry 1 }
+
+   lanBlazer7000L2AddressControlMacAddress OBJECT-TYPE
+      SYNTAX  MacAddress
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The IEEE 802 MAC Address associated with this database entry."
+      ::= { lanBlazer7000L2AddressControlEntry 2 }
+
+   lanBlazer7000L2AddressControlPortBinding OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The port to bind this address to."
+      ::= { lanBlazer7000L2AddressControlEntry 3 }
+
+   lanBlazer7000L2AddressControlVlanID OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The VLAN ID of the VLAN to bind this address to."
+      ::= { lanBlazer7000L2AddressControlEntry 4 }
+
+   lanBlazer7000L2AddressControlPriority OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 priorityZero(1),
+                 priorityFour(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "If set to high(2), frames destined to this address are classified with priority
+              value 4."
+      ::= { lanBlazer7000L2AddressControlEntry 5 }
+
+
+   lanBlazer7000L2AddressControlPersistence OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 permanent(1),
+                 deleteOnReset(2),
+                 deleteOnTimeout(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The persistence of the entry to be created:
+
+              permanent(1) -  Address is not aged out. Additionally, if the address is seen
+              as a source on a different port for this VLAN, the frame is filtered and the
+              filter event is counted.  Static address entries are stored in non-volatile
+              memory and are restored to the address table following each system reset.
+
+              deleteOnReset(2) - Indicates that the entry is not to be aged, however the
+              entry is not stored in non-volatile memory.  Therefore, when the device is
+              reset, the entry will not be restored.
+
+              deleteOnTimeout(3) - Indicates that the entry is to be aged by the normal
+              aging process."
+      ::= { lanBlazer7000L2AddressControlEntry 6 }
+
+   lanBlazer7000L2AddressControlStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 createRequest(1),
+                 underCreation(2),
+                 success(3),
+                 otherError(4),
+                 entryExistsError(5),
+                 invalidMacAddress(6),
+                 invalidPortBinding(7),
+                 invalidVlanID(8)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of an entry to be created.  When adding an entry all fields will
+              be set, and then the control status is set to createRequest(1), indicating that
+              the entry is to be created.  During creation, the status will be
+              underCreation(2).  If the creation is successful, then the status will be set to
+              success(3), and the value of lanBlazer7000AddressControlIndex indicates the index
+              of the entry that was created in the address table.  Otherwise if the creation
+              was not successful, then one of the following error codes will be set and
+              the entry will not be created:
+
+              otherError(4) - An error other then the others defined.
+
+              entryExistsError(5) - An entry already exists with this MAC address in this
+              address table.
+
+              invalidMacAddress(6) - Cannot create an entry with this MAC address.
+
+              invalidTableIndex(7) - The table does not exist.
+
+              invalidPortBinding(8) - The port binding is invalid.
+
+              invalidVlanID(9) - The VLAN ID is invalid.
+
+              Note that the only value that is valid to write to this object is
+              createRequest(1), and that this object will never return the value
+              createRequest(1)."
+      ::= { lanBlazer7000L2AddressControlEntry 7 }
+
+
+
+-- Address Change
+
+   lanBlazer7000L2AddrChangeMgt OBJECT IDENTIFIER ::= { lanBlazer7000L2AddrMgmt 4 }
+
+-- Address Change Information
+
+   lanBlazer7000L2AddressChangeLast OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The index of the last entry written to the address change table"
+      ::= { lanBlazer7000L2AddrChangeMgt  1 }
+
+   lanBlazer7000L2AddressChangeWraps OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The count of the number of times the address change table has wrapped."
+      ::= { lanBlazer7000L2AddrChangeMgt  2 }
+
+   lanBlazer7000L2AddressChangeMaxEntries OBJECT-TYPE
+      SYNTAX  INTEGER (1024..4096)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The maximum number of entries in the address change table."
+      ::= { lanBlazer7000L2AddrChangeMgt  3 }
+
+
+
+-- Address Change Tables
+--
+-- Address Change Tables
+--
+   lanBlazer7000L2AddressChangeTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000L2AddressChangeEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "."
+      ::= { lanBlazer7000L2AddrChangeMgt 4 }
+
+   lanBlazer7000L2AddressChangeEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000L2AddressChangeEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "The address change table provides a quick way of getting only the entries
+              that have recently changed.  Since entries age out as part of the normal
+              switching process, entries that have aged (i.e. their destination bindings are
+              no longer valid) are not considered to be changed.  Any other modification
+              to the entry, including deletion or creation, are considered to be changes.
+
+              The address change table is considered a circular table.  When an entry
+              changes, it is added to the next position within the table.  If the 'next'
+              position goes beyond the end of the table,  the 'next' position is set to the
+              beginning of the table (1) and the wrap counter
+              (lanBlazer7000AddressChangeWraps) is incremented.  The
+              lanBlazer7000AddressChangeLast value is updated with the index of the last
+              entered entry.
+
+              An entry may be in the table multiple times if it has changed multiple times.
+              Every time that an entry changes, it is added to the change table.
+
+              A network management application should follow the following algorithm
+              when polling this table:
+
+              1. Set lastChangeWrap = lanBlazer7000AddressChangeWraps.
+              2. Set lastChangeIndex = lanBlazer7000AddressChangeLast
+              3. Get the entire lanBlazer7000AddressEntryTable.
+              4. Submit a getNext for <lastChangeWrap>.<lastChangeIndex>,
+              updating lastChangeWrap and lastChangeIndex with the returned next
+              values.  Update the address entry database with the changed values.
+              5. Repeat step 4 until no more entries are returned.
+              6. Wait polling timeout period.
+              7. Get wrap events counter and last index.  If the wrap events counter is
+              equal to lastChangeWrap, then goto step 4.  Else if the wrap events
+              counter is more then one greater then lastChangeWrap, goto step 1.
+              Else the wrap events counter is exactly one greater then
+              lastChangeWrap, and if the last index is greater then lastChangeIndex,
+              then goto step 1, else goto step 4.
+
+              The last step simply insures that we have not missed any of the change
+              entries.  Essentially it says that if we have wrapped to beyond where we last
+              polled, then we must get the entire table to synch up again.  Otherwise we
+              can just get the entries that have changed."
+      INDEX   { lanBlazer7000L2AddressChangeWrapCount,
+                lanBlazer7000L2AddressChangeIndex }
+      ::= { lanBlazer7000L2AddressChangeTable 1 }
+
+   LanBlazer7000L2AddressChangeEntry ::=
+      SEQUENCE {
+         lanBlazer7000L2AddressChangeWrapCount
+            INTEGER,
+         lanBlazer7000L2AddressChangeIndex
+            INTEGER,
+         lanBlazer7000L2AddressChangeIndexChanged
+            INTEGER,
+         lanBlazer7000L2AddressChangeSummary
+            OCTET STRING
+      }
+
+   lanBlazer7000L2AddressChangeWrapCount OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The number of times that the lanBlazer7000AddressChangeLastIndex had
+              wrapped when this entry was added."
+      ::= { lanBlazer7000L2AddressChangeEntry 1 }
+
+   lanBlazer7000L2AddressChangeIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The index that uniquely identifies this address change entry."
+      ::= { lanBlazer7000L2AddressChangeEntry 2 }
+
+   lanBlazer7000L2AddressChangeIndexChanged OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The address entry that changed.  The value of this object corresponds to
+              the lanBlazer7000L2AddressIndex object. "
+      ::= { lanBlazer7000L2AddressChangeEntry 3 }
+
+   lanBlazer7000L2AddressChangeSummary OBJECT-TYPE
+      SYNTAX  OCTET STRING (SIZE(20))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              " The structure is interpreted in the following manner:"
+      ::= { lanBlazer7000L2AddressChangeEntry 4 }
+
+
+-- SWITCH PORT MANAGEMENT
+
+   lanBlazer7000SwitchPortMgt OBJECT IDENTIFIER ::= { lanBlazer7000Switching 2 }
+
+-- Switch Port Table
+--
+--  The switch port table manages the configuration and status of each
+--  switch port.
+
+   lanBlazer7000SwitchPortTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000SwitchPortEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000SwitchPortMgt 1 }
+
+   lanBlazer7000SwitchPortEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000SwitchPortEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      INDEX   { lanBlazer7000SwitchPortIndex }
+      ::= { lanBlazer7000SwitchPortTable 1 }
+
+   LanBlazer7000SwitchPortEntry ::=
+      SEQUENCE {
+         lanBlazer7000SwitchPortIndex
+            ResourceId,
+         lanBlazer7000SwitchPortSTAPMode
+            INTEGER,
+         lanBlazer7000SwitchPortConvertToStatic
+            INTEGER,
+         lanBlazer7000SwitchPortLearningMode
+            INTEGER,
+         lanBlazer7000SwitchPortHuntGroup
+            INTEGER,
+         lanBlazer7000SwitchPortPhysicalPort
+            ResourceId,
+         lanBlazer7000SwitchPortKnownMode
+            INTEGER,
+         lanBlazer7000SwitchPortMappingMethod
+            INTEGER,
+         lanBlazer7000SwitchPortTrunkingMode
+            INTEGER,
+         lanBlazer7000SwitchPortVlanBindingMethod
+            INTEGER,
+         lanBlazer7000SwitchPortIgnoreTag
+            INTEGER,
+         lanBlazer7000SwitchPortVlanID
+            INTEGER,
+         lanBlazer7000SwitchPort3ComMappingTableIndex
+            INTEGER,
+         lanBlazer7000SwitchPortAutoVlanCreation
+            INTEGER,
+         lanBlazer7000SwitchPortIfIndex
+            INTEGER,
+         lanBlazer7000SwitchPortFastStart
+            INTEGER,
+         lanBlazer7000SwitchPortVlanExchange
+            INTEGER
+      }
+
+   lanBlazer7000SwitchPortIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "A unique index that identifies this switch port.  The value of
+              this index corresponds to the value of the lanBlazer7000ResourceIndex for
+              switch ports."
+      ::= { lanBlazer7000SwitchPortEntry 1 }
+
+   lanBlazer7000SwitchPortSTAPMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),   -- default
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Disabling spanning tree on a switch port prevents the switch
+              port from participating in the spanning tree process.  When
+              disabled(2), this port will neither generate BPDUs, nor process
+              received BPDUs.  Also, the port will always start in the
+              forwarding state.  A port configured in this mode will not be
+              able to detect network loops involving this port.
+
+              The factory default is to enable spanning tree on all ports."
+      ::= { lanBlazer7000SwitchPortEntry 2 }
+
+   lanBlazer7000SwitchPortConvertToStatic OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 learnAsDynamic(1),
+                 convertToStatic(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When this object is set to convertToStatic(2), all addresses
+              learned on this port will be added to the non-volatile version
+              of the static address table.
+
+              Typically, this object will be used to perform a crude form of
+              address database update where the address activity associated
+              with this port is collected as static (i.e. permanent) addresses
+              while the value of this object is set to convertToStatic(2).
+              Following this usually short period of time (perhaps a week of
+              activity), the  value of this object is restored back to its
+              default value of learnAsDynamic(1) and learning for this port is
+              disabled.
+
+              It is important that the user verify the address database to
+              verify that only the desired addresses were made permanent."
+      ::= { lanBlazer7000SwitchPortEntry 3 }
+
+   lanBlazer7000SwitchPortLearningMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),   -- default
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Disable learning on a bridge port to prevent new addresses from
+              being added to the address database.  Used in combination with
+              static (permanent) address entries, disabling address learning
+              is an effective security feature to prevent new hosts from
+              appearing on the network, or to prevent hosts from moving to
+              different locations in the network.  The default is enable."
+      ::= { lanBlazer7000SwitchPortEntry 4 }
+
+   lanBlazer7000SwitchPortHuntGroup OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Hunt groups provide the capability to logically bind multiple
+              switch ports into one switch port.  This provides a way of
+              balancing the load of multiple links between like-configured
+              switches.
+
+              Care must be taken to configure the hunt groups properly to
+              prevent accidental network looping.
+
+              Use this object to bind this port to a specific hunt group.
+              When not configured to a specific hunt group, set the value of
+              this object to zero."
+      ::= { lanBlazer7000SwitchPortEntry 5 }
+
+   lanBlazer7000SwitchPortPhysicalPort OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The physical port resource bound to this switch port."
+      ::= { lanBlazer7000SwitchPortEntry 6 }
+
+   lanBlazer7000SwitchPortKnownMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Enabling known mode for this switch port causes the port to
+              safely discard frames flooded because they are unknown unicast
+              frames.  This mode greatly enhances the efficiency of the port's
+              output buffer since space is not wasted for frames not meant for
+              this port.
+
+              Enabling this feature disables learning for this port.
+              Addresses associated for this port should be entered statically.
+              The default is disable."
+      ::= { lanBlazer7000SwitchPortEntry 7 }
+
+   lanBlazer7000SwitchPortMappingMethod OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 port-based(1)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The frame mapping method of this switch port.  When set to
+              port-based(1) (the factory default), all non-tagged frames are
+              classified to the VLAN associated with this switch port."
+      ::= { lanBlazer7000SwitchPortEntry 8 }
+
+   lanBlazer7000SwitchPortTrunkingMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 clear(1),         -- Factory Default
+                 ieee8021q(2),     -- IEEE 802.1Q Format
+                 multiLevel(3),    -- Multi-level Format
+                 trunk3Com(4)      -- 3Com Trunking Format
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The trunking mode of this port.  All frames transmitted out
+              this switch port are translated to the appropriate trunking
+              format:
+
+                 Clear:           Ethernet or IEEE 802.3 frame format.
+                                  This is the default.
+                 IEEE 802.1Q:     The original frame with a new Ethernet Type
+                                  (Protocol = 0xXXXX) and the VLAN ID inserted
+                                  following the original Source Address.
+                                  Also, the CRC is recalculated.
+                 Multi-level:     The original frame is encapsulated in an
+                                  IEEE 802.3 legal frame proprietary to a
+                                  major networking equipment vendor.
+                 3Com LinkSwitch: The original frame has the VLAN ID added to
+                                  the front of the frame (before the
+                                  Destination Address).  Trunking format is
+                                  proprietary to 3Com Corporation."
+      ::= { lanBlazer7000SwitchPortEntry 9 }
+
+   lanBlazer7000SwitchPortVlanBindingMethod OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 static(1),
+                 persistent(2),
+                 dynamic(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The VLAN binding method of a switch port specifies the way in
+              which the port can be a member of the egress lists of VLANs
+              other than the port default VLAN specified by
+              lanBlazer7000SwitchPortVlanID:
+                 static:      A Virtual Switch Port must be statically created for
+                              each VLAN/port combination.
+                 persistent:  A Virtual Switch Port is automatically created for
+                              each VLAN known to the switch (i.e., the port is
+                              a member of the egress lists of all VLANs).
+                 dynamic:     A Virtual Switch Port is automatically created for
+                              each VLAN when the associated VLAN ID is used as a
+                              tag in an IEEE 802.1Q or Multi-level tagged frame
+                              received on the port (i.e., the port is a member of
+                              the egress lists of the VLANs from frames received
+                              on the port).
+
+              The default is static."
+      ::= { lanBlazer7000SwitchPortEntry 10 }
+
+   lanBlazer7000SwitchPortIgnoreTag OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 useTag(1),      -- default
+                 ignoreTag(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Each switch port is capable of ignoring the VLAN Tag associated
+              with a frame in a trunking format.  When ignored, the tag is
+              used as the default in the event that a VLAN classification
+              based on the switch's policy(s) cannot be made.
+
+              This feature is useful for connecting layer 2 VLANs and layer 3
+              VLANs.  The default is useTag."
+      ::= { lanBlazer7000SwitchPortEntry 11 }
+
+   lanBlazer7000SwitchPortVlanID OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When this switch port is configured in port-based VLAN mode,
+              all non-tagged frames received on this port are bound to this
+              VLAN.  Otherwise, non-tagged frames are classified to this VLAN
+              as the default if a VLAN binding cannot be otherwise determined.
+              The factory default is 1, which is the VLAN ID of the Default
+              VLAN."
+      ::= { lanBlazer7000SwitchPortEntry 12 }
+
+   lanBlazer7000SwitchPort3ComMappingTableIndex OBJECT-TYPE
+      SYNTAX  INTEGER (1..100)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The 3Com VLAN mapping table associated with this switch port.
+              The default is 1, which indicates the default mapping table."
+      ::= { lanBlazer7000SwitchPortEntry 13 }
+
+   lanBlazer7000SwitchPortAutoVlanCreation OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Enabling auto VLAN creation for this switch port causes the
+              port to dynamically create a VLAN whenever an IEEE 802.1Q or
+              Multi-level tagged frame is received on the port with a tag value
+              which does not correspond to a known VLAN.  All switch ports with
+              a trunking mode of IEEE 802.1Q or Multi-level are bound to this
+              created VLAN.  The default is disable."
+      ::= { lanBlazer7000SwitchPortEntry 14 }
+
+   lanBlazer7000SwitchPortMirrorMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "When set to enable(1), this object indicates that the port is 
+              defined as a mirror port through the 
+              lanBlazer7000PortMirroringTable.  A mirror port duplicates frames 
+              received at one or more source ports."
+      ::= { lanBlazer7000SwitchPortEntry 15 }
+
+   lanBlazer7000SwitchPortIfIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "Each switch port is associated with an interface.  This object
+              provides a mechanism to map switch ports to bridge ports."
+      ::= { lanBlazer7000SwitchPortEntry 16 }
+
+   lanBlazer7000SwitchPortFastStart OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When this object is set to enable(1), bridge ports on this switch port 
+              transitions right from blocking to forwarding, skipping the listening
+              and learning states.  The user should be warned that using the fast start
+              feature greatly increases the likelihood of unintended network loops that
+              would otherwise be prevented by participating in the normal spanning tree
+              algorithm.
+
+              The factory default value for this object is disable(2)."
+      ::= { lanBlazer7000SwitchPortEntry 17 }
+
+   lanBlazer7000SwitchPortVlanExchange OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When this object is set to enable(1), this switch port attempts to
+              learn VLANs from a major networking equipment vendor if the switch port's
+              trunking mode is IEEE 802.1Q Format or Multi-level Format.
+
+              The factory default value for this object is enable(1)."
+      ::= { lanBlazer7000SwitchPortEntry 18 }
+
+-- HUNT GROUPS
+
+   lanBlazer7000HuntGroupMgt OBJECT IDENTIFIER ::= { lanBlazer7000Switching 4 }
+
+-- A hunt group logically binds together multiple switch ports so that they act as one
+-- switch port.  This feature enables the ports within the hunt group to load
+-- share the network traffic.
+--
+-- The hunt group feature is targeted for a restricted topology where two switches
+-- are connected together by multiple lines of the same bandwidth.  Hunt groups
+-- require that both switches be configured identically to the other.
+--
+-- Each hunt group requires a base port.  The hunt group assumes the characteristics
+-- of the base port where all the managed information (configuration & statistics) of
+-- any of the switch ports in the hunt group is only available from the base port
+-- instance.
+
+   lanBlazer7000HuntGroupTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000HuntGroupEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000HuntGroupMgt  1 }
+
+   lanBlazer7000HuntGroupEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000HuntGroupEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      INDEX   { lanBlazer7000HuntGroupIndex }
+      ::= { lanBlazer7000HuntGroupTable 1 }
+
+   LanBlazer7000HuntGroupEntry ::=
+      SEQUENCE {
+         lanBlazer7000HuntGroupIndex
+            INTEGER,
+         lanBlazer7000HuntGroupName
+            DisplayString,
+         lanBlazer7000HuntGroupBasePort
+            ResourceId,
+         lanBlazer7000HuntGroupNumberOfPorts
+            INTEGER,
+         lanBlazer7000HuntGroupLoadSharing
+            INTEGER,
+         lanBlazer7000HuntGroupStatus
+            INTEGER
+      }
+
+   lanBlazer7000HuntGroupIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this hunt group.  This index corresponds
+              to the value of lanBlazer7000ResourceIndex for resources of the  hunt group type."
+      ::= { lanBlazer7000HuntGroupEntry 1 }
+
+   lanBlazer7000HuntGroupName OBJECT-TYPE
+      SYNTAX  DisplayString
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000HuntGroupEntry 2 }
+
+   lanBlazer7000HuntGroupBasePort OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The switch port index that serves as the base port for this hunt group.
+              Each hunt group requires a base port.  In lieu of a specific configuration,
+              the hunt group will inherit the first switch port bound to the hunt group as
+              its base port.
+
+              The base port serves as the management focus for the hunt group.  That is,
+              a hunt group is managed as one switch port whose instance is provided by
+              the base switch port.  All configuration (e.g. spanning tree information) and
+              statistics related to switch ports are meaningful only through the instance of
+              the base port."
+      ::= { lanBlazer7000HuntGroupEntry 3 }
+
+   lanBlazer7000HuntGroupNumberOfPorts OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The current number of ports that belong to this hunt group."
+      ::= { lanBlazer7000HuntGroupEntry 4 }
+
+   lanBlazer7000HuntGroupLoadSharing OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000HuntGroupEntry 5 }
+
+   lanBlazer7000HuntGroupStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 createRequest(1),
+                 underCreation(2),
+                 deleteRequest(3),
+                 active(4)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000HuntGroupEntry 6 }
+
+
+-- Port Mirroring
+
+   lanBlazer7000PortMirroringMgt OBJECT IDENTIFIER ::= { lanBlazer7000Switching 5 }
+
+-- Port Mirroring is used to duplicate packets received on one or more ports on 
+-- another port so that the mirror port can be monitored, for example with an 
+-- RMON probe.  Port Mirroring allows either all packets received on the source 
+-- port, or a periodic sample, to be duplicated on the mirror port.
+
+   lanBlazer7000PortMirroringTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000PortMirroringEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of port mirroring entries used to mirror traffic from 
+              a source port to a mirror port."
+   ::= { lanBlazer7000PortMirroringMgt 1 }
+
+   lanBlazer7000PortMirroringEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000PortMirroringEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "Objects related to the PortMirroring functionality."
+      INDEX   { lanBlazer7000PortMirroringIndex }
+      ::= { lanBlazer7000PortMirroringTable 1 }
+
+
+   LanBlazer7000PortMirroringEntry ::=
+      SEQUENCE {
+         lanBlazer7000PortMirroringIndex
+          	ResourceId,
+         lanBlazer7000PortMirroringSourceSubPort
+            	INTEGER,
+         lanBlazer7000PortMirroringSamplerType
+            	INTEGER,
+         lanBlazer7000PortMirroringRate
+            	INTEGER,
+         lanBlazer7000PortMirroringMirrorPort
+            	ResourceId
+      }
+
+   lanBlazer7000PortMirroringIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The unique index that identifies this entry. This index consists 
+              of a switch fabric port and the index of a Packet Lookup Engine 
+              servicing this fabric port."
+      ::= { lanBlazer7000PortMirroringEntry 1 }
+
+   lanBlazer7000PortMirroringSourceSubPort OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The frame sampler source switch subport. The source port is the 
+              port from which received traffic will be mirrored.  This object 
+              identifies the switch subport only, the switch fabric port is 
+              identified in lanBlazer7000PortMirroringIndex.  If set to 0, all subports 
+              associated with the lanBlazer7000PortMirroringIndex will be source ports. The
+              default value is 0."
+      ::= { lanBlazer7000PortMirroringEntry 2 }
+
+   lanBlazer7000PortMirroringSamplerType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 disable(1),
+                 enable(2),
+                 periodic(3)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The type for this frame sampler. When set to enable(1), every 
+              frame received on the source port(s) will be mirrored at the mirror
+              port. When set to disable(2), no frames received on the source 
+              port(s) will be mirrored at the mirror port.  When set to 
+              periodic(3), frames will be mirrored at the rate defined in 
+              lanBlazer7000PortMirroringRate. The default value is disable(2)."
+      ::= { lanBlazer7000PortMirroringEntry 3 }
+
+   lanBlazer7000PortMirroringRate OBJECT-TYPE
+      SYNTAX  INTEGER 
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Used in conjunction with lanBlazer7000PortMirroringSamplerType to implement 
+              periodic sampling functionality. If lanBlazer7000PortMirroringSamplerType is 
+              set to periodic(3), this object defines the number of packets/second 
+              that will be mirrored. If lanBlazer7000PortMirroringSamplerType is not 
+              periodic(3), this object will set to 0."
+      ::= { lanBlazer7000PortMirroringEntry 4 }
+
+   lanBlazer7000PortMirroringMirrorPort OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The Switch Port on which frames received at source ports(s) will be 
+              duplicated. If no mirror port has been defined this object will 
+              return NULL."
+      ::= { lanBlazer7000PortMirroringEntry 5 }
+
+
+-- VIRTUAL LANS
+
+   lanBlazer7000VlanMgt OBJECT IDENTIFIER ::= { odsLANBlazer7000Mib 7 }
+
+-- VIRTUAL LAN TABLE
+
+   lanBlazer7000Vlans OBJECT IDENTIFIER ::= { lanBlazer7000VlanMgt 1 }
+
+-- Each entry in this table identifies a virtual LAN.
+
+   lanBlazer7000VlanTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000VlanEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000Vlans 1 }
+
+   lanBlazer7000VlanEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000VlanEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      INDEX   { lanBlazer7000VlanID }
+      ::= { lanBlazer7000VlanTable 1 }
+
+   LanBlazer7000VlanEntry ::=
+      SEQUENCE {
+         lanBlazer7000VlanID
+            INTEGER,
+         lanBlazer7000VlanName
+            DisplayString,
+         lanBlazer7000VlanIfIndex
+            INTEGER,
+         lanBlazer7000VlanAFTIndex
+            INTEGER,
+         lanBlazer7000VlanBridgeIndex
+            ResourceId,
+         lanBlazer7000VlanStatus
+            INTEGER,
+         lanBlazer7000VlanInitialHashTableSize
+            INTEGER,
+         lanBlazer7000VlanAutoIncrementHTSize
+            INTEGER,
+         lanBlazer7000VlanLearnStatus
+            INTEGER
+      }
+
+   lanBlazer7000VlanID OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An identifier that is unique within the administrative domain.
+              This ID is assigned by the management application and is
+              meaningful within that context.
+
+              This ID is used to identify VLANs when tagged using either the
+              IEEE 802.1 frame format or the Multi-level frame format."
+      ::= { lanBlazer7000VlanEntry 1 }
+
+   lanBlazer7000VlanName OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE (1..31))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "A user-assignable name for this Vlan."
+      ::= { lanBlazer7000VlanEntry 2 }
+
+
+   lanBlazer7000VlanIfIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "Each virtual LAN has a virtual interface associated with it.
+              This enables RMON monitoring to occur per-VLAN.  It also
+              provides a handy mechanism to map virtual LANs to bridge ports
+              by mapping them with the ifStack table from the Interface MIB."
+      ::= { lanBlazer7000VlanEntry 3 }
+
+   lanBlazer7000VlanAFTIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The address table used for this VLAN for explicitly tagged
+              frames (frames received in a trunking frame format or from a
+              port in port-based VLAN mode.)  Normally, each VLAN maps to a
+              unique address table.  This is useful for environments with
+              duplicate host addresses appear on different VLANs on different
+              ports.
+
+              For those environments where duplicate hosts on different VLANs
+              don't exist, or exist but are on the same port, and where the
+              address table size and/or aging is a concern, then multiple
+              VLANs may be mapped to the same address table."
+      ::= { lanBlazer7000VlanEntry 4 }
+
+   lanBlazer7000VlanBridgeIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The bridge resource which is bound to this Vlan."
+      ::= { lanBlazer7000VlanEntry 5 }
+
+   lanBlazer7000VlanStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 createRequest(1),
+                 underCreation(2),
+                 destroyRequest(3),
+                 underDestruction(4),
+                 active(5),
+                 otherError(6),
+                 entryExistsError(7),
+                 invalidVlanID(8),
+                 invalidVlanName(9),
+                 invalidVlanAFTIndex(10),
+                 invalidVlanBridgeIndex(11),
+                 invalidVlanInitialHashTableSize(12),
+                 invalidVlanAutoIncrementHTSize(13)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of an entry to be created or deleted.
+              When adding an entry all fields will be set, and then the status
+              is set to createRequest(1) (indicating that the entry is to be
+              created).  When deleting an entry the status is set to
+              destroyRequest(3) (indicating that the entry is to be destroyed).
+              During creation the status will be underCreation(2). If the
+              creation is successful, then the status will be set to
+              active(5).  Otherwise if the creation was not successful then
+              one of the following error codes will be set and the entry will
+              not be created:
+                 otherError(6) - An error other than the others defined.
+                 entryExistsError(7) - An entry already exists.
+                 invalidVlanID(8) - the VLAN ID is invalid.
+                 invalidVlanName(9) - the VLAN name is invalid.
+                 invalidVlanAFTIndex(10) - the VLAN AFT index is invalid.
+                 invalidVlanBridgeIndex(11) - the VLAN bridge index is invalid.
+                 invalidVlanInitialHashTableSize(12) - the VLAN initial hash
+                                                       table size is invalid.
+                 invalidVlanAutoIncrementHTSize(13) - the VLAN auto increment
+                                                      hash table size is
+                                                      invalid."
+      ::= { lanBlazer7000VlanEntry 6 }
+
+   lanBlazer7000VlanInitialHashTableSize OBJECT-TYPE
+      SYNTAX  INTEGER (16..8192)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The initial hash table size used for MAC addresses on this
+              VLAN.  This attribute may only be set when lanBlazer7000VlanStatus is
+              set to createRequest(1).  It must be a power of 2 between 16
+              and 8192, inclusive."
+      ::= { lanBlazer7000VlanEntry 7 }
+
+   lanBlazer7000VlanAutoIncrementHTSize OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 true(1),
+                 false(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "This attribute specifies whether or not the hash table size
+              used for MAC addresses on this VLAN is automatically increased
+              as necessary to hold more MAC addresses.  This attribute may only
+              be set when lanBlazer7000VlanStatus is set to createRequest(1)."
+      ::= { lanBlazer7000VlanEntry 8 }
+
+   lanBlazer7000VlanLearnStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 notLearned(1),
+                 vlanExchange(2),
+                 auto(3)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "This attribute indicates if the VLAN was learned.  If learned
+              it indicates if the VLAN was learned either by VLAN Exchange or
+              Auto VLAN creation."
+      ::= { lanBlazer7000VlanEntry 9 }
+
+
+-- 3COM MAPPING TABLES
+
+   lanBlazer7000VlanMappings OBJECT IDENTIFIER ::= { lanBlazer7000VlanMgt 3 }
+
+-- 3Com Map Table Identification
+
+   lanBlazer70003ComMapping OBJECT IDENTIFIER ::= { lanBlazer7000VlanMappings 1 }
+
+   lanBlazer70003ComMappingTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer70003ComMappingEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer70003ComMapping 1 }
+
+   lanBlazer70003ComMappingEntry OBJECT-TYPE
+      SYNTAX  LanBlazer70003ComMappingEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      INDEX   { lanBlazer70003ComMappingTableIndex }
+      ::= { lanBlazer70003ComMappingTable 1 }
+
+   LanBlazer70003ComMappingEntry ::=
+      SEQUENCE {
+         lanBlazer70003ComMappingTableIndex
+            INTEGER,
+         lanBlazer70003ComMappingTableName
+            DisplayString,
+         lanBlazer70003ComMappingTableStatus
+            INTEGER
+      }
+
+   lanBlazer70003ComMappingTableIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer70003ComMappingEntry 1 }
+
+   lanBlazer70003ComMappingTableName OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE (1..31))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "A user-readable name associated with this table."
+      ::= { lanBlazer70003ComMappingEntry 2 }
+
+   lanBlazer70003ComMappingTableStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 createRequest(1),
+                 destroyRequest(2),
+                 active(3),
+                 entryExistsError(4),
+                 otherError(5)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of an entry to be created. When adding an entry all
+              fields will be set, and then the status is set to
+              createRequest(1), indicating that the entry is to be created.
+              If the creation is successful, then the status will be set to
+              active(3).  Otherwise if the creation was not successful then
+              one of the following error codes will be set and the entry will
+              not be created:
+                 entryExistsError(4) - An entry already exists.
+                 otherError(5) - An error other than the others defined."
+      ::= { lanBlazer70003ComMappingEntry 3 }
+
+
+-- 3Com VLAN Mappings
+
+   lanBlazer7000Vlan3ComMapping OBJECT IDENTIFIER ::= { lanBlazer7000VlanMappings 2 }
+
+   lanBlazer7000Vlan3ComMappingTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000Vlan3ComMappingEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000Vlan3ComMapping 1 }
+
+   lanBlazer7000Vlan3ComMappingEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000Vlan3ComMappingEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      INDEX   { lanBlazer70003ComMappingTableIndex,
+                lanBlazer7000Vlan3ComMappingIndex }
+      ::= { lanBlazer7000Vlan3ComMappingTable 1 }
+
+   LanBlazer7000Vlan3ComMappingEntry ::=
+      SEQUENCE {
+         lanBlazer7000Vlan3ComMappingIndex
+            INTEGER,
+         lanBlazer7000Vlan3ComMappingVlanID
+            INTEGER,
+         lanBlazer7000Vlan3ComMappingStatus
+            INTEGER
+      }
+
+   lanBlazer7000Vlan3ComMappingIndex OBJECT-TYPE
+      SYNTAX  INTEGER (1..16)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The external tag of this 3Com VLAN."
+      ::= { lanBlazer7000Vlan3ComMappingEntry 1 }
+
+   lanBlazer7000Vlan3ComMappingVlanID OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The VLAN ID of the VLAN that this 3Com tag is associated with."
+      ::= { lanBlazer7000Vlan3ComMappingEntry 2 }
+
+   lanBlazer7000Vlan3ComMappingStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 createRequest(1),
+                 destroyRequest(2),
+                 active(3),
+                 otherError(4)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of an entry to be created. When adding an entry all
+              fields will be set, and then the status is set to
+              createRequest(1), indicating that the entry is to be created.
+              If the creation is successful, then the status will be set to
+              active(3).  Otherwise if the creation was not successful then
+              one of the following error codes will be set and the entry will
+              not be created:
+                 otherError(4) - An error other than the others defined."
+      ::= { lanBlazer7000Vlan3ComMappingEntry 3 }
+
+
+
+-- VIRTUAL SWITCH PORTS
+
+   lanBlazer7000VirtualPorts OBJECT IDENTIFIER ::= { lanBlazer7000VlanMgt 4 }
+
+   lanBlazer7000VirtualSwitchPortTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000VirtualSwitchPortEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000VirtualPorts 1 }
+
+   lanBlazer7000VirtualSwitchPortEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000VirtualSwitchPortEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "An instance of a virtual switch port indicates that this
+              switch port is a member of this VLAN."
+      INDEX   { lanBlazer7000VirtualSwitchPortIndex }
+      ::= { lanBlazer7000VirtualSwitchPortTable 1 }
+
+   LanBlazer7000VirtualSwitchPortEntry ::=
+      SEQUENCE {
+         lanBlazer7000VirtualSwitchPortIndex
+            ResourceId,
+         lanBlazer7000VirtualSwitchPortFormat
+            INTEGER,
+         lanBlazer7000VirtualSwitchPortBridgePort
+            ResourceId,
+         lanBlazer7000VirtualSwitchPortBindingType
+            INTEGER,
+         lanBlazer7000VirtualSwitchPortStatus
+            INTEGER
+      }
+
+   lanBlazer7000VirtualSwitchPortIndex OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The Resource ID of the virtual switch port bound to the VLAN."
+      ::= { lanBlazer7000VirtualSwitchPortEntry 1 }
+
+   lanBlazer7000VirtualSwitchPortFormat OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 clear(1),          -- don't tag for this VLAN, port
+                 trunkingFormat(2)  -- use switch port format - may be clear
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Typically, a VLAN capable switch port has one of three modes:
+              access, trunk, or hybrid.  In access mode, the port sends
+              frames in clear format (untagged). In trunk mode, all outbound
+              frames are translated into the switch port's configured
+              trunking format.
+
+              In hybrid mode, it is possible for a port to send trunked
+              frames for some VLANs and clear frames for others.  In this
+              case, the switch port is configured to trunk, and the virtual
+              switch port(s) for those VLANs that require clear formatted
+              frames are configured to be override the switch port setting.
+              This is done by setting this object to clear(1).
+
+              By default, the value of this object is trunkingFormat(2)
+              which means to use the trunking format configured for this
+              switch port. (which may be clear)."
+      ::= { lanBlazer7000VirtualSwitchPortEntry 2 }
+
+   lanBlazer7000VirtualSwitchPortBridgePort OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The bridge port resource bound to this virtual port."
+      ::= { lanBlazer7000VirtualSwitchPortEntry 3 }
+
+   lanBlazer7000VirtualSwitchPortBindingType OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 static(1),         -- port binding was manually created
+                 persistent(2),     -- port binding was automatically created
+                 dynamic(3)         -- port binding was automatically created
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The method by which this switch port was bound to the VLAN.
+              If the value is static(1), the binding was manually created
+              by the administrator.  If the value is persistent(2), the
+              binding was created by the switch because the VLAN is the
+              port-based VLAN for the switch port, or the switch port
+              VLAN Binding Method is persistent.  These bindings may not
+              be removed.  If the value is dynamic(3), the binding was
+              created by the switch as a result of receiving a tagged
+              frame on the switch port with a VLAN ID corresponding to
+              the VLAN."
+      ::= { lanBlazer7000VirtualSwitchPortEntry 4 }
+
+   lanBlazer7000VirtualSwitchPortStatus OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 createRequest(1),
+                 destroyRequest(2),
+                 active(3),
+                 otherError(4),
+                 entryExistsError(5),
+                 entryNoExistError(6)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The status of an entry to be created or deleted.
+              When adding an entry all fields will be set, and then the status
+              is set to createRequest(1) (indicating that the entry is to be
+              created).  When deleting an entry the status is set to
+              destroyRequest(2) (indicating that the entry is to be destroyed).
+              If the creation is successful, then the status will be set to
+              active(3).  Otherwise if the creation was not successful then
+              one of the following error codes will be set and the entry will
+              not be created:
+                 otherError(4) - An error other than the others defined.
+                 entryExistsError(5) - On creation, an entry already exists.
+                                       On deletion, the entry may not be
+                                       removed.
+                 entryNoExistError(6) - The VLAN specified by ID
+                                        does not exist."
+      ::= { lanBlazer7000VirtualSwitchPortEntry 5 }
+
+
+
+-- EVENT MANAGEMENT
+
+   lanBlazer7000Events OBJECT IDENTIFIER ::= { odsLANBlazer7000Mib 10 }
+
+-- EVENT TABLE
+
+   lanBlazer7000EventMgt OBJECT IDENTIFIER ::= { lanBlazer7000Events 1 }
+
+-- Event Table
+
+   lanBlazer7000EventTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF  LanBlazer7000EventEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "Table of events currently supported."
+      ::= { lanBlazer7000EventMgt 1 }
+
+   lanBlazer7000EventEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000EventEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "Attributes associated with the event."
+      INDEX   { lanBlazer7000EventIndex }
+      ::= { lanBlazer7000EventTable 1 }
+
+   LanBlazer7000EventEntry ::=
+      SEQUENCE {
+         lanBlazer7000EventIndex
+            INTEGER,
+         lanBlazer7000EventMode
+            INTEGER,
+         lanBlazer7000EventLogAction
+            INTEGER,
+         lanBlazer7000EventTrapAction
+            INTEGER,
+         lanBlazer7000EventConsoleAction
+            INTEGER
+      }
+
+   lanBlazer7000EventIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              ""
+      ::= { lanBlazer7000EventEntry 1 }
+
+   lanBlazer7000EventMode OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "Disabling an event prevents this event from taking any actions when
+              triggered.
+              When set to enable to the console, the event will print the event information
+              to the console serial port.  The user can select whether to view log
+              messages, trap messages or any event at the console."
+      ::= { lanBlazer7000EventEntry 2 }
+
+--
+-- lanBlazer7000EventCategory has been removed
+--
+
+   lanBlazer7000EventLogAction OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When enabled, this action will cause an event log entry to be created."
+      ::= { lanBlazer7000EventEntry 3 }
+
+   lanBlazer7000EventTrapAction OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When enabled, this event will cause an SNMP trap to be generated."
+      ::= { lanBlazer7000EventEntry 4 }
+
+   lanBlazer7000EventConsoleAction OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When enabled, this event will cause a message to printed to the console serial port."
+      ::= { lanBlazer7000EventEntry 5 }
+
+
+
+-- EVENT LOG
+
+   lanBlazer7000EventLogMgt OBJECT IDENTIFIER ::= { lanBlazer7000Events 2 }
+
+-- EVENT LOG OBJECTS
+
+   lanBlazer7000LogTableMaxSize OBJECT-TYPE
+      SYNTAX  INTEGER (0..2048)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The maximum number of entries in the log table.
+              Changing this value causes the existing log to be
+              truncated and rebuilt."
+      ::= { lanBlazer7000EventLogMgt 1 }
+
+   lanBlazer7000LogLastEntry OBJECT-TYPE
+      SYNTAX  INTEGER (1..65535)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The log index of the last entry entered in the log."
+      ::= { lanBlazer7000EventLogMgt 2 }
+
+
+   lanBlazer7000LogWraps OBJECT-TYPE
+      SYNTAX  Counter
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The number of times that the last entry has wrapped from 65K back to 1."
+      ::= { lanBlazer7000EventLogMgt 3 }
+
+
+-- EVENT LOG TABLE
+
+   lanBlazer7000EventLog OBJECT IDENTIFIER ::= { lanBlazer7000Events 3 }
+
+   lanBlazer7000EventLogTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000EventLogEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "The log table for the events in the event table that are enabled for the
+               Log Action."
+      ::= { lanBlazer7000EventLog 1 }
+
+   lanBlazer7000EventLogEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000EventLogEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "An entry in the log indicates information associated with a particular
+              event."
+      INDEX   { lanBlazer7000EventLogIndex }
+      ::= { lanBlazer7000EventLogTable 1 }
+
+
+   LanBlazer7000EventLogEntry ::=
+      SEQUENCE {
+         lanBlazer7000EventLogEventIndex
+            INTEGER,
+         lanBlazer7000EventLogIndex
+            INTEGER,
+         lanBlazer7000EventLogTime
+            TimeTicks,
+         lanBlazer7000EventLogDescr
+            DisplayString,
+         lanBlazer7000EventLogType
+            EventCategory,
+         lanBlazer7000EventLogSeverity
+            INTEGER,
+         lanBlazer7000EventLogDTM
+            DisplayString,
+         lanBlazer7000EventLogResType
+            ResourceType,
+         lanBlazer7000EventLogResID
+            ResourceId,
+         lanBlazer7000EventLogResLeaf
+            INTEGER,
+         lanBlazer7000EventLogValueType
+            EventValueType,
+         lanBlazer7000EventLogValue
+            OCTET STRING,
+         lanBlazer7000EventLogEpochTime
+            INTEGER,
+         lanBlazer7000EventLogID
+            INTEGER
+      }
+
+
+   lanBlazer7000EventLogEventIndex OBJECT-TYPE
+      SYNTAX  INTEGER (1..65535)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The index that uniquely identifies the event that caused this log entry."
+      ::= { lanBlazer7000EventLogEntry 1 }
+
+   lanBlazer7000EventLogIndex OBJECT-TYPE
+      SYNTAX  INTEGER (1..65535)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this log entry."
+      ::= { lanBlazer7000EventLogEntry 2 }
+
+   lanBlazer7000EventLogTime OBJECT-TYPE
+      SYNTAX  TimeTicks
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of sysUpTime when this event was triggered."
+      ::= { lanBlazer7000EventLogEntry 3 }
+
+   lanBlazer7000EventLogDescr OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..255))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The event log description."
+      ::= { lanBlazer7000EventLogEntry 4 }
+
+   lanBlazer7000EventLogType OBJECT-TYPE
+      SYNTAX  EventCategory
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The type of event that caused this log entry."
+      ::= { lanBlazer7000EventLogEntry 5 }
+
+   lanBlazer7000EventLogSeverity OBJECT-TYPE
+      SYNTAX  INTEGER (0..100)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The severity associated with this event.  It is recommended that the
+              severity be interpreted in the following manner:
+
+               0-19: Normal
+              20-39: Informational
+              40-59: Warning
+              60-79: Alarm
+              80-99: Severe Error
+                100: Failure."
+      ::= { lanBlazer7000EventLogEntry 6 }
+
+   lanBlazer7000EventLogDTM OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE (18))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The date and time when this log entry was made.  The format is yy-Mon-
+              dd hh:mm:ss, time is in 24 hour time."
+      ::= { lanBlazer7000EventLogEntry 7 }
+
+   lanBlazer7000EventLogResType OBJECT-TYPE
+      SYNTAX  ResourceType
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The type of object (if provided) that triggered this event.  If not provided,
+              the value is equal to 'Invalid Resource'."
+      ::= { lanBlazer7000EventLogEntry 8 }
+
+   lanBlazer7000EventLogResID OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The instance of this resource (if provided - see lanBlazer7000EventLogResType)
+              that triggered this event."
+      ::= { lanBlazer7000EventLogEntry 9 }
+
+   lanBlazer7000EventLogResLeaf OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "A number corresponding to the attribute associated with this resource and
+              this event entry.  It corresponds exactly to the leaf MIB number of the MIB
+              that manages this resource.  For example, if a port's mode changed, the
+              configuration event log entry would indicate the value of  5 which is the
+              leaf index of the lanBlazer7000PortMode within the lanBlazer7000PortTable MIB table."
+      ::= { lanBlazer7000EventLogEntry 10 }
+
+
+   lanBlazer7000EventLogValueType OBJECT-TYPE
+      SYNTAX  EventValueType
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The data type associated with the log event value.  This object indicates
+              how to interpret the data stored in the event log value:
+
+              - none(1) indicates no value returned.
+              - integer32(2) -  a 4 byte unsigned integer.
+              - integer64(3) - an 8 byte unsigned integer.
+              - displayString(4) - a null terminated (or up to 8 characters) string.
+              - ipv4NetworkAddress(5) - a 4 byte IP version 4 network address.
+              - ieee802MACAddress(6) - a 6 byte MAC Address.
+              - timeticks(7) - sysUpTime type value (4 bytes)"
+      ::= { lanBlazer7000EventLogEntry 11 }
+
+
+   lanBlazer7000EventLogValue OBJECT-TYPE
+      SYNTAX  OCTET STRING (SIZE(0..8))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value associated with the event encoded in an octet string.  Refer to
+              lanBlazer7000EventLogValueType for how to interpret this value.
+              The value encoded in this string is in Big Endian order."
+      ::= { lanBlazer7000EventLogEntry 12 }
+
+   lanBlazer7000EventLogEpochTime OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The number of time ticks since the epoch when this
+              event was logged. The interpretation of this value is
+              as follows:
+
+              struct DateTimeOvly {
+               UNS32 year:6;
+               UNS32 month:4;
+               UNS32 day:5;
+               UNS32 hour:5;
+               UNS32 minute:6;
+               UNS32 second:6;
+               };
+
+              The epoch is January 1, 1997, at 00:00:00.  A value of
+              0 refers to this date and time.  "
+      ::= { lanBlazer7000EventLogEntry 13 }
+
+      lanBlazer7000EventLogID OBJECT-TYPE
+         SYNTAX  INTEGER (1..65535)
+         ACCESS  read-only
+         STATUS  mandatory
+         DESCRIPTION
+              "A unique index that identifies the occurence of this
+              event.  This ID can be correlated between traps, logs
+              and the like."
+      ::= { lanBlazer7000EventLogEntry 14 }
+
+-- SHUTDOWN EVENT LOG
+
+   lanBlazer7000ShutdownLogMgt OBJECT IDENTIFIER ::= { lanBlazer7000Events 4 }
+
+-- The most recent event log entries are stored in non-volatile memory.  In the event
+-- of a system restart, it may be useful to look at the last few events that were
+-- logged before the system last went down.  The Shutdown Log Table stores those
+-- last events.
+--
+-- SHUTDOWN EVENT LOG OBJECTS
+
+   lanBlazer7000ShutdownLogTableMaxSize OBJECT-TYPE
+      SYNTAX  INTEGER (0..128)
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The maximum number of entries in the non-volatile log table.  Changing
+              the value of this object changes the maximum number of entries to be
+              stored in Shutdown."
+      ::= { lanBlazer7000ShutdownLogMgt 1 }
+
+   lanBlazer7000ShutdownLogLastEntry OBJECT-TYPE
+      SYNTAX  INTEGER (1..65535)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The ID of the last entry made to the shutdown log."
+      ::= { lanBlazer7000ShutdownLogMgt 2 }
+
+   lanBlazer7000ShutdownLogAcknowledged OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 not-acknowledged(1),
+                 acknowledged(2)
+              }
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "This object is to set to acknowledged(2) the first time the Shutdown Log
+              Table is accessed indicating that the Shutdown log has been read (at least
+              once) since the system restarted."
+      ::= { lanBlazer7000ShutdownLogMgt 3 }
+
+
+
+-- SHUTDOWN LOG TABLE
+--
+-- The Shutdown Log Table is a copy of the log file stored in non-volatile memory.  It is copied
+-- to dynamic memory (RAM) when the system is initialized and the non-volatile version
+-- is re-initialized.
+
+   lanBlazer7000EventShutdownLog OBJECT IDENTIFIER ::= { lanBlazer7000Events 5 }
+
+   lanBlazer7000EventShutdownLogTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000EventShutdownLogEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of the last events logged before the system restarted."
+      ::= { lanBlazer7000EventShutdownLog 1 }
+
+   lanBlazer7000EventShutdownLogEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000EventShutdownLogEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A log entry stored in non-volatile memory."
+      INDEX   { lanBlazer7000EventShutdownLogIndex }
+      ::= { lanBlazer7000EventShutdownLogTable 1 }
+
+   LanBlazer7000EventShutdownLogEntry ::=
+      SEQUENCE {
+         lanBlazer7000EventShutdownLogEventIndex
+            INTEGER,
+         lanBlazer7000EventShutdownLogIndex
+            INTEGER,
+         lanBlazer7000EventShutdownLogTime
+            TimeTicks,
+         lanBlazer7000EventShutdownLogDescr
+            DisplayString,
+         lanBlazer7000EventShutdownLogType
+            EventCategory,
+         lanBlazer7000EventShutdownLogSeverity
+            INTEGER,
+         lanBlazer7000EventShutdownLogDTM
+            DisplayString,
+         lanBlazer7000EventShutdownLogResType
+            ResourceType,
+         lanBlazer7000EventShutdownLogResID
+            ResourceId,
+         lanBlazer7000EventShutdownLogResLeaf
+            INTEGER,
+         lanBlazer7000EventShutdownLogValueType
+            EventValueType,
+         lanBlazer7000EventShutdownLogValue
+            OCTET STRING,
+         lanBlazer7000EventShutdownLogEpochTime
+            INTEGER,
+         lanBlazer7000EventShutdownLogID
+            INTEGER
+
+      }
+
+
+   lanBlazer7000EventShutdownLogEventIndex OBJECT-TYPE
+      SYNTAX  INTEGER (1..65535)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The index that uniquely identifies the event that caused this ShutdownLog
+              entry."
+      ::= { lanBlazer7000EventShutdownLogEntry 1 }
+
+   lanBlazer7000EventShutdownLogIndex OBJECT-TYPE
+      SYNTAX  INTEGER (1..65535)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "An index that uniquely identifies this ShutdownLog entry."
+      ::= { lanBlazer7000EventShutdownLogEntry 2 }
+
+   lanBlazer7000EventShutdownLogTime OBJECT-TYPE
+      SYNTAX  TimeTicks
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of sysUpTime when this event was triggered.  Note, 
+              the value corresponds to the sysUpTime when the system was last 
+              running (i.e. before it was shutdown.)"
+      ::= { lanBlazer7000EventShutdownLogEntry 3 }
+
+   lanBlazer7000EventShutdownLogDescr OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..255))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The event ShutdownLog description."
+      ::= { lanBlazer7000EventShutdownLogEntry 4 }
+
+   lanBlazer7000EventShutdownLogType OBJECT-TYPE
+      SYNTAX  EventCategory
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The type of event that caused this ShutdownLog entry."
+      ::= { lanBlazer7000EventShutdownLogEntry 5 }
+
+   lanBlazer7000EventShutdownLogSeverity OBJECT-TYPE
+      SYNTAX  INTEGER (0..100)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The severity associated with this event.  It is recommended that the
+              severity be interpreted in the following manner:
+
+               0-19: Normal
+              20-39: Informational
+              40-59: Warning
+              60-79: Alarm
+              80-99: Severe Error
+                100: Failure."
+      ::= { lanBlazer7000EventShutdownLogEntry 6 }
+
+   lanBlazer7000EventShutdownLogDTM OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE (18))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The date and time when this ShutdownLog entry was made.  The format
+              is yy-Mon-dd hh:mm:ss, time is in 24 hour time."
+      ::= { lanBlazer7000EventShutdownLogEntry 7 }
+
+   lanBlazer7000EventShutdownLogResType OBJECT-TYPE
+      SYNTAX  ResourceType
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The type of object (if provided) that triggered this event.  If not provided,
+              the value is invalid."
+      ::= { lanBlazer7000EventShutdownLogEntry 8 }
+
+   lanBlazer7000EventShutdownLogResID OBJECT-TYPE
+
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The instance of this resource (if provided) that triggered this event."
+      ::= { lanBlazer7000EventShutdownLogEntry 9 }
+
+   lanBlazer7000EventShutdownLogResLeaf OBJECT-TYPE
+
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "To be provided."
+      ::= { lanBlazer7000EventShutdownLogEntry 10 }
+
+   lanBlazer7000EventShutdownLogValueType OBJECT-TYPE
+      SYNTAX  EventValueType
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The data type associated with the ShutdownLog event value.  This object
+              indicates how to interpret the data stored in the event ShutdownLog
+              value."
+      ::= { lanBlazer7000EventShutdownLogEntry 11 }
+
+
+   lanBlazer7000EventShutdownLogValue OBJECT-TYPE
+      SYNTAX  OCTET STRING (SIZE(0..8))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value associated with the event encoded in an octet string. "
+      ::= { lanBlazer7000EventShutdownLogEntry 12 }
+
+   lanBlazer7000EventShutdownLogEpochTime OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The number of time ticks since the epoch when this
+              event was logged. The interpretation of this value is
+              as follows:
+
+              struct DateTimeOvly {
+               UNS32 year:6;
+               UNS32 month:4;
+               UNS32 day:5;
+               UNS32 hour:5;
+               UNS32 minute:6;
+               UNS32 second:6;
+               };
+
+              The epoch is January 1, 1997, at 00:00:00.  A value of
+              0 refers to this date and time.  "
+      ::= { lanBlazer7000EventShutdownLogEntry 13 }
+
+    lanBlazer7000EventShutdownLogID OBJECT-TYPE
+         SYNTAX  INTEGER (1..65535)
+         ACCESS  read-only
+         STATUS  mandatory
+         DESCRIPTION
+              "A unique index that identifies the occurence of this
+              event.  This ID can be correlated between traps, logs
+              and the like."
+      ::= { lanBlazer7000EventShutdownLogEntry 14 }
+
+-- EVENT TRAP DATA
+
+   lanBlazer7000EventTrapMgmt OBJECT IDENTIFIER ::= { lanBlazer7000Events 6 }
+
+   lanBlazer7000EventTrapEventIndex OBJECT-TYPE
+      SYNTAX  INTEGER (1..65535)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The index that uniquely identifies the event that caused this trap."
+      ::= { lanBlazer7000EventTrapMgmt 1 }
+
+   lanBlazer7000EventTrapTime OBJECT-TYPE
+      SYNTAX  TimeTicks
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of sysUpTime when this event was triggered."
+      ::= { lanBlazer7000EventTrapMgmt 2 }
+
+   lanBlazer7000EventTrapDescr OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..255))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The event log description."
+      ::= { lanBlazer7000EventTrapMgmt 3 }
+
+   lanBlazer7000EventTrapType OBJECT-TYPE
+      SYNTAX  EventCategory
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The type of event that caused this trap."
+      ::= { lanBlazer7000EventTrapMgmt 4 }
+
+   lanBlazer7000EventTrapSeverity OBJECT-TYPE
+      SYNTAX  INTEGER (0..100)
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The severity associated with this event.  It is recommended that the
+              severity be interpreted in the following manner:
+
+               0-19: Normal
+              20-39: Informational
+              40-59: Warning
+              60-79: Alarm
+              80-99: Severe Error
+                100: Failure."
+      ::= { lanBlazer7000EventTrapMgmt 5 }
+
+   lanBlazer7000EventTrapDTM OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE (18))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The date and time when this trap was sent.  The format is yy-Mon-
+              dd hh:mm:ss, time is in 24 hour time."
+      ::= { lanBlazer7000EventTrapMgmt 6 }
+
+   lanBlazer7000EventTrapResType OBJECT-TYPE
+      SYNTAX  ResourceType
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The type of object (if provided) that triggered this event.  If not provided,
+              the value is equal to 'Invalid Resource'."
+      ::= { lanBlazer7000EventTrapMgmt 7 }
+
+   lanBlazer7000EventTrapResID OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The instance of this resource (if provided - see lanBlazer7000EventTrapResType)
+              that triggered this event."
+      ::= { lanBlazer7000EventTrapMgmt 8 }
+
+   lanBlazer7000EventTrapResLeaf OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "A number corresponding to the attribute associated with this resource and
+              this event entry.  It corresponds exactly to the leaf MIB number of the MIB
+              that manages this resource.  For example, if a port's mode changed, the
+              configuration event log entry would indicate the value of  5 which is the
+              leaf index of the lanBlazer7000PortMode within the lanBlazer7000PortTable MIB table."
+      ::= { lanBlazer7000EventTrapMgmt 9 }
+
+
+   lanBlazer7000EventTrapValueType OBJECT-TYPE
+      SYNTAX  EventValueType
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The data type associated with the trap event value.  This object indicates
+              how to interpret the data stored in the event trap value:
+
+              - none(1) indicates no value returned.
+              - integer32(2) -  a 4 byte unsigned integer.
+              - integer64(3) - an 8 byte unsigned integer.
+              - displayString(4) - a null terminated (or up to 8 characters) string.
+              - ipv4NetworkAddress(5) - a 4 byte IP version 4 network address.
+              - ieee802MACAddress(6) - a 6 byte MAC Address.
+              - timeticks(7) - sysUpTime type value (4 bytes)"
+      ::= { lanBlazer7000EventTrapMgmt 10 }
+
+
+   lanBlazer7000EventTrapValue OBJECT-TYPE
+      SYNTAX  OCTET STRING (SIZE(0..8))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value associated with the event encoded in an octet string.  Refer to
+              lanBlazer7000EventTrapValueType for how to interpret this value.
+              The value encoded in this string is in Big Endian order."
+      ::= { lanBlazer7000EventTrapMgmt 11 }
+
+   lanBlazer7000EventTrapEpochTime OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The number of time ticks since the epoch when this
+              event was logged. The interpretation of this value is
+              as follows:
+
+              struct DateTimeOvly {
+               UNS32 year:6;
+               UNS32 month:4;
+               UNS32 day:5;
+               UNS32 hour:5;
+               UNS32 minute:6;
+               UNS32 second:6;
+               };
+
+              The epoch is January 1, 1997, at 00:00:00.  A value of
+              0 refers to this date and time.  "
+      ::= { lanBlazer7000EventTrapMgmt 12 }
+
+      lanBlazer7000EventTrapID OBJECT-TYPE
+         SYNTAX  INTEGER (1..65535)
+         ACCESS  read-only
+         STATUS  mandatory
+         DESCRIPTION
+              "A unique index that identifies the occurence of this
+              event.  This ID can be correlated between traps, logs
+              and the like."
+      ::= { lanBlazer7000EventTrapMgmt 13 }
+
+
+-- ALARM MANAGEMENT
+
+   lanBlazer7000AlarmMgt OBJECT IDENTIFIER ::= { odsLANBlazer7000Mib  11 }
+
+-- ALARM GENERAL
+
+   lanBlazer7000AlarmGeneral OBJECT IDENTIFIER ::= { lanBlazer7000AlarmMgt 1 }
+
+-- Alarm Table
+--
+-- The alarm table contains events that are considered "alarmable".  This table is a handy place
+-- to quickly check the "health" of the system.  Any non-normal indication in the system will be
+-- indicated in this table.
+
+   lanBlazer7000AlarmGeneralActiveEntries OBJECT-TYPE
+      SYNTAX  Gauge
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The total number of alarm entries in the triggered state currently in the
+              alarm table."
+      ::= { lanBlazer7000AlarmGeneral  1 }
+
+   lanBlazer7000AlarmGeneralTimeStamp OBJECT-TYPE
+      SYNTAX  TimeTicks
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The value of sysUpTime when any alarm state last changed (either
+              triggering a new alarm or re-arming an old one)."
+      ::= { lanBlazer7000AlarmGeneral  2 }
+
+
+
+-- ALARM TABLE
+
+   lanBlazer7000Alarms OBJECT IDENTIFIER ::= { lanBlazer7000AlarmMgt 2 }
+
+-- ACTIVE ALARM TABLE
+
+   lanBlazer7000ActiveAlarmTable OBJECT-TYPE
+      SYNTAX  SEQUENCE OF LanBlazer7000ActiveAlarmEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "A table of all alarms in the triggered state."
+      ::= { lanBlazer7000Alarms 2 }
+
+   lanBlazer7000ActiveAlarmEntry OBJECT-TYPE
+      SYNTAX  LanBlazer7000ActiveAlarmEntry
+      ACCESS  not-accessible
+      STATUS  mandatory
+      DESCRIPTION
+              "An alarm in the triggered state."
+      INDEX   { lanBlazer7000ActiveAlarmIndex }
+      ::= { lanBlazer7000ActiveAlarmTable 1 }
+
+   LanBlazer7000ActiveAlarmEntry ::=
+      SEQUENCE {
+         lanBlazer7000ActiveAlarmIndex
+            INTEGER,
+         lanBlazer7000ActiveAlarmName
+            DisplayString,
+         lanBlazer7000ActiveAlarmValueHigh
+            INTEGER,
+         lanBlazer7000ActiveAlarmValueLow
+            INTEGER,
+         lanBlazer7000ActiveAlarmVariable
+            OBJECT IDENTIFIER,
+         lanBlazer7000ActiveAlarmResType
+            ResourceType,
+         lanBlazer7000ActiveAlarmResID
+            ResourceId,
+         lanBlazer7000ActiveAlarmLeaf
+            INTEGER,
+         lanBlazer7000ActiveAlarmOwner
+            DisplayString
+      }
+
+
+   lanBlazer7000ActiveAlarmIndex OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The unique index that identifies this alarm."
+      ::= { lanBlazer7000ActiveAlarmEntry  1 }
+
+   lanBlazer7000ActiveAlarmName OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..31))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The name of this alarm."
+      ::= { lanBlazer7000ActiveAlarmEntry  2 }
+
+   lanBlazer7000ActiveAlarmValueHigh OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The high order 32 bits of the value that triggered this alarm."
+      ::= { lanBlazer7000ActiveAlarmEntry 3 }
+
+   lanBlazer7000ActiveAlarmValueLow OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The low order 32 bits of the value that triggered this alarm."
+      ::= { lanBlazer7000ActiveAlarmEntry 4 }
+
+   lanBlazer7000ActiveAlarmVariable OBJECT-TYPE
+      SYNTAX  OBJECT IDENTIFIER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The OID of the alarm variable if this is a user-created alarm (null
+              otherwise)."
+      ::= { lanBlazer7000ActiveAlarmEntry 5 }
+
+   lanBlazer7000ActiveAlarmResType OBJECT-TYPE
+      SYNTAX  ResourceType
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The resource type of this alarm if this is an internally created alarm."
+      ::= { lanBlazer7000ActiveAlarmEntry 6 }
+
+   lanBlazer7000ActiveAlarmResID OBJECT-TYPE
+      SYNTAX  ResourceId
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The resource identifier associated with this alarm if this is an internally created alarm."
+      ::= { lanBlazer7000ActiveAlarmEntry 7 }
+
+   lanBlazer7000ActiveAlarmLeaf OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The leaf index of the MIB table used to manage this resource that is associated with this
+              alarm, if this is an internally created alarm.  For example,  if this alarm was created to
+              monitor a port's status, then the value of this object will be 6, corresponding to the leaf
+              index of the lanBlazer7000PortStatus object."
+      ::= { lanBlazer7000ActiveAlarmEntry 8 }
+
+
+   lanBlazer7000ActiveAlarmOwner OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..255))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "This is the owner of the alarm."
+      ::= { lanBlazer7000ActiveAlarmEntry 9 }
+
+
+-- TRAP
+
+   lanBlazer7000SnmpTraps OBJECT IDENTIFIER ::= { odsLANBlazer7000Mib  13 }
+
+   lanBlazer7000SystemTrap TRAP-TYPE
+      ENTERPRISE  lanBlazer7000SnmpTraps
+      VARIABLES   { lanBlazer7000EventTrapEventIndex,
+                     lanBlazer7000EventTrapTime,
+                     lanBlazer7000EventTrapDescr,
+                     lanBlazer7000EventTrapType,
+                     lanBlazer7000EventTrapSeverity,
+                     lanBlazer7000EventTrapDTM,
+                     lanBlazer7000EventTrapResType,
+                     lanBlazer7000EventTrapResID,
+                     lanBlazer7000EventTrapResLeaf,
+                     lanBlazer7000EventTrapValueType,
+                     lanBlazer7000EventTrapValue,
+                     lanBlazer7000EventTrapEpochTime,
+                     lanBlazer7000EventTrapID }
+
+      DESCRIPTION
+               "A lanBlazer7000SystemTrap is sent by the agent when a system
+               event is triggered.  These events are usually triggered
+               when the software encounters an unexpected situation,
+               e.g. a hardware failure or a software bug."
+      ::= 2
+
+   lanBlazer7000ConfigurationTrap TRAP-TYPE
+      ENTERPRISE  lanBlazer7000SnmpTraps
+      VARIABLES   { lanBlazer7000EventTrapEventIndex,
+                     lanBlazer7000EventTrapTime,
+                     lanBlazer7000EventTrapDescr,
+                     lanBlazer7000EventTrapType,
+                     lanBlazer7000EventTrapSeverity,
+                     lanBlazer7000EventTrapDTM,
+                     lanBlazer7000EventTrapResType,
+                     lanBlazer7000EventTrapResID,
+                     lanBlazer7000EventTrapResLeaf,
+                     lanBlazer7000EventTrapValueType,
+                     lanBlazer7000EventTrapValue,
+                     lanBlazer7000EventTrapEpochTime,
+                     lanBlazer7000EventTrapID }
+      DESCRIPTION
+               "A lanBlazer7000ConfigurationTrap is sent by the agent when the
+               configuration event is triggered.  These events are
+               triggered when a configuration change is made."
+       ::= 3
+
+   lanBlazer7000TemperatureTrap TRAP-TYPE
+      ENTERPRISE  lanBlazer7000SnmpTraps
+      VARIABLES   { lanBlazer7000EventTrapEventIndex,
+                     lanBlazer7000EventTrapTime,
+                     lanBlazer7000EventTrapDescr,
+                     lanBlazer7000EventTrapType,
+                     lanBlazer7000EventTrapSeverity,
+                     lanBlazer7000EventTrapDTM,
+                     lanBlazer7000EventTrapResType,
+                     lanBlazer7000EventTrapResID,
+                     lanBlazer7000EventTrapResLeaf,
+                     lanBlazer7000EventTrapValueType,
+                     lanBlazer7000EventTrapValue,
+                     lanBlazer7000EventTrapEpochTime,
+                     lanBlazer7000EventTrapID }
+      DESCRIPTION
+               "A lanBlazer7000TemperatureTrap is sent by the agent when the
+               temperature event is triggered.  This event is
+               triggered when a temperature probe detects the
+               temperature crossing a threshold."
+      ::= 4
+
+   lanBlazer7000ResourceTrap TRAP-TYPE
+      ENTERPRISE  lanBlazer7000SnmpTraps
+      VARIABLES   { lanBlazer7000EventTrapEventIndex,
+                     lanBlazer7000EventTrapTime,
+                     lanBlazer7000EventTrapDescr,
+                     lanBlazer7000EventTrapType,
+                     lanBlazer7000EventTrapSeverity,
+                     lanBlazer7000EventTrapDTM,
+                     lanBlazer7000EventTrapResType,
+                     lanBlazer7000EventTrapResID,
+                     lanBlazer7000EventTrapResLeaf,
+                     lanBlazer7000EventTrapValueType,
+                     lanBlazer7000EventTrapValue,
+                     lanBlazer7000EventTrapEpochTime,
+                     lanBlazer7000EventTrapID }
+      DESCRIPTION
+               "A lanBlazer7000ResourceTrap is sent by the agent when the
+               resource event is triggered.  The resource event is
+               triggered when a resource is added or removed from the
+               system."
+      ::= 5
+
+   lanBlazer7000FanTrap TRAP-TYPE
+      ENTERPRISE  lanBlazer7000SnmpTraps
+      VARIABLES   { lanBlazer7000EventTrapEventIndex,
+                     lanBlazer7000EventTrapTime,
+                     lanBlazer7000EventTrapDescr,
+                     lanBlazer7000EventTrapType,
+                     lanBlazer7000EventTrapSeverity,
+                     lanBlazer7000EventTrapDTM,
+                     lanBlazer7000EventTrapResType,
+                     lanBlazer7000EventTrapResID,
+                     lanBlazer7000EventTrapResLeaf,
+                     lanBlazer7000EventTrapValueType,
+                     lanBlazer7000EventTrapValue,
+                     lanBlazer7000EventTrapEpochTime,
+                     lanBlazer7000EventTrapID }
+      DESCRIPTION
+               "A lanBlazer7000FanTrap is sent by the agent when the
+               fan status event is triggered.  The fan status event
+               is triggered when a fan has a change in its status."
+      ::= 6
+      
+   lanBlazer7000PowerTrap TRAP-TYPE
+      ENTERPRISE  lanBlazer7000SnmpTraps
+      VARIABLES   { lanBlazer7000EventTrapEventIndex,
+                     lanBlazer7000EventTrapTime,
+                     lanBlazer7000EventTrapDescr,
+                     lanBlazer7000EventTrapType,
+                     lanBlazer7000EventTrapSeverity,
+                     lanBlazer7000EventTrapDTM,
+                     lanBlazer7000EventTrapResType,
+                     lanBlazer7000EventTrapResID,
+                     lanBlazer7000EventTrapResLeaf,
+                     lanBlazer7000EventTrapValueType,
+                     lanBlazer7000EventTrapValue,
+                     lanBlazer7000EventTrapEpochTime,
+                     lanBlazer7000EventTrapID }
+      DESCRIPTION
+               "A lanBlazer7000PowerTrap is sent by the agent when the power
+               event is triggered.  These events are triggered when a
+               power supply changes status."
+      ::= 9
+
+-- VLAN EXCHANGE 
+
+   lanBlazer7000VlanExchange OBJECT IDENTIFIER ::= { odsLANBlazer7000Mib 14 }
+
+-- VLAN EXCHANGE SWITCH 
+-- General switch-wide objects
+
+   lanBlazer7000VlanExchangeSwitch OBJECT IDENTIFIER ::= { lanBlazer7000VlanExchange 1 }
+
+   lanBlazer7000VlanExchangeState OBJECT-TYPE
+      SYNTAX  INTEGER {
+                 enable(1),
+                 disable(2)
+              }
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "When this object is set to enable(1), the switch attempts to
+              learn VLANs from a major networking equipment vendor on switch
+              ports that have their VLAN Exchange parameter set to enable(1).
+              trunking mode is IEEE 802.1Q Format or Multi-level Format.
+
+              The factory default value for this object is disable(2)."
+      ::= { lanBlazer7000VlanExchangeSwitch 1 }
+
+   lanBlazer7000VlanExchangeDomainName OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..32))
+      ACCESS  read-write
+      STATUS  mandatory
+      DESCRIPTION
+              "The VLAN Exchange Domain Name of the switch.  A switch may
+              only belong to one domain."
+      ::= { lanBlazer7000VlanExchangeSwitch 2 }
+
+   lanBlazer7000VlanExchangeUpdaterId OBJECT-TYPE
+      SYNTAX  NetworkAddress
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The IP address of the switch from which the VLAN Exchange 
+              configuration was learned."
+      ::= { lanBlazer7000VlanExchangeSwitch 3 }
+
+   lanBlazer7000VlanExchangeUpdateTimeStamp OBJECT-TYPE
+      SYNTAX  DisplayString (SIZE(0..12))
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+              "The time at which the VLAN Exchange configuration changed
+              on the initiating switch."
+      ::= { lanBlazer7000VlanExchangeSwitch 4 }
+
+   lanBlazer7000VlanExchangeConfigRevNum OBJECT-TYPE
+      SYNTAX  INTEGER
+      ACCESS  read-only
+      STATUS  mandatory
+      DESCRIPTION
+               "Configuration Revision Number of VLAN Exchange Configuration on
+               the switch that initiated the VLAN Exchange."
+      ::= { lanBlazer7000VlanExchangeSwitch 5 }
+   
+
+END

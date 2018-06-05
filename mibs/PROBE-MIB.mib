@@ -1,0 +1,4135 @@
+PROBE-MIB DEFINITIONS ::= BEGIN
+
+-- Complete LanProbe Private MIB
+--
+-- Copyright (C) 1991-1998 Hewlett-Packard Corporation. All rights reserved.
+-- Author:        Hewlett-Packard Netmetrix Operation
+-- Last updated:  21 January 1998
+-- Purpose:       Defines objects need to configure a network probe's:
+--                 *  IP interface,
+--                 *  trap destinations, and
+--                 *  access security
+--                and to reboot the probe and check its administrative
+--                status.  It also includes proprietary extensions to the
+--                RMON MIB.  Designed for use with the HP LanProbe which
+--                also supports the RMON MIB and MIB-II.
+--
+-- Change History:
+--   12/11/92 jah New version created to allow Token Ring Support. 
+--   02/03/93 gme Added etherStatsExtensions and hostStatsExtensions groups
+--   05/10/93 gme Added echoTest and filterExtensions groups plus changes
+--                to the hostStatsExtensions group
+--   06/03/93 jah Added the serialTrapTimeout variable. Also modified the
+--                default value of serialTimeout. Added new sysObjectIDs.
+--   07/08/93 gme Added event indicies for IP address objects.
+--   07/16/93 pmk Modified defaults for modem connect and modem init 
+--                strings.
+--   08/09/93 gme Added Vines protocol to echo test; modified echo timeout
+--                DEFVAL; changed hostExtNetAddrStatus description
+--   08/25/93 gme Changed hostExtNetAddrStatus values and description.
+--   10/11/93 jah Added a netConfigRingNumber variable and a new default
+--                value for serialHangupString.
+--   10/16/93 jah Cleaned up a comment. Added CopyRight notice.
+--   10/23/93 jah Modified the definition of serialConnectStatus variable.
+--                Now, zero-length switchxxxxSeq strings are acceptable.
+--   05/03/94 jdm Modified Cable Group definition. 
+--   06/29/94 gcc Changed OwnerString to DisplayString.
+--                Changed commnunity from OCTET STRING to DisplayString.
+--                Comment out trapDestAlternateXXX.
+--   11/17/95 gcc Add FDDI extensions.
+--   07/02/97 jct Add LanProbe Trap definitions, changed from RFC1271-MIB
+--                to RMON-MIB(RFC1757), added TRAP-TYPE imports.
+--   07/22/97 map Change default serial IP to 0.0.0.0 to prevent duplicate
+--		  IP messages from HP Openview.
+--   12/22/97 map Changes to support ATM, WAN, Multiport Ethernet and 
+--                Multiport Token-Ring
+--                Split the FDDI LanProbe statistics off into their own 
+--                MIB file.  Greatly reduced the size and complexity of this
+--                MIB file while making it consistent with the WAN counters
+--                which are maintained separately.
+--   12/23/97 map Add object identifier for sysObjectID.  Fix definition of
+--                curUtil.  Add serial port speeds to the definition of 
+--                netConfigLinkSpeed.
+--   01/25/98 map Add support for monitor port for T1/E1.  Add reference to 
+--                Full duplex MIB definition.
+--   02/09/98 map db-37, rj-48c, mini-bantam, br-2 and hssi for connector
+--                types (netConfigPhysicalConnector).
+--   02/10/98 map Fix formatting.
+--   02/12/98 map Add an unknown type for netConfigPhysicalConnector and 
+--                clarify which variables are missing in the netConfigTable
+--                for the various WAN and ATM probes.
+--
+
+IMPORTS
+    enterprises, Counter, IpAddress, TimeTicks      FROM RFC1155-SMI
+    DisplayString                        FROM RFC1213-MIB
+    OBJECT-TYPE                          FROM RFC-1212
+    EntryStatus, OwnerString             FROM RMON-MIB
+    TRAP-TYPE                            FROM RFC-1215;
+
+    -- textual conventions
+
+    AccessLevel ::= INTEGER
+      {   level1(1),
+          level2(2),
+          level3(3),
+          level4(4)
+      }
+    -- The level of access right that maps to a community string.
+    -- There are four levels with increasing degree of authorization.
+    -- Each higher level is granted the rights of the lower levels
+    -- in addition to the following specific privileges:
+    --
+    -- level1 - Read access to MIB-II objects.
+    --
+    -- level2 - Read access to MIB-II, RMON MIB, and LanProbe MIB
+    --    objects, excluding the objects in the AccessControl group
+    --    and in the captureBufferTable.
+    --
+    -- level3 - Write access to RMON MIB and LanProbe MIB objects, 
+    --    excluding the objects in the probeAdmin, interface,
+    --    and accessControl groups.  Read access to MIB-II, RMON MIB 
+    --    (including the captureBufferTable), and LanProbe MIB objects 
+    --    excluding those in the accessControl group.
+    --
+    -- level4 - Read and write access to all MIB-II, RMON MIB, and LanProbe
+    --    MIB objects.
+
+
+
+    ControlString ::= DisplayString
+    -- This data type is used to communicate with a modem or a serial
+    -- data switch.  A ControlString contains embeded commands to
+    -- control how the device will interact with the remote device
+    -- through the serial interface.  Commands are represented as
+    -- two character sequences beginning with the "^" character.
+    -- The following commands are recognized by the device (note
+    -- that command characters are case sensitive):
+    --
+    --    ^s  Send string that follows which is terminated by the next
+    --        command or the end of string.
+    --    ^c  Delay for the number of seconds that follows.  Toss out
+    --        any data received rather than storing it in a buffer for
+    --        parsing.
+    --    ^t  Set timeout to the value represented by the decimal
+    --        digits that follow.  The default timeout is 20 seconds.
+    --        Note that this timeout may be override by a smaller
+    --        serialTimeout configured for the associated serial
+    --        interface (see serialConfigTable).
+    --    ^w  Wait for the reply string that follows which is terminated
+    --        by the next command or the end of string.  Partial and
+    --        case insensitive matching is applied, ie. if the reply
+    --        string (any case combination) is found anywhere in the
+    --        received string, then the a match is found.  If the
+    --        current timeout elapses without a match, then the
+    --        remaining control string is ignored.
+    --    ^!  The ^ character.
+    --    ^d  Delay the number of seconds specified by the decimal
+    --        digits that follow.
+    --    ^b  Send break for the number of milliseconds specified by
+    --        the decimal digits that follow.  If no digits follow,
+    --        break will be enforced for 250 milliseconds by default.
+    --
+    -- The following ASCII control characters may be inserted into
+    -- the "^s" send string or the "^w" reply string:
+    --
+    --    ^@    0x00
+    --    ^A    0x01
+    --     ..
+    --    ^M    0x0D
+    --     ..
+    --    ^Z    0x1A
+    --    ^[    0x1B
+    --    ^\    0x1C
+    --    ^]    0x1D
+    --    ^^    0x1E
+    --    ^_    0x1F
+    --
+    -- Binary data may also be inserted into the data stream.  The
+    -- control sequence for each byte of binary data is ^0x##, where
+    -- ## is the hexadecimal representation of the data byte.  Two
+    -- ASCII characters (0-9, a-f, A-F) must follow the "^0x" control
+    -- prefix.  For example, "^0x0D^0x0A" is interpreted as a carriage
+    -- return followed by a line feed.
+
+
+
+    -- Default IP values
+    --
+    -- Because Marshall Rose's MOSY compiler does not accept
+    -- an IP address for a DEFVAL, these DEFVALs have been commented
+    -- out but it is required that implementors use these default
+    -- values.
+
+    -- Traps
+    --
+    -- Traps sent by agents implementing the LanProbe MIB are defined
+    -- in a LanProbe-Trap companion MIB.
+
+
+
+
+    hp                        OBJECT IDENTIFIER  ::= { enterprises 11 }
+    nm                        OBJECT IDENTIFIER  ::= { hp 2 }
+    hpExperimental            OBJECT IDENTIFIER  ::= { nm 1 }
+    system                    OBJECT IDENTIFIER  ::= { nm 3 }
+    interface                 OBJECT IDENTIFIER  ::= { nm 4 }
+    snmp                      OBJECT IDENTIFIER  ::= { nm 13 }
+    netElement                OBJECT IDENTIFIER  ::= { system 7 }
+    ntd                       OBJECT IDENTIFIER  ::= { hpExperimental 5 }
+    trap                      OBJECT IDENTIFIER  ::= { snmp 1 }
+    community                 OBJECT IDENTIFIER  ::= { snmp 5 }
+
+    -- sysObjectId definitions
+    
+    lanprobe                  OBJECT IDENTIFIER  ::= { netElement 6 }
+    general                   OBJECT IDENTIFIER  ::= { lanprobe 1 }
+    lp1                       OBJECT IDENTIFIER  ::= { lanprobe 2 }
+    lpEther                   OBJECT IDENTIFIER  ::= { lanprobe 3 }
+    lp2EtherV1                OBJECT IDENTIFIER  ::= { lpEther 1 }
+    lp2EtherV2                OBJECT IDENTIFIER  ::= { lpEther 2 }
+    lp3Ether                  OBJECT IDENTIFIER  ::= { lpEther 3 }
+    pview                     OBJECT IDENTIFIER  ::= { lanprobe 4 }
+    lp2TokenRing              OBJECT IDENTIFIER  ::= { lanprobe 5 }
+    lp2TokenRingV2            OBJECT IDENTIFIER  ::= { lp2TokenRing 2 }
+    lpFDDI                    OBJECT IDENTIFIER  ::= { lanprobe 6 }       
+    lpFDDIV1                  OBJECT IDENTIFIER  ::= { lpFDDI 1 }
+    lpFDDIV2                  OBJECT IDENTIFIER  ::= { lpFDDI 2 }
+    lpQ                       OBJECT IDENTIFIER  ::= { lanprobe 7 }
+    lpQuadEther               OBJECT IDENTIFIER  ::= { lpQ 2 }
+    lpQuadEtherV1             OBJECT IDENTIFIER  ::= { lpQuadEther 1 }
+    lpFE                      OBJECT IDENTIFIER  ::= { lanprobe 9 }
+    lpFastEther               OBJECT IDENTIFIER  ::= { lpFE 1 }
+    lpFastEtherV1             OBJECT IDENTIFIER  ::= { lpFastEther 1 }
+    lpMultiport               OBJECT IDENTIFIER  ::= { lanprobe 10 }
+    lpMultiportTokenRing      OBJECT IDENTIFIER  ::= { lpMultiport 1 }
+    lpMultiportTokenRingV1    OBJECT IDENTIFIER  ::= { lpMultiportTokenRing 1 }
+    lpMultiportEther          OBJECT IDENTIFIER  ::= { lpMultiport 2 }
+    lpMultiportEtherV1        OBJECT IDENTIFIER  ::= { lpMultiportEther 1 }
+    lpT1                      OBJECT IDENTIFIER  ::= { lanprobe 11 }
+    lpT1Multiport             OBJECT IDENTIFIER  ::= { lpT1 1 }
+    lpT1MultiportV1           OBJECT IDENTIFIER  ::= { lpT1Multiport 1 }
+    lpE1                      OBJECT IDENTIFIER  ::= { lanprobe 12 }
+    lpE1Multiport             OBJECT IDENTIFIER  ::= { lpE1 1 }
+    lpE1MultiportV1           OBJECT IDENTIFIER  ::= { lpE1Multiport 1 }
+    lpVSeries                 OBJECT IDENTIFIER  ::= { lanprobe 13 }
+    lpVSeriesMultiport        OBJECT IDENTIFIER  ::= { lpVSeries 1 }
+    lpVSeriesMultiportV1      OBJECT IDENTIFIER  ::= { lpVSeriesMultiport 1 }
+    lpHSSerial                OBJECT IDENTIFIER  ::= { lanprobe 14 }
+    lpHSSI                    OBJECT IDENTIFIER  ::= { lpHSSerial 1 }
+    lpHSSIV1                  OBJECT IDENTIFIER  ::= { lpHSSI 1 }
+    lpT3                      OBJECT IDENTIFIER  ::= { lanprobe 15 }
+    lpT3Multiport             OBJECT IDENTIFIER  ::= { lpT3 1 }
+    lpT3MultiportV1           OBJECT IDENTIFIER  ::= { lpT3Multiport 1 }
+    lpATMUTP                  OBJECT IDENTIFIER  ::= { lanprobe 16 }
+    lpATMUTPMultiport         OBJECT IDENTIFIER  ::= { lpATMUTP 1 }
+    lpATMUTPMultiportV1       OBJECT IDENTIFIER  ::= { lpATMUTPMultiport 1 }
+    lpATMOC3                  OBJECT IDENTIFIER  ::= { lanprobe 17 }
+    lpATMOC3Multiport         OBJECT IDENTIFIER  ::= { lpATMOC3 1  }
+    lpATMOC3MultiportV1       OBJECT IDENTIFIER  ::= { lpATMOC3Multiport 1 }
+    lpATMT3                   OBJECT IDENTIFIER  ::= { lanprobe 18 }
+    lpATMT3Multiport          OBJECT IDENTIFIER  ::= { lpATMT3 1 }
+    lpATMT3MultiportV1        OBJECT IDENTIFIER  ::= { lpATMT3Multiport 1 }
+    lpATME3                   OBJECT IDENTIFIER  ::= { lanprobe 19 }
+    lpATME3Multiport          OBJECT IDENTIFIER  ::= { lpATME3 1 }
+    lpATME3MultiportV1        OBJECT IDENTIFIER  ::= { lpATME3Multiport 1 }
+    lpATMOC12                 OBJECT IDENTIFIER  ::= { lanprobe 20 }
+    lpATMOC12Multiport        OBJECT IDENTIFIER  ::= { lpATMOC12 1 }
+    lpATMOC12MultiportV1      OBJECT IDENTIFIER  ::= { lpATMOC12Multiport 1 }
+    lpATMGigabit              OBJECT IDENTIFIER  ::= { lanprobe 21 }
+    lpATMGigabitMultiport     OBJECT IDENTIFIER  ::= { lpATMGigabit 1 }
+    lpATMGigabitMultiportV1   OBJECT IDENTIFIER  ::= { lpATMGigabitMultiport 1 }
+    lpE3                      OBJECT IDENTIFIER  ::= { lanprobe 22 }
+    lpE3Multiport             OBJECT IDENTIFIER  ::= { lpE3 1 }
+    lpE3MultiportV1           OBJECT IDENTIFIER  ::= { lpE3Multiport 1 }
+
+    -- probe Group locations
+
+    probeAdmin                OBJECT IDENTIFIER  ::= { general 1 }
+    cableTest                 OBJECT IDENTIFIER  ::= { general 2 }
+    nodeLocation              OBJECT IDENTIFIER  ::= { general 3 }
+    probeView                 OBJECT IDENTIFIER  ::= { general 4 }
+    rmonExtension             OBJECT IDENTIFIER  ::= { general 5 }
+    echoTest                  OBJECT IDENTIFIER  ::= { general 6 }
+    cable                     OBJECT IDENTIFIER  ::= { general 7 }
+    nodeLocatorII             OBJECT IDENTIFIER  ::= { general 8 }
+    -- general.9 reserved for 64 bit counter MIB.  See ctr64.mib
+    statsExtension            OBJECT IDENTIFIER  ::= { rmonExtension 1 }
+    -- statsExtension.3 reserved for fddistats.     See fddistats.mib
+    -- statsExtension.4 reserved for fddistats.     See fddistats.mib
+    -- statsExtension.8 reserved for wanstats.      See wanstats.mib
+    -- statsExtension.9 reserved for full_duplex.   See full_duplex.mib
+    hostsExtension            OBJECT IDENTIFIER  ::= { rmonExtension 4 }
+    filterExtension           OBJECT IDENTIFIER  ::= { rmonExtension 7 }
+    -- rmonExtension.8 reserved for islvlan.  See islvlan.mib
+    ethernet                  OBJECT IDENTIFIER  ::= { interface 4 }
+    serial                    OBJECT IDENTIFIER  ::= { interface 5 }
+    net                       OBJECT IDENTIFIER  ::= { interface 6 }
+    tokenRing                 OBJECT IDENTIFIER  ::= { interface 7 }
+    -- interface.8 reserved for pvcconfig.  See pvcconfig.mib
+    accessControl             OBJECT IDENTIFIER  ::= { community 1 }
+    delivery                  OBJECT IDENTIFIER  ::= { trap 3 }
+    slip                      OBJECT IDENTIFIER  ::= { nm 15 }
+
+-- probeadmin Group
+--
+-- These objects identifies the device, control its operation, and
+-- allows new operating software to be downloaded.  These objects are
+-- writeable only by clients with the highest access level (level4).
+-- All information in this group is stored in non-volatile memory and will
+-- be preserved across power failures.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-only access
+-- level4:  read-write access
+
+probeIdentification  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE(0..127))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A string uniquely identifying this device."
+    ::= { probeAdmin 1 }
+
+probeFirmwareRev  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE(0..32))
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The firmware revision of this device."
+    ::= { probeAdmin 2 }
+
+probeHardwareRev  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE(0..31))
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The hardware revision of this device."
+    ::= { probeAdmin 3 }
+
+probeDateTime  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE(26..40))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Probe's current date and time in the format:
+       WWW MMM DD HH:MM:SS TTT YYYY
+      (eg: 'Wed Jan 02 02:03:55 PST 1980').
+      The length of the timezone field can be from
+      1 to 15 octets.  The timezone is stored for the
+      convenience of the manager and is not used by
+      the probe to adjust the probe's clock.  If and when
+      the timezone and clock changes, the manager must
+      update probeDateTime.  The timezone field has
+      the default value of 'PST', Pacific Standard Time."
+    ::= { probeAdmin 4 }
+
+probeResetControl  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   running(1),
+        warmBoot(2),
+        coldBoot(3)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Setting this object to warmBoot(2) causes the device to
+      restart the application software with current configuration
+      parameters saved in non-volatile memory.  Setting this
+      object to coldBoot(3) causes the device to reinitialize
+      configuration parameters in non-volatile memory to default
+      values and restart the application software.  When the device
+      is running normally, this variable has a value of running(1)."
+    ::= { probeAdmin 5 }
+
+probeDownloadFile  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE(0..127))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The file name to be downloaded from the TFTP server."
+    ::= { probeAdmin 6 }
+
+probeDownloadTFTPServer  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The IP address of the TFTP server that contains the boot
+      image to load."
+    ::= { probeAdmin 7 }
+
+probeDownloadAction  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   imageValid(1),
+        downloadToPROM(2),
+        downloadToRAM(3)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "When this object is set to downloadToRAM(2) or 
+      downloadToPROM(3), the device will discontinue its
+      normal operation and begin download of the image specified
+      by probeDownLoadFile from the server specifed by
+      probeDownLoadTFTPServer using the TFTP protocol.  If
+      downloadToRAM(2) is specified, the new image is copied
+      to RAM only (the old image remains unaltered in the flash
+      EPROM).  If downloadToPROM(3) is specified (supported only by
+      LanProbe-II), the new image is written to the flash EPROM
+      memory after its checksum has been verified to be correct.
+      When the download process is completed, the device will
+      warm boot to restart the newly loaded application.
+      When the device is not downloading, this object will have
+      a value of imageValid(1)."
+    ::= { probeAdmin 8 }
+
+probeDownloadStatus  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   downloadSuccess(1),
+        downloadFailed(2),
+        downloadStatusUnknown(3)
+    }
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The status of the last download procedure, if any.  This object
+      will have a value of downloadStatusUnknown(3) if no download
+      process has been performed."
+    ::= { probeAdmin 9 }
+
+probeEchoInterval OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The probe will send an ICMP echo request (ping) to the
+      default gateway every probeEchoInterval seconds.  To force
+      the probe not to send any echo requests, set probeEchoInterval
+      to 0."
+    DEFVAL { 1800 }
+    ::= { probeAdmin 10 }
+
+-- probeDownloadIfIndex  OBJECT-TYPE
+--    SYNTAX    INTEGER (1..65535)
+--    ACCESS    read-write
+--    STATUS    mandatory
+--    DESCRIPTION
+--	  "The value of this object uniquely identifies the interface
+--	   on this remote network monitoring device on which a firmware
+--	   download will be performed.  The interface identified by
+--	   a particular value of this object is the same interface
+--	   as identified by the same value of the ifIndex object,
+--     defined in RFC 1156 and RFC 1213."
+--	DEFVAL { 1 }
+--    ::= { probeAdmin 11 }
+
+probeFeatureDeactivate OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "This integer represents ORed bit fields which can be set
+      to deactivate certain features of a probe.  Currently
+      defined bit fields:
+        Bit      Feature To Deactivate
+        ---      ---------------------
+         0       Packet Capture
+         1       TFTP Firmware Download
+         2       Packet generation capability
+         3       Duplicate IP/changed IP processing
+      "
+    DEFVAL { 0 }
+    ::= { probeAdmin 12 }
+
+-- Interface Group
+
+-- These objects set up communication parameters for each interface
+-- supported by the device.  These objects are writeable only by
+-- clients with the highest access level (level4).  The entries in
+-- the netConfigTable and serialConfigTable are created by
+-- the agent.  All information in these tables is stored in non-
+-- volatile memory and will be preserved across power failures.
+-- All objects in the serialConfigTable will revert to default
+-- values as indicated following a cold restart.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-only access
+-- level4:  read-write access
+
+
+-- NOTE: 12/11/92 The ethernetConfigTable has been deprecated!!!! Use 
+--   the netConfigTable instead.
+--
+-- ethernetConfigTable  OBJECT-TYPE
+--  SYNTAX    SEQUENCE OF EthernetConfigEntry
+--  ACCESS    not-accessible
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "A table of Ethernet interface configuration entries."
+--  ::= { ethernet 1 }
+--
+-- ethernetConfigEntry  OBJECT-TYPE
+--  SYNTAX    EthernetConfigEntry
+--  ACCESS    not-accessible
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "A set of configuration parameters for a particular
+--    Ethernet interface on this device."
+--  INDEX  { etherIfIndex }
+--  ::= { ethernetConfigTable 1 }
+--
+-- EthernetConfigEntry ::= SEQUENCE {
+--  etherIfIndex           INTEGER (1..65535),
+--  etherIpAddress         IpAddress,
+--  etherSubnetMask        IpAddress,
+--  etherDefaultGateway    IpAddress
+-- }
+--
+-- etherIfIndex  OBJECT-TYPE
+--  SYNTAX    INTEGER (1..65535)
+--  ACCESS    read-only
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The value of this object uniquely identifies the Ethernet
+--    interface on this device for which this entry contains
+--    configuration parameters.  The interface identified by a
+--    particular value of this object is the same interface as
+--    identified by the same value of the ifIndex object, defined
+--    in RFC 1213."
+--  ::= { ethernetConfigEntry 1 }
+--
+-- etherIpAddress  OBJECT-TYPE
+--  SYNTAX    IpAddress
+--  ACCESS    read-write
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The IP address of this Ethernet interface.  The default value
+--    for this object is 0.0.0.0.  If either the etherIpAddress or
+--    etherSubnetMask are 0.0.0.0, then when the device boots, it will
+--    use BOOTP to try to figure out what these values should be.
+--    Otherwise, if BOOTP fails, before the device can talk on the
+--    network, this value must be configured through a terminal
+--    attached to the device."
+--  DEFVAL { 0.0.0.0 }
+--  ::= { ethernetConfigEntry 2 }
+--
+-- etherSubnetMask  OBJECT-TYPE
+--  SYNTAX    IpAddress
+--  ACCESS    read-write
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The subnet mask of this Ethernet interface.  The default value
+--    for this object is 0.0.0.0.  If either the etherIpAddress
+--    or etherSubnetMask are 0.0.0.0, then when the device boots, it
+--    will use BOOTP to try to figure out what these values should be.
+--    Otherwise, if BOOTP fails, before the device can talk on the
+--    network, this value must be configured through a terminal
+--    attached to the device."
+--  DEFVAL { 0.0.0.0 }
+--  ::= { ethernetConfigEntry 3 }
+--
+-- etherDefaultGateway  OBJECT-TYPE
+--  SYNTAX    IpAddress
+--  ACCESS    read-write
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The default gateway of this Ethernet interface."
+--  DEFVAL { 0.0.0.0 }
+--  ::= { ethernetConfigEntry 4 }
+
+serialConfigTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF SerialConfigEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A table of Serial interface configuration entries."
+    ::= { serial 1 }
+
+serialConfigEntry  OBJECT-TYPE
+    SYNTAX    SerialConfigEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A set of configuration parameters for a particular
+      serial interface on this device."
+    INDEX  { serialIfIndex }
+    ::= { serialConfigTable 1 }
+
+SerialConfigEntry ::= SEQUENCE {
+    serialIfIndex                INTEGER (1..65535),
+    serialIpAddress              IpAddress,
+    serialSubnetMask             IpAddress,
+    serialMode                   INTEGER,
+    serialProtocol               INTEGER,
+    serialSpeed                  INTEGER,
+    serialTimeout                INTEGER (1..65535),
+    serialModemInitString        ControlString (SIZE (0..255)),
+    serialModemHangUpString      ControlString (SIZE (0..255)),
+    serialModemConnectResp       DisplayString (SIZE (0..255)),
+    serialModemNoConnectResp     DisplayString (SIZE (0..255)),
+    serialFlowControl            INTEGER,
+    serialTrapTimeout            INTEGER (1..65535)
+}
+
+serialIfIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The value of this object uniquely identifies the serial
+      interface on this device for which this entry contains
+      configuration parameters.  The interface identified by a
+      particular value of this object is the same interface as
+      identified by the same value of the ifIndex object, defined
+      in RFC 1213."
+    ::= { serialConfigEntry 1 }
+
+serialIpAddress  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The IP address of this serial interface."
+    -- DEFVAL { 0.0.0.0 }
+    ::= { serialConfigEntry 2 }
+
+serialSubnetMask  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The IP subnet mask of this serial interface."
+    -- DEFVAL { 255.255.252.0 }
+    ::= { serialConfigEntry 3 }
+
+serialMode  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   direct(1),
+        modem(2)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The type of incoming connection to expect on this serial
+      interface."
+    DEFVAL { 1 }
+    ::= { serialConfigEntry 4 }
+
+serialProtocol  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   slip(1)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The type of data link encapsulation to be used on this
+      serial interface."
+    DEFVAL { 1 }
+    ::= { serialConfigEntry 5 }
+
+serialSpeed  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   speed-300bps(1),
+        speed-1200bps(2),
+        speed-2400bps(3),
+        speed-4800bps(4),
+        speed-9600bps(5),
+        speed-14400bps(6),
+        speed-19200bps(7),
+        speed-38400bps(8)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The data rate to configure this serial interface to on startup
+      as well as after each serial connection."
+    DEFVAL { 5 }
+    ::= { serialConfigEntry 6 }
+
+serialTimeout  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "This timeout value is used when the Management Station has initiated
+      the conversation over the serial link. This variable represents the
+      number of seconds of inactivity allowed before terminating
+      the connection on this serial interface. Use the serialTrapTimeout
+      in the case where the probe has initiated the connection for the
+      purpose of sending a trap."
+    DEFVAL { 300 }
+    ::= { serialConfigEntry 7 }
+
+serialModemInitString  OBJECT-TYPE
+    SYNTAX    ControlString (SIZE (0..255))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A control string which controls how a modem attached to this
+      serial interface should be initialized.  The initialization is
+      performed once during startup and again after each connection
+      is terminated if the associated serialMode has the value
+      of modem(2)."
+    DEFVAL { "^s^MATE0Q0V1X4 S0=1 S2=43^M" }
+    ::= { serialConfigEntry 8 }
+
+serialModemHangUpString  OBJECT-TYPE
+    SYNTAX    ControlString (SIZE (0..255))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A control string which specifies how to disconnect a modem
+      connection on this serial interface.  This object is only
+      meaningful if the associated serialMode has the value
+      of modem(2)."
+    DEFVAL { "^d2^s+++^d2^sATH0^M^d2" }
+    ::= { serialConfigEntry 9 }
+
+serialModemConnectResp  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE (0..255))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "An ASCII string conntaining substrings that desribe the
+      expected modem connection response code and associated bps
+      rate.  The substrings are delimited by the first character
+      in the string, for example:
+        /CONNECT/300/CONNECT 1200/1200/CONNECT 2400/2400/
+        CONNECT 4800/4800/CONNECT 9600/9600
+      will be interpreted as:
+      response code    bps rate
+        CONNECT            300
+        CONNECT 1200      1200
+        CONNECT 2400      2400
+        CONNECT 4800      4800
+        CONNECT 9600      9600
+      The agent will use the information in this string to adjust
+      the bps rate of this serial interface once a modem connection
+      is established."
+    DEFVAL { "/CONNECT/300/CONNECT 1200/1200/CONNECT 2400/2400/
+              CONNECT 4800/4800/CONNECT 9600/9600/CONNECT 14400/14400/
+              CONNECT 19200/19200/CONNECT 38400/38400/" }
+    ::= { serialConfigEntry 10 }
+
+serialModemNoConnectResp  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE (0..255))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "An ASCII string containing response codes that may be
+      generated by a modem to report the reason why a connection
+      attempt has failed.  The response codes are delimited by
+      the first character in the string, for example:
+        /NO CARRIER/BUSY/NO DIALTONE/NO ANSWER/ERROR/
+      If one of these response codes is received via this serial
+      interface while attempting to make a modem connection,
+      the agent will issue the hang up command as specified by
+      modemHangUpString."
+    DEFVAL { "/NO CARRIER/BUSY/NO DIALTONE/NO ANSWER/ERROR/" }
+    ::= { serialConfigEntry 11 }
+
+serialFlowControl  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   noFlowControl(1),
+        hardwareFlowControl(2)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The type of flow control to use on this serial
+      interface."
+    DEFVAL { 2 }
+    ::= { serialConfigEntry 12 }
+
+serialTrapTimeout  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "This timeout value is used when the probe initiates the serial 
+      connection with the intention of sending a trap. This variable
+      represents the number of seconds of inactivity allowed before 
+      terminating the connection on this serial interface."
+    DEFVAL { 20 }
+    ::= { serialConfigEntry 13 }
+
+
+netConfigTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF NetConfigEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A table of network configuration entries."
+    ::= { net 1 }
+
+netConfigEntry  OBJECT-TYPE
+    SYNTAX    NetConfigEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A set of configuration parameters for a particular
+      network interface on this device."
+    INDEX  { netConfigIfIndex }
+    ::= { netConfigTable 1 }
+
+NetConfigEntry ::= SEQUENCE {
+    netConfigIfIndex             INTEGER (1..65535),
+    netConfigIfSpeed             INTEGER,
+    netConfigIPAddress           IpAddress,
+    netConfigSubnetMask          IpAddress,
+    netConfigRingNumber          INTEGER (-1..4095),
+    netConfigPortType            INTEGER,
+    netConfigDefaultGateway      IpAddress,
+    netConfigPhysicalConnector   INTEGER,
+    netConfigLinkSpeed           INTEGER,
+    netConfigDuplex              INTEGER,
+    netConfigLineCode            INTEGER,
+    netConfigFramingType         INTEGER,
+    netConfigChannelRate         INTEGER,
+    netConfigDataChannel         INTEGER,
+    netConfigDataSense           INTEGER,
+    netConfigLinkLayerType       INTEGER,
+    netConfigNetworkInterface    INTEGER,
+    netConfigCellSynchronization INTEGER,
+    netConfigReceiverMode        INTEGER,
+    netConfigMaximumFrameSize    INTEGER
+}
+
+netConfigIfIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The value of this object uniquely identifies the physical
+      interface on this device for which this entry contains
+      configuration parameters.  The interface identified by a
+      particular value of this object is the same interface as
+      identified by the same value of the ifIndex object, defined
+      in RFC 1213."
+    ::= { netConfigEntry 1 }
+
+netConfigIfSpeed  OBJECT-TYPE
+    SYNTAX    INTEGER {
+        ifsp-1Mb(1),
+        ifsp-10Mb(2),         -- Ethernet 
+        ifsp-100Mb(3),        -- Fast Ethernet/FDDI
+        ifsp-4Mb(4),          -- Token-Ring
+        ifsp-16Mb(5),         -- Token-Ring
+        ifsp-unspecified(6),
+        ifsp-20Mb(7),         -- Fast Ethernet/Full-Duplex
+        ifsp-200Mb(8),        -- Fast Ethernet/Full-Duplex
+        ifsp-1Gb(9),          -- Gigabit
+        ifsp-64000bps(10),    -- 1x64K T1/E1
+        ifsp-128000bps(11),   -- 2x64K T1/E1
+        ifsp-192000bps(12),   -- 3x64K T1/E1
+        ifsp-256000bps(13),   -- 4x64K T1/E1
+        ifsp-320000bps(14),   -- 5x64K T1/E1
+        ifsp-384000bps(15),   -- 6x64K T1/E1
+        ifsp-448000bps(16),   -- 7x64K T1/E1
+        ifsp-512000bps(17),   -- 8x64K T1/E1
+        ifsp-576000bps(18),   -- 9x64K T1/E1
+        ifsp-640000bps(19),   -- 10x64K T1/E1
+        ifsp-704000bps(20),   -- 11x64K T1/E1
+        ifsp-768000bps(21),   -- 12x64K T1/E1
+        ifsp-832000bps(22),   -- 13x64K T1/E1
+        ifsp-896000bps(23),   -- 14x64K T1/E1
+        ifsp-960000bps(24),   -- 15x64K T1/E1
+        ifsp-1024000bps(25),  -- 16x64K T1/E1
+        ifsp-1088000bps(26),  -- 17x64K T1/E1
+        ifsp-1152000bps(27),  -- 18x64K T1/E1
+        ifsp-1216000bps(28),  -- 19x64K T1/E1
+        ifsp-1280000bps(29),  -- 20x64K T1/E1
+        ifsp-1344000bps(30),  -- 21x64K T1/E1
+        ifsp-1408000bps(31),  -- 22x64K T1/E1
+        ifsp-1472000bps(32),  -- 23x64K T1/E1
+        ifsp-1536000bps(33),  -- 24x64K T1/E1
+        ifsp-1600000bps(34),  -- 25x64K E1
+        ifsp-1664000bps(35),  -- 26x64K E1
+        ifsp-1728000bps(36),  -- 27x64K E1
+        ifsp-1792000bps(37),  -- 28x64K E1
+        ifsp-1856000bps(38),  -- 29x64K E1
+        ifsp-1920000bps(39),  -- 30x64K E1
+        ifsp-1984000bps(40),  -- 31x64K E1
+        ifsp-56000bps(41),    -- 1x56K T1
+        ifsp-112000bps(42),   -- 2x56K T1
+        ifsp-168000bps(43),   -- 3x56K T1
+        ifsp-224000bps(44),   -- 4x56K T1
+        ifsp-280000bps(45),   -- 5x56K T1
+        ifsp-336000bps(46),   -- 6x56K T1
+        ifsp-392000bps(47),   -- 7x56K T1
+--      ifsp-448000bps(xx),      8x56K T1
+        ifsp-504000bps(48),   -- 9x56K T1
+        ifsp-560000bps(49),   -- 10x56K T1
+        ifsp-616000bps(50),   -- 11x56K T1
+        ifsp-672000bps(51),   -- 12x56K T1
+        ifsp-728000bps(52),   -- 13x56K T1
+        ifsp-784000bps(53),   -- 14x56K T1
+        ifsp-840000bps(54),   -- 15x56K T1
+--      ifsp-896000bps(xx),      16x56K T1
+        ifsp-952000bps(55),   -- 17x56K T1
+        ifsp-1008000bps(56),  -- 18x56K T1
+        ifsp-1064000bps(57),  -- 19x56K T1
+        ifsp-1120000bps(58),  -- 20x56K T1
+        ifsp-1176000bps(59),  -- 21x56K T1
+        ifsp-1232000bps(60),  -- 22x56K T1
+        ifsp-1288000bps(61),  -- 23x56K T1
+--      ifsp-1344000bps(xx),     24x56K T1
+        ifsp-300bps(62),      -- asynchronous rate
+        ifsp-1200bps(63),     -- asynchronous rate
+        ifsp-2400bps(64),     -- asynchronous rate
+        ifsp-4800bps(65),     -- asynchronous rate
+        ifsp-7200bps(66),     -- asynchronous rate
+        ifsp-9600bps(67),     -- asynchronous rate
+        ifsp-12000bps(68),    -- asynchronous rate
+        ifsp-14400bps(69),    -- asynchronous rate
+        ifsp-19200bps(70),    -- asynchronous rate
+        ifsp-38400bps(71),    -- asynchronous rate
+--      ifsp-56000bps(xx),       asynchronous rate
+        ifsp-57600bps(72),    -- asynchronous rate
+--      ifsp-64000bps(xx),       asynchronous rate
+        ifsp-115200bps(73),   -- asynchronous rate
+        ifsp-34368kbps(74),   -- ATM 34.368 Mbps (E3)
+        ifsp-44736kbps(75),   -- ATM 44.736 Mbps (DS-3)
+        ifsp-155520kbps(76),  -- ATM 155.52 Mbps (OC-3c)
+        ifsp-622000kbps(77),  -- ATM 622.00 Mbps (OC-12c)
+        ifsp-2048000bps(78),  -- E1 (no synchronizing channel)
+        ifsp-1000kbps(79),    -- 1.000MHz HSSI
+        ifsp-1500kbps(80),    -- 1.500MHz HSSI
+        ifsp-2000kbps(81),    -- 2.000MHz HSSI
+        ifsp-2500kbps(82),    -- 2.500MHz HSSI
+        ifsp-3000kbps(83),    -- 3.000MHz HSSI
+        ifsp-3500kbps(84),    -- 3.500MHz HSSI
+        ifsp-4000kbps(85),    -- 4.000MHz HSSI
+        ifsp-4500kbps(86),    -- 4.500MHz HSSI
+        ifsp-5000kbps(87),    -- 5.000MHz HSSI
+        ifsp-5500kbps(88),    -- 5.500MHz HSSI
+        ifsp-6000kbps(89),    -- 6.000MHz HSSI
+        ifsp-6500kbps(90),    -- 6.500MHz HSSI
+        ifsp-7000kbps(91),    -- 7.000MHz HSSI
+        ifsp-7500kbps(92),    -- 7.500MHz HSSI
+        ifsp-8000kbps(93),    -- 8.000MHz HSSI
+        ifsp-8500kbps(94),    -- 8.500MHz HSSI
+        ifsp-9000kbps(95),    -- 9.000MHz HSSI
+        ifsp-9500kbps(96),    -- 9.500MHz HSSI
+        ifsp-10000kbps(97),   -- 10.000MHz HSSI
+        ifsp-10500kbps(98),   -- 10.500MHz HSSI
+        ifsp-11000kbps(99),   -- 11.000MHz HSSI
+        ifsp-11500kbps(100),  -- 11.500MHz HSSI
+        ifsp-12000kbps(101),  -- 12.000MHz HSSI
+        ifsp-12500kbps(102),  -- 12.500MHz HSSI
+        ifsp-13000kbps(103),  -- 13.000MHz HSSI
+        ifsp-13500kbps(104),  -- 13.500MHz HSSI
+        ifsp-14000kbps(105),  -- 14.000MHz HSSI
+        ifsp-14500kbps(106),  -- 14.500MHz HSSI
+        ifsp-15000kbps(107),  -- 15.000MHz HSSI
+        ifsp-15500kbps(108),  -- 15.500MHz HSSI
+        ifsp-16000kbps(109),  -- 16.000MHz HSSI
+        ifsp-16500kbps(110),  -- 16.500MHz HSSI
+        ifsp-17000kbps(111),  -- 17.000MHz HSSI
+        ifsp-17500kbps(112),  -- 17.500MHz HSSI
+        ifsp-18000kbps(113),  -- 18.000MHz HSSI
+        ifsp-18500kbps(114),  -- 18.500MHz HSSI
+        ifsp-19000kbps(115),  -- 19.000MHz HSSI
+        ifsp-19500kbps(116),  -- 19.500MHz HSSI
+        ifsp-20000kbps(117),  -- 20.000MHz HSSI
+        ifsp-20500kbps(118),  -- 20.500MHz HSSI
+        ifsp-21000kbps(119),  -- 21.000MHz HSSI
+        ifsp-21500kbps(120),  -- 21.500MHz HSSI
+        ifsp-22000kbps(121),  -- 22.000MHz HSSI
+        ifsp-22500kbps(122),  -- 22.500MHz HSSI
+        ifsp-23000kbps(123),  -- 23.000MHz HSSI
+        ifsp-23500kbps(124),  -- 23.500MHz HSSI
+        ifsp-24000kbps(125),  -- 24.000MHz HSSI
+        ifsp-24500kbps(126),  -- 24.500MHz HSSI
+        ifsp-25000kbps(127),  -- 25.000MHz HSSI
+        ifsp-25500kbps(128),  -- 25.500MHz HSSI
+        ifsp-26000kbps(129),  -- 26.000MHz HSSI
+        ifsp-26500kbps(130),  -- 26.500MHz HSSI
+        ifsp-27000kbps(131),  -- 27.000MHz HSSI
+        ifsp-27500kbps(132),  -- 27.500MHz HSSI
+        ifsp-28000kbps(133),  -- 28.000MHz HSSI
+        ifsp-28500kbps(134),  -- 28.500MHz HSSI
+        ifsp-29000kbps(135),  -- 29.000MHz HSSI
+        ifsp-29500kbps(136),  -- 29.500MHz HSSI
+        ifsp-30000kbps(137),  -- 30.000MHz HSSI
+        ifsp-30500kbps(138),  -- 30.500MHz HSSI
+        ifsp-31000kbps(139),  -- 31.000MHz HSSI
+        ifsp-31500kbps(140),  -- 31.500MHz HSSI
+        ifsp-32000kbps(141),  -- 32.000MHz HSSI
+        ifsp-32500kbps(142),  -- 32.500MHz HSSI
+        ifsp-33000kbps(143),  -- 33.000MHz HSSI
+        ifsp-33500kbps(144),  -- 33.500MHz HSSI
+        ifsp-34000kbps(145),  -- 34.000MHz HSSI
+        ifsp-34100kbps(146),  -- 34.100MHz HSSI
+        ifsp-34500kbps(147),  -- 34.500MHz HSSI
+        ifsp-35000kbps(148),  -- 35.000MHz HSSI
+        ifsp-35500kbps(149),  -- 35.500MHz HSSI
+        ifsp-36000kbps(150),  -- 36.000MHz HSSI
+        ifsp-36500kbps(151),  -- 36.500MHz HSSI
+        ifsp-37000kbps(152),  -- 37.000MHz HSSI
+        ifsp-37500kbps(153),  -- 37.500MHz HSSI
+        ifsp-38000kbps(154),  -- 38.000MHz HSSI
+        ifsp-38500kbps(155),  -- 38.500MHz HSSI
+        ifsp-39000kbps(156),  -- 39.000MHz HSSI
+        ifsp-39500kbps(157),  -- 39.500MHz HSSI
+        ifsp-40000kbps(158),  -- 40.000MHz HSSI
+        ifsp-40500kbps(159),  -- 40.500MHz HSSI
+        ifsp-41000kbps(160),  -- 41.000MHz HSSI
+        ifsp-41500kbps(161),  -- 41.500MHz HSSI
+        ifsp-42000kbps(162),  -- 42.000MHz HSSI
+        ifsp-42500kbps(163),  -- 42.500MHz HSSI
+        ifsp-43000kbps(164),  -- 43.000MHz HSSI
+        ifsp-43500kbps(165),  -- 43.500MHz HSSI
+        ifsp-44000kbps(166),  -- 44.000MHz HSSI
+        ifsp-44210kbps(167),  -- 44.210MHz HSSI
+        ifsp-44500kbps(168),  -- 44.500MHz HSSI
+        ifsp-45000kbps(169),  -- 45.000MHz HSSI
+        ifsp-45500kbps(170),  -- 45.500MHz HSSI
+        ifsp-46000kbps(171),  -- 46.000MHz HSSI
+        ifsp-46500kbps(172),  -- 46.500MHz HSSI
+        ifsp-47000kbps(173),  -- 47.000MHz HSSI
+        ifsp-47500kbps(174),  -- 47.500MHz HSSI
+        ifsp-48000kbps(175),  -- 48.000MHz HSSI
+        ifsp-48500kbps(176),  -- 48.500MHz HSSI
+        ifsp-49000kbps(177),  -- 49.000MHz HSSI
+        ifsp-49500kbps(178),  -- 49.500MHz HSSI
+        ifsp-50000kbps(179),  -- 50.000MHz HSSI
+        ifsp-50500kbps(180),  -- 50.500MHz HSSI
+        ifsp-51000kbps(181),  -- 51.000MHz HSSI
+        ifsp-51500kbps(182),  -- 51.500MHz HSSI
+        ifsp-52000kbps(183)   -- 52.000MHz HSSI
+    }
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The value of this object indicates the speed of the media.
+       This is equivalent to the MIB-2 object ifSpeed."
+    ::= { netConfigEntry 2 }
+
+netConfigIPAddress  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The IP address of this Net interface.  The default value
+      for this object is 0.0.0.0.  If either the netConfigIPAddress or
+      netConfigSubnetMask are 0.0.0.0, then when the device boots, it will
+      use BOOTP to try to figure out what these values should be.
+      Otherwise, if BOOTP fails, before the device can talk on the
+      network, this value must be configured through a terminal
+      attached to the device."
+    -- DEFVAL { 0.0.0.0 }
+    ::= { netConfigEntry 3 }
+
+netConfigSubnetMask  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The subnet mask of this Net interface.  The default value
+      for this object is 0.0.0.0.  If either the netConfigIPAddress
+      or netConfigSubnetMask are 0.0.0.0, then when the device boots, it
+      will use BOOTP to try to figure out what these values should be.
+      Otherwise, if BOOTP fails, before the device can talk on the
+      network, this value must be configured through a terminal
+      attached to the device."
+    -- DEFVAL { 0.0.0.0 }
+    ::= { netConfigEntry 4 }
+
+netConfigRingNumber  OBJECT-TYPE
+    SYNTAX    INTEGER (-1..4095)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The value of this object uniquely identifies the physical
+      ring number on which the probe resides. This variable is only
+      meaningful on a Token Ring probe. If the user sets this value
+      to -1, the probe will attempt to 'auto-discover' the ring number
+      by sending a packet to the Ring Parameter Server. Setting this
+      variable to any value other than -1 indicates that the user
+      wants to explicitly set the ring number to the given value.
+      This value will take effect the next time the probe is rebooted,
+      or the next time a sourceRoutingTable entry is created."
+    DEFVAL { -1 }
+    ::= { netConfigEntry 5 }
+
+netConfigPortType  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   monitorOnly(1),
+        telemetry(2),
+	monitorTransmit(3)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+	  "This object indicates whether or not the port for this row
+	  (indicated in netConfigIfIndex) is monitor only or can transmit
+	  as well.  If this port is monitorOnly the values of
+	  netConfigIpAddress and netConfigSubnetMask for this row are in
+	  reality don't cares."
+    ::= { netConfigEntry 6 }
+
+netConfigDefaultGateway  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The IP Address of the default gateway for this Net interface."
+    -- DEFVAL { 0.0.0.0 }
+    ::= { netConfigEntry 7 }
+
+netConfigPhysicalConnector  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   rj-45(1),
+        aui(2),
+        fiber(3),
+        bnc(4),
+	db-9(5),
+	db-25(6),
+        mini-bantam(7),
+        rj-48c(8),
+        db-37(9),
+        br-2(10),
+        hssi(11),
+        unknown(12)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The value of this object indicates the type of physical
+       connector which is currently being used to connect the
+       interface to the network."
+    ::= { netConfigEntry 8 }
+
+netConfigLinkSpeed  OBJECT-TYPE
+    SYNTAX    INTEGER {
+        lksp-1Mb(1),
+        lksp-10Mb(2),
+        lksp-100Mb(3),
+        lksp-4Mb(4),
+        lksp-16Mb(5),
+        lksp-auto-negotiate(6),
+        lksp-20Mb(7),         -- Fast Ethernet/Full-Duplex
+        lksp-200Mb(8),        -- Fast Ethernet/Full-Duplex
+        lksp-1Gb(9),          -- Gigabit
+        lksp-64000bps(10),    -- 1x64K T1/E1
+        lksp-128000bps(11),   -- 2x64K T1/E1
+        lksp-192000bps(12),   -- 3x64K T1/E1
+        lksp-256000bps(13),   -- 4x64K T1/E1
+        lksp-320000bps(14),   -- 5x64K T1/E1
+        lksp-384000bps(15),   -- 6x64K T1/E1
+        lksp-448000bps(16),   -- 7x64K T1/E1
+        lksp-512000bps(17),   -- 8x64K T1/E1
+        lksp-576000bps(18),   -- 9x64K T1/E1
+        lksp-640000bps(19),   -- 10x64K T1/E1
+        lksp-704000bps(20),   -- 11x64K T1/E1
+        lksp-768000bps(21),   -- 12x64K T1/E1
+        lksp-832000bps(22),   -- 13x64K T1/E1
+        lksp-896000bps(23),   -- 14x64K T1/E1
+        lksp-960000bps(24),   -- 15x64K T1/E1
+        lksp-1024000bps(25),  -- 16x64K T1/E1
+        lksp-1088000bps(26),  -- 17x64K T1/E1
+        lksp-1152000bps(27),  -- 18x64K T1/E1
+        lksp-1216000bps(28),  -- 19x64K T1/E1
+        lksp-1280000bps(29),  -- 20x64K T1/E1
+        lksp-1344000bps(30),  -- 21x64K T1/E1
+        lksp-1408000bps(31),  -- 22x64K T1/E1
+        lksp-1472000bps(32),  -- 23x64K T1/E1
+        lksp-1536000bps(33),  -- 24x64K T1/E1
+        lksp-1600000bps(34),  -- 25x64K E1
+        lksp-1664000bps(35),  -- 26x64K E1
+        lksp-1728000bps(36),  -- 27x64K E1
+        lksp-1792000bps(37),  -- 28x64K E1
+        lksp-1856000bps(38),  -- 29x64K E1
+        lksp-1920000bps(39),  -- 30x64K E1
+        lksp-1984000bps(40),  -- 31x64K E1
+        lksp-56000bps(41),    -- 1x56K T1
+        lksp-112000bps(42),   -- 2x56K T1
+        lksp-168000bps(43),   -- 3x56K T1
+        lksp-224000bps(44),   -- 4x56K T1
+        lksp-280000bps(45),   -- 5x56K T1
+        lksp-336000bps(46),   -- 6x56K T1
+        lksp-392000bps(47),   -- 7x56K T1
+--      lksp-448000bps(xx),      8x56K T1
+        lksp-504000bps(48),   -- 9x56K T1
+        lksp-560000bps(49),   -- 10x56K T1
+        lksp-616000bps(50),   -- 11x56K T1
+        lksp-672000bps(51),   -- 12x56K T1
+        lksp-728000bps(52),   -- 13x56K T1
+        lksp-784000bps(53),   -- 14x56K T1
+        lksp-840000bps(54),   -- 15x56K T1
+--      lksp-896000bps(xx),      16x56K T1
+        lksp-952000bps(55),   -- 17x56K T1
+        lksp-1008000bps(56),  -- 18x56K T1
+        lksp-1064000bps(57),  -- 19x56K T1
+        lksp-1120000bps(58),  -- 20x56K T1
+        lksp-1176000bps(59),  -- 21x56K T1
+        lksp-1232000bps(60),  -- 22x56K T1
+        lksp-1288000bps(61),  -- 23x56K T1
+--      lksp-1344000bps(xx),     24x56K T1
+        lksp-300bps(62),      -- asynchronous rate
+        lksp-1200bps(63),     -- asynchronous rate
+        lksp-2400bps(64),     -- asynchronous rate
+        lksp-4800bps(65),     -- asynchronous rate
+        lksp-7200bps(66),     -- asynchronous rate
+        lksp-9600bps(67),     -- asynchronous rate
+        lksp-12000bps(68),    -- asynchronous rate
+        lksp-14400bps(69),    -- asynchronous rate
+        lksp-19200bps(70),    -- asynchronous rate
+        lksp-38400bps(71),    -- asynchronous rate
+--      lksp-56000bps(xx),       asynchronous rate
+        lksp-57600bps(72),    -- asynchronous rate
+--      lksp-64000bps(xx),       asynchronous rate
+        lksp-115200bps(73),   -- asynchronous rate
+        lksp-34368kbps(74),   -- ATM 34.368 Mbps (E3)
+        lksp-44736kbps(75),   -- ATM 44.736 Mbps (DS-3)
+        lksp-155520kbps(76),  -- ATM 155.52 Mbps (OC-3c)
+        lksp-622000kbps(77),  -- ATM 622.00 Mbps (OC-12c)
+        lksp-2048000bps(78),  -- E1 (no synchronizing channel)
+        lksp-1000kbps(79),    -- 1.000MHz HSSI
+        lksp-1500kbps(80),    -- 1.500MHz HSSI
+        lksp-2000kbps(81),    -- 2.000MHz HSSI
+        lksp-2500kbps(82),    -- 2.500MHz HSSI
+        lksp-3000kbps(83),    -- 3.000MHz HSSI
+        lksp-3500kbps(84),    -- 3.500MHz HSSI
+        lksp-4000kbps(85),    -- 4.000MHz HSSI
+        lksp-4500kbps(86),    -- 4.500MHz HSSI
+        lksp-5000kbps(87),    -- 5.000MHz HSSI
+        lksp-5500kbps(88),    -- 5.500MHz HSSI
+        lksp-6000kbps(89),    -- 6.000MHz HSSI
+        lksp-6500kbps(90),    -- 6.500MHz HSSI
+        lksp-7000kbps(91),    -- 7.000MHz HSSI
+        lksp-7500kbps(92),    -- 7.500MHz HSSI
+        lksp-8000kbps(93),    -- 8.000MHz HSSI
+        lksp-8500kbps(94),    -- 8.500MHz HSSI
+        lksp-9000kbps(95),    -- 9.000MHz HSSI
+        lksp-9500kbps(96),    -- 9.500MHz HSSI
+        lksp-10000kbps(97),   -- 10.000MHz HSSI
+        lksp-10500kbps(98),   -- 10.500MHz HSSI
+        lksp-11000kbps(99),   -- 11.000MHz HSSI
+        lksp-11500kbps(100),  -- 11.500MHz HSSI
+        lksp-12000kbps(101),  -- 12.000MHz HSSI
+        lksp-12500kbps(102),  -- 12.500MHz HSSI
+        lksp-13000kbps(103),  -- 13.000MHz HSSI
+        lksp-13500kbps(104),  -- 13.500MHz HSSI
+        lksp-14000kbps(105),  -- 14.000MHz HSSI
+        lksp-14500kbps(106),  -- 14.500MHz HSSI
+        lksp-15000kbps(107),  -- 15.000MHz HSSI
+        lksp-15500kbps(108),  -- 15.500MHz HSSI
+        lksp-16000kbps(109),  -- 16.000MHz HSSI
+        lksp-16500kbps(110),  -- 16.500MHz HSSI
+        lksp-17000kbps(111),  -- 17.000MHz HSSI
+        lksp-17500kbps(112),  -- 17.500MHz HSSI
+        lksp-18000kbps(113),  -- 18.000MHz HSSI
+        lksp-18500kbps(114),  -- 18.500MHz HSSI
+        lksp-19000kbps(115),  -- 19.000MHz HSSI
+        lksp-19500kbps(116),  -- 19.500MHz HSSI
+        lksp-20000kbps(117),  -- 20.000MHz HSSI
+        lksp-20500kbps(118),  -- 20.500MHz HSSI
+        lksp-21000kbps(119),  -- 21.000MHz HSSI
+        lksp-21500kbps(120),  -- 21.500MHz HSSI
+        lksp-22000kbps(121),  -- 22.000MHz HSSI
+        lksp-22500kbps(122),  -- 22.500MHz HSSI
+        lksp-23000kbps(123),  -- 23.000MHz HSSI
+        lksp-23500kbps(124),  -- 23.500MHz HSSI
+        lksp-24000kbps(125),  -- 24.000MHz HSSI
+        lksp-24500kbps(126),  -- 24.500MHz HSSI
+        lksp-25000kbps(127),  -- 25.000MHz HSSI
+        lksp-25500kbps(128),  -- 25.500MHz HSSI
+        lksp-26000kbps(129),  -- 26.000MHz HSSI
+        lksp-26500kbps(130),  -- 26.500MHz HSSI
+        lksp-27000kbps(131),  -- 27.000MHz HSSI
+        lksp-27500kbps(132),  -- 27.500MHz HSSI
+        lksp-28000kbps(133),  -- 28.000MHz HSSI
+        lksp-28500kbps(134),  -- 28.500MHz HSSI
+        lksp-29000kbps(135),  -- 29.000MHz HSSI
+        lksp-29500kbps(136),  -- 29.500MHz HSSI
+        lksp-30000kbps(137),  -- 30.000MHz HSSI
+        lksp-30500kbps(138),  -- 30.500MHz HSSI
+        lksp-31000kbps(139),  -- 31.000MHz HSSI
+        lksp-31500kbps(140),  -- 31.500MHz HSSI
+        lksp-32000kbps(141),  -- 32.000MHz HSSI
+        lksp-32500kbps(142),  -- 32.500MHz HSSI
+        lksp-33000kbps(143),  -- 33.000MHz HSSI
+        lksp-33500kbps(144),  -- 33.500MHz HSSI
+        lksp-34000kbps(145),  -- 34.000MHz HSSI
+        lksp-34100kbps(146),  -- 34.100MHz HSSI
+        lksp-34500kbps(147),  -- 34.500MHz HSSI
+        lksp-35000kbps(148),  -- 35.000MHz HSSI
+        lksp-35500kbps(149),  -- 35.500MHz HSSI
+        lksp-36000kbps(150),  -- 36.000MHz HSSI
+        lksp-36500kbps(151),  -- 36.500MHz HSSI
+        lksp-37000kbps(152),  -- 37.000MHz HSSI
+        lksp-37500kbps(153),  -- 37.500MHz HSSI
+        lksp-38000kbps(154),  -- 38.000MHz HSSI
+        lksp-38500kbps(155),  -- 38.500MHz HSSI
+        lksp-39000kbps(156),  -- 39.000MHz HSSI
+        lksp-39500kbps(157),  -- 39.500MHz HSSI
+        lksp-40000kbps(158),  -- 40.000MHz HSSI
+        lksp-40500kbps(159),  -- 40.500MHz HSSI
+        lksp-41000kbps(160),  -- 41.000MHz HSSI
+        lksp-41500kbps(161),  -- 41.500MHz HSSI
+        lksp-42000kbps(162),  -- 42.000MHz HSSI
+        lksp-42500kbps(163),  -- 42.500MHz HSSI
+        lksp-43000kbps(164),  -- 43.000MHz HSSI
+        lksp-43500kbps(165),  -- 43.500MHz HSSI
+        lksp-44000kbps(166),  -- 44.000MHz HSSI
+        lksp-44210kbps(167),  -- 44.210MHz HSSI
+        lksp-44500kbps(168),  -- 44.500MHz HSSI
+        lksp-45000kbps(169),  -- 45.000MHz HSSI
+        lksp-45500kbps(170),  -- 45.500MHz HSSI
+        lksp-46000kbps(171),  -- 46.000MHz HSSI
+        lksp-46500kbps(172),  -- 46.500MHz HSSI
+        lksp-47000kbps(173),  -- 47.000MHz HSSI
+        lksp-47500kbps(174),  -- 47.500MHz HSSI
+        lksp-48000kbps(175),  -- 48.000MHz HSSI
+        lksp-48500kbps(176),  -- 48.500MHz HSSI
+        lksp-49000kbps(177),  -- 49.000MHz HSSI
+        lksp-49500kbps(178),  -- 49.500MHz HSSI
+        lksp-50000kbps(179),  -- 50.000MHz HSSI
+        lksp-50500kbps(180),  -- 50.500MHz HSSI
+        lksp-51000kbps(181),  -- 51.000MHz HSSI
+        lksp-51500kbps(182),  -- 51.500MHz HSSI
+        lksp-52000kbps(183)   -- 52.000MHz HSSI
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Indicates the speed of the media (in one direction).
+
+       For Fast Ethernet auto-negotiation and Token-Ring 
+       speed auto-detection, this value should be set to
+       auto-negotiate.
+
+       For Token-Ring, the default value should be 16Mb.
+
+       For Fast Ethernet, the default value should be
+       auto-negotiate.
+
+       For V-Series WAN, the speed must be selected for the
+       interface.  For ATM, the speed can be determined by
+       the interface card type.  For T1 and E1, the speed 
+       should be calculated from the data channels and
+       channel speed."
+    ::= { netConfigEntry 9 }
+
+netConfigDuplex  OBJECT-TYPE
+    SYNTAX    INTEGER {
+        half-duplex(1),
+        full-duplex(2)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Indicates whether the interface supports half or full
+       duplex mode.  When LinkSpeed is set to auto-negotiate,
+       this field has no effect.  It will be set to the           
+       negotiated mode."
+    ::= { netConfigEntry 10 }
+
+netConfigLineCode  OBJECT-TYPE
+    SYNTAX    INTEGER {
+        b8zs(1),
+        ami(2),
+        hdb3(3),
+        b3zs(4)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Line coding.  The choices for this field are:
+          B8ZS        - Binary 8 Zeros Suppress.  Used with more recent
+                        ESF T1 framing.  Commonly used in 64 Kbps,
+                        fractional T1 and Primary Rate ISDN lines.
+                        Valid for T1.
+          AMI         - Alternate Mark Inversion.  Usually the choice
+                        with D4 framing.  Common in existing 56 Kbps
+                        DDS type circuits.
+                        Valid for T1 and E1.
+          HDB3        - High Density Bipolar, 3 zeros.
+                        Valid for E1 and E3.
+          B3ZS        - Binary 3 Zeros Suppress.
+                        Valid for T3.
+
+       This field applies only to the T1, E1 and T3/DS-3 WanProbes."
+    ::= { netConfigEntry 11 }
+
+netConfigFramingType  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   esf(1),
+        d4(2),
+        withCRC4(3),
+        withoutCRC4(4),
+        m13(5),
+        cbitParity(6),
+        g804(7),
+        g751(8),
+        t1dm(9),
+        slic96(10)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Framing type.  The choices for this field are:
+          ESF           - Extended Super Frame (24 frames/ESF).
+                          Valid for T1.
+          D4            - Conventional Super Frame (12 frames/SF).
+                          Valid for T1.
+          with CRC-4    - Cyclic Redundancy Check, 4 bits.
+                          Valid for E1.
+          without CRC-4 - CRC not checked.
+                          Valid for E1.
+          M13           - A DS-3 framing fromat.  See C-Bit parity.
+                          Valid for T3.
+          C-Bit Parity  - The synchronous DS-3 C-Bit Parity is a structure
+                          that can be used to multiplex 28 DS-1 signals to
+                          the DS-3 signal level.  In C-Bit Parity, the
+                          X-Bit channel is used to transmit failure 
+                          conditions from the far end to the near end of a
+                          system.
+                          Valid for T3.
+          G.832/G.804   - Valid with PLCP cell synchronization only.
+                          Valid for ATM E3.
+          G.751         - Valid with HEC cell synchronization only.
+                          Valid for ATM E3.
+          T1DM (DDS)    - A.T&T. DDS Framing using D4 and time slot 24.
+                          Not Implemented at this time.
+          SLIC-96       - Special version of D4 framing.  Useds 4-D4
+                          frames but changes some of the framing bits.
+                          Not Implemented at this time.
+
+       This field applies only to the T1, E1, T3/DS-3 WanProbes and 
+       DS-3 and E3 ATMProbes."
+    ::= { netConfigEntry 12 }
+
+netConfigChannelRate  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   chnrt-56K(1),
+        chnrt-64K(2),
+        chnrt-1536000bps(3)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Channel Rate.  The choices for this field are:
+          56K         - Valid for T1.
+          64K         - Valid for T1/E1.
+          1536bps     - Valid for Channelized T3.
+       This field applies only to the T1, E1 and T3/DS-3 WanProbes."
+    ::= { netConfigEntry 13 }
+
+netConfigDataChannel  OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "This integer represents the ORed bit fields which can be
+       set to indicate that the probe should monitor the specified
+       channel on the incoming data line.  A value of 1 in the bit
+       position indicates that the channel is to be monitored.
+
+       Channel 1 is in the least significant bit position.
+
+       T1: 1 - 24 data channels.
+       E1: 1 - 31 data channels.
+       T3: 1 - 28 data channels.
+
+       This field applies only to the T1, E1 and T3/DS-3 WanProbes."
+    ::= { netConfigEntry 14 }
+
+netConfigDataSense  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   normal(1),
+        inverted(2),
+        nrzi(3)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Indicates whether the bits on the channel(s) being tested
+       are inverted.  A Mark is a signal pulse on the line.  A 
+       Space is a bit time with no pulse.  The choices for this 
+       field are:
+          Normal      - Indicates that the bits are not inverted;
+                        therefore a Mark is represented by a binary 1.
+          Inverted    - A Mark is represented by a binary 0.
+          NRZI        - Non-Return to Zero Invert (on zeros), bit 
+                        timing follows derived line timing.  Successive
+                        Marks or Spaces represent binary 1.  Changes from
+                        Mark to Space or from Space to Mark represent a
+                        binary 0.
+    
+       This field applies only to the T1, E1, V-Series, T3/DS-3 WanProbes."
+    DEFVAL { 1 }
+    ::= { netConfigEntry 15 }
+
+netConfigLinkLayerType  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   frameRelay(1),
+        x25(2),
+        hdlc(3),
+        sdlc(4),
+        aal5(5),
+	ppp(6)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Indicates the type of link layer analysis to be performed on
+       the incoming data.
+
+       This field applies only to WanProbes and ATMProbes"
+    DEFVAL { 1 }
+    ::= { netConfigEntry 16 }
+
+netConfigNetworkInterface  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   uni(1),
+        nni(2)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "ATM network interface addressing mode.  Valid values for this
+       field are:
+         NNI - Network to Network Interface.
+               The Network to Network Interface (or Network to Node Interface)
+               is similar to UNI but these is no 4-bit GFC field.  The 4 extra
+               bits are used as part of the VPI.
+         UNI - User Network Interface.
+
+       This field applies only to ATMProbes"
+    DEFVAL { 1 }
+    ::= { netConfigEntry 17 }
+
+netConfigCellSynchronization  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   hec(1),
+        plcp(2)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "ATM network interface addressing mode.  Valid values for this
+       field are:
+         HEC  - The Header Error Control (DEC) is an 8-bit field and the
+                fifth byte in the header of an ATM cell.  The HEC value
+                is calculated from the first four bytes of the cell header.
+                If an error occurs in an ATM cell header, it will be 
+                detected in the HEC field.  Cells with HEC errors that can not
+                be corrected are discarded by the receiving node.  The HEC
+                field can also be used to determine the boundaries of a packet
+                for cell delineation.
+                Valid for ATM OC-3, ATM UTP, ATM T3, ATM E3 with G.832/G.804
+                  framing.
+         PLCP - Physical Layer Convergence Protocol.  Each cell is preceded
+                by a 2-byte framing pattern (A1, A2) to enable the receiver to
+                synchronize to the cells.
+                Valid for ATM OC-3, ATM UTP, ATM T3, ATM E3 with G.751 framing.
+
+       This field applies only to ATMProbes"
+    DEFVAL { 1 }
+    ::= { netConfigEntry 18 }
+
+netConfigReceiverMode  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   line(1),
+        monitor-jack(2)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "Line:
+             When monitoring, the selected challes are presented as the line
+             and equipment signals for decoding and statistics.  All changes
+             are regenerated and passed through unaltered.
+
+       Monitor_jack:
+             Expect the lower amplitude, isolated T1 test point signal
+             (increased receiver gain).
+
+             Expect the higher ampliture E1 test point signal (-20dB)
+
+       This field applies only to the T1, E1 and T3/DS-3 WanProbes."
+    DEFVAL { 1 }
+    ::= { netConfigEntry 19 }
+
+netConfigMaximumFrameSize    OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The size of the buffer to be allocated at the physical layer for the
+      reception of a frame from the network.  Any frames which are longer
+      than the maximum frame size will be reported as a errored frame.  The
+      number of buffers available to receive frames is
+      (POOL SIZE / maximum frame size).  Overallocation of this maximum
+      frame size decreases the number of available buffers which could result
+      in dropped frames during periods of heavy network utilization.
+
+      The minimum accepted value is 1024.  The maximum accepted value is 
+      65535."
+    DEFVAL { 8192 }
+    ::= { netConfigEntry 20 }
+
+netDefaultGateway  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "NOTE:  Because, this variable has been obsoleted by the variable
+          netConfigDefaultGateway, it will be deprecated in a future
+          firmware release.  Applications should migrate to the new MIB
+          variable as soon as possible.
+
+       The IP Address of the default gateway.  This entry should
+       be equal to the value of netConfigDefaultGateway.1 for
+       multi-port probes."
+      -- DEFVAL { 0.0.0.0 }
+    ::= { net 2 }
+
+tokenRingSpeed  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   autoDetect(1),
+		ringsp-4Mbps(2),
+		ringsp-16Mbps(3)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+         "NOTE:  Because, this variable has been obsoleted by the
+          netConfigLinkSpeed and netConfigIfSpeed, it will be deprecated
+          in a future firmware release.  Applications should migrate to
+          the new MIB variables as soon as possible.
+
+	  This object specifies the speed of the token ring that
+	  is being connected to.  If autoDetect(1) is selected,
+	  the correct value will be filled in in this object
+	  by the hardware after some ammount of time.
+
+          This variable does not apply to Token-Ring interfaces
+          on a  multi-interface probe.  Refer to netConfigLinkSpeed
+          and netConfigIfSpeed in the netConfigTable."
+    DEFVAL { 3 }
+    ::= { tokenRing 1 }
+
+-- accessControl Groups
+--
+-- commAccess Table
+--
+-- This table configures community names that will have access to
+-- this device and assigns them an access control level.  Only
+-- those communities defined in this table shall have access to
+-- this device through SNMP.
+--
+-- Only those communities with level4 access shall have access
+-- to this table.
+--
+-- This table will be stored in non-volatile memory and will be
+-- preserved across power failures.  This table will be initialized
+-- to contain the following default entries if the device has gone
+-- through a cold restart, where configuration data is cleared:
+--
+-- 1 - An entry with commAccessIndex equal to 1, commAccessCommunity
+--     equal to "public", commAccessLevel equal to level1(1),
+--     and commAccessStatus equal to valid(1).
+--
+-- 2 - An entry with commAccessIndex equal to 2, commAccessCommunity
+--     equal to "rmon", commAccessLevel equal to level2(2),
+--     and commAccessStatus equal to valid(1).
+--
+-- 3 - An entry with commAccessIndex equal to 3, commAccessCommunity
+--     equal to "rmon_admin", commAccessLevel equal to level3(3),
+--     and commAccessStatus equal to valid(1).
+--
+-- 4 - An entry with commAccessIndex equal to 4, commAccessCommunity
+--     equal to "hp_admin", commAccessLevel equal to
+--     level4(4), and commAccessStatus equal to valid(1).
+--
+-- Since this initial state would grant complete access to
+-- well-known communities, it is recommended that a management
+-- station respond quickly to the newly restarted device and
+-- change this configuration to a local configuration.
+--
+-- The commAccessCommunity of each valid row is unique among
+-- all valid rows.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  no access
+-- level3:  no access
+-- level4:  read-write access
+
+commAccessTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF CommAccessEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A list of community access entries"
+    ::= { accessControl 1 }
+
+commAccessEntry  OBJECT-TYPE
+    SYNTAX    CommAccessEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A mapping of community name to access rights."
+    INDEX { commAccessIndex }
+    ::= { commAccessTable 1 }
+
+CommAccessEntry ::= SEQUENCE {
+    commAccessIndex        INTEGER (1..65535),
+--  commAccessCommunity    OCTET STRING (SIZE(0..127)),
+    commAccessCommunity    DisplayString (SIZE(0..127)),
+    commAccessLevel        AccessLevel,
+    commAccessOwner        OwnerString,
+--  commAccessStatus       INTEGER
+    commAccessStatus       EntryStatus
+}
+
+commAccessIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "A unique index for this entry."
+    ::= { commAccessEntry 1 }
+
+commAccessCommunity  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE(0..127))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The community string to which this entry grants access.
+      This string must be unique among the community strings
+      defined in all entries of this table.
+
+      This object may not be modifed if the associated 
+      commAccessStatus object is equal to valid(1)."
+    ::= { commAccessEntry 2 }
+
+commAccessLevel  OBJECT-TYPE
+    SYNTAX    AccessLevel
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The access level for this community string.
+
+      This object may not be modifed if the associated 
+      commAccessStatus object is equal to valid(1)."
+    ::= { commAccessEntry 3 }
+
+commAccessOwner  OBJECT-TYPE
+--  SYNTAX    DisplayString
+    SYNTAX    OwnerString
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The owner of this serial connection entry."
+    ::= { commAccessEntry 4 }
+
+commAccessStatus  OBJECT-TYPE
+    SYNTAX    EntryStatus
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The status of this community access entry.  When this
+      object is set to valid(1), if the commAccessCommunity for 
+      this row is not unique among commAccessCommunity objects 
+      for all valid rows, the set request will be rejected
+      with badValue(3)."
+    ::= { commAccessEntry 5 }
+
+-- client Table
+--
+-- Since community strings are fairly easy to discover, by themselves
+-- they do not provide a very secure mechanism for controlling access
+-- to the device.  Therefore, this client table specifies which IP
+-- addresses can access the device with a particular community.  A
+-- particular IP address may have more than one entry in this table so
+-- that different users on that host can use different communities and
+-- thus be granted different access.  Using a mask, a client table
+-- entry may grant the same community to multiple IP addresses.  This
+-- is useful in environments where a large number of users wish to
+-- access the device.
+--
+-- The client table works with the access table as follows.  When the device
+-- receives an SNMP request, it loops through the access table, ANDing
+-- the requestor's IP address with each clientIpMask.  If the result matches
+-- the clientIpAddress and the community name in the request matches
+-- the community name in the current clientTable row, we go to the access
+-- table.  If there is a row in the access table with a community string
+-- matching that in the requestor's packet, the requestor is given the
+-- corresponding accessLevel.  That accessLevel is used to determine
+-- what objects in the MIB the requestor can read and write.
+--
+-- Only those communities with level4 access shall have access to this
+-- table.
+--
+-- This table will be stored in non-volatile memory and will be
+-- preserved across power failures.  This table will be initialized
+-- to contain the following default entries if the device has gone
+-- through a cold restart
+--
+-- 1 - An entry with clientIndex equal to 1, clientIpMask and
+--     clientIpAddress equal to 0.0.0.0, clientCommunity equal to
+--     "public", and clientStatus equal to valid(1).  This entry
+--     allows any IP address to use the "public" community.
+--
+-- 2 - An entry with clientIndex equal to 2, clientIpMask and
+--     clientIpAddress equal to 0.0.0.0, clientCommunity equal to
+--     "rmon", and clientStatus equal to valid(1).  This entry
+--     allows any IP address to use the "rmon" community.
+--
+-- 3 - An entry with clientIndex equal to 3, clientIpMask and
+--     clientIpAddress equal to 0.0.0.0, clientCommunity equal to
+--     "rmon_admin", and clientStatus equal to valid(1).  This entry
+--     allows any IP address to use the "rmon_admin" community.
+--
+-- 4 - An entry with clientIndex equal to 4, clientIpMask and
+--     clientIpAddress equal to 0.0.0.0, clientCommunity equal to
+--     "hp_admin", and clientStatus equal to valid(1).
+--     This entry allows any IP address to use the "hp_admin" community.
+--
+-- Since this initial state would grant wide access to well-known
+-- communities, it is recommended that a management station respond
+-- quickly to the newly restarted device and change this configuration
+-- to a local configuration.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  no access
+-- level3:  no access
+-- level4:  read-write access
+
+clientTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF ClientEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A list of client entries."
+    ::= { accessControl 2 }
+
+clientEntry  OBJECT-TYPE
+    SYNTAX    ClientEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A configuration that allows an SNMP community to send
+      packets from a particular IP address."
+    INDEX { clientIndex }
+    ::= { clientTable 1 }
+
+ClientEntry ::= SEQUENCE {
+    clientIndex            INTEGER (1..65535),
+    clientIpAddress        IpAddress,
+    clientIpMask           IpAddress,
+--  clientCommunity        OCTET STRING (SIZE(0..127)),
+    clientCommunity        DisplayString (SIZE(0..127)),
+    clientOwner            OwnerString,
+    clientStatus           EntryStatus
+    }
+
+clientIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "A value that uniquely identifies this client entry."
+    ::= { clientEntry 1 }
+
+clientIpAddress  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "An IP Address (or portion thereof) from which this device will
+      accept SNMP packets with the associated community.  The requesting
+      entity's IP address is ANDed with the clientIpMask before being
+      compared to the clientIpAddress.  Note that if the clientIpMask
+      is set to 0.0.0.0, a clientIpAddress of 0.0.0.0 matches all
+      IP addresses.
+
+      This object may not be modifed if the associated clientStatus
+      object is equal to valid(1)."
+    ::= { clientEntry 2 }
+
+clientIpMask  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A mask to be ANDed with the requesting entity's IP address
+      before comparison with clientIpAddress.  If the result matches
+      with clientIpAddress, then the address is authenticated.
+
+      This object may not be modifed if the associated clientStatus
+      object is equal to valid(1)."
+    -- DEFVAL { 255.255.255.255 }
+    ::= { clientEntry 3 }
+
+clientCommunity  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE(0..127))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The community that can be used by the client represented
+      by the associated IP Address.
+
+      This object may not be modifed if the associated clientStatus
+      object is equal to valid(1)."
+    ::= { clientEntry 4 }
+
+clientOwner  OBJECT-TYPE
+--  SYNTAX    DisplayString
+    SYNTAX    OwnerString
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The owner of this client entry."
+    ::= { clientEntry 5 }
+
+clientStatus  OBJECT-TYPE
+    SYNTAX    EntryStatus
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The status of this client entry."
+    ::= { clientEntry 6 }
+
+-- Probe Trap Delivery Group
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+
+-- NOTE: 02/12/98 These scalars were never implemented.
+--
+-- trapMaxRetries  OBJECT-TYPE
+--     SYNTAX    INTEGER (1..20)
+--     ACCESS    read-write
+--     STATUS    mandatory
+--     DESCRIPTION
+--       "Specifies the number of times a trap can be retransmitted
+--       to the same IP address.  This object is stored in non-
+--       volatile memory.  Only those communities with level3 or
+--       level4 access shall have write access to this object."
+--     DEFVAL { 2 }
+--     ::= { delivery 1 }
+-- 
+-- trapMaxTimeOut  OBJECT-TYPE
+--     SYNTAX    INTEGER (1..300)
+--     ACCESS    read-write
+--     STATUS    mandatory
+--     DESCRIPTION
+--       "Specifies the number of seconds to wait for acknowledgement
+--       of a trap before retransmitting.  This object is stored in
+--       non-volatile memory.   Only those communities with level3
+--       or level4 access shall have write access to this object."
+--     DEFVAL { 60 }
+--     ::= { delivery 2 }
+ 
+-- Trap Destination Table
+--
+-- This table defines the destination addresses for traps generated
+-- from the device.  This table maps a community to one or more trap
+-- destination entries.  These entries support assured delivery of
+-- traps through retransmission and the optional specification of
+-- an alternate address for receipt of traps.
+--
+-- If the trapDestDeliveryType is set to one-shot(1), then the trap
+-- is sent only once to the primary address regardless of what
+-- trapMaxRetries is set to.  Otherwise, the trap is sent to the
+-- primary address expecting an acknowledgement.  If the trap is not
+-- acknowledged within the time specified by trapMaxTimeOut, then the
+-- trap is retransmitted to the primary address at most trapMaxRetries
+-- times until acknowledged.  If the trap is still not acknowleged,
+-- then it is sent to the alternate address (if it is not 0.0.0.0) at
+-- most trapMaxRetries + 1 times until acknowledged.
+--
+-- The same trap will be sent to all destinations specified in the
+-- entries that have the same trapDestCommunity as the eventCommunity
+-- (as defined by RMON MIB).  Information in this table will be stored
+-- in non-volatile memory.  If the device has gone through a hard 
+-- restart, this information will be reset to its default state.
+--
+-- Only those communities with level3 or level4 access shall have
+-- write access to this table.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+
+trapDestTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF TrapDestEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A list of trap destination entries."
+    ::= { delivery 3 }
+
+trapDestEntry  OBJECT-TYPE
+    SYNTAX    TrapDestEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "This entry includes a destination IP address to which to send
+      traps for this community.  It also includes a backup address in
+      case the primary address does not acknowledge the trap."
+    INDEX { trapDestIndex }
+    ::= { trapDestTable 1 }
+
+TrapDestEntry ::= SEQUENCE {
+    trapDestIndex                INTEGER (1..65535),
+    trapDestCommunity            DisplayString (SIZE(0..127)),
+    trapDestDeliveryType         INTEGER,
+    trapDestPrimaryIpAddress     IpAddress,
+    trapDestPrimaryIfIndex       INTEGER (1..65535),
+--  trapDestAlternateIpAddress   IpAddress,
+--  trapDestAlternateIfIndex     INTEGER (1..65535),
+    trapDestOwner                OwnerString,
+--    trapDestStatus               INTEGER
+	trapDestStatus				 EntryStatus
+}
+
+trapDestIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "A value that uniquely identifies this trapDestEntry."
+    ::= { trapDestEntry 1 }
+
+trapDestCommunity  OBJECT-TYPE
+    SYNTAX    DisplayString (SIZE(0..127))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A community to which these destination IP addresses belong.
+      This entry is associated with any eventEntries in the RMON MIB
+      whose value of eventCommunity is equal to the value of this
+      object.  Every time an associated event entry sends a trap
+      due to an event, that trap will be sent according to the
+      addresses specified in this entry.
+
+      This object may not be modifed if the associated trapDestStatus
+      object is equal to valid(1)."
+    ::= { trapDestEntry 2 }
+
+trapDestDeliveryType  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   one-shot(1)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "If this object has the value one-shot(1), then the trap will
+      be sent only once to the primary address without requiring
+      acknowledgement.  If this object has the value acknowleged(2),
+      then the trap will be sent to the primary address expecting
+      an acknowledgement.  If the trap is not acknowledged within
+      the time specified by trapMaxTimeOut, then the trap is
+      retransmitted (with the same sequence number) to the primary
+      address.  The trap is retransmitted at most trapMaxRetries
+      times until acknowledged.  If the trap is still not
+      acknowleged and the alternate address is not 0.0.0.0, then
+      it is sent to the alternate address at most trapMaxRetries 
+      plus one times until acknowledged.
+
+      This object may not be modifed if the associated trapDestStatus
+      object is equal to valid(1)."
+    DEFVAL { 1 }
+    ::= { trapDestEntry 3 }
+
+trapDestPrimaryIpAddress  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The primary IP address to which to send traps.
+
+      This object may not be modifed if the associated trapDestStatus
+      object is equal to valid(1)."
+    ::= { trapDestEntry 4 }
+
+trapDestPrimaryIfIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The value of this object uniquely identifies the interface on
+      this device through which the host at trapPrimaryIpAddress
+      can be reached.  The interface identified by a particular
+      value of this object is the same interface as identified by
+      the same value of the ifIndex object, defined in RFC 1213.
+
+      This object may not be modifed if the associated trapDestStatus
+      object is equal to valid(1)."
+    DEFVAL { 1 }
+    ::= { trapDestEntry 5 }
+
+--trapDestAlternateIpAddress  OBJECT-TYPE
+--    SYNTAX    IpAddress
+--    ACCESS    read-write
+--    STATUS    mandatory
+--    DESCRIPTION
+--      "The alternate IP address to which to send traps.
+--
+--      This object may not be modifed if the associated trapDestStatus
+--      object is equal to valid(1)."
+--   DEFVAL { 0.0.0.0 }
+--    ::= { trapDestEntry 6 }
+--
+--  trapDestAlternateIfIndex  OBJECT-TYPE
+--    SYNTAX    INTEGER (1..65535)
+--    ACCESS    read-write
+--    STATUS    mandatory
+--    DESCRIPTION
+--      "The value of this object uniquely identifies the interface on
+--      this device through which the host at trapAlternateIpAddress
+--      can be reached.  The interface identified by a particular
+--      value of this object is the same interface as identified by
+--      the same value of the ifIndex object, defined in RFC 1213.
+--
+--      This object may not be modifed if the associated trapDestStatus
+--      object is equal to valid(1)."
+--    DEFVAL { 1 }
+--    ::= { trapDestEntry 7 }
+
+trapDestOwner  OBJECT-TYPE
+--  SYNTAX    DisplayString
+    SYNTAX    OwnerString
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The owner of this trap destination entry."
+    ::= { trapDestEntry 8 }
+
+trapDestStatus  OBJECT-TYPE
+    SYNTAX    EntryStatus
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The status of this trap destination entry."
+    ::= { trapDestEntry 9 }
+
+-- Trap Status Table
+--
+-- The trapStatusTable contains the acknowledgment status of recently
+-- sent traps that require acknowledgement.  Traps that do not require
+-- acknowledgement are sent with seqence number 0, and they are not
+-- stored in this table.  The management station that receives traps
+-- with non-zero sequence number must acknowledge receipt by setting
+-- the associated status to acknowledged.  Otherwise, the trap will be
+-- retransmitted to the primary destination and then the alternate
+-- destination if needed.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+-- 
+-- NOTE: 02/12/98 This table was never implemented.
+--
+-- trapStatusTable  OBJECT-TYPE
+--     SYNTAX    SEQUENCE OF TrapStatusEntry
+--     ACCESS    not-accessible
+--     STATUS    mandatory
+--     DESCRIPTION
+--       "A list of trap status entries."
+--     ::= { delivery 4 }
+-- 
+-- trapStatusEntry  OBJECT-TYPE
+--     SYNTAX    TrapStatusEntry
+--     ACCESS    not-accessible
+--     STATUS    mandatory
+--     DESCRIPTION
+--       "The status of a trap that has been sent."
+--     INDEX { trapStatusSeqNum }
+--     ::= { trapStatusTable 1 }
+-- 
+-- TrapStatusEntry ::= SEQUENCE {
+--     trapStatusSeqNum   INTEGER (1..65535),
+--     trapStatusState    INTEGER
+-- }
+-- 
+-- trapStatusSeqNum  OBJECT-TYPE
+--     SYNTAX    INTEGER (1..65535)
+--     ACCESS    read-only
+--     STATUS    mandatory
+--     DESCRIPTION
+--       "A sequence number that identifies a trap sent from this device.
+--       This variable is added to the varbind in the trap. If the
+--       sequence number is 0, then the trap is not expected to be
+--       acknowledged.  Otherwise, the sequence number starts at 1 for
+--       the first reliable trap sent and increments by one for each
+--       new trap.  Retransmissions to the same address do not get a
+--       new sequence number.  When this number reaches 2^32 - 1, it
+--       wraps around to 1."
+--     ::= { trapStatusEntry 1 }
+-- 
+-- trapStatusState  OBJECT-TYPE
+--     SYNTAX    INTEGER
+--     {   unacknowledged(1),
+--         acknowledged(2),
+--         timed-out(3)
+--     }
+--     ACCESS    read-write
+--     STATUS    mandatory
+--     DESCRIPTION
+--       "The state of this trap.  When the trap is sent, this object
+--       is initialized to unacknowledged(1).  This variable shall
+--       be added to the varbind in the trap.  When the management
+--       station receives the trap with a non-zero sequence number,
+--       it should set this object to acknowledged(2).  This will
+--       acknowledge the trap and end the retransmission process.
+--       If the trap is retransmitted for trapMaxRetries times without
+--       being acknowledged, the agent will set this object to timed-
+--       out(3).  The agent may delete any trapStatusEntries in the
+--       acknowledged(2) or timed-out(3) states at any time."
+--     ::= { trapStatusEntry 2 }
+
+-- trapTest objects
+--
+-- To check that the management station can receive traps generated by the
+-- device, once the trap destination tables above have been created, the
+-- user can set the following two objects.  This will generate a trap.
+-- If the appropriate management station receives the trap, everything 
+-- is fine.  If the test trap is not received, then a configuration
+-- problem may exist.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+--
+-- NOTE: 02/12/98 This table was never implemented.
+--
+-- trapTestDestIndex    OBJECT-TYPE
+--     SYNTAX    INTEGER (1..65535)
+--     ACCESS    read-write
+--     STATUS    mandatory
+--     DESCRIPTION
+--       "The index of the trapDestEntry that should be used when
+--       trapTestAction is set to sendTestTrap(2).  The trapDestEntry
+--       identified by a particular value of this index is the same as
+--       that identified by the same value of the trapDestIndex object.
+--       Setting the value of trapTestDestIndex automatically resets the
+--       value of trapTestDestAction to notSending(1)."
+--     ::= { delivery 5 }
+-- 
+-- trapTestDestAction    OBJECT-TYPE
+--     SYNTAX     INTEGER
+--     {   notSending(1),
+--         sendTestTrap(2),
+--         trapSent(3)
+--     }
+--     ACCESS    read-write
+--     STATUS    mandatory
+--     DESCRIPTION
+--       "When this object is set to sendTestTrap(2), a one-shot trap is
+--       sent to the trapDestPrimaryIpAddress in the trapDestEntry identified
+--       by trapTestDestIndex.  After it has been sent, the value of this
+--       object will be set to trapSent(3) and may at some later time change
+--       to notSending(1).  If trapTestDestIndex is set, trapTestDestAction is
+--       automatically reset to notSending(1)."
+--     ::= { delivery 6 }
+
+-- Serial Connection Table
+--
+-- The device may communicate with a management station using
+-- SLIP.  In order for the device to send traps via SLIP, it must
+-- be able to initiate a connection over the serial interface.  The
+-- serial connection table stores the parameters for such connection
+-- initiation.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+
+serialConnectionTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF SerialConnectionEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A list of serial connection entries."
+    ::= { slip 5 }
+
+serialConnectionEntry  OBJECT-TYPE
+    SYNTAX    SerialConnectionEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "Configuration for a SLIP link over a serial line."
+    INDEX { serialConnectIndex }
+    ::= { serialConnectionTable 1 }
+
+SerialConnectionEntry ::= SEQUENCE {
+    serialConnectIndex                   INTEGER (1..65535),
+    serialConnectDestIpAddress           IpAddress,
+    serialConnectType                    INTEGER,
+    serialConnectDialString              ControlString (SIZE(0..255)),
+    serialConnectSwitchConnectSeq        ControlString (SIZE(0..255)),
+    serialConnectSwitchDisconnectSeq     ControlString (SIZE(0..255)),
+    serialConnectSwitchResetSeq          ControlString (SIZE(0..255)),
+    serialConnectOwner                   OwnerString,
+--    serialConnectStatus                  INTEGER
+    serialConnectStatus                  EntryStatus
+}
+
+serialConnectIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "A value that uniquely identifies this serialConnection entry."
+    ::= { serialConnectionEntry 1 }
+
+serialConnectDestIpAddress  OBJECT-TYPE
+    SYNTAX    IpAddress
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The IP Address that can be reached at the other end of this
+      serial connection.
+      This object may not be modifed if the associated
+      serialConnectStatus object is equal to valid(1)."
+    ::= { serialConnectionEntry 2 }
+
+serialConnectType  OBJECT-TYPE
+    SYNTAX    INTEGER
+    {   direct(1),
+        modem(2),
+        switch(3),
+        modem-switch(4)
+    }
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The type of outgoing connection to make.  If this object
+      has the value direct(1), then a direct serial connection
+      is assumed.  If this object has the value modem(2),
+      then serialConnectDialString will be used to make a modem
+      connection.  If this object has the value switch(3),
+      then serialConnectSwitchConnectSeq will be used to establish
+      the connection over a serial data switch, and
+      serialConnectSwitchDisconnectSeq will be used to terminate
+      the connection.  If this object has the value modem-switch(4),
+      then a modem connection will be made first followed by
+      the switch connection.
+      This object may not be modifed if the associated
+      serialConnectStatus object is equal to valid(1)."
+    DEFVAL { 1 }
+    ::= { serialConnectionEntry 3 }
+
+serialConnectDialString  OBJECT-TYPE
+    SYNTAX    ControlString (SIZE(0..255))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A control string which specifies how to dial the phone
+      number in order to establish a modem connection.  The
+      string should include dialing prefix and suffix.  For
+      example: ``^s^MATD9,888-1234^M'' will instruct the Probe
+      to send a carriage return followed by the dialing prefix
+      ``ATD'', the phone number ``9,888-1234'', and a carriage
+      return as the dialing suffix.
+      This object may not be modifed if the associated
+      serialConnectStatus object is equal to valid(1)."
+    ::= { serialConnectionEntry 4 }
+
+serialConnectSwitchConnectSeq  OBJECT-TYPE
+    SYNTAX    ControlString (SIZE(0..255))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A control string which specifies how to establish a
+      data switch connection.
+      This object may not be modifed if the associated
+      serialConnectStatus object is equal to valid(1)."
+    ::= { serialConnectionEntry 5 }
+
+serialConnectSwitchDisconnectSeq  OBJECT-TYPE
+    SYNTAX    ControlString (SIZE(0..255))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A control string which specifies how to terminate a
+      data switch connection.
+      This object may not be modifed if the associated
+      serialConnectStatus object is equal to valid(1)."
+    ::= { serialConnectionEntry 6 }
+
+serialConnectSwitchResetSeq  OBJECT-TYPE
+    SYNTAX    ControlString (SIZE(0..255))
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "A control string which specifies how to reset a data
+      switch in the event of a timeout.
+      This object may not be modifed if the associated
+      serialConnectStatus object is equal to valid(1)."
+    ::= { serialConnectionEntry 7 }
+
+serialConnectOwner  OBJECT-TYPE
+--  SYNTAX    DisplayString
+    SYNTAX    OwnerString
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The owner of this serial connection entry."
+    ::= { serialConnectionEntry 8 }
+
+serialConnectStatus  OBJECT-TYPE
+    SYNTAX    EntryStatus
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The status of this serial connection entry.
+  
+      If the manager attempts to set this object to valid(1) when
+      the serialConnectType is set to modem(2) or modem-switch(4)
+      and the serialConnectDialString is a zero-length string or
+      cannot be correctly parsed as a ConnectString, the set
+      request will be rejected with badValue(3).
+
+      If the manager attempts to set this object to valid(1) when
+      the serialConnectType is set to switch(3) or modem-switch(4)
+      and the serialConnectSwitchConnectSeq,
+      the serialConnectSwitchDisconnectSeq, or
+      the serialConnectSwitchResetSeq cannot be correctly parsed 
+      as ConnectStrings, the set request will be rejected with 
+      badValue(3). Note that in these cases, zero-length strings
+      should be considered to be valid and parsable strings. Thus,
+      a set request should not be rejected in the case where any
+      of the three serialConnectSwitchxxxxxSeq strings are of 0 
+      length. The set should only be rejected if a non-zero length 
+      string cannot be correctly parsed."
+    ::= { serialConnectionEntry 9 }
+
+-- RMON Extensions
+--
+-- Objects that provide additional features not found in the RMON MIB
+-- are defined here
+--
+-- etherStatsExtensions Group
+--
+-- This group provides extensions to the variables provided in the RMON
+-- MIB Statistics Group.
+--
+-- The etherStatsExtensions Group requires the existence of the RMON
+-- Statistics Group.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+
+currentUtilizationPeriod  OBJECT-TYPE
+    SYNTAX    INTEGER (1..3600)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The number of seconds over which the currentUtilization object
+      is calculated.  Any change to this variable causes the value of 
+      currentUtilization to be set to all 1's.  On a multi-interface
+      probe, this parameter applies only to interface index 1.  Refer
+      to currentUtilizationTable in this document for the current
+      utilization parameters for the other interfaces on a multi-
+      interface probe."
+    DEFVAL    { 5 }
+    ::= { statsExtension 1 }
+
+currentUtilization  OBJECT-TYPE
+    SYNTAX    INTEGER 
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "NOTE:  Because, this variable has been obsoleted by the
+      currentUtilizationTable, it will be deprecated in a future 
+      firmware release.  Applications should migrate to the new MIB
+      variable as soon as possible.
+
+      The best estimate of the mean physical layer network utilization
+      on the monitor's physical interface during the previous number of
+      seconds defined by currentUtilizationPeriod.  The units of this
+      object are hundredths of a percent.  Its value will normally be
+      in the range (0..10000).  A value of all 1's means that a full 
+      currentUtilizationPeriod has not passed since either monitor
+      startup or the last time currentUtilizationPeriod was changed.
+      On a multi-interface probe, this value applies only to interface
+      index 1.  Refer to currentUtilizationTable in this document for
+      the current utilization value for the other interfaces on a multi-
+      interface probe."
+    ::= { statsExtension 2 }
+
+currentUtilizationTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF CurrentUtilizationEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A table of current utilizations for multi-port probes."
+    ::= { statsExtension 7 }
+
+currentUtilizationEntry  OBJECT-TYPE
+    SYNTAX    CurrentUtilizationEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+	  "The current utilization period and current utilization
+	   for a particular interface on a multi-interface probe."
+    INDEX  { curUtilIfIndex }
+    ::= { currentUtilizationTable 1 }
+
+CurrentUtilizationEntry ::= SEQUENCE {
+    curUtilIfIndex         INTEGER (1..65535),
+    curUtilPeriod          INTEGER,
+    curUtil                INTEGER,
+    curUtilReceive         INTEGER,
+    curUtilTransmit        INTEGER
+	}
+
+curUtilIfIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (1..65535)
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The value of this object uniquely identifies the physical
+      interface on this device for which this entry contains
+      current utilization parameters.  The interface identified by a
+      particular value of this object is the same interface as
+      identified by the same value of the ifIndex object, defined
+      in RFC 1213."
+    ::= { currentUtilizationEntry 1 }
+
+curUtilPeriod  OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The number of seconds over which the current utilization object
+      for this entry in the table is calculated.  Any change to this
+      variable causes the value of curUtil for this entry to be set
+      to all 1's"
+    DEFVAL    { 5 }
+    ::= { currentUtilizationEntry 2 }
+
+curUtil  OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The best estimate of the mean physical layer network utilization
+      on the monitor's physical interface during the previous number of
+      seconds defined by curUtilPeriod for this entry in the table.  The
+      units of this object are hundredths of a percent.  Its value will
+      normally be in the range (0..10000).  A value of all 1's means
+      that a full curUtilPeriod for this entry in the table has not passed
+      since either monitor startup or the last time curUtilPeriod was
+      changed.
+
+      For probes which support full-duplex media, this variable should 
+      reflect the mean physical layer network utilization for both 
+      directions combined.  For example, if the two directions of a Fast
+      Ethernet full duplex connection are 90% and 50%, this variable should
+      reflect a value of 70%."
+    ::= { currentUtilizationEntry 3 }
+
+curUtilReceive  OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The best estimate of the mean physical layer network utilization
+      on the monitor's physical interface during the previous number of
+      seconds defined by curUtilPeriod for this entry in the table.  The
+      units of this object are hundredths of a percent.  Its value will
+      normally be in the range (0..10000).  A value of all 1's means
+      that a full curUtilPeriod for this entry in the table has not passed
+      since either monitor startup or the last time curUtilPeriod was
+      changed.
+
+      For a LAN interface with the exception of the Fast Ethernet LanProbe
+      option 201, this value should be zero.  For the Fast Ethernet LanProbe
+      option 201, a WanProbe or ATMProbe, this value should reflect the 
+      network traffic on the receive wires/cable."
+    ::= { currentUtilizationEntry 4 }
+
+curUtilTransmit  OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The best estimate of the mean physical layer network utilization
+      on the monitor's physical interface during the previous number of
+      seconds defined by curUtilPeriod for this entry in the table.  The
+      units of this object are hundredths of a percent.  Its value will
+      normally be in the range (0..10000).  A value of all 1's means
+      that a full curUtilPeriod for this entry in the table has not passed
+      since either monitor startup or the last time curUtilPeriod was
+      changed.
+
+      For a LAN interface with the exception of the Fast Ethernet LanProbe
+      option 201, this value should be zero.  For the Fast Ethernet LanProbe
+      option 201, a WanProbe or ATMProbe, this value should reflect the 
+      network traffic on the receive wires/cable."
+    ::= { currentUtilizationEntry 5 }
+
+-- hostsStatsExtensions Group
+--
+-- This group provides extensions to the variables provided in the RMON
+-- MIB Hosts Group.  The first two objects (hostExtDuplicateNetAddresses
+-- and hostExtLastDuplicateHost) can be used in conjuction with the 
+-- RMON alarm facility to generate a trap whenever duplicate network 
+-- level addresses are detected.
+--
+-- NOTE:  The NodeLocator functionality has been deprecated.
+--   This group is also used to keep track of information produced by the
+--   NodeLocator II system. The host extension table maintains a moving sum
+--   of all counter values collected by the NodeLocator II system for each
+--   host in the hostTable. The Management Station can collect this data and
+--   apply a conversion algorithm to transform it into distance information.
+--   Thus, if NodeLocator II hardware is present, the Management Station 
+--   software can calculate the length of cable between the Lanprobe and
+--   each node on the segment.
+--
+--   The Management Station may optionally use the RMON alarm facility to 
+--   monitor the hostExtNumberNodeMovements variable. In this manner, the user 
+--   can be notified when more than X node movements have occurred in a given 
+--   period of time.
+--
+-- The hostsStatsExtensions Group requires the existence of the RMON
+-- Host Group.
+
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+
+hostExtDuplicateNetAddresses  OBJECT-TYPE
+    SYNTAX    Counter
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "This counter is incremented every time the monitor detects a
+      second host using the same network address as another host.  
+      This object can be the target of an RMON alarm, for the purpose 
+      of discovering duplicate network addresses."
+    ::= { hostsExtension 1 }
+
+hostExtDuplicateNetEvent  OBJECT-TYPE
+    SYNTAX    INTEGER (0..65535)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The index of the eventEntry in the RMON MIB that is used
+      whenever the value of hostExtDuplicateNetAddresses changes.
+      The eventEntry identified by a particular value of this index 
+      is the same as identified by the same value of the eventIndex 
+      object.  If there is no corresponding entry in the eventTable, 
+      then no association exists.  In particular, if this value is zero,
+      no associated event will be generated, as zero is not a valid 
+      event index."
+    ::= { hostsExtension 2 }
+
+hostExtLastDuplicateNetAddress  OBJECT-TYPE
+    SYNTAX    OCTET STRING
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The network address that was being used by two different hosts
+      (represented by hostExtLastDuplicateHost1 and 
+      hostExtLasDuplicateHost2).  The value of this object will correspond 
+      with the detection event that caused the latest increment of the 
+      hostExtDuplicateNetAddresses object."
+    ::= { hostsExtension 3 }
+
+hostExtLastDuplicateHost1  OBJECT-TYPE
+    SYNTAX    OCTET STRING
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The MAC address of one of the two last hosts to be detected using 
+      a duplicate network level address.  The value of this object
+      will correspond with the detection event that caused the latest
+      increment of the hostExtDuplicateNetAddresses object."
+    ::= { hostsExtension 4 }
+
+hostExtLastDuplicateHost2  OBJECT-TYPE
+    SYNTAX    OCTET STRING
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The MAC address of the other of the two last hosts to be detected 
+      using a duplicate network level address.  The value of this object
+      will correspond with the detection event that caused the latest
+      increment of the hostExtDuplicateNetAddresses object."
+    ::= { hostsExtension 5 }
+
+hostExtChangedNetAddresses  OBJECT-TYPE
+    SYNTAX    Counter
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "This counter is incremented every time the monitor detects 
+      that a host has changed the network address it is using.  It
+      is not incremented by detection of a host's initial use of a
+      network address.  This object can be the target of an RMON alarm."
+    ::= { hostsExtension 6 }
+
+hostExtChangedNetEvent  OBJECT-TYPE
+    SYNTAX    INTEGER (0..65535)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+      "The index of the eventEntry in the RMON MIB that is used
+      whenever the value of hostExtChangedNetAddresses changes.
+      The eventEntry identified by a particular value of this index 
+      is the same as identified by the same value of the eventIndex 
+      object.  If there is no corresponding entry in the eventTable, 
+      then no association exists.  In particular, if this value is zero,
+      no associated event will be generated, as zero is not a valid 
+      event index."
+    ::= { hostsExtension 7 }
+
+hostExtLastChangedHost  OBJECT-TYPE
+    SYNTAX    OCTET STRING
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The MAC address of the last host which was detected to have
+      changed the network address it was using.  The value of this 
+      object will correspond with the detection event that caused the 
+      latest increment of the hostExtChangedNetAddresses object."
+    ::= { hostsExtension 8 }
+
+hostExtLastOldNetAddress  OBJECT-TYPE
+    SYNTAX    OCTET STRING
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The network address that the host represented by 
+       hostExtLastChangedHost was previously using.  The value of this 
+       object will correspond with the detection event that caused the 
+       latest increment of the hostExtChangedNetAddresses object."
+    ::= { hostsExtension 9 }
+
+hostExtLastNewNetAddress  OBJECT-TYPE
+    SYNTAX    OCTET STRING
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The network address that the host represented by 
+       hostExtLastChangedHost is currently using.  The value of this 
+       object will correspond with the detection event that caused the 
+       latest increment of the hostExtChangedNetAddresses object."
+    ::= { hostsExtension 10 }
+
+-- The following table is a logical extension of the RMON host table.
+-- It is indexed in the same way as that table.  There is one row in
+-- the extended host table for every row in the RMON host table.
+
+hostExtTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF HostExtEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A list of extensions to the RMON MIB Host Table"
+    ::= { hostsExtension 11 }
+
+hostExtEntry  OBJECT-TYPE
+    SYNTAX    HostExtEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A collection of additional statistics for a particular
+       host that has been discovered on an interface of this device."
+    INDEX  { hostExtIndex, hostExtMacAddress }
+    ::= { hostExtTable 1 }
+
+HostExtEntry ::= SEQUENCE {
+    hostExtIndex                INTEGER (1..65535),
+    hostExtMacAddress           OCTET STRING,
+    hostExtNetAddrType          INTEGER,
+    hostExtNetAddrStatus        INTEGER,
+    hostExtNetAddress           OCTET STRING,
+    hostExtCreationOrder        INTEGER (1..65535),
+    hostExtLastUpdateTime       TimeTicks
+--  hostExtTrackerResult        INTEGER,
+--  hostExtTrackerLastMoveTime  TimeTicks
+}
+
+hostExtIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The set of collected host statistics of which this entry is a 
+       part.  The set of hosts identified by a particular value of 
+       this index is associated with the hostControlEntry as identified 
+       by the same value of hostControlIndex."
+    ::= { hostExtEntry 1 }
+
+hostExtMacAddress OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The physical address of this host."
+    ::= { hostExtEntry 2 }
+    
+hostExtNetAddrType OBJECT-TYPE
+    SYNTAX INTEGER {
+      ip(1)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The type of network address used in packets sent by this host."
+    ::= { hostExtEntry 3 }
+     
+hostExtNetAddrStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+       unknown(1),
+       known(2),
+       changedOnce(3),
+       multipleChanges(4)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The level of knowledge the monitor has of the network address
+       used by this host.  Values greater than known(2) indicate that
+       this host has used more than one network address since the last
+       time the monitor restarted.  A value of multipleChanges(4) might 
+       indicate that this host is acting as a router."
+    ::= { hostExtEntry 4 }
+     
+hostExtNetAddress OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The network address for this host.  The expected length of this
+       object is dependent on the value of hostExtNetAddrType. If 
+       hostExtNetAddrStatus == multipleChanges(4), and hostExtNetAddrType
+       == ip(1), the value of this object is undefined."
+    ::= { hostExtEntry 5 }
+
+hostExtCreationOrder OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "An Index that defines the relative ordering of
+       the creation time of hosts caputed for a 
+       particular hostControlEntry. This index shall
+       be between 1 and N, where N is the value of the 
+       associated hostControlTableSize. The ordering of
+       the indexes is based on the order of each entry's
+       insertion into the table, in which entries added 
+       earlier have a lower index value than entries added
+       later.
+       
+       Basically, this variable is exactly the same as the
+       hostCreationOrder variable in the RMON MIB definition."
+    ::= { hostExtEntry 6 }
+
+hostExtLastUpdateTime OBJECT-TYPE
+    SYNTAX TimeTicks
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The value of the SysUptime variable the last time that the
+       corresponding hostEntry was updated."
+    ::= { hostExtEntry 7 }
+
+-- hostExtTrackerResult OBJECT-TYPE
+--  SYNTAX INTEGER
+--  ACCESS read-only
+--  STATUS deprecated
+--  DESCRIPTION
+--    "The summation and number of counter values that we have obtained
+--     from the Tracker hardware for this particular node. The least
+--     significant 3 bytes of the variable are the summation and the
+--     most significant byte is the number of samples that make up the
+--     summation. This variable shall be set to 0 if no information is
+--     available."
+-- ::= { hostExtEntry 8 }
+
+-- hostExtTrackerLastMoveTime OBJECT-TYPE
+--  SYNTAX TimeTicks
+--  ACCESS read-only
+--  STATUS deprecated
+--  DESCRIPTION
+--    "The value of SysUptime the last time we detected movement for this
+--     particular node."
+-- ::= { hostExtEntry 9 }
+
+-- The following table is a logical extension of the RMON hostTime table.
+-- It is indexed in the same way as that table.  There is one row in
+-- the extended hostTime table for every row in the RMON hostTime table.
+
+hostTimeExtTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF HostTimeExtEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A list of extensions to the RMON MIB Host Time Table"
+    ::= { hostsExtension 12 }
+
+hostTimeExtEntry  OBJECT-TYPE
+    SYNTAX    HostTimeExtEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+      "A collection of additional statistics for a particular
+       host that has been discovered on an interface of this device."
+    INDEX  { hostTimeExtIndex, hostTimeExtCreationOrder }
+    ::= { hostTimeExtTable 1 }
+
+HostTimeExtEntry ::= SEQUENCE {
+    hostTimeExtIndex                INTEGER (1..65535),
+    hostTimeExtMacAddress           OCTET STRING,
+    hostTimeExtNetAddrType          INTEGER,
+    hostTimeExtNetAddrStatus        INTEGER,
+    hostTimeExtNetAddress           OCTET STRING,
+    hostTimeExtCreationOrder        INTEGER (1..65535),
+    hostTimeExtLastUpdateTime       TimeTicks
+--  hostTimeExtTrackerResult        INTEGER,
+--  hostTimeExtTrackerLastMoveTime  TimeTicks
+}
+
+hostTimeExtIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The set of collected host statistics of which this entry is a 
+       part.  The set of hosts identified by a particular value of 
+       this index is associated with the hostControlEntry as identified 
+       by the same value of hostControlIndex."
+    ::= { hostTimeExtEntry 1 }
+
+hostTimeExtMacAddress OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The physical address of this host."
+    ::= { hostTimeExtEntry 2 }
+    
+hostTimeExtNetAddrType OBJECT-TYPE
+    SYNTAX INTEGER {
+        ip(1)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The type of network address used in packets sent by this host."
+     ::= { hostTimeExtEntry 3 }
+     
+hostTimeExtNetAddrStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+       unknown(1),
+       known(2),
+       changedOnce(3),
+       multipleChanges(4)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The level of knowledge the monitor has of the network address
+       used by this host.  Values greater than known(2) indicate that
+       this host has used more than one network address since the last
+       time the monitor restarted.  A value of multipleChanges(4) might 
+       indicate that this host is acting as a router."
+    ::= { hostTimeExtEntry 4 }
+     
+hostTimeExtNetAddress OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The network address for this host.  The expected length of this
+       object is dependent on the value of hostTimeExtNetAddrType. If 
+       hostTimeExtNetAddrStatus == multipleChanges(4), and 
+       hostTimeExtNetAddrType == ip(1), the value of this object is 
+       undefined."
+    ::= { hostTimeExtEntry 5 }
+
+hostTimeExtCreationOrder OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "An Index that defines the relative ordering of
+       the creation time of hosts caputed for a 
+       particular hostControlEntry. This index shall
+       be between 1 and N, where N is the value of the 
+       associated hostControlTableSize. The ordering of
+       the indexes is based on the order of each entry's
+       insertion into the table, in which entries added 
+       earlier have a lower index value than entries added
+       later.
+       
+       Basically, this variable is exactly the same as the
+       hostCreationOrder variable in the RMON MIB definition."
+    ::= { hostTimeExtEntry 6 }
+
+hostTimeExtLastUpdateTime OBJECT-TYPE
+    SYNTAX TimeTicks
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "The value of the SysUptime variable the last time that the
+       corresponding hostEntry was updated."
+    ::= { hostTimeExtEntry 7 }
+
+-- hostTimeExtTrackerResult OBJECT-TYPE
+--  SYNTAX INTEGER
+--  ACCESS read-only
+--  STATUS deprecated
+--  DESCRIPTION
+--    "The summation and number of counter values that we have obtained
+--     from the Tracker hardware for this particular node. The least
+--     significant 3 bytes of the variable are the summation and the
+--     most significant byte is the number of samples that make up the
+--     summation. This variable shall be set to 0 if no information is
+--     available."
+--  ::= { hostTimeExtEntry 8 }
+--
+-- hostTimeExtTrackerLastMoveTime OBJECT-TYPE
+--  SYNTAX TimeTicks
+--  ACCESS read-only
+--  STATUS deprecated
+--  DESCRIPTION
+--    "The value of SysUptime the last time we detected movement for this
+--     particular node."
+-- ::= { hostTimeExtEntry 9 }
+--
+-- hostExtNumberNodeMovements  OBJECT-TYPE
+--  SYNTAX    INTEGER
+--  ACCESS    read-only
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The total number of node movements that have been detected
+--     since the NodeLocator II system became active."
+-- ::= { hostsExtension 13 }
+
+-- The NodeLocatorII Group
+-- NOTE:  This group supersedes the NodeLocation group. The NodeLocation
+--        group has been deprecated.
+-- NOTE:  The NodeLocatorII group has been deprecated. JAH 2/16/94.
+--
+-- The variables defined in this group are needed in order to support
+-- the NodeLocator II product.
+--
+-- Note: 12/22/97 The nodeLocatorII Group has been deprecated.  All of the
+--   probes which supported the nodeLocator have now been obsoleted.
+--
+-- nodeLocatorHardwareInstalled  OBJECT-TYPE
+--  SYNTAX    INTEGER
+--  ACCESS    read-only
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "This variable will be set to 1 if the probe being queried has a
+--     Tracker board loaded. It will be set to 0 otherwise."
+-- ::= { nodeLocatorII 1 }
+--
+-- nodeLocatorSelected  OBJECT-TYPE
+--  SYNTAX    OCTET STRING
+--  ACCESS    read-write
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The physical address of the Node Locator II being used by this
+--     Lanprobe to compute distance information. This variable
+--     must be saved in BRAM. It should only be reset by a coldstart.
+--     The user may enter any MAC address they like for this variable,
+--     but the node location system will only operate correctly if this MAC
+--     address represents the correct Node Locator device."
+--  ::= { nodeLocatorII 2 }
+--
+-- The following table is used to keep track of all Node Locator II devices
+-- known to this probe. The Management Station may use this list of Node 
+-- Locators to fill a ListBox from which the user may select a specific one. 
+-- Normally, this will not be necessary because only one Node Locator will 
+-- be found by a given Lanprobe. By default, the Lanprobe will set the 
+-- variable 'nodeLocatorSelected' to the first device recorded in the 
+-- following table. The user may over-ride this if so desired. The 
+-- 'nodeLocatorSelected' variable is saved in BRAM. It is destroyed
+-- only when the probe is coldstarted.
+--
+-- nodeLocatorTable  OBJECT-TYPE
+--  SYNTAX    SEQUENCE OF NodeLocatorEntry
+--  ACCESS    not-accessible
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "A list of MAC addresses for Node Locator II devices that have been
+--     seen transmitting on our segment. Normally, we would expect this
+--     table to have only one entry. The exception is if there are 
+--     repeaters on the segment that we are attached to, and there
+--     is more than one Node Locator II present."
+--  ::= { nodeLocatorII 3 }
+--
+-- nodeLocatorEntry  OBJECT-TYPE
+--  SYNTAX    NodeLocatorEntry
+--  ACCESS    not-accessible
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "A MAC address for a device that we have identified as a 
+--     Node Locator II."
+--  INDEX  { nodeLocatorIndex }
+-- ::= { nodeLocatorTable 1 }
+--
+-- NodeLocatorEntry ::= SEQUENCE {
+--    nodeLocatorIndex           INTEGER (1..10),
+--    nodeLocatorMacAddress      OCTET STRING
+-- }
+--
+-- nodeLocatorIndex OBJECT-TYPE
+--  SYNTAX INTEGER (1..10)
+--  ACCESS read-only
+--  STATUS deprecated
+--  DESCRIPTION
+--    "An index into the nodeLocatorTable."
+--  ::= { nodeLocatorEntry 1 }
+--
+-- nodeLocatorMacAddress OBJECT-TYPE
+--  SYNTAX OCTET STRING
+--  ACCESS read-only
+--  STATUS deprecated
+--  DESCRIPTION
+--    "The physical address of a Node Locator that has been seen transmitting
+--     'chaser packets' on the attached segment."
+--  ::= { nodeLocatorEntry 2 }
+ 
+-- filterExtensions Group
+--
+-- This group provides extensions to the variables provided in the RMON
+-- MIB Filter Group.  The filterExtensions Group requires the 
+-- existence of the RMON Filter Group.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+--
+-- The following table is a logical extension of the RMON channel table.
+-- It is indexed in the same way as that table.  There is one row in
+-- the extended filter table for every row in the RMON filter table.
+
+channelExtTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF ChannelExtEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+      "A list of extensions to RMON packet channel entries."
+    ::= { filterExtension 2 }
+
+channelExtEntry OBJECT-TYPE
+    SYNTAX ChannelExtEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+      "A set of additional parameters for a RMON packet channel applied 
+       on a particular interface."
+    INDEX { channelExtIndex }
+    ::= { channelExtTable 1 }
+
+ChannelExtEntry ::= SEQUENCE {
+    channelExtIndex           INTEGER (1..65535),
+    channelExtSelfPktCapture  INTEGER
+}
+
+channelExtIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+      "An index that uniquely identifies an entry in the channel table.  
+       Each such entry defines one channel, a logical data and event 
+       stream.  The channel identified by a particular value of this
+       object is identical to one associated with a like value of the 
+       RMON object channelIndex."
+    ::= { channelExtEntry 1 }
+
+channelExtSelfPktCapture OBJECT-TYPE
+    SYNTAX INTEGER {
+      captureMyOwn(1),
+      ignoreMyOwn(2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+      "The value of this object indicates whether or not packets
+       that are sent to or from the MAC address of the monitor should
+       pass through this channel."
+    DEFVAL { 1 }
+    ::= { channelExtEntry 2 }
+
+channelExtDropEvents  OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+      "The total number of events in which packets were dropped for
+       all channels due to lack of resources in the probe.  Note that
+       this number is not necessarily the number of packets dropped;
+       it is just the number of times this condition has been detected."
+    ::= { filterExtension 3 }
+    
+-- Purpose:	Introduce revisions to the echo test group to support:
+--		 * 30 minute Min/Max Response Time
+--		 * 5 minute Min/Max Response Time
+--		 * Sum of Squares computation
+--		 * Status for Periodic Table
+--		 * Keep track of edits to Periodic Table
+--
+-- Note this definition is a modification to the existing Echo Test portion
+-- of the Aspen MIB.  This definition ONLY includes the Echo Test portion of
+-- the Aspen MIB; any new or modified object is preceeded by a comment
+-- identifying the modification.
+--
+-- Although this proposed MIB modification retains the support for the Single
+-- Shot Table (SSTable), it is unclear whether that functionality is actually
+-- being used. 	We recommend it's removal.
+--
+--
+-- Echo Testing Group
+--
+-- This group defines objects which support network connectivity testing 
+-- in the SNMP LanProbe.  It contains two tables and some scalars.
+
+-- The Single Shot Test Table is used to invoke one-shot echo tests
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+--
+--
+-- NOTE: Once an entry in the following table is created, it will exist 
+--   indefinitely, so that the owner may GET the results at a later time.
+--   Limited resources in the LanProbe may necessitate deletion of entries 
+--   in which echoTestSSLastEchoStatus is not equal to no_results_available(1).
+--   Also note that this table is *not* stored in non-volatile memory...it
+--   will disappear after a warm or cold start.
+
+echoTestSSTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF EchoTestSSEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+	"A table of instructions for and results of one-shot network 
+	 connectivity tests"
+    ::= { echoTest 1 }
+
+echoTestSSEntry  OBJECT-TYPE
+    SYNTAX    EchoTestSSEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+	"A collection of objects that describe the form of and give the
+	 results of a one-shot connectivity test to a given host."
+    INDEX  { echoTestSSIndex }
+    ::= { echoTestSSTable 1 }
+
+EchoTestSSEntry ::= SEQUENCE {
+    echoTestSSIndex            INTEGER (1..65535),
+    echoTestSSIfIndex          INTEGER (1..65535),
+    echoTestSSMacAddress       OCTET STRING,
+    echoTestSSNetAddress       OCTET STRING,
+    echoTestSSProtocol         INTEGER,
+    echoTestSSTimeout          INTEGER,
+    echoTestSSRetryAttempts    INTEGER,
+    echoTestSSLastEchoStatus   INTEGER,
+    echoTestSSResponseNumber   INTEGER,
+    echoTestSSResponseTime     INTEGER,
+    echoTestSSOwner            OwnerString,
+--    echoTestSSStatus           INTEGER
+    echoTestSSStatus           EntryStatus
+}
+ 
+echoTestSSIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"An index that uniquely identifies an entry in the echoTestSS 
+	 table.  Each such entry defines a single shot echo test to the
+	 node corresponding to either the mac address or net address
+	 objects."
+   ::= { echoTestSSEntry 1 }
+
+echoTestSSIfIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The value of this object uniquely identifies the interface on
+	 this remote network monitoring device on which the echo test 
+	 will be performed.  The interface identified by a particular 
+	 value of this object is the same interface as identified by the 
+	 same value of the ifIndex object, defined in RFC 1156 and
+	 RFC 1213."
+    DEFVAL { 1 }
+    ::= { echoTestSSEntry 2 }
+
+echoTestSSMacAddress OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The MAC level address for this host."
+    ::= { echoTestSSEntry 3 }
+    
+echoTestSSNetAddress OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The network level address for this host."
+    ::= { echoTestSSEntry 4 }
+    
+echoTestSSProtocol OBJECT-TYPE
+    SYNTAX INTEGER {
+	icmp-echo(1),
+	ieee-802-2(2),
+	ethernet-ctp(3),
+	novell-802-3(4),
+	novell-ethernet(5),
+	vines-datalink(6),
+        appleTalk(7),
+	novell-802-2(8)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The type of echo test to perform."
+    DEFVAL { 1 }
+    ::= { echoTestSSEntry 5 }
+     
+echoTestSSTimeout OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The number of milliseconds to wait for a reply before
+	 retransmitting the echo request packet.  Note that a 
+	 monitor may impose a lower bound on this object if its 
+	 timing facilities are limited."
+    DEFVAL { 100 }
+    ::= { echoTestSSEntry 6 }
+     
+echoTestSSRetryAttempts OBJECT-TYPE
+    SYNTAX INTEGER (0..9)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The number of times to retransmit the echo request packet 
+	 should a response packet not be received before echoTestSSTimeout
+	 expires."
+    DEFVAL { 0 }
+    ::= { echoTestSSEntry 7 }
+
+echoTestSSLastEchoStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+	no-results-available(1),
+	response-received(2),
+	response-timed-out(3)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The result of this echo test."
+    ::= { echoTestSSEntry 8 }
+     
+echoTestSSResponseNumber OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The number of echo request packets sent before a successful 
+	 response packet was received. The value of this object will
+	 be non-zero only when echoTestSSLastEchoStatus is equal to
+	 response_received(2)"
+    ::= { echoTestSSEntry 9 }
+     
+echoTestSSResponseTime OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The number of milliseconds between the time the last echo 
+	 request packet was transmitted and a response packet was 
+	 received.  The value of this object will be non-zero only 
+	 when echoTestSSLastEchoStatus is equal to response_received(2)"
+    ::= { echoTestSSEntry 10 }
+     
+echoTestSSOwner OBJECT-TYPE
+--  SYNTAX DisplayString
+    SYNTAX OwnerString
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The entity that configured this entry and is therefore
+	 using the resources assigned to it."
+    ::= { echoTestSSEntry 11 }
+
+echoTestSSStatus OBJECT-TYPE
+    SYNTAX EntryStatus
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The status of this row."
+    ::= { echoTestSSEntry 12 }
+
+-- The List Echo Test Table is for periodic tests.  
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+
+-- NOTE: Entries added to this table while echoTestPeriod is non-zero
+-- (i.e. periodic echo testing is ongoing) will not be tested until the
+-- start of the next test period.  This table is stored in non-volatile
+-- memory, hence it will survive a warm start (or power failure).
+
+echoTestPeriodicTable  OBJECT-TYPE
+    SYNTAX    SEQUENCE OF EchoTestPeriodicEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+	"A table of instructions for and results of periodic network
+	connectivity tests"
+    ::= { echoTest 2 }
+
+echoTestPeriodicEntry  OBJECT-TYPE
+    SYNTAX    EchoTestPeriodicEntry
+    ACCESS    not-accessible
+    STATUS    mandatory
+    DESCRIPTION
+	"A collection of objects that describe the form of and give the
+	 results of periodic connectivity tests to a given host."
+    INDEX  { echoTestPeriodicIndex }
+    ::= { echoTestPeriodicTable 1 }
+
+EchoTestPeriodicEntry ::= SEQUENCE {
+    echoTestPeriodicIndex                 INTEGER (1..65535),
+    echoTestPeriodicIfIndex               INTEGER (1..65535),
+    echoTestPeriodicMacAddress            OCTET STRING,
+    echoTestPeriodicNetAddress            OCTET STRING,
+    echoTestPeriodicProtocol              INTEGER,
+    echoTestPeriodicTimeout               INTEGER,
+    echoTestPeriodicRetryAttempts         INTEGER,
+    echoTestPeriodicNoResponseEventIndex  INTEGER,
+    echoTestPeriodicRespondedEventIndex   INTEGER,
+    echoTestPeriodicEchoState             INTEGER,
+    echoTestPeriodicLastEchoStatus        INTEGER,
+    echoTestPeriodicTotalOperations       INTEGER,
+    echoTestPeriodicSuccessfulOperations  INTEGER,
+    echoTestPeriodicMinRespTime           INTEGER,
+    echoTestPeriodicMaxRespTime           INTEGER,
+    echoTestPeriodicLastRespTime          INTEGER,
+    echoTestPeriodicTotalRespTime         INTEGER,
+    echoTestPeriodicSumOfSquaresTimeLo	  INTEGER,
+    echoTestPeriodicSumOfSquaresTimeHi	  INTEGER,
+    echoTestPeriodicFailedAttemptCount	  INTEGER,
+    echoTestPeriodicMinRespTime30MinInt	  INTEGER,
+    echoTestPeriodicMaxRespTime30MinInt	  INTEGER,
+    echoTestPeriodicMinRespTime5MinInt	  INTEGER,
+    echoTestPeriodicMaxRespTime5MinInt	  INTEGER,
+--    echoTestPeriodicOwner                 OwnerString,
+--    echoTestPeriodicStatus                INTEGER
+    echoTestPeriodicOwner                 OwnerString,
+    echoTestPeriodicStatus                EntryStatus
+
+}
+
+echoTestPeriodicIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"An index that uniquely identifies an entry in the echoTestPeriodic
+	 table.  Each such entry defines a periodic echo test to the
+	 node corresponding to either the mac address or net address
+	 objects."
+    ::= { echoTestPeriodicEntry 1 }
+
+echoTestPeriodicIfIndex OBJECT-TYPE
+    SYNTAX INTEGER (1..65535)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The value of this object uniquely identifies the interface on
+	 this remote network monitoring device on which the echo test 
+	 will be performed.  The interface identified by a particular 
+	 value of this object is the same interface as identified by the 
+	 same value of the ifIndex object, defined in RFC 1156 and
+	 RFC 1213."
+    DEFVAL { 1 }
+    ::= { echoTestPeriodicEntry 2 }
+
+echoTestPeriodicMacAddress OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The MAC level address of this host."
+    ::= { echoTestPeriodicEntry 3 }
+    
+echoTestPeriodicNetAddress OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The network level address of this host."
+    ::= { echoTestPeriodicEntry 4 }
+    
+echoTestPeriodicProtocol OBJECT-TYPE
+    SYNTAX INTEGER {
+	icmp-echo(1),
+	ieee-802-2(2),
+	ethernet-ctp(3),
+	novell-802-3(4),
+	novell-ethernet(5),
+	vines-datalink(6),
+        appleTalk(7),
+	novell-802-2(8)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The type of echo test to perform. Note that only one test can
+	 be selected at a time."
+    DEFVAL { 1 }
+    ::= { echoTestPeriodicEntry 5 }
+     
+echoTestPeriodicTimeout OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The number of milliseconds to wait for a reply before
+	 retransmitting the echo request packet.  Note that a 
+	 monitor may impose a lower bound on this object if its 
+	 timing facilities are limited."
+    DEFVAL { 500 }
+    ::= { echoTestPeriodicEntry 6 }
+     
+echoTestPeriodicRetryAttempts OBJECT-TYPE
+    SYNTAX INTEGER (0..9)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The number of times to retransmit the echo request packet 
+	 should a response packet not be received before 
+	 echoTestPeriodicTimeout expires."
+    DEFVAL { 0 }
+    ::= { echoTestPeriodicEntry 7 }
+ 
+echoTestPeriodicNoResponseEventIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (0..65535)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+	"The index of the eventEntry in the RMON MIB that is used
+	 whenever the value of echoTestPeriodicLastEchoStatus changes
+	 to response_timed_out(3).  The eventEntry identified by a 
+	 particular value of this index is the same as identified by 
+	 the same value of the eventIndex object.  If there is no 
+	 corresponding entry in the eventTable, then no association exists.  
+	 In particular, if this value is zero, no associated event will 
+	 be generated, as zero is not a valid event index."
+    ::= { echoTestPeriodicEntry 8 }
+
+echoTestPeriodicRespondedEventIndex  OBJECT-TYPE
+    SYNTAX    INTEGER (0..65535)
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+	"The index of the eventEntry in the RMON MIB that is used
+	 whenever the value of echoTestPeriodicLastEchoStatus changes
+	 from response_timed_out(3) to response_received(2).  The eventEntry
+	 identified by a particular value of this index is the same as 
+	 identified by the same value of the eventIndex object.  If there 
+	 is no corresponding entry in the eventTable, then no association 
+	 exists.  In particular, if this value is zero, no associated event 
+	 will  be generated, as zero is not a valid event index."
+    ::= { echoTestPeriodicEntry 9 }
+
+echoTestPeriodicEchoState OBJECT-TYPE
+    SYNTAX INTEGER {
+	no-echo-sent(1),
+	waiting-for-initial-response(2),
+	waiting-to-echo(3),
+	waiting-for-subsequent-response(4)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The current state of testing for this echoTestPeriodicEntry.
+	Once a successful response has been received, this object
+	will alternate between waiting_to_echo(3) and 
+	waiting_for_subsequent_response(4).  Whenever the value of
+	echoTestPeriodicLastEchoStatus changes to response_timed_out(3),
+	this object's value will revert to waiting_for_initial_response(2)."
+    ::= { echoTestPeriodicEntry 10 }
+     
+echoTestPeriodicLastEchoStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+	no-results-available(1),
+	response-received(2),
+	response-timed-out(3)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The result of the last echo test for this entry."
+    ::= { echoTestPeriodicEntry 11 }
+     
+echoTestPeriodicTotalOperations OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The total number of times that echoTestPeriod has expired
+	 and an echo test has been initiated for this host."
+    ::= { echoTestPeriodicEntry 12 }
+     
+echoTestPeriodicSuccessfulOperations OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The total number of times that an echo test has completed 
+	 successfully with the reception of a correct response packet.
+	 This number will always be less than or equal to 
+	 echoTestPeriodicTotalOperations."
+    ::= { echoTestPeriodicEntry 13 }
+     
+echoTestPeriodicMinRespTime OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The shortest time (in milliseconds) between request and response
+	 for all of the periodic echo tests that have been attempted 
+	 for this host."
+    ::= { echoTestPeriodicEntry 14 }
+     
+echoTestPeriodicMaxRespTime OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The longest time (in milliseconds) between request and response
+	 for all of the periodic echo tests that have been attempted 
+	 for this host."
+    ::= { echoTestPeriodicEntry 15 }
+     
+echoTestPeriodicLastRespTime OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The time (in milliseconds) between request and response for the
+         last echo test attempted for this host.  If the value of
+         echoTestPeriodicLastEchoStatus for this host is not
+         response_received(2), the value returned will be -1."
+    ::= { echoTestPeriodicEntry 16 }
+     
+echoTestPeriodicTotalRespTime OBJECT-TYPE
+    SYNTAX INTEGER 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The sum of all the response times (in milliseconds) for all of the 
+	periodic echo tests that have been attempted for this host.  This
+	object and echoTestPeriodicSuccessfulOperations can be used to 
+	calculate an average response time for this host"
+    ::= { echoTestPeriodicEntry 17 }
+
+echoTestPeriodicOwner OBJECT-TYPE
+--    SYNTAX DisplayString
+    SYNTAX OwnerString
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The entity that configured this entry and is therefore
+	 using the resources assigned to it."
+    ::= { echoTestPeriodicEntry 18 }
+
+echoTestPeriodicStatus OBJECT-TYPE
+    SYNTAX EntryStatus
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The status of this row."
+    ::= { echoTestPeriodicEntry 19 }
+
+echoTestPeriodicSumOfSquaresTimeLo OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The sum of the square of all the response times (in milliseconds) for
+	 all of the periodic tests analogous to targetTotalResponseTime.  This
+	 object, targetTotalResponseTime, and targetSuccessfulOperations can be
+	 used to calculate a standard deviation of response time for this host.
+	 This is the low order unsigned long portion of the value."
+    ::= { echoTestPeriodicEntry 20 }
+
+echoTestPeriodicSumOfSquaresTimeHi OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The sum of the square of all the response times (in milliseconds) for
+	 all of the periodic tests analogous to targetTotalResponseTime.  This
+	 object, targetTotalResponseTime, and targetSuccessfulOperations can be
+	 used to calculate a standard deviation of response time for this host.
+	 This is the high order unsigned long portion of the value."
+    ::= { echoTestPeriodicEntry 21 }
+
+echoTestPeriodicFailedAttemptCount OBJECT-TYPE
+    SYNTAX	INTEGER
+    ACCESS	read-only
+    STATUS	mandatory
+    DESCRIPTION
+	"The total count of failed attempts"
+    ::= { echoTestPeriodicEntry 22 }
+
+echoTestPeriodicMinRespTime30MinInt OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	    "Minimum response time (in milliseconds) value for the last 30
+	     minute interval. The agent must update this object every 30
+	     minutes, aligning to the system clock at every hour and half
+	     hour.  If there is no valid value available for this object
+		 because the test hasn't been running for 30 minutes, or there
+		 was no response received in the last 30 minutes,  -1 will
+		 be returned."
+	::= { echoTestPeriodicEntry 23 }
+
+echoTestPeriodicMaxRespTime30MinInt OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	    "Maximum response time (in milliseconds) value for the last 30
+	     minute interval. The agent must update this object every 30
+	     minutes, aligning to the system clock at every hour and half
+	     hour.  If there is no valid value available for this object
+		 because the test hasn't been running for 30 minutes, or there
+		 was no response received in the last 30 minutes,  -1 will
+		 be returned."
+	::= { echoTestPeriodicEntry 24 }
+
+echoTestPeriodicMinRespTime5MinInt OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	    "Minimum response time (in milliseconds) value for the last 5
+	     minute interval. The agent must update this object every 5
+	     minutes, aligning to the system clock at every 5 minute
+	     interval.  If there is no valid value available for this object
+		 because the test hasn't been running for 5 minutes, or there
+		 was no response received in the last 5 minutes,  -1 will
+		 be returned."
+	::= { echoTestPeriodicEntry 25 }
+
+echoTestPeriodicMaxRespTime5MinInt OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	    "Maximum response time (in milliseconds) value for the last 5
+	     minute interval. The agent must update this object every 5
+	     minutes, aligning to the system clock at every 5 minute
+	     interval.  If there is no valid value available for this object
+		 because the test hasn't been running for 5 minutes, or there
+		 was no response received in the last 5 minutes,  -1 will
+		 be returned."
+	::= { echoTestPeriodicEntry 26 }
+
+-- Echo Test Scalar Objects
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+
+echoTestPeriod OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-write
+    STATUS    mandatory
+    DESCRIPTION
+	"This object indicates how long to wait (in seconds) after 
+	 completion of a pass through the echoTestPeriodic table
+	 before starting a new pass.  Whenever this object is set to 
+	 zero(0), the periodic echo list is disabled.  Whenever it is 
+	 set to a non-zero value, an initial round of tests will be 
+	 scheduled immediately, and subsequent rounds will start after
+	 the specified period.  Note that a monitor may impose a lower 
+	 bound on this object if its timing facilities are limited."
+    DEFVAL { 0 }
+    ::= { echoTest 3 }
+
+echoTestPeriodicCount OBJECT-TYPE
+    SYNTAX    INTEGER
+    ACCESS    read-only
+    STATUS    mandatory
+    DESCRIPTION
+	"This object indicates how many complete passes through the 
+	 echoTestPeriodicTable have occurred since it was last
+	 restarted.  Its value will be zero(0) until the first
+	 pass is complete."
+    ::= { echoTest 4 }
+
+echoTestResetSSTable OBJECT-TYPE
+    SYNTAX INTEGER {
+	table-is-empty(1),
+	table-in-use(2),
+	reset-the-table(3)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"This is a control/status object for the echoTestSSTable.  When 
+	there are entries in the table, this object's value is 
+	table-in-use(3).  When set to reset-the-table(3), all entries
+	are deleted, and this object's value changes to table-is-empty(1)."
+    ::= { echoTest 5 }
+
+echoTestResetPeriodicTable OBJECT-TYPE
+    SYNTAX INTEGER {
+	table-is-empty(1),
+	table-in-use(2),
+	reset-the-table(3)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"This is a control/status object for the echoTestListTable.  
+	When there are entries in the table, this object's value is 
+	table_in_use(3).  When set to reset_the_table(3), all entries
+	are deleted, and this object's value changes to table_is_empty(1)."
+    ::= { echoTest 6 }
+
+echoTestPeriodicTableLastEdit OBJECT-TYPE
+    SYNTAX TimeTicks
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+	"The value of sysUpTime at the time of the last edit (create, delete,
+	 or modify) to the echoTestPeriodicTable"
+    ::= { echoTest 7 }
+
+echoTestPeriodicTableStatus OBJECT-TYPE
+    SYNTAX 	INTEGER
+    {
+	valid(1),
+	recoveryRequest(2),
+	underRecovery(3),
+	beingModified(4)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The status of the PeriodicTable.
+
+	 Only those communities with level4 access shall have access to this
+	 object.
+
+	 When the agent sets the status of a row in the echoTestPeriodicTable
+	 to underCreation, it must set this object to beingModified(4).  This
+	 object must be reset to valid(1) after the row leaves the
+	 underCreation state (either by being set to valid or invalid).  The
+	 agent should not allow the management station to modify this object
+	 when it's value is beingModified(4).
+
+	 The status for any row should be ignored by a manager that has
+	 successfully placed the table underRecovery(3).  Managers trying to
+	 operate on row status during the recovery operation should fail.
+	 Management stations which start walking the table after ensuring
+	 the table status is valid should ensure the table has remained 
+	 unchanged during the walk by checking the PeriodicTableLastEdit.
+
+	 A management station cannot set the state to underRecovery(3). To
+	 initiate a recovery operation, the management station must set this
+	 object to recoveryRequest(2).  The agent must clear the table
+	 entries when setting this object to recoveryRequest.  If successful,
+	 the management station may download the echo test table. If
+	 unsuccessful, then the contents of the PeriodicTable cannot be
+	 guaranteed.
+
+	 The table shall exist in the underRecovery state until the management
+	 station has finished downloading the table and sets this object back
+	 to valid(1).  If the agent determines the table has been in the
+	 underRecovery(3) state for an abornmally long time, it may decide that
+	 the management station has crashed.  The agent then can set the clear
+	 the table and set this object to valid(1)."
+
+    ::= { echoTest 8 }
+
+echoTestNovellDefaultGateway OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The MAC level address of the router through which Novell Echo
+         packets are to be forwarded, if the echo test is to be performed
+         outside of the subnet on which this probe is placed."
+    ::= { echoTest 9 }
+
+-- The Cable Group
+-- NOTE: This group has been deprecated. JAH 2/16/94.
+--
+-- The Cable Test Group
+-- NOTE: This group supersedes the cableTest group.
+--       The cableTest group has been deprecated.
+--
+-- This group implements an ethernet cable test, detecting faults
+-- at a user-specified frequency.  The results of these tests
+-- can optionally be relayed to the management station through
+-- the event mechanism in the RMON MIB.
+--
+-- This group also maintains information about the cable length that
+-- has been obtained through a method of statistical sampling (Tracker
+-- Board required for this). This information allows the probe to inform
+-- the Management Station via traps when the cable length changes.
+--
+-- The values of probeCableTestResult should be interpreted as follows:
+-- noTest(2)                  - No cable test has been run yet.
+-- cableOk(3)                 - Cable is okay.
+-- cableOpen(5)               - Cable is open at cableTestFaultDistance,
+--                                possible missing terminator.
+-- cableShort(6)              - Cable is shorted at cableTestFaultDistance,
+--                                possible extra terminator.
+-- hardwareError(11)          - Cable tester hardware error.
+--
+-- Access privileges:
+-- level1:  no access
+-- level2:  read-only access
+-- level3:  read-write access
+-- level4:  read-write access
+--
+--
+-- cableType  OBJECT-TYPE
+--  SYNTAX    INTEGER
+--  {   vp66c(1),
+--      vp78c(2),
+--      custom(3)
+--  }
+--  ACCESS    read-write
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The velocity of propagation characteristic of the cable. This 
+--     variable is saved in NVRAM and is thus maintained over a warmstart
+--     or power failure."
+--  DEFVAL { vp66c }
+--  ::= { cable 1 }
+--
+-- cableTestFrequency  OBJECT-TYPE
+--  SYNTAX    INTEGER
+--  {   one-shot(1),
+--      continuous(2),
+--      freq-3-minutes(3),
+--      freq-10-minutes(4),
+--      freq-30-minutes(5),
+--      freq-1-hour(6),
+--      freq-3-hours(7),
+--      freq-12-hours(8)
+--  }
+--  ACCESS    read-write
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "Defines the frequency that the cable test will be performed. This 
+--     variable is saved in NVRAM and is thus maintained over a warmstart
+--     or power failure."
+--  ::= { cable 2 }
+--
+-- cableTestActionStatus  OBJECT-TYPE
+--  SYNTAX    INTEGER
+--  {   running(1),
+--      stopped(2)
+--  }
+--  ACCESS    read-write
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The status of the cable test.  If this variable is set to
+--     running(1) and the cableTestFrequency object is equal to
+--     one-shot, after a single cable test is performed, the device
+--     will set this object to stopped(2). This variable is saved in 
+--     NVRAM and is thus maintained over a warmstart or power failure."
+--  ::= { cable 3 }
+--
+-- cableTestTime  OBJECT-TYPE
+--  SYNTAX    TimeTicks
+--  ACCESS    read-only
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The value of sysUpTime when the last cable test was
+--    performed."
+--  ::= { cable 4 }
+--
+-- cableTestResult  OBJECT-TYPE
+--  SYNTAX    INTEGER
+--  {   noTest(2),
+--      cableOk(3),
+--      cableOpen(5),
+--      cableShort(6),
+--      hardwareError(11)
+--  }
+--  ACCESS    read-only
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The result of the last cable test.  If no cable test has
+--     previously been performed, this object shall have the value
+--     noTest(2)."
+--  ::= { cable 5 }
+--
+-- cableTestDistance  OBJECT-TYPE
+--  SYNTAX    INTEGER
+--  ACCESS    read-only
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The distance returned by the 82596 cable test measurement.
+--     If a cable test has been performed, this distance will be 
+--     the distance to the cable fault detected, 
+--     in tenths of meters.  If no cable test has been run or the 
+--     distance is unknown, this variable shall have the value of 
+--     -1."
+--  ::= { cable 6 }
+--
+-- cableEventIndex  OBJECT-TYPE
+--  SYNTAX    INTEGER (0..65535)
+--  ACCESS    read-write
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The index of the eventEntry in the RMON MIB that is
+--     used when a change in probeCableTestResult or
+--     probeCableTestFaultDistance is detected.  The eventEntry
+--     identified by a particular value of this index is the same
+--     as identified by the same value of the eventIndex object.
+--     If there is no corresponding entry in the eventTable, then
+--     no association exists.  In particular, if this value is
+--     zero, no associated event will be generated, as zero is
+--     not a valid event index.
+--     
+--     This event index is also used when a change in cable length
+--     is detected as indicated by the cableLengthLastChangeTime
+--     variable.
+--     
+--     This variable is saved in NVRAM and is thus maintained over 
+--     a warmstart or power failure."
+--  ::= { cable 7 }
+--
+-- cableLengthResult  OBJECT-TYPE
+--  SYNTAX    INTEGER
+--  ACCESS    read-only
+--  STATUS    deprecated
+--  DESCRIPTION
+--    "The summation and number of counter values that we have obtained
+--     from the Tracker hardware that indicate the cable length. The
+--     least significant 3 bytes of the variable are the summation and
+--     the most significant byte is the number of samples that make up
+--     the summation. This variable shall be set to 0 if no information
+--     is available."
+--  ::= { cable 8 }
+--
+-- cableLengthLastChangeTime OBJECT-TYPE
+--  SYNTAX TimeTicks
+--  ACCESS read-only
+--  STATUS deprecated
+--  DESCRIPTION
+--    "The value of SysUptime the last time we detected a change in 
+--     cable length."
+--  ::= { cable 9 }
+--
+-- cableMAUDelay OBJECT-TYPE
+--  SYNTAX INTEGER
+--  ACCESS read-write
+--  STATUS deprecated
+--  DESCRIPTION
+--    "The amount of delay (in 100ns increments) attributed to the 
+--     signal passing through the MAU and AUI cable, when cableType 
+--     is set to custom.  This value is set at the factory for the 
+--     recommended MAU and is not intended to be visible to the 
+--     Management Station. It can be set by the Management Station 
+--     if necessary to support a different type of MAU."
+--  ::= { cable 10 }
+--
+-- cableCustomNVP OBJECT-TYPE
+--  SYNTAX INTEGER
+--  ACCESS read-write
+--  STATUS deprecated
+--  DESCRIPTION
+--    "The value used for the nominal velocity of propagation (NVP),
+--     when cableType is set to custom . To get the most accurate 
+--     test results this value should be set for the specific cable 
+--     being tested. It is usually somewhere between 60% and 90%."
+--  ::= { cable 11 }
+
+--  LanProbe Traps
+
+echotestStatus TRAP-TYPE
+   ENTERPRISE lanprobe
+   VARIABLES { echoTestPeriodicMacAddress, echoTestPeriodicNetAddress,
+               echoTestPeriodicProtocol, echoTestPeriodicEchoState,
+	         echoTestPeriodicLastEchoStatus }
+   DESCRIPTION
+     "The SNMP trap that is generated when a LanProbe echo test
+      status has changed and generates an event that is 
+      configured for sending SNMP traps."
+   ::= 1
+
+duplicateIP TRAP-TYPE
+   ENTERPRISE lanprobe
+   VARIABLES { hostExtDuplicateNetAddresses, hostExtLastDuplicateHost1,
+               hostExtLastDuplicateHost2, hostExtLastDuplicateNetAddress  }
+
+   DESCRIPTION
+     "The SNMP trap that is generated when the monitor
+	  detects a network level address is being used by 
+	  two different hosts."
+   ::= 2
+
+changedIP TRAP-TYPE
+   ENTERPRISE lanprobe
+   VARIABLES { hostExtChangedNetAddresses, hostExtLastChangedHost,
+               hostExtLastOldNetAddress, hostExtLastNewNetAddress }
+
+   DESCRIPTION
+     "The SNMP trap that is generated when the monitor
+	  detects a host has changed the network level address 
+	  it is using."
+   ::= 3
+
+END
