@@ -1,0 +1,909 @@
+PANDATEL-CHASSIS-MIB DEFINITIONS ::= BEGIN
+
+ -- This mib describes the physical chassis construction that
+ -- contains the currently managed devices by PANDATEL.
+
+ -- A chassis may be a stand-alone box as well as a cabinet
+ -- consisting of several racks and other components that contain
+ -- lots of slots and modules.
+ -- It may also contain one single device or various functional
+ -- units.
+
+ -- This mib module may be extended without notice, when needed.
+
+ -- Ver.1.16  May.05.2000
+
+        IMPORTS
+                enterprises, Counter, NetworkAddress, IpAddress,
+                Gauge, TimeTicks
+                        FROM RFC1155-SMI
+                DisplayString
+                        FROM RFC1213-MIB
+                OBJECT-TYPE
+                        FROM RFC-1212
+					TRAP-TYPE FROM RFC-1215;
+
+ -- ********************* THE MAIN STRUCTURE ********************
+
+pandatel        OBJECT IDENTIFIER ::= { enterprises 760 }
+
+mibs            OBJECT IDENTIFIER ::= {pandatel 1}
+
+chassis         OBJECT IDENTIFIER ::= { mibs 20000 }
+
+-- * * * * * * * * *  *  THE CHASSIS GROUP  * * * * * * * * * * *
+
+-- The chassis may be splitted into several components, which are
+-- again containing none, one or more slots. Each slot may or may
+-- not contain a module. These modules may again contain ports.
+
+-- A virtual component 0 may refer to a stand-alone unit with or
+-- without slots, when a component address is needed.
+-- A virtual slot 0 may be used to address a fixed "main board" that
+-- is not intended to be removed from the component, when a slot
+-- address is needed.
+-- Component 0 will not appear in the component table, because it
+-- does not exist physically; slot (comp,0) may not appear in the
+-- slot table, but it is not incorrect if it does so to clarify
+-- functionality.
+
+-- The chassis group is mandatory for all managed PANDATEL devices.
+
+chassisTypeID  OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This may be an authoritative or well-known id that
+                 refers to the type of equipment that is being managed.
+                 If that is unknown, an (0.0) will also be correct."
+        ::= { chassis 1 }
+
+chassisComponents OBJECT-TYPE
+        SYNTAX  INTEGER {
+                stand-alone (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of components the chassis consists of.
+                 If the managed unit is stand-alone, this object
+                 may return 0, but it can also return 1, if an entry
+                 in the component table is provided.
+                 This implementory decision must be made according to
+                 the specific device characteristics.
+                 In other words, this object indicates the number
+                 of entries in the component table."
+        ::= { chassis 2 }
+
+chassisDevices OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of devices in the chassis.
+                 This is equivalent to the total amount of devices
+                 in all components.
+                 Its value will probably be at least one.
+                 In other words, this object indicates the number
+                 of entries in the device table."
+        ::= { chassis 3 }
+
+chassisSlots OBJECT-TYPE
+        SYNTAX  INTEGER {
+                no-slots (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of slots in the chassis.
+                 This is equivalent to the total amount of slots
+                 in all components and to the maximum number of
+                 modules that the chassis can contain.
+                 Any virtual slot (addressed {comp,0}) in the slot
+                 table will increase the value of this object.
+                 If there are no physical or virtual slots, its
+                 value will be 0.
+                 In other words, this object indicates the number
+                 of entries in the slot table."
+        ::= { chassis 4 }
+
+chassisModules OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of modules in the chassis.
+                 This is equivalent to the total amount of slots
+                 in all components that are occupied by a module.
+                 Any virtual module (addressed {comp,0}) in the slot
+                 table will increase the value of this object.
+                 If there are no physical or virtual slots, its
+                 value will be 0."
+        ::= { chassis 5 }
+
+chassisPorts OBJECT-TYPE
+        SYNTAX  INTEGER {
+                no-ports (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of ports in the chassis.
+                 This is equivalent to the total amount of ports
+                 on all modules, including virtual modules '0'.
+                 If there are no ports, its value will be 0.
+                 In other words, this object indicates the number
+                 of entries in the port table."
+        ::= { chassis 6 }
+
+ -- chassis 7,8,9 for further use
+
+chassisComponentTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF ChassisComponentEntry
+        ACCESS  not-accessible
+        STATUS  optional
+        DESCRIPTION
+                "The component table of the whole chassis,
+                 regardless of the particular component type.
+                 May be empty if this is a stand-alone unit."
+        ::= { chassis 10 }
+
+chassisDeviceTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF ChassisDeviceEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "The device table of the whole chassis.
+                Includes all functional devices."
+        ::= { chassis 11 }
+
+chassisSlotTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF ChassisSlotEntry
+        ACCESS  not-accessible
+        STATUS  optional
+        DESCRIPTION
+                "The slot table of the whole chassis, regardless
+                 of the particular slot type.
+                 May be empty if there are no slots."
+        ::= { chassis 12 }
+
+chassisPortTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF ChassisPortEntry
+        ACCESS  not-accessible
+        STATUS  optional
+        DESCRIPTION
+                "The port table of the whole chassis, regardless
+                 of the particular port type.
+                 May be empty if there are no ports."
+        ::= { chassis 13 }
+
+chassisPowerSupplyTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF ChassisPowerSupplyEntry
+        ACCESS  not-accessible
+        STATUS  optional
+        DESCRIPTION
+                "Table which contains information about all installed
+                 power supplies."
+        ::= { chassis 14 }
+
+ -- * * * * * * * * *  CHASSIS COMPONENT TABLE   * * * * * * * * * * *
+
+ -- A component is every kind of housing or backplane that will be
+ -- built directly into the chassis.
+
+ -- Implementation of this table is mandatory for all units that are
+ -- not stand-alone, i.e. all manageable devices that consist of more
+ -- than one removable component.
+
+compEntry OBJECT-TYPE
+        SYNTAX  ChassisComponentEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "One entry in the chassis component table.
+                 Each entry contains the description of one
+                 component."
+        INDEX   { compComp }
+        ::= { chassisComponentTable 1 }
+
+ChassisComponentEntry ::= SEQUENCE {
+        compComp
+                INTEGER,
+        compDesign
+                INTEGER,
+        compTypeID
+                OBJECT IDENTIFIER,
+        compSlots
+                INTEGER,
+        compModules
+                INTEGER
+        }
+
+compComp OBJECT-TYPE
+        SYNTAX  INTEGER {
+                main (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of this particular component in the
+                 chassis."
+        ::= { compEntry 1 }
+
+compDesign OBJECT-TYPE
+        SYNTAX  INTEGER {
+                other  (1),
+                rack   (2),
+                device (3),
+                stack  (4)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The general design what this particular component
+                 is.
+                 A rack is an empty housing whose main purpose is
+                 to contain some slots for modules.
+                 A device is an active unit with own functionality,
+                 e.g. a repeater. It may also contain modules, but
+                 that is not its main purpose.
+                 A device may be identical with an entry in the
+                 device table, if the entry relates to one whole
+                 component."
+        ::= { compEntry 2 }
+
+compTypeID OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This object identifies the type of this component.
+                 It will point to an authoritative or a well-known
+                 identifier that may relate to the product type,
+                 the product family it has been designed for or, if
+                 no other statement can be made, e.g. the type of
+                 media the component works with."
+        ::= { compEntry 3 }
+
+compSlots OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of slots this component provides for
+                 plugging in modules. This includes all used and
+                 unused physical slots, but not a virtual slot 0."
+        ::= { compEntry 4 }
+
+compModules OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of modules that are contained within
+                 this component.
+                 This value may include a virtual 'module 0' that
+                 is realized on the component main board
+                 (see below)."
+        ::= { compEntry 5 }
+
+ -- * * * * * * * * * * *  CHASSIS DEVICE TABLE   * * * * * * * * * * *
+
+ -- A device is a functional unit that consists of one or more
+ -- modules. There is no fixed relation between a component and a
+ -- device, i.e. one component may contain several devices while
+ -- another device can consist of modules that reside in more
+ -- than one component.
+
+ -- A device is identified by the first slot in the first component
+ -- that contains one of its modules.
+
+ -- An identification of (component X, slot 0) indicates that the
+ -- device is identical with the component X and does not need
+ -- any slot modules for its main functionality. (This does not
+ -- exclude that it may contain extension slots.)
+ -- Addressing slot 0 this way does not require an entry in the
+ -- slot table.
+
+ -- An identification of (component 0, slot 0) indicates this is a
+ -- stand-alone device.
+ -- Addressing component 0 this way does not require an entry in
+ -- the component table.
+
+devcEntry OBJECT-TYPE
+        SYNTAX  ChassisDeviceEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "One entry in the chassis device table.
+                 Each entry contains the description of one
+                 functional device included in the chassis."
+        INDEX   { devcComp, devcSlot}
+        ::= { chassisDeviceTable 1 }
+
+ChassisDeviceEntry ::= SEQUENCE {
+        devcComp
+                INTEGER,
+        devcSlot
+                INTEGER,
+        devcTypeID
+                OBJECT IDENTIFIER,
+        devcMgmtAddress
+                NetworkAddress,
+        devcDescr
+                DisplayString,
+        devcModules
+                INTEGER,
+        devcPorts
+                INTEGER,
+        devcLastChange
+                TimeTicks
+        }
+
+devcComp OBJECT-TYPE
+        SYNTAX  INTEGER {
+                main (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of the component which contains the
+                 first module that is part of this device.
+                 If this value is 0, the device is realized on
+                 a stand-alone unit."
+        ::= { devcEntry 1 }
+
+devcSlot OBJECT-TYPE
+        SYNTAX  INTEGER {
+                main (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of the slot relatively to its component
+                 which contains the first module that is part of
+                 this device.
+                 If the device is realized partially or mainly
+                 on the component main-board, a slot of 0 is
+                 adequate, especially if this component contains
+                 no slots."
+        ::= { devcEntry 2 }
+
+devcTypeID OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This object identifies the type of this device.
+                 It will point to the authoritative identifier
+                 that resides in the (1.3.6.1.4.1) subtree and
+                 relates to the type of the managed device."
+        ::= { devcEntry 3 }
+
+devcMgmtAddress OBJECT-TYPE
+        SYNTAX  NetworkAddress
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This object returns the network address that
+                 must be used to access this device for
+                 management purposes.
+                 This can be the agent's network address, but
+                 it may be different e.g. if the device includes
+                 its own agent for management access."
+        ::= { devcEntry 4 }
+
+devcDescr OBJECT-TYPE
+        SYNTAX  DisplayString
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A textual description of this device."
+        ::= { devcEntry 5 }
+
+devcModules OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of modules that are part of this
+                 device.
+                 If the device is realized partially or mainly
+                 on the component main-board, a virtual 'module 0'
+                 entry in the slot table may increase this value."
+        ::= { devcEntry 6 }
+
+devcPorts OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of ports that are part of this
+                 device.
+                 This does not differentiate between several types
+                 of ports."
+        ::= { devcEntry 7 }
+
+devcLastChange OBJECT-TYPE
+        SYNTAX  TimeTicks
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The value of SysUpTime in the moment when the last
+                 change occurred to the physical configuration
+                 of this device.
+                 When nothing changed since start-up, the value 0
+                 shall be returned."
+        ::= { devcEntry 8 }
+
+ -- * * * * * * * * * * *  CHASSIS SLOT TABLE   * * * * * * * * * * *
+
+ -- Implementation of this table is mandatory for all devices that are
+ -- providing slots.
+
+slotEntry OBJECT-TYPE
+        SYNTAX  ChassisSlotEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "One entry in the slot table."
+        INDEX   { slotComp,
+                  slotSlot }
+        ::= { chassisSlotTable 1 }
+
+ChassisSlotEntry ::= SEQUENCE {
+        slotComp
+                INTEGER,
+        slotSlot
+                INTEGER,
+        slotOwnerDeviceID
+                OBJECT IDENTIFIER,
+        slotSlotTypeID
+                OBJECT IDENTIFIER,
+        slotModuleTypeID
+                OBJECT IDENTIFIER,
+        slotModuleName
+                DisplayString,
+        slotPorts
+                INTEGER
+        }
+
+slotComp OBJECT-TYPE
+        SYNTAX  INTEGER {
+                main (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of the component that contains this slot.
+                 If this value is 0, this is a slot on a stand-alone
+                 unit."
+        ::= { slotEntry 1 }
+
+slotSlot OBJECT-TYPE
+        SYNTAX  INTEGER {
+                main (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of this slot, relatively to the particular
+                 component.
+                 If this value is 0, this is a virtual entry for a
+                 functional module that is realized on a built-in
+                 main board. It is correct, but not mandatory, to
+                 provide such an entry for sake of completeness."
+        ::= { slotEntry 2 }
+
+slotOwnerDeviceID OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This object points to the device that owns this slot.
+                 It consists of an authoritative or a well-known id
+                 that refers to the type of the owner device,
+                 appended with its base address (Comp,Slot).
+                 In other words, this identifier refers to the
+                 corresponding entry in the chassisDeviceTable.
+                 If this slot currently does not belong to any device
+                 (e.g. because it is actually not used and will
+                 be assigned at run-time), the value will be (0.0)."
+        ::= { slotEntry 3 }
+
+slotSlotTypeID OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This object points to an authoritative or a
+                 well-known id that refers to the type of this
+                 slot. This may point to the media the slot is
+                 realized with or to the product family of modules
+                 that can be plugged in here."
+        ::= { slotEntry 4 }
+
+slotModuleTypeID OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This object points to an authoritative or a
+                 well-known id that refers to the type of
+                 module that occupies this slot.
+                 If the slot is unused, then the id (0.0)
+                 will show that."
+        ::= { slotEntry 5 }
+
+slotModuleName OBJECT-TYPE
+        SYNTAX  DisplayString
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A short textual description of the module that
+                 occupies this slot."
+        ::= { slotEntry 6 }
+
+slotPorts OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of ports on this slot.
+                 This does not differentiate between several types
+                 of ports."
+        ::= { slotEntry 7 }
+
+ -- * * * * * * * * * * *  CHASSIS PORT TABLE  * * * * * * * * * * * *
+
+ -- Implementation of this table is mandatory for all managed units that
+ -- are providing any kind of physical ports.
+
+portEntry OBJECT-TYPE
+        SYNTAX  ChassisPortEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "One entry in the chassis port table."
+        INDEX   { portComp,
+                  portSlot,
+                  portPort }
+        ::= { chassisPortTable 1 }
+
+ChassisPortEntry ::= SEQUENCE {
+        portComp
+                INTEGER,
+        portSlot
+                INTEGER,
+        portPort
+                INTEGER,
+        portOwnerDeviceID
+                OBJECT IDENTIFIER,
+        portFunctionalTypeID
+                OBJECT IDENTIFIER,
+        portPhysicalType
+                INTEGER
+        }
+
+portComp OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of the component that contains this port.
+                 The component identified by a particular value of this
+                 index is the same one as identified by the same
+                 value of compIndex."
+        ::= { portEntry 1 }
+
+portSlot OBJECT-TYPE
+        SYNTAX  INTEGER {
+                main (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The slot index of the module that contains this port.
+                 The module is identified by the index of the slot where
+                 it resides.
+                 A virtual slot 0 may refer to an internal module
+                 that is realized on the main board and occupies
+                 no slot."
+        ::= { portEntry 2 }
+
+portPort OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of this port, relatively to the particular
+                 module."
+        ::= { portEntry 3 }
+
+portOwnerDeviceID OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This object points to the device that owns this port.
+                 It consists of an authoritative or a well-known id
+                 that refers to the type of the owner device,
+                 appended with its base address (Comp,Slot).
+                 In other words, this identifier refers to the
+                 corresponding entry in the chassisDeviceTable.
+                 If this port currently does not belong to any device
+                 (e.g. because it is actually not used and will
+                 be assigned at run-time), the value will be (0.0)."
+        ::= { portEntry 4 }
+
+portFunctionalTypeID OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "An unambiguous id referring to the functional type
+                 of this port. This may be an authoritative or a
+                 well-known id that illustrates what is the purpose
+                 of this port. The range of possible port types
+                 depend on the individual managed device.
+                 For example, a port on a LAN can be a repeater port,
+                 a WAN-device port may be a local or a line port,
+                 or it may be a console port on a mgmt module."
+        ::= { portEntry 5 }
+
+portPhysicalType OBJECT-TYPE
+        SYNTAX  INTEGER {
+                other            (1),     -- other
+                single-fiber     (2),     -- fiber optic single
+                dual-fiber       (3),     -- fiber optic pair
+                bnc              (4),     -- BNC
+                dpc              (5),     -- DPC
+                rj45             (7),     -- twisted pair
+                ics              (8),     -- IBM type 1
+                mic              (9),     -- FDDI
+                db-9-f          (10),     -- sub-d 9 female
+                db-9-m          (11),     -- sub-d 9 male
+                db-15-f         (12),     -- sub-d 15 female
+                db-15-m         (13),     -- sub-d 15 male
+                db-25-f         (14),     -- sub-d 25 female
+                db-25-m         (15),     -- sub-d 25 male
+                db-37-f         (16),     -- sub-d 37 female
+                db-37-m         (17),     -- sub-d 37 male
+                winch-f         (18),     -- winchester female
+                winch-m         (19),     -- winchester male
+                mini-c          (20),     -- 8pin mini C
+                minimicro       (21),     --
+                escon           (22),     -- ESCON fiber pair
+                e2000           (23),     -- E2000 fiber connector
+                single-sc       (24),
+                single-fc       (25),
+                single-st       (26),
+                dual-sc         (27),
+                dual-fc         (28),
+                dual-st         (29),
+                single-sc-apc   (30),
+                single-fc-apc   (31),
+                dual-sc-apc     (32),
+                dual-fc-apc     (33),
+                single-lc       (34),
+                single-lc-apc   (35),
+                dual-lc         (36),
+                dual-lc-apc     (37),
+                mt-rj           (38),
+                single-sc-45    (39),
+                dual-sc-45      (40),
+                -- add further port connector types here
+                unknown        (997),     -- type cannot be decided
+                virtual        (998),     -- virtual, for further use
+                not-installed  (999)      -- currently not installed
+                }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The physical connector type of this port."
+        ::= { portEntry 6 }
+
+ -- * * * * * * * * *  CHASSIS POWER SUPPLY TABLE   * * * * * * * * * * *
+
+ -- This table contains information about the power supply units
+ -- in all components. It also contains information about power supplies
+ -- that "should be there".
+
+psupplyEntry OBJECT-TYPE
+        SYNTAX  ChassisPowerSupplyEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of the table."
+        INDEX   { psupplyRack,
+                  psupplySlot,
+                  psupplyIndex }
+        ::= { chassisPowerSupplyTable 1 }
+
+ChassisPowerSupplyEntry ::= SEQUENCE {
+        psupplyRack
+                INTEGER,
+        psupplySlot
+                INTEGER,
+        psupplyIndex
+                INTEGER,
+        psupplyTypeID
+                OBJECT IDENTIFIER,
+        psupplyDescr
+                DisplayString,
+        psupplyStatus
+                INTEGER
+        }
+
+psupplyRack OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of the component that contains the power supply."
+        ::= { psupplyEntry 1 }
+
+psupplySlot OBJECT-TYPE
+        SYNTAX  INTEGER {
+                main (0)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The slot index of the module that contains this port.
+                 The module is identified by the index of the slot where
+                 it resides.
+                 A virtual slot 0 may refer to an internal module
+                 that is realized on the main board and occupies
+                 no slot."
+        ::= { psupplyEntry 2 }
+
+psupplyIndex OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of the power supply corresponding to the component."
+        ::= { psupplyEntry 3 }
+
+psupplyTypeID OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This object points to an authoritative or a
+                 well-known id that refers to the type of
+                 power supply that occupies this slot."
+        ::= { psupplyEntry 4 }
+
+psupplyDescr OBJECT-TYPE
+        SYNTAX  DisplayString
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A verbal description of the power supply. If there is no
+                 power supply installed in this slot, the power supplies
+                 that are suitable for this slot will be described."
+        ::= { psupplyEntry 5 }
+
+psupplyStatus OBJECT-TYPE
+        SYNTAX  INTEGER {
+                other       (1),
+                up          (2),
+                down        (3),
+                fail        (4),
+                unknown     (98),
+                not-present (99)
+        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This entry indicates the operational status of the power
+                 supply. The value 'up' means that the power supply works
+                 properly. The value 'fail' means that the power supply does
+                 not work correctly. The transitions between the values may
+                 cause traps."
+        ::= { psupplyEntry 6 }
+
+ -- * * * * * * * * * * * * *   TRAPS  * * * * * * * * * * * * * * * *
+
+componentAdded TRAP-TYPE
+        ENTERPRISE  chassis
+        VARIABLES   { compTypeID }
+        DESCRIPTION
+                "This trap will be sent when a component is
+                 added to the managed chassis.
+                 The component index of the new component is sent along with
+                 this trap."
+        REFERENCE
+                "PANDATEL-CHASSIS-MIB, ComponentAdded event notification."
+        ::= 1
+
+componentRemoved TRAP-TYPE
+        ENTERPRISE  chassis
+        VARIABLES   { compTypeID }
+        DESCRIPTION
+                "This trap will be sent when a component is
+                 removed from the managed chassis.
+                 The component index of the removed component is sent along
+                 with this trap."
+        REFERENCE
+                "PANDATEL-CHASSIS-MIB, ComponentRemoved event notification."
+        ::= 2
+
+moduleAdded TRAP-TYPE
+        ENTERPRISE  chassis
+        VARIABLES   { slotModuleTypeID }
+        DESCRIPTION
+                "This trap will be sent when a module is added.
+                 The component number and the index of the new module is sent
+                 along with this trap."
+        REFERENCE
+                "PANDATEL-CHASSIS-MIB, ModuleAdded event notification."
+        ::= 3
+
+moduleRemoved TRAP-TYPE
+        ENTERPRISE  chassis
+        VARIABLES   { slotModuleTypeID }
+        DESCRIPTION
+                "This trap will be sent when a module in one
+                 of the slots is removed.
+                 The component number and the index of the removed module is
+                 sent along with this trap."
+        REFERENCE
+                "PANDATEL-CHASSIS-MIB, ModuleRemoved event notification."
+        ::= 4
+
+powerSupplyAdded TRAP-TYPE
+        ENTERPRISE  chassis
+        VARIABLES   { psupplyTypeID }
+        DESCRIPTION
+                "This trap will be sent when an additional power supply
+                 is installed.
+                 The component number and the index of the additional power
+                 supply is sent along with this trap."
+        REFERENCE
+                "PANDATEL-CHASSIS-MIB, PowerSupplyAdded event notification."
+        ::= 21
+
+powerSupplyRemoved TRAP-TYPE
+        ENTERPRISE  chassis
+        VARIABLES   { psupplyTypeID }
+        DESCRIPTION
+                "This trap will be sent when one of the power supplies
+                 is removed, i.e. it enters the 'not-present' status.
+                 The component number and the index of the removed power supply
+                 is sent along with  this trap."
+        REFERENCE
+                "PANDATEL-CHASSIS-MIB, PowerSupplyRemoved event notification."
+        ::= 22
+
+powerSupplyFailed TRAP-TYPE
+        ENTERPRISE  chassis
+        VARIABLES   { psupplyTypeID }
+        DESCRIPTION
+                "This trap will be sent when one of the power supplies
+                 enters the 'fail' status.
+                 The component number and the index of the failing power supply
+                 is sent along with this trap."
+        REFERENCE
+                "PANDATEL-CHASSIS-MIB, PowerSupplyFailed event notification."
+        ::= 23
+
+powerSupplyRecovered TRAP-TYPE
+        ENTERPRISE  chassis
+        VARIABLES   { psupplyTypeID }
+        DESCRIPTION
+                "This trap will be sent when one of the power supplies
+                 leaves the 'fail' status and enters the 'up' status.
+                 If the 'fail' status is left because the power supply has
+                 been removed, a powerSupplyRemoved trap type will be sent
+                 instead.
+                 The component number and the index of the recovering power
+                 supply is sent along with this trap."
+        REFERENCE
+                "PANDATEL-CHASSIS-MIB, PowerSupplyRecovered event notification."
+        ::= 24
+
+END

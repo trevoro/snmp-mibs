@@ -1,0 +1,755 @@
+-- extracted from draft-turner-adslmib-cpeautoconf-00.txt
+-- at Mon Nov 15 17:11:30 1999
+
+       RBBPROVISIONING-MIB DEFINITIONS ::= BEGIN
+
+        IMPORTS
+	TEXTUAL-CONVENTION FROM SNMPv2-TC
+           NOTIFICATION-TYPE, MODULE-IDENTITY, OBJECT-TYPE,
+           Counter32, Integer32, IpAddress, mib-2, enterprises
+               FROM SNMPv2-SMI
+           DisplayString,  TruthValue
+               FROM SNMPv2-TC
+           MODULE-COMPLIANCE, OBJECT-GROUP
+               FROM SNMPv2-CONF
+           InterfaceIndex, ifIndex
+               FROM IF-MIB
+           AtmAddr, AtmConnKind, AtmConnCastType,
+           AtmServiceCategory, AtmTrafficDescrParamIndex,
+           AtmVpIdentifier, AtmVcIdentifier
+               FROM ATM-TC-MIB;
+
+
+        rbbProvMIB MODULE-IDENTITY
+             LAST-UPDATED "9909271200Z"
+             ORGANIZATION "IETF ADSL MIB Working Group"
+             CONTACT-INFO
+               "          Randy Turner
+                 Postal:  2Wire, Inc.
+                          694 Tasman Dr.
+                          Milpitas, CA 95035
+                 Tel:     408-895-1216
+                 Fax:     408-428-9590
+                 E-mail:  rturner@2wire.com"
+             DESCRIPTION
+              "This is the MIB Module for provisioning of broadband
+               customer premises equipment, specifically xDSL-related
+               services. While not precluding other broadband
+               technology, the MIB has been constructed around existing
+               xDSL facilities, including ATM transports."
+
+             ::= { enterprises 4839 32 }
+
+
+
+        RBBServiceID ::= TEXTUAL-CONVENTION
+                STATUS  current
+                DESCRIPTION
+                  "A globally unique OID that unambiguously specifies
+                   a particular service, and as much protocol and
+                   semantics as is necessary to access the service"
+
+                SYNTAX  OBJECT IDENTIFIER
+
+        RBBServiceName ::= TEXTUAL-CONVENTION
+                STATUS  current
+                DESCRIPTION
+                  "A string denoting the same information as RBBServiceOID,
+                   except this object is in human-readable form."
+                   SYNTAX   DisplayString (SIZE(0..64))
+
+        RBBServiceProvider ::= TEXTUAL-CONVENTION
+                STATUS  current
+                DESCRIPTION
+                  "A human-readable string representing the name of
+                   the private or public entity that is making the
+                   service available. For a typical internet service
+                   provider (ISP), this would be the name of the
+                   ISP company itself"
+                SYNTAX  DisplayString (SIZE(0..64))
+
+        RBBServiceStatus ::= TEXTUAL-CONVENTION
+                STATUS  current
+                DESCRIPTION
+                  "An enumeration representing the current state of
+                   a particular service availability or service
+                   subscription (i.e., up, down, enabled, etc.)"
+                SYNTAX INTEGER {
+   	                       other(1),
+   			       up(2),
+   			       down(3),
+   			       adminDown(4)
+   			    }
+
+        RBBURLType ::= TEXTUAL-CONVENTION
+                STATUS  current
+                DESCRIPTION
+                  "An octet string containing a uniform resource
+                   locator (URL). The usage of this URL is object-
+                   context dependent. See individual object
+                   descriptions that reference this textual convention"
+                SYNTAX DisplayString (SIZE(0..128))
+
+        RBBCPEAuthType ::= TEXTUAL-CONVENTION
+                STATUS current
+                DESCRIPTION
+                  "An opaque string used to identify a particular subscriber.
+                  Currently, this MIB does not specify how authentication
+                  strings are generated. This is still an open issue."
+   	     SYNTAX OCTET STRING (SIZE(0..64))
+
+        RBBMailAddr ::= TEXTUAL-CONVENTION
+                STATUS  current
+                DESCRIPTION
+                  "The email address (user@domain) of a contact that is
+                   responsible for some entity that references this
+                   textual convention, such as the administrator for an
+                   access network, or the email address of the admin for
+                   a particular service provider"
+                SYNTAX DisplayString (SIZE(0..64))
+
+        RBBCPESerialNumber ::= TEXTUAL-CONVENTION
+                STATUS  current
+   	     DESCRIPTION
+   	       "Define the syntax of a product serial number"
+   	     SYNTAX DisplayString (SIZE(0..32))
+
+        RBBVendorModel ::= TEXTUAL-CONVENTION
+                STATUS  current
+                DESCRIPTION
+                  "Define the syntax of a CPE vendor model"
+                SYNTAX DisplayString (SIZE(0..64))
+
+
+        RowStatus ::= TEXTUAL-CONVENTION
+                STATUS       current
+                DESCRIPTION
+   	       ""
+                SYNTAX       INTEGER {
+                        -- the following two values are states:
+                        -- these values may be read or written
+                        active(1),
+                        notInService(2),
+
+                        -- the following value is a state:
+                        -- this value may be read, but not written
+                        notReady(3),
+
+                        -- the following three values are
+                        -- actions: these values may be written,
+                        --   but are never read
+                        createAndGo(4),
+                        createAndWait(5),
+                        destroy(6)
+                    }
+
+
+
+        rbbProvMIBObjects  OBJECT IDENTIFIER ::= {rbbProvMIB 1}
+        rbbServicesGroup OBJECT IDENTIFIER ::= { rbbProvMIBObjects 1 }
+        rbbSubGroup OBJECT IDENTIFIER ::= { rbbProvMIBObjects 2 }
+        rbbCPEGroup OBJECT IDENTIFIER ::= { rbbProvMIBObjects 3 }
+        rbbVendorGroup OBJECT IDENTIFIER ::= { rbbProvMIBObjects 4 }
+        rbbNotifyGroup OBJECT IDENTIFIER ::= { rbbProvMIBObjects 12 }
+
+
+        -- The MIB consists of five groups
+        -- 1) The Services Group
+        -- 2) The Subscription Group
+        -- 3) The CPE Group
+        -- 4) The Vendor-Equipment Group
+        -- 5) and the Notification Group
+
+   --
+   -- Define the Services Group
+   --
+
+        srvServicesTable  OBJECT-TYPE
+             SYNTAX         SEQUENCE OF SRVServiceEntry
+             MAX-ACCESS     not-accessible
+             STATUS         current
+             DESCRIPTION
+              "This table contains a sequence of rows where each
+               row describes a particular service that is available
+               to a broadband customer. The service availability expressed
+               in this table is assumed to be valid only for customers
+               served by this management infrastructure, and may
+               differ on a regional basis, even within the same overall
+               access network."
+             ::= { rbbServicesGroup 1 }
+
+        srvServiceEntry    OBJECT-TYPE
+             SYNTAX         SRVServiceEntry
+             MAX-ACCESS     not-accessible
+             STATUS         current
+             DESCRIPTION
+              "This object defines the individual rows in the SRV
+               services table (srvServicesTable)"
+             INDEX { srvServiceIdentifier }
+             ::= { srvServicesTable  1}
+
+        SRVServiceEntry    ::= SEQUENCE  {
+             srvServiceIdentifier            RBBServiceID,
+             srvServiceName                  RBBServiceName,
+             srvServiceProvider              RBBServiceProvider,
+             srvServiceStatus                RBBServiceStatus,
+             srvServiceConnType              AtmConnKind,
+             srvServiceQOSType               INTEGER,
+             srvServiceSpeedReq              INTEGER,
+             srvServiceLatencyReq            INTEGER,
+             srvServiceURL                   RBBURLType,
+             srvServiceDescr                 DisplayString,
+             srvAdminContact                 RBBMailAddr,
+             srvRowInfo			  RowStatus
+                  }
+
+
+        srvServiceIdentifier  OBJECT-TYPE
+             SYNTAX           RBBServiceID
+             MAX-ACCESS       read-create
+             STATUS           current
+             DESCRIPTION
+               "A unique object identifier (OID) value uniquely
+               representing a particular service."
+             ::= { srvServiceEntry 1 }
+
+        srvServiceName OBJECT-TYPE
+             SYNTAX         RBBServiceName
+             MAX-ACCESS     read-create
+             STATUS         current
+             DESCRIPTION
+              "A human-readable name string that identifies
+               a service to an end-user"
+             ::= { srvServiceEntry 2 }
+
+        srvServiceProvider  OBJECT-TYPE
+             SYNTAX         RBBServiceProvider
+             MAX-ACCESS     read-create
+             STATUS         current
+             DESCRIPTION
+               "A human-readable name string that identifies the
+               public or private sponsoring entity for a particular
+               service."
+             ::= { srvServiceEntry 3 }
+
+        srvServiceStatus  OBJECT-TYPE
+             SYNTAX         RBBServiceStatus
+             MAX-ACCESS     read-create
+             STATUS         current
+             DESCRIPTION
+               "An INTEGER enumeration describing the current
+                availability status of a particular service.
+
+                NOTE: This status implies different semantics
+                than that used by srvServiceSubrStatus"
+             ::= { srvServiceEntry 4 }
+
+        srvServiceConnType  OBJECT-TYPE
+             SYNTAX         AtmConnKind
+             MAX-ACCESS     read-create
+             STATUS         current
+             DESCRIPTION
+               "An enumerated value describing the type of
+                endpoint address used to refer to a particular
+                service, as well as whether the CPE should be
+                an initiator or target during the connection."
+             ::= { srvServiceEntry 5 }
+
+        srvServiceQOSType   OBJECT-TYPE
+             SYNTAX         INTEGER
+             MAX-ACCESS     read-create
+             STATUS         current
+             DESCRIPTION
+               "The quality-of-service to be associated with a
+               connection to a particular service."
+             ::= { srvServiceEntry 6 }
+
+        srvServiceSpeedReq  OBJECT-TYPE
+             SYNTAX         INTEGER
+             MAX-ACCESS     read-create
+             STATUS         current
+             DESCRIPTION
+               "The bandwidth or speed (in bits-per-second) necessary
+                to realize a particular service"
+             ::= { srvServiceEntry 7 }
+
+        srvServiceLatencyReq  OBJECT-TYPE
+             SYNTAX         INTEGER  {
+   	                             high(1),
+   				     med(2),
+   				     low(3)
+   				  }
+             MAX-ACCESS     read-create
+             STATUS         current
+             DESCRIPTION
+               "An enumerated value that describes whether or not a
+                particular service has special latency requirements
+                associated to effectively realize the service."
+             ::= { srvServiceEntry 8 }
+
+        srvServiceURL        OBJECT-TYPE
+             SYNTAX          RBBURLType
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+               "A URL string associated with a particular service. A
+                service may be provisioned with an associated URL that
+                can be used either as a provisioning link or as a
+                potentially advertising source for the service."
+             ::= { srvServiceEntry 9 }
+
+        srvServiceDescr      OBJECT-TYPE
+             SYNTAX          DisplayString (SIZE(0..256))
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+               "A human-readable string used to provide a brief
+                description for a particular service."
+             ::= { srvServiceEntry 10 }
+
+        srvAdminContact      OBJECT-TYPE
+             SYNTAX          RBBMailAddr
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+               "A string representing the email address of an
+               administrator contact for the particular service. This
+               could either be a contact used to request new service
+               or options associated with the service, OR, could be
+               used as a support contact address for an existing
+               subscription."
+             ::= { srvServiceEntry 11 }
+
+        srvRowInfo           OBJECT-TYPE
+             SYNTAX          RowStatus
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+               "Maintains row status information for this table"
+             ::= { srvServiceEntry 12 }
+
+
+   --
+   -- Broadband Service Subscription Group
+   --
+
+        rbbSubTable  OBJECT-TYPE
+             SYNTAX         SEQUENCE OF RBBSubEntry
+             MAX-ACCESS     not-accessible
+             STATUS         current
+             DESCRIPTION
+              "This table contains a sequence of rows where each
+               row describes a particular service subscription
+               between an end-user CPE and a particular service."
+             ::= { rbbSubGroup 1 }
+
+        rbbSubEntry    OBJECT-TYPE
+             SYNTAX         RBBSubEntry
+             MAX-ACCESS     not-accessible
+             STATUS         current
+             DESCRIPTION
+              "This object defines the individual rows in the
+               subscription table (rbbSubTable)"
+             INDEX { rbbSubVendor, rbbSubModel, rbbSubSerialNumber, rbbSubServiceIdentifier }
+             ::= { rbbSubTable  1}
+
+        RBBSubEntry    ::= SEQUENCE  {
+   	  rbbSubVendor			     OBJECT IDENTIFIER,
+   	  rbbSubModel		             RBBVendorModel,
+   	  rbbSubSerialNumber		     DisplayString,
+             rbbSubServiceIdentifier            RBBServiceID,
+             rbbSubVPI                          AtmVpIdentifier,
+             rbbSubVCI                          AtmVcIdentifier,
+             rbbSubAddr                         AtmAddr,
+             rbbSubStatus                       RBBServiceStatus,
+             rbbSubRowInfo                      RowStatus
+                  }
+
+
+        rbbSubVendor OBJECT-TYPE
+             SYNTAX     OBJECT IDENTIFIER
+   	  MAX-ACCESS read-create
+   	  STATUS     current
+   	  DESCRIPTION
+   	    "The Vendor part of the index that uniquely identifies this CPE"
+   	  ::= { rbbSubEntry 1 }
+
+        rbbSubModel  OBJECT-TYPE
+             SYNTAX     RBBVendorModel
+   	  MAX-ACCESS read-create
+   	  STATUS     current
+   	  DESCRIPTION
+   	    "The Model part of the index that uniquely identifies a CPE"
+   	  ::= { rbbSubEntry 3 }
+
+        rbbSubSerialNumber OBJECT-TYPE
+             SYNTAX     DisplayString
+   	  MAX-ACCESS read-create
+   	  STATUS     current
+   	  DESCRIPTION
+   	    "The serial number part of the index that uniquely identifies a CPE"
+   	  ::= { rbbSubEntry 4 }
+
+        rbbSubServiceIdentifier  OBJECT-TYPE
+             SYNTAX     RBBServiceID
+             MAX-ACCESS read-create
+             STATUS     current
+             DESCRIPTION
+               "An Index value referring to an entry in the rbbServicesTable.
+                This is the service-side in the customer/service subscription
+                association."
+
+             ::= { rbbSubEntry 5 }
+
+        rbbSubVPI   OBJECT-TYPE
+             SYNTAX     AtmVpIdentifier
+             MAX-ACCESS read-create
+             STATUS     current
+             DESCRIPTION
+               "The virtual path identifier to be used in the establishment
+                of a PVC to a particular service, if the service is PVC-
+                based."
+             ::= { rbbSubEntry 6 }
+
+        rbbSubVCI   OBJECT-TYPE
+             SYNTAX     AtmVcIdentifier
+             MAX-ACCESS read-create
+             STATUS     current
+             DESCRIPTION
+               "The virtual circuit identifier to be used in the
+               establishment of a PVC to a particular service, if the service
+               is PVC-based."
+             ::= { rbbSubEntry 7 }
+
+        rbbSubAddr  OBJECT-TYPE
+             SYNTAX     AtmAddr
+             MAX-ACCESS read-create
+             STATUS     current
+             DESCRIPTION
+               "The end-system address to be used in the establishment of
+               an SVC to a particular service, if the service is SVC-based."
+             ::= { rbbSubEntry 8 }
+
+        rbbSubStatus   OBJECT-TYPE
+             SYNTAX    RBBServiceStatus
+             MAX-ACCESS  read-create
+             STATUS      current
+             DESCRIPTION
+               "The current status of this subscription, currently defined
+                as up, down, or suspended."
+             ::= { rbbSubEntry 9 }
+
+        rbbSubRowInfo	OBJECT-TYPE
+             SYNTAX        RowStatus
+             MAX-ACCESS    read-create
+             STATUS        current
+             DESCRIPTION
+               ""
+             ::= { rbbSubEntry 10 }
+
+   --
+   -- Broadband CPE Group
+   --
+
+        rbbCPETable  OBJECT-TYPE
+             SYNTAX         SEQUENCE OF RBBCPEEntry
+             MAX-ACCESS     not-accessible
+             STATUS         current
+             DESCRIPTION
+              "This table contains a sequence of rows where each
+               row describes a particular CPE that has identified
+               itself to the management framework."
+             ::= { rbbCPEGroup 1 }
+
+        rbbCPEEntry    OBJECT-TYPE
+             SYNTAX         RBBCPEEntry
+             MAX-ACCESS     not-accessible
+             STATUS         current
+             DESCRIPTION
+              "This object defines the individual rows in the
+               CPE table (rbbCPETable)"
+             INDEX { rbbVendorOID, rbbVendorModel, rbbCPESerialNumber }
+             ::= { rbbCPETable 1}
+
+        RBBCPEEntry    ::= SEQUENCE  {
+                     rbbCPEAuthValue         RBBCPEAuthType,
+                     rbbCPEVendorOID         OBJECT IDENTIFIER,
+   		  rbbCPEVendorModel       RBBVendorModel,
+                     rbbCPEStatus            INTEGER,
+                     rbbCPESubCount          INTEGER,
+                     rbbCPESubAggrSpeed      INTEGER,
+                     rbbCPECustContact       RBBMailAddr,
+                     rbbCPESerialNumber      RBBCPESerialNumber,
+                     rbbCPETrapEnable        INTEGER,
+                     rbbCPECurrentImage      RBBURLType,
+   		  rbbCPEIpAddress	  IpAddress,
+                     rbbCPERowInfo           RowStatus
+                  }
+
+
+        rbbCPEAuthValue  OBJECT-TYPE
+             SYNTAX     RBBCPEAuthType
+             MAX-ACCESS read-create
+             STATUS     current
+             DESCRIPTION
+               "A unique identifier that uniquely identifies a particular
+                customer or end-user"
+             ::= { rbbCPEEntry 1 }
+
+        rbbCPEVendorOID    OBJECT-TYPE
+             SYNTAX        OBJECT IDENTIFIER
+             MAX-ACCESS    read-create
+             STATUS        current
+             DESCRIPTION
+               "A unique object identifier that identifies a particular
+                CPE vendor"
+             ::= { rbbCPEEntry 2 }
+
+        rbbCPEVendorModel  OBJECT-TYPE
+             SYNTAX        RBBVendorModel
+   	  MAX-ACCESS    read-create
+   	  STATUS        current
+   	  DESCRIPTION
+   	    ""
+   	  ::= { rbbCPEEntry 3 }
+
+        rbbCPEStatus       OBJECT-TYPE
+             SYNTAX        INTEGER
+             MAX-ACCESS    read-create
+             STATUS        current
+             DESCRIPTION
+               "An integer enumeration that identifies the current status
+                of the CPE device"
+             ::= { rbbCPEEntry 4 }
+
+        rbbCPESubCount     OBJECT-TYPE
+             SYNTAX        INTEGER
+             MAX-ACCESS    read-create
+             STATUS        current
+             DESCRIPTION
+               "An integer value representing the number of service
+               subscriptions that exist in the subscription table for this
+               customer"
+             ::= { rbbCPEEntry 5 }
+
+        rbbCPESubAggrSpeed   OBJECT-TYPE
+             SYNTAX          INTEGER
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+               "The total aggregate bandwidth required by all active
+               subscriptions for this CPE customer."
+             ::= { rbbCPEEntry 6 }
+
+        rbbCPECustContact    OBJECT-TYPE
+             SYNTAX          RBBMailAddr
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+               "The email address for the individual at the customer
+               premises that is responsible for the broadband service."
+             ::= { rbbCPEEntry 7 }
+
+        rbbCPESerialNumber   OBJECT-TYPE
+             SYNTAX          RBBCPESerialNumber
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+               "The unique hardware address or serial number associated
+                with the CPE"
+             ::= { rbbCPEEntry 8 }
+
+        rbbCPETrapEnable     OBJECT-TYPE
+             SYNTAX          INTEGER
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+               "A boolean value representing whether or not service-related
+                traps are enabled or disabled for this CPE device."
+             ::= { rbbCPEEntry 9 }
+
+        rbbCPECurrentImage   OBJECT-TYPE
+             SYNTAX          RBBURLType
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+                "A URL string pointing to the current image that is installed
+                in this particular CPE/customer site"
+             ::= { rbbCPEEntry 10 }
+
+        rbbCPEIpAddress      OBJECT-TYPE
+             SYNTAX          IpAddress
+   	  MAX-ACCESS      read-create
+   	  STATUS          current
+   	  DESCRIPTION
+   	    ""
+   	  ::= { rbbCPEEntry 11 }
+
+        rbbCPERowInfo        OBJECT-TYPE
+             SYNTAX          RowStatus
+             MAX-ACCESS      read-create
+             STATUS          current
+             DESCRIPTION
+                ""
+             ::= { rbbCPEEntry 12 }
+
+
+   --
+   -- Vendor Group
+   --
+
+        rbbVendorTable    OBJECT-TYPE
+              SYNTAX      SEQUENCE OF RBBVendorEntry
+              MAX-ACCESS  not-accessible
+              STATUS      current
+              DESCRIPTION
+                "Vendor table describing types of CPE supported, and
+                 associated CPE management details."
+              ::= { rbbVendorGroup 1 }
+
+        rbbVendorEntry    OBJECT-TYPE
+              SYNTAX      RBBVendorEntry
+              MAX-ACCESS  not-accessible
+              STATUS      current
+              DESCRIPTION
+                "Each row describes a particular vendor model of CPE"
+              INDEX { rbbVendorOID, rbbVendorModel }
+              ::= { rbbVendorTable 1 }
+
+        RBBVendorEntry ::= SEQUENCE {
+                              rbbVendorOID           OBJECT IDENTIFIER,
+                              rbbVendorModel         RBBVendorModel,
+                              rbbVendorImageURL      RBBURLType,
+                              rbbVendorRowInfo       RowStatus
+                           }
+
+        rbbVendorOID           OBJECT-TYPE
+              SYNTAX           OBJECT IDENTIFIER
+              MAX-ACCESS       read-create
+              STATUS           current
+              DESCRIPTION
+                "A unique object identifier value associated with a particular
+                 vendor of CPE"
+              ::= { rbbVendorEntry 1 }
+
+        rbbVendorModel        OBJECT-TYPE
+              SYNTAX          RBBVendorModel
+              MAX-ACCESS      read-create
+              STATUS          current
+              DESCRIPTION
+                "A human-readable string representing the model number for a
+                 particular vendor's CPE device"
+              ::= { rbbVendorEntry 2 }
+
+
+        rbbVendorImageURL          OBJECT-TYPE
+              SYNTAX               RBBURLType
+              MAX-ACCESS           read-create
+              STATUS               current
+              DESCRIPTION
+                "A URL string representing the most current version of firmware
+                available for this CPE model"
+              ::= { rbbVendorEntry 3 }
+
+        rbbVendorRowInfo           OBJECT-TYPE
+              SYNTAX               RowStatus
+              MAX-ACCESS           read-create
+              STATUS               current
+              DESCRIPTION
+                ""
+              ::= { rbbVendorEntry 4 }
+
+   --
+   -- MIB Serial numbers. These serial numbers are incremented each time a change is made to one
+   -- of the MIB groups. CPE devices can monitor these values to determine whether or not the CPE
+   -- needs to re-synchronize its' provisioning information. There is one serial number for each
+   -- group.
+   --
+        rbbSrvGrpSerialNumber       OBJECT-TYPE
+              SYNTAX            Counter32
+              MAX-ACCESS        read-only
+              STATUS            current
+              DESCRIPTION
+                 ""
+              ::= { rbbProvMIBObjects 5 }
+
+        rbbSubGrpSerialNumber        OBJECT-TYPE
+              SYNTAX            Counter32
+              MAX-ACCESS        read-only
+              STATUS            current
+              DESCRIPTION
+                ""
+              ::= { rbbProvMIBObjects 6 }
+
+        rbbCPEGrpSerialNumber        OBJECT-TYPE
+              SYNTAX                 Counter32
+              MAX-ACCESS             read-only
+              STATUS                 current
+              DESCRIPTION
+                ""
+              ::= { rbbProvMIBObjects 7 }
+
+        rbbVendorGrpSerialNumber        OBJECT-TYPE
+              SYNTAX                 Counter32
+              MAX-ACCESS             read-only
+              STATUS                 current
+              DESCRIPTION
+                ""
+              ::= { rbbProvMIBObjects 8 }
+
+
+
+   rbbSubNotify NOTIFICATION-TYPE
+   	OBJECTS { rbbSubVendor, rbbSubModel, rbbSubSerialNumber, rbbSubServiceIdentifier }
+   	STATUS current
+   	DESCRIPTION
+           "This notification indicates that a new subscription
+           has been added to, or when a subscription has been deleted
+           from the rbbSubTable in the rbbSubGroup. The notification
+           includes which specific index was added so that the manager
+           does not have to implement a search for changes."
+   	::= { rbbNotifyGroup 1 }
+
+
+   rbbPowerUpNotify NOTIFICATION-TYPE
+           OBJECTS { rbbCPEVendorOID, rbbCPEVendorModel, rbbCPESerialNumber }
+   	STATUS  current
+   	DESCRIPTION
+   	  ""
+   	::= { rbbNotifyGroup 2 }
+
+
+
+
+
+
+   END
+
+-- 
+--    Copyright (C) The Internet Society (1999). All Rights Reserved.
+-- 
+--    This document and translations of it may be copied and furnished to
+--    others, and derivative works that comment on or otherwise explain it
+--    or assist in its implmentation may be prepared, copied, published
+--    and distributed, in whole or in part, without restriction of any
+--    kind, provided that the above copyright notice and this paragraph
+--    are included on all such copies and derivative works. However, this
+--    document itself may not be modified in any way, such as by removing
+--    the copyright notice or references to the Internet Society or other
+--    Internet organizations, except as needed for the purpose of
+--    developing Internet standards in which case the procedures for
+--    copyrights defined in the Internet Standards process must be
+--    followed, or as required to translate it into languages other than
+--    English.
+-- 
+--    The limited permissions granted above are perpetual and will not be
+--    revoked by the Internet Society or its successors or assigns.
+-- 
+--    This document and the information contained herein is provided on an
+--    "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING
+--    TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+--    BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION
+--    HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF
+--    MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+-- 
+

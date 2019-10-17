@@ -1,0 +1,1029 @@
+-- Based on Network Address Client (NAC) MIB file, mcmnac.mib (access device Rlse 1.1), 
+-- and Remote Server Interface (RSI) Design Document (Rev 1.4, dated 4/30/97).
+-- 
+-- MIB Revision : 1.0 dated 6-3-97
+-- Change Desc. : Initial submittal - R. Carmona. 
+-- 
+-- MIB Revision : 1.1 dated 7-15-97
+-- Change Desc. : Changed RSI Cache table, mcmRSICacheCfgTable, CAPABILITIES
+--		  field declaration to 'NET_DISP, VPN_DISP'.  Purpose is to
+--		  disable user capability to add 'static' RSI Cache entries
+--		  to table for 4400 2.0 as per e-mail from P. Lupo, 7/11/97.
+--		  'Static' entries may still be 'hard coded' by software
+--		  developer (for test purposes) and these entries may still
+--		  be read by a user from the RSI Cache table.
+--
+-- MIB Revision : 1.2 dated 7-24-97
+-- Change Desc. : Changed SIZE range of Server Name and CUGIC fields to allow
+--		  for null strings as per e-mail from P. Lupo on 7/23/97.
+--		  (Allows the user to not configure these objects for an
+--		  existing row in the RSI Server tables.)  -R. Carmona
+--
+-- MIB Revision : 1.3 dated 10-10-97
+-- Change Desc. : Changed MPA to 4400, and deleted the 
+--                'mcmRSICacheCfgEntryRowStatus' object based on mutual
+--                agreement with Paul Lupo, plus other minor changes - B. Jafari.
+--
+-- MIB Revision : 1.4 dated 10-27-97
+-- Change Desc. : Several modifications based on pre-release development
+--                requirements, including deletion of redundant objects,
+--                and minor syntax corrections. - B. Jafari
+--               
+-- MIB Revision : 1.5 Dated 10-30-97
+-- Change Desc. : Removed mcmRSIServerUsageStatus object from the mcmRSIServer
+--		  table. - K. Yeh
+--               
+-- MIB Revision : 1.6 Dated 11-25-97
+-- Change Desc. : Removed all remaining references to static entries throughout
+--		  the MIB and deleted the nvmRSICacheCfgTable. - B. Jafari
+--
+-- MIB Revision : 1.7 Dated 2-23-98
+-- Change Desc. : Added mcmRSIServerDNAAddr to the varbind list for 
+--		  mcmAlarmRsiRSAIsDown and mcmAlarmRsiRSAIsUp.
+--
+-- *** RELEASE 3.0 ***
+-- MIB Revision : 1.8 dated 6-24-98
+-- Change Desc. : Removed and/or replaced "4400" with 
+--				  "access device" wherever possible.
+--				  Added the enumeration "active" and
+--				  changed the access to read-write for
+--				  the row status object, nvmRSIServerEntryRowStatus 
+--				  Obsoleted the counter reset object,
+--				  mcmRSICounterResetCmd. -A. Llanes 
+--
+-- MIB Revision : 1.9 dated 11-02-98
+-- Change Desc. : Add Severity Levels to Traps.
+--					-F. Kottab
+--
+MICOM-RSI-MIB DEFINITIONS ::= BEGIN
+	IMPORTS
+		Counter 
+				FROM RFC1155-SMI
+		OBJECT-TYPE
+				FROM RFC-1212
+		TRAP-TYPE
+				FROM RFC-1215
+		mcmSysAsciiTimeOfDay
+				FROM MICOM-SYS-MIB
+		DisplayString 
+				FROM SNMPv2-TC
+		micom-oscar 
+				FROM MICOM-OSCAR-MIB;
+
+
+-- group OBJECT IDENTIFIERs
+
+	micom-rsi			OBJECT IDENTIFIER ::= {micom-oscar 23}
+	rsi-configuration		OBJECT IDENTIFIER ::= {micom-rsi 1}
+	rsi-control			OBJECT IDENTIFIER ::= {micom-rsi 2}
+	rsi-statistics			OBJECT IDENTIFIER ::= {micom-rsi 3}
+
+
+-- *** CONFIGURATION groups/tables ***
+
+-- Note: The following groups contain 2 related groups/tables for all configuration
+--       functionality. 
+--	 1) The Standard or Operational Parameters (Operational) provide the
+--	 SNMP management interface with the access device operational modules.
+--	 Objects defined for this interface begin with the 'mcm' prefix.
+--	 2) The Configuration Parameters (Configuration) provide the SNMP 
+--	 management interface with a stored access device configuration. 
+--	 Objects defined for this interface begin with the 'nvm' prefix.
+--	
+
+
+--  Operational Parameter ("mcm") Groups/Tables
+
+
+--  the RSI System Define Parameters Configuration Group 
+--  (Standard/Operational Parameters)
+
+--  This group provides the RSI system configuration parameters
+--  applicable to the RSI task as a whole.  The objects belonging to 
+--  this group are 'Definable'.
+
+mcmRSISysCfgDefGroup  OBJECT IDENTIFIER ::= { rsi-configuration 1 }
+
+mcmRSISysCfgDefVNCSInstance OBJECT-TYPE
+	SYNTAX	INTEGER (1..16)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object provides a unique \
+		  VNCS identifier. (Operational);
+	   HELP = This allows multiple VNCS databases to \
+		  exist in the Passport.;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { 1 }
+	::= { mcmRSISysCfgDefGroup 1 }
+
+mcmRSISysCfgDefNumCacheEntries OBJECT-TYPE
+	SYNTAX	INTEGER (20..100)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the \
+		  maximum number of Address Resolutions \
+		  to be cached in memory. (Operational);
+	   HELP = If this value is very high, the free \
+		  memory space on the unit will be reduced \
+		  which may affect the unit's performance. \
+		  A very low value may cause the unit to \
+		  frequently consult the server if diverse \
+		  numbers are dialed, defeating the purpose \
+		  of having a local cache.  The optimum value \
+		  will depend on the network size and the \
+		  number of frequently dialed DNs. It is \
+		  recommended to start with the default value \
+		  (30) and tune it to the optimum value \
+		  by observing the performance.;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { 30 }
+	::= { mcmRSISysCfgDefGroup 2 }
+
+
+--  the RSI System Set Parameters Configuration Group 
+--  (Standard/Operational Parameters)
+
+--  This group provides the RSI system configuration parameters
+--  applicable to the RSI task as a whole.  The objects belonging to 
+--  this group are 'Setable'.
+
+mcmRSISysCfgSetGroup  OBJECT IDENTIFIER ::= { rsi-configuration 2 }
+
+mcmRSISysCfgSetAddrResRetries OBJECT-TYPE
+	SYNTAX	INTEGER (1..5)
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the \
+		  number of times an address resolution \
+		  request is sent to the RSA to get a DNA \
+		  address. (Operational);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	DEFVAL { 3 }
+	::= { mcmRSISysCfgSetGroup 1 }
+
+mcmRSISysCfgSetAddrResTimeout OBJECT-TYPE
+	SYNTAX	INTEGER (5..30)
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the \
+		  timeout period (in tenths of a second), after \
+		  which, an address resolution request will be \
+		  resent to the RSA (in case the previous one \
+		  is not answered). (Operational);
+	   HELP = Setting a very low value in a \
+		  heavily loaded network would result in \
+		  transmissions of multiple requests \
+		  further increasing the network load. \
+		  It is recommended to tune this value \
+		  by considering the network load and \
+		  performance.;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	DEFVAL { 15 }
+	::= { mcmRSISysCfgSetGroup 2 }
+
+mcmRSISysCfgSetAddrCacheStatus OBJECT-TYPE
+	SYNTAX	INTEGER {
+		disabled (1),
+		enabled (2),
+		flush (3)
+		}
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the \
+		  ability to enable or disable caching of \
+		  previously resolved addresses.  Also, the \
+		  capability to remove previously resolved \
+		  addresses from the cache is provided. \
+		  (Configuration);
+	   HELP = It is recommended that caching be enabled \
+		  as it helps relieve the load on the server, \
+		  reduces network traffic, speeds up address \
+		  resolution, and hence call-setup. \
+		  Flushing of cache is recommended if the \
+		  network configuration has changed resulting \
+		  in changes in DNAs and/or DNs, rendering \
+		  the previously cached resolutions incorrect.;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	DEFVAL { enabled }
+	::= { mcmRSISysCfgSetGroup 3 }
+
+
+--  the RSI Cache Configuration Table 
+--  (Standard/Operational Parameters)
+
+--  This table provides the RSI cache configuration parameters
+--  applicable to the RSI local cache.
+
+mcmRSICacheCfgTable OBJECT-TYPE
+	SYNTAX	SEQUENCE OF McmRSICacheCfgEntry
+	ACCESS	not-accessible
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The RSI Cache Configuration Table. \
+		  (Operational) ;
+	   HELP = ;
+	   CAPABILITIES = NET_DISP, VPN_DISP ;"
+	::= {rsi-configuration 3 }
+
+mcmRSICacheCfgEntry OBJECT-TYPE
+	SYNTAX	McmRSICacheCfgEntry
+	ACCESS	not-accessible
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the RSI Cache Configuration \
+		  Table. (Operational) ;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX  {mcmRSICacheCfgDNDigits}
+	::= {mcmRSICacheCfgTable 1}
+
+McmRSICacheCfgEntry ::= SEQUENCE {
+	mcmRSICacheCfgDNDigits		DisplayString,
+	mcmRSICacheCfgDNAAddr		DisplayString,
+	mcmRSICacheCfgProfileNumber	INTEGER,
+	mcmRSICacheCfgNumberOfHits	Counter,
+	mcmRSICacheCfgServerDNA		DisplayString
+	}
+
+mcmRSICacheCfgDNDigits OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(1..40))
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The RSI cache DN digits specifies the dialing \
+		  number sequence which is resolved to a DNA. \
+		  Used as the index to the RSI Cache Configuration \
+		  table. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmRSICacheCfgEntry 1 }
+
+mcmRSICacheCfgDNAAddr OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(1..40))
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object designates the DNA \
+		  address of the destination unit for the specified \
+		  DN digit string. (Operational);
+	   HELP = Note: DNA is used by Nortel to identify \
+		  services in a given Magellan Passport Network.;
+	   CAPABILITIES = ;"
+	::= { mcmRSICacheCfgEntry 2 }
+
+mcmRSICacheCfgProfileNumber OBJECT-TYPE
+	SYNTAX	INTEGER (1..16)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object designates the number \
+		  of the Profile associated with this entry. \
+		  (Operational) ;
+	   HELP = The Passport uses a Profile to assign call \
+		  parameters. This is the number that identifies \
+		  this profile.;
+	   CAPABILITIES = ;"
+	::= { mcmRSICacheCfgEntry 3 }
+
+
+mcmRSICacheCfgNumberOfHits OBJECT-TYPE
+	SYNTAX	Counter 
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the \
+		  number of times this entry was used \
+		  by this unit for resolving dialed digits. \
+		  (Operational);
+	   HELP = This value is useful in identifying \
+		  frequently dialed numbers;
+	   CAPABILITIES = ;"
+	::= { mcmRSICacheCfgEntry 4 }
+
+mcmRSICacheCfgServerDNA OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(1..40))
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the DNA \
+		  address of the server which resolved this entry. \
+		  Value of this object is valid only when \
+		  EntryType is 'learned'. (Operational) ;
+	   HELP = The DNA is unique to a given server.  This \
+		  object helps in tracking the address resolution \
+		  by a particular server. A DNA is used by \
+		  Nortel to identify services in a given Magellan \
+		  Passport Network.;
+	   CAPABILITIES = ;"
+	::= { mcmRSICacheCfgEntry 5 }
+
+--  the RSI Server (RSA) Configuration (and Status) Table 
+--  (Standard/Operational Parameters)
+
+--  This table provides the RSI Server configuration parameters
+--  applicable to the RSI-RSA interface.  
+
+mcmRSIServerTable OBJECT-TYPE
+	SYNTAX	SEQUENCE OF McmRSIServerEntry
+	ACCESS	not-accessible
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The RSI Server Configuration Table. \
+		  (Operational) ;
+	   HELP = This table provides the list of servers this \
+		  unit can use to request address resolutions
+		  from.;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	::= {rsi-configuration 4 }
+
+mcmRSIServerEntry OBJECT-TYPE
+	SYNTAX	McmRSIServerEntry
+	ACCESS	not-accessible
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the RSI Server Configuration \
+		  Table. (Operational) ;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX  {mcmRSIServerDNAAddr}
+	::= {mcmRSIServerTable 1}
+
+McmRSIServerEntry ::= SEQUENCE {
+	mcmRSIServerDNAAddr		DisplayString,
+	mcmRSIServerName		DisplayString,
+	mcmRSIServerType		INTEGER,
+        mcmRSIServerPortID              INTEGER,
+	mcmRSIServerDLCI		INTEGER,
+	mcmRSIServerAvailStatus		INTEGER,
+        mcmRSIServerLastDisconnectCause DisplayString,
+	mcmRSIServerRequestCount	Counter,
+	mcmRSIServerResolvedCount	Counter,
+	mcmRSIServerNoNumberCount	Counter,
+	mcmRSIServerTimeoutCount	Counter,
+	mcmRSIServerRecoveryCount	Counter
+	}
+
+mcmRSIServerDNAAddr OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(1..40))
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The RSI Server DNA address specifies the \
+		  DNA digits corresponding to a unique RSA. \
+		  Used as the index to the RSI Server \
+		  Configuration table. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 1 }
+
+mcmRSIServerName OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(0..50))
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object designates the user \
+		  supplied name for the server. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 2 }
+
+mcmRSIServerType OBJECT-TYPE
+	SYNTAX	INTEGER {
+		primary (1),
+		secondary (2)
+		}
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the preferred \
+		  server which that will be consulted for address \
+		  resolution. (Operational);
+	   HELP = A 'primary' server will be consulted first for \
+		  address resolution.  A 'secondary' server is used \
+		  as an alternative if the primary is not responding. \
+		  Note that all servers have to be marked 'secondary' \
+		  if round-robin load sharing is desired between \
+		  servers.;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 3 }
+
+mcmRSIServerPortID OBJECT-TYPE
+	SYNTAX	INTEGER
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the \
+                  current WAN port being used for the DLCI \
+                  call between RSI and RSA.;
+	   HELP = When a connection to a remote server is \
+                  established, either the primary or the \
+                  backup port will be in use. This field \
+                  corresponds to the Wide Area Network (WAN) \
+                  port numbering convention for primary and \
+                  backup links.;
+	   CAPABILITIES = NET_OPER, VPN_OPER ;"
+	::= { mcmRSIServerEntry 4 }
+
+mcmRSIServerDLCI OBJECT-TYPE
+	SYNTAX	INTEGER (0..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the DLCI of \
+		  the RSI-RSA connection. (Operational);
+	   HELP = When a connection to a remote server is \
+		  established, a DLCI is assigned for transferring \
+		  data across a virtual channel.  This DLCI is \
+		  useful for debugging.  When no connection is \
+		  present, the DLCI will be reported as 0.;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 5 }
+
+mcmRSIServerAvailStatus OBJECT-TYPE
+	SYNTAX	INTEGER {
+		available (1),
+		notAvailable (2)
+		}
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the \
+		  availability of the server for address \
+		  resolution. (Operational);
+	   HELP = A server is said to be 'available' if this \
+		  unit has been successfully communicating \
+		  with it.  A server is said to be 'notAvailable' \
+		  if this unit has temporarily lost communication \
+		  with it.;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 6 }
+
+mcmRSIServerLastDisconnectCause OBJECT-TYPE
+	SYNTAX	DisplayString (1..50)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The string displayed by this object \
+                  indicates the reason for the last \
+                  RSI-RSA call disconnect for this server.;
+	   HELP = When a connection to a remote server is \
+                  disconnected, a cause code may be generated \
+                  to aid in determining the reason for the call \
+                  disconnect. This shows the last reported reason.;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 7 }
+
+mcmRSIServerRequestCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the \
+		  number of DN-DNA requests to this \
+		  server since start up. \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 8 }
+
+mcmRSIServerResolvedCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the \
+		  number of DN-DNA's resolved by this \
+		  server since start up. \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 9 }
+
+mcmRSIServerNoNumberCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the \
+		 number of DN-DNA requests with phone \
+		  numbers not found in server since start up. \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 10 }
+
+mcmRSIServerTimeoutCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the \
+		  number of entries resent due to timeouts \
+		  since start up. \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 11 }
+
+mcmRSIServerRecoveryCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the \
+		  number of times RSI has attempted to \
+		  reestablish a connection to this server. \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmRSIServerEntry 12 }
+
+
+--  "Parallel" Configuration Parameter ("nvm") Groups/Tables
+
+
+--  the RSI System Define Parameters Configuration Group 
+--  (Configuration Parameters)
+
+--  This group provides the RSI system configuration parameters
+--  applicable to the RSI task as a whole.  The objects belonging to 
+--  this group are 'Definable'.
+
+nvmRSISysCfgDefGroup  OBJECT IDENTIFIER ::= { rsi-configuration 5 }
+
+nvmRSISysCfgDefVNCSInstance OBJECT-TYPE
+	SYNTAX	INTEGER (1..16)
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object provides a unique \
+		  VNCS identifier. (Configuration);
+	   HELP = This allows multiple VNCS databases to \
+		  exist in the Passport.;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { 1 }
+	::= { nvmRSISysCfgDefGroup 1 }
+
+nvmRSISysCfgDefNumCacheEntries OBJECT-TYPE
+	SYNTAX	INTEGER (20..100)
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the \
+		  maximum number of Address Resolutions \
+		  to be cached in memory. (Configuration);
+	   HELP = If this value is very high, the free \
+		  memory space on the unit will be reduced \
+		  which may affect the unit's performance. \
+		  A very low value may cause the unit to \
+		  frequently consult the server if diverse \
+		  numbers are dialed, defeating the purpose \
+		  of having a local cache.  The optimum value \
+		  will depend on the network size and the \
+		  number of frequently dialed DNs. It is \
+		  recommended to start with the default value \
+		  (30) and tune it to the optimum value \
+		  by observing the performance.;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { 30 }
+	::= { nvmRSISysCfgDefGroup 2 }
+
+
+--  the RSI System Set Parameters Configuration Group 
+--  (Standard/Configuration Parameters)
+
+--  This group provides the RSI system configuration parameters
+--  applicable to the RSI task as a whole.  The objects belonging to 
+--  this group are 'Setable'.
+
+nvmRSISysCfgSetGroup  OBJECT IDENTIFIER ::= { rsi-configuration 6 }
+
+nvmRSISysCfgSetAddrResRetries OBJECT-TYPE
+	SYNTAX	INTEGER (1..5)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the \
+		  number of times an address resolution \
+		  request is sent to the RSA to get a DNA \
+		  address. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { 3 }
+	::= { nvmRSISysCfgSetGroup 1 }
+
+nvmRSISysCfgSetAddrResTimeout OBJECT-TYPE
+	SYNTAX	INTEGER (5..30)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the \
+		  timeout period (in tenths of a second), after \
+		  which, an address resolution request will be \
+		  resent to the RSA (in case the previous one \
+		  is not answered). (Configuration);
+	   HELP = Setting a very low value in a \
+		  heavily loaded network would result in \
+		  transmissions of multiple requests \
+		  further increasing the network load. \
+		  It is recommended to tune this value \
+		  by considering the network load and \
+		  performance.;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { 15 }
+	::= { nvmRSISysCfgSetGroup 2 }
+
+nvmRSISysCfgSetAddrCacheStatus OBJECT-TYPE
+	SYNTAX	INTEGER {
+		disabled (1),
+		enabled (2)
+		}
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the \
+		  ability to enable or disable caching of \
+		  previously resolved addresses. \
+		  (Configuration);
+	   HELP = It is recommended that caching be enabled \
+		  as it helps relieve the load on the server, \
+		  reduces network traffic, speeds up address \
+		  resolution, and hence call-setup.;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { enabled }
+	::= { nvmRSISysCfgSetGroup 3 }
+
+
+--  the RSI Server (RSA) Configuration Table 
+--  (Configuration Parameters)
+
+--  This table provides the RSI Server configuration parameters
+--  applicable to the RSI-RSA interface.  The Network Administrator
+--  uses this table to provision the access device with the DNA(s) of the 
+--  RSA(s) to use.
+
+nvmRSIServerTable OBJECT-TYPE
+	SYNTAX	SEQUENCE OF NvmRSIServerEntry
+	ACCESS	not-accessible
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The RSI Server Configuration Table. \
+		  (Configuration) ;
+	   HELP = This table provides the list of servers this \
+		  unit can use to request address resolutions
+		  from.;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	::= {rsi-configuration 7 }
+
+nvmRSIServerEntry OBJECT-TYPE
+	SYNTAX	NvmRSIServerEntry
+	ACCESS	not-accessible
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the RSI Server Configuration \
+		  Table. (Configuration) ;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX  {nvmRSIServerDNAAddr}
+	::= {nvmRSIServerTable 1}
+
+NvmRSIServerEntry ::= SEQUENCE {
+	nvmRSIServerDNAAddr		DisplayString,
+	nvmRSIServerName		DisplayString,
+	nvmRSIServerType		INTEGER,
+	nvmRSIServerEntryRowStatus	INTEGER
+	}
+
+nvmRSIServerDNAAddr OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(1..40))
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The RSI Server DNA address specifies the \
+		  DNA digits corresponding to a unique RSA. \
+		  Used as the index to the RSI Server \
+		  Configuration table. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmRSIServerEntry 1 }
+
+nvmRSIServerName OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(0..50))
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object designates the user \
+		  supplied name for the server. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmRSIServerEntry 2 }
+
+nvmRSIServerType OBJECT-TYPE
+	SYNTAX	INTEGER {
+		primary (1),
+		secondary (2)
+		}
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the preferred \
+		  server which that will be consulted for address \
+		  resolution. (Configuration);
+	   HELP = A 'primary' server will be consulted first for \
+		  address resolution.  A 'secondary' server is used \
+		  as an alternative if the primary is not responding. \
+		  Note that all servers have to be marked 'secondary' \
+		  if round-robin load sharing is desired between \
+		  servers.;
+	   CAPABILITIES = ;"
+	::= { nvmRSIServerEntry 3 }
+
+nvmRSIServerEntryRowStatus OBJECT-TYPE
+	SYNTAX	INTEGER {
+		add (1),
+		delete (2),
+		active (3)
+		}
+	ACCESS  read-write	
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = For software releases prior to 3.0 \
+		  this object only supports add and delete \
+		  with an access of write-only.  
+	      This object is used to insert or remove \
+		  an RSA entry in this RSI server table. \
+		  Upon creation of a row, the \
+		  the row status is internally set to 'active'. \ 
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmRSIServerEntry 4 }
+
+
+
+-- *** STATISTICS groups/tables ***
+
+--  Operational Parameter ("mcm") Groups/Tables (note: no parallel "nvm" objects
+--  are defined for STATISTICS parameters.)
+
+
+--  the RSI Statistics Counters Group 
+
+--  This group provides the RSI statistics counter parameters. 
+
+mcmRSIStatisticsGroup  OBJECT IDENTIFIER ::= { rsi-statistics 1 }
+
+mcmRSIStatisticsCacheCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of entries currently in the RSI cache. \
+		  Includes learned entries. (Not \
+		  cleared by mcmRSICounterResetCmd.);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 1}
+
+mcmRSIStatisticsRequestAllCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of DN-DNA requests received from \
+		  the voice application.;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 2}
+
+mcmRSIStatisticsLocalResolvedCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of DN-DNA requests resolved out \
+		  of the local RSI cache.;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 3}
+
+mcmRSIStatisticsPurgeCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of purge requests received from the \
+		  voice application.;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 4}
+
+mcmRSIStatisticsServerCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of servers configured to resolve \
+		  addresses.  (Not cleared by \
+		  mcmRSICounterResetCmd.);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 5}
+
+mcmRSIStatisticsServerRequestCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of DN-DNA requests made to all \
+		  servers.;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 6}
+
+mcmRSIStatisticsServerResolvedCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of DN-DNA requests resolved by \
+		  all servers.;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 7}
+
+mcmRSIStatisticsServerNoNumberCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of DN-DNA requests with phone \
+		  numbers not found in servers.;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 8}
+
+mcmRSIStatisticsTimeoutCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of DN-DNA requests timed out.;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 9}
+
+mcmRSIStatisticsRecoveryCount OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object indicates the total \
+		  number of attempts to connect to all servers.;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { mcmRSIStatisticsGroup 10}
+
+
+-- *** CONTROL groups/tables ***
+
+--  Operational Parameter ("mcm") Groups/Tables (note: no parallel "nvm" objects
+--  are defined for CONTROL parameters.)
+
+--  the RSI Counter Reset Group 
+
+--  This 'group' provides the RSI counter reset command object.
+
+mcmRSICounterResetCmd OBJECT-TYPE
+	SYNTAX	INTEGER {
+		reset(1)
+		}
+	ACCESS	write-only
+	STATUS  obsolete	
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This object was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  Setting this object to reset(1) will zero \
+		  	  the values of the counters in the RSI \
+		  	  Statistics table.;
+	   HELP = ;
+	   CAPABILITIES = NET_OPER, VPN_OPER;"
+	::= { rsi-control 1 }
+
+
+
+-- Trap Messages 
+
+mcmAlarmRsiFailedToLocateRSA TRAP-TYPE
+	ENTERPRISE	micom-rsi
+	VARIABLES	{ mcmSysAsciiTimeOfDay}
+	DESCRIPTION
+	  "NAME = ServerUnreachable;
+	   DESC = No RSA was configured\
+		  Severity Level: CRITICAL.;
+	   HELP = No RSA server was configured on the access device. \
+		  At least one RSA server must be configured in the \
+		  access device using the add rsi server command.;"
+	::= 1
+
+mcmAlarmRsiRSAIsDown TRAP-TYPE
+	ENTERPRISE	micom-rsi
+	VARIABLES	{ mcmSysAsciiTimeOfDay, mcmRSIServerDNAAddr }
+	DESCRIPTION
+	  "NAME = ServerCommunicationLost;
+	   DESC = This unit is now unable to communicate with a \
+		  previously available server. \
+		  This unit will periodically attempt to re-establish \
+		  communication with the server.\
+		  Severity Level: CRITICAL.;
+	   HELP = Communication is lost with a previously available server. \
+		  This could indicate a problem with the Frame Relay \
+		  network, or the server in the Passport may be temporarily \
+		  out-of-service. This unit will periodically attempt to \
+		  re-establish communication with the server, or the \
+		  alternate server, if configured.;"
+	::= 2
+
+mcmAlarmRsiRSAIsUp TRAP-TYPE
+	ENTERPRISE	micom-rsi
+	VARIABLES	{ mcmSysAsciiTimeOfDay, mcmRSIServerDNAAddr }
+	DESCRIPTION
+	  "NAME = ServerCommunicationRestored;
+	   DESC = This unit is now able to communicate with a \
+		  server with which it had previously lost communication.
+		  Severity Level: INFORMATIVE.;
+	   HELP = Communication is restored with a previously \
+		  non-responsive server. \
+		  It will henceforth be used for address resolution.;"
+	::= 3
+
+-- End of Trap Messages
+
+END
+
+

@@ -1,0 +1,617 @@
+-- *****************************************************************
+-- REDSTONE-PPPOE-MIB
+--
+-- Redstone Communications Inc. Enterprise MIB
+-- PPPoE MIB
+--
+-- Copyright 1999 Redstone Communications, Incorporated.
+-- All Rights Reserved.
+-- *****************************************************************
+
+REDSTONE-PPPOE-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	MODULE-IDENTITY,
+	OBJECT-TYPE,
+	Integer32,
+    Counter32
+		FROM SNMPv2-SMI
+	OBJECT-GROUP, MODULE-COMPLIANCE FROM SNMPv2-CONF
+
+	RowStatus,
+    TimeStamp
+		FROM SNMPv2-TC
+
+    InterfaceIndex, InterfaceIndexOrZero
+        FROM IF-MIB
+
+	rsMgmt
+		FROM REDSTONE-SMI
+
+    RsNextIfIndex
+        FROM REDSTONE-TC;
+
+
+rsPPPoEMIB  MODULE-IDENTITY
+	LAST-UPDATED "9801010000Z"
+	ORGANIZATION "Redstone Communications, Inc."
+	CONTACT-INFO
+        "
+        Redstone Communications, Inc.
+		5 Carlisle Road
+        Westford MA 01886
+        USA
+        Tel:    +1-978-692-1999
+		Email:  mib@redstonecom.com
+        "
+	DESCRIPTION
+		"The PPPoE MIB for the 
+		Redstone Communications Inc. enterprise."
+	REVISION      "9801010000Z"
+	DESCRIPTION
+		"Initial version of this MIB module."
+	::= { rsMgmt 18 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- No textual conventions are defined in this MIB.
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+rsPPPoEObjects     OBJECT IDENTIFIER ::= { rsPPPoEMIB 1 }
+
+-- 
+-- This MIB contains managed objects for each of two interface
+-- layers: PPPoE interfaces, and PPPoE subinterfaces. 
+-- For each of these layers, management objects are provided to 
+-- query for an available interface index, and to create/delete 
+-- interfaces of that type. Creating/deleting these interface 
+-- types using this MIB has the side effect of creating/deleting 
+-- corresponding entries in the Interface MIB ifTable/ifXTable, 
+-- and in the Redstone Enterprise Interface MIB rsIfTable.
+--
+-- 
+--
+
+rsPPPoEIfLayer        OBJECT IDENTIFIER ::= { rsPPPoEObjects 1 }
+rsPPPoESubIfLayer     OBJECT IDENTIFIER ::= { rsPPPoEObjects 2 }
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- PPPoE Interface Layer
+--
+-- This layer is managed with the following elements:
+--
+--  o NextIfIndex (generator for PPPoE IfIndex selection)
+--  o Interface Table (creation/configuration/deletion of PPPoE interfaces)
+--  o Statistics Table (PPPoE interface statistics)
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- IfIndex selection for creating new PPPoE interfaces
+--
+
+rsPPPoENextIfIndex OBJECT-TYPE
+    SYNTAX      RsNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries
+        in rsPPPoEIfTable.
+
+        A GET of this object returns the next available ifIndex 
+        value to be used to create an entry in the associated
+        interface table; or zero, if no valid ifIndex value is
+        available. This object also returns a value of zero when 
+        it is the lexicographic successor of a varbind presented 
+        in an SNMP GETNEXT or GETBULK request, for which circumstance
+        it is assumed that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different
+        values, thus avoiding collisions among cooperating
+        management clients seeking to create table entries
+        simultaneously.
+        "
+    ::= { rsPPPoEIfLayer 1 }
+
+--
+-- The PPPoE Interface Table
+--
+
+rsPPPoEIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsPPPoEIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+		"The parameters for the PPPoE service on this interface."        
+
+    REFERENCE
+        "RFC 2156 A method for transmitting PPP over Ethernet"
+    ::= { rsPPPoEIfLayer 2 }
+
+rsPPPoEIfEntry OBJECT-TYPE
+    SYNTAX      RsPPPoEIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The Parameters for a particular PPPoE interface. 
+
+        Creating/deleting entries in this table causes corresponding 
+        entries for be created/deleted in ifTable/ifXTable/rsIfTable,
+        and rsPPPoEIfStatsTable."
+
+    INDEX   { rsPPPoEIfIfIndex }
+    ::= { rsPPPoEIfTable 1 }
+
+RsPPPoEIfEntry ::= SEQUENCE {
+    rsPPPoEIfIfIndex                InterfaceIndex,
+	rsPPPoEIfMaxNumSessions     INTEGER,
+    rsPPPoEIfRowStatus              RowStatus,
+	rsPPPoEIfLowerIfIndex	    InterfaceIndexOrZero
+}
+
+rsPPPoEIfIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex value of the corresponding ifEntry."
+    ::= { rsPPPoEIfEntry 1 }
+
+rsPPPoEIfMaxNumSessions OBJECT-TYPE
+    SYNTAX      INTEGER (0..65336)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of sessions allowed on the PPPoE interface, 
+         zero indicates unlimited"
+    DEFVAL  { 0 }
+    ::= { rsPPPoEIfEntry 2 }
+
+rsPPPoEIfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table
+        according to the RowStatus textual convention, 
+        constrained to support the following values only:
+
+            createAndGo
+            destroy
+            
+        To create an entry in this table, the following 
+        entry objects MUST be explicitly configured:
+
+            rsPPPoEIfRowStatus
+			rsPPPoEIfLowerIfIndex
+
+        In addition, when creating an entry the following
+        conditions must hold:
+
+            A value for rsPPPoEIfIndex must have been determined
+            previously, by reading rsPPPoENextIfIndex. 
+
+            The interface identified by rsPPPoEIfLowerIfIndex
+            must exist, and must be an interface type that
+            permits layering of PPPoE above it.
+
+        A corresponding entry in ifTable/ifXTable/rsIfTable is 
+        created/destroyed as a result of creating/destroying an entry 
+        in this table. "
+
+    ::= { rsPPPoEIfEntry 3 }
+
+
+rsPPPoEIfLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of an interface over which this PPPoE interface 
+        is to be layered. A value of zero indicates no layering.
+        An implementation may choose to require that a nonzero value
+        be configured at entry creation."
+    ::= { rsPPPoEIfEntry 4 }
+
+--
+-- The PPPoE Interface Statistics Table
+--
+
+rsPPPoEIfStatsTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsPPPoEIfStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The statistics for the PPP over Ethernet 
+        Interface for the PPPoE service on this interface."
+    ::= { rsPPPoEIfLayer 3 }
+
+rsPPPoEIfStatsEntry OBJECT-TYPE
+    SYNTAX      RsPPPoEIfStatsEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The statistics for a particular PPPoE Interface."
+    INDEX   { rsPPPoEIfIfIndex }
+    ::= { rsPPPoEIfStatsTable 1 }
+
+RsPPPoEIfStatsEntry ::= SEQUENCE {
+        rsPPPoEIfStatsRxPADI             Counter32,
+        rsPPPoEIfStatsTxPADO             Counter32, 
+        rsPPPoEIfStatsRxPADR             Counter32, 
+	    rsPPPoEIfStatsTxPADS             Counter32,
+	    rsPPPoEIfStatsRxPADT             Counter32,
+	    rsPPPoEIfStatsTxPADT             Counter32,
+	    rsPPPoEIfStatsRxInvVersion       Counter32,
+	    rsPPPoEIfStatsRxInvCode          Counter32,
+	    rsPPPoEIfStatsRxInvTags          Counter32,
+	    rsPPPoEIfStatsRxInvSession       Counter32,
+	    rsPPPoEIfStatsRxInvTypes	     Counter32,
+	    rsPPPoEIfStatsRxInvPackets		 Counter32,
+        rsPPPoEIfStatsRxInsufficientResources Counter32
+}
+
+rsPPPoEIfStatsRxPADI OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADI packets received."
+    ::= { rsPPPoEIfStatsEntry 1 }
+
+rsPPPoEIfStatsTxPADO OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADO packets transmitted."
+    ::= { rsPPPoEIfStatsEntry 2 }
+
+rsPPPoEIfStatsRxPADR OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADR packets received."
+    ::= { rsPPPoEIfStatsEntry 3 }
+
+rsPPPoEIfStatsTxPADS OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADS packets transmitted."
+    ::= { rsPPPoEIfStatsEntry 4 }
+
+rsPPPoEIfStatsRxPADT OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADT packets received."
+    ::= { rsPPPoEIfStatsEntry 5 }
+
+rsPPPoEIfStatsTxPADT OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of PADT packets transmitted."
+    ::= { rsPPPoEIfStatsEntry 6 }
+
+rsPPPoEIfStatsRxInvVersion OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid version."
+    ::= { rsPPPoEIfStatsEntry 7 }
+
+rsPPPoEIfStatsRxInvCode OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid code."
+    ::= { rsPPPoEIfStatsEntry 8 }
+
+rsPPPoEIfStatsRxInvTags OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid tags."
+    ::= { rsPPPoEIfStatsEntry 9 }
+
+rsPPPoEIfStatsRxInvSession OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid session identifiers."
+    ::= { rsPPPoEIfStatsEntry 10 }
+
+rsPPPoEIfStatsRxInvTypes OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of packets received with invalid types."
+    ::= { rsPPPoEIfStatsEntry 11 }
+
+rsPPPoEIfStatsRxInvPackets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of invalid packets received."
+    ::= { rsPPPoEIfStatsEntry 12 }
+
+rsPPPoEIfStatsRxInsufficientResources OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of session requests that could not be honored due
+		to invalid resources."
+    ::= { rsPPPoEIfStatsEntry 13 }
+
+
+-- //////////////////////////////////////////////////////////////////////
+--
+-- PPPoE Subinterface Layer
+--
+-- This layer is managed with the following elements:
+--
+--  o NextIfIndex (generator for PPPoE subinterface IfIndex selection)
+--  o SubIf Table (creation/configuration/deletion of PPPoE subinterfaces)
+--
+-- //////////////////////////////////////////////////////////////////////
+
+--
+-- IfIndex selection for creating new PPPoE Subinterfaces
+--
+
+rsPPPoESubIfNextIfIndex OBJECT-TYPE
+    SYNTAX      RsNextIfIndex
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Coordinate ifIndex value allocation for entries
+        in rsPPPoESubIfTable.
+
+        A GET of this object returns the next available ifIndex 
+        value to be used to create an entry in the associated
+        interface table; or zero, if no valid ifIndex value is
+        available. This object also returns a value of zero when 
+        it is the lexicographic successor of a varbind presented 
+        in an SNMP GETNEXT or GETBULK request, for which circumstance
+        it is assumed that ifIndex allocation is unintended.
+
+        Successive GETs will typically return different
+        values, thus avoiding collisions among cooperating
+        management clients seeking to create table entries
+        simultaneously.
+        "
+    ::= { rsPPPoESubIfLayer 1 }
+
+--
+-- The PPPoE Subinterface Table
+--
+
+rsPPPoESubIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsPPPoESubIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table contains entries for PPPoE Subinterfaces present 
+        in the system."
+    ::= { rsPPPoESubIfLayer 2 }
+
+rsPPPoESubIfEntry OBJECT-TYPE
+    SYNTAX      RsPPPoESubIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Each entry describes the characteristics of a PPPoE Subinterface. 
+        Creating/deleting entries in this table causes corresponding 
+        entries for be created /deleted in ifTable/ifXTable/rsIfTable."
+    INDEX   { rsPPPoESubIfIndex }
+    ::= { rsPPPoESubIfTable 1 }
+
+RsPPPoESubIfEntry ::= SEQUENCE {
+    rsPPPoESubIfIndex
+        InterfaceIndex,
+    rsPPPoESubIfRowStatus
+        RowStatus,
+    rsPPPoESubIfLowerIfIndex
+        InterfaceIndexOrZero,
+    rsPPPoESubIfId
+        Integer32,
+	rsPPPoESubIfSessionId
+		Integer32
+    }
+
+
+rsPPPoESubIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the PPPoE Subinterface. When 
+        creating entries in this table, suitable values
+        for this object are determined by reading
+        rsPPPoESubNextIfIndex."
+    ::= { rsPPPoESubIfEntry 1 }
+
+rsPPPoESubIfRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table
+        according to the RowStatus textual convention, 
+        constrained to support the following values only:
+
+            createAndGo
+            destroy
+            
+        To create an entry in this table, the following 
+        entry objects MUST be explicitly configured:
+
+            rsPPPoESubIfRowStatus
+            rsPPPoESubIfLowerIfIndex
+
+        In addition, when creating an entry the following
+        conditions must hold:
+
+            A value for rsPPPoESubIfIndex must have been determined
+            previously, by reading rsPPPoESubIfNextIfIndex. 
+
+            The interface identified by rsPPPoESubIfLowerIfIndex
+            must exist, and must be a PPPoE interface.
+
+            A positive value configured for rsPPPoESubIfId must not
+            already be assigned to another subinterface layered
+            onto the same underlying PPPoE interface.
+
+        A corresponding entry in ifTable/ifXTable/rsIfTable is 
+        created/destroyed as a result of creating/destroying an entry 
+        in this table.
+        "
+    ::= { rsPPPoESubIfEntry 2 }
+
+rsPPPoESubIfLowerIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of a PPPoE interface over which this 
+        PPPoE Subinterface is to be layered. A value of zero 
+        indicates no layering. An implementation may choose to require 
+        that a nonzero value be configured at entry creation."
+    ::= { rsPPPoESubIfEntry 3 }
+
+
+rsPPPoESubIfId OBJECT-TYPE
+    SYNTAX      Integer32 (-1..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An integer identifier for the PPPoE subinterface, 
+        used in conjunction with the command-line interface. 
+        It is provided here for cross-reference purposes only.
+
+        The value must be unique among subinterfaces configured on the same 
+        underlying PPPoE interface.
+        
+        If this object is not configured, or is configured with a 
+        value of -1, a nonzero value will be allocated internally
+        and can be retrieved from this object after table entry creation 
+        has succeeded.
+
+        A value of zero for this object is reserved for future use."
+    DEFVAL { -1 }
+    ::= { rsPPPoESubIfEntry 4 }
+rsPPPoESubIfSessionId OBJECT-TYPE
+    SYNTAX      Integer32 (0..65535)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current sessionId associated with this sub-interface."
+    ::= { rsPPPoESubIfEntry 5 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notification control objects
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- No notifications are defined in this MIB. Placeholder follows.
+
+-- rsPPPoETrapControl      OBJECT IDENTIFIER ::= { rsPPPoEMIB 2 }
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Notifications
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+-- No notifications are defined in this MIB. Placeholder follows.
+
+-- The following two OBJECT IDENTIFIERS are used to define SNMPv2 
+-- Notifications that are easily translated into SNMPv1 Traps.
+
+-- rsPPPoETraps            OBJECT IDENTIFIER ::= { rsPPPoEMIB 3 }
+-- rsPPPoETrapPrefix       OBJECT IDENTIFIER ::= { rsPPPoETraps 0 }
+
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+rsPPPoEConformance OBJECT IDENTIFIER ::= { rsPPPoEMIB 4 }
+rsPPPoECompliances OBJECT IDENTIFIER ::= { rsPPPoEConformance 1 }
+rsPPPoEGroups      OBJECT IDENTIFIER ::= { rsPPPoEConformance 2 }
+
+-- compliance statements
+
+rsPPPoECompliance MODULE-COMPLIANCE
+        STATUS  current
+        DESCRIPTION
+                "The compliance statement for entities which implement
+                the Redstone PPPoE MIB."
+        MODULE  -- this module
+                MANDATORY-GROUPS { rsPPPoEGroup, rsPPPoESubIfGroup }
+        ::= { rsPPPoECompliances 1 }
+
+-- units of conformance
+
+rsPPPoEGroup OBJECT-GROUP
+        OBJECTS {
+		rsPPPoENextIfIndex,
+
+	    rsPPPoEIfIfIndex,
+		rsPPPoEIfMaxNumSessions,
+    	rsPPPoEIfRowStatus,
+		rsPPPoEIfLowerIfIndex,
+
+        rsPPPoEIfStatsRxPADI,
+        rsPPPoEIfStatsTxPADO,
+        rsPPPoEIfStatsRxPADR,
+	    rsPPPoEIfStatsTxPADS,
+	    rsPPPoEIfStatsRxPADT,
+	    rsPPPoEIfStatsTxPADT,
+	    rsPPPoEIfStatsRxInvVersion,
+	    rsPPPoEIfStatsRxInvCode,
+	    rsPPPoEIfStatsRxInvTags,
+	    rsPPPoEIfStatsRxInvSession
+	}
+	STATUS  current
+	DESCRIPTION
+		"A collection of objects providing management of PPPoE interfaces
+		in a Redstone product."
+    ::= { rsPPPoEGroups 1 }
+
+rsPPPoESubIfGroup OBJECT-GROUP
+        OBJECTS {
+		rsPPPoESubIfNextIfIndex,
+
+        rsPPPoESubIfRowStatus,
+	    rsPPPoESubIfLowerIfIndex,
+	    rsPPPoESubIfId,
+		rsPPPoESubIfSessionId
+	}
+	STATUS  current
+	DESCRIPTION
+		"A collection of objects providing management of PPPoE subinterfaces
+		in a Redstone product."
+    ::= { rsPPPoEGroups 2 }
+
+END

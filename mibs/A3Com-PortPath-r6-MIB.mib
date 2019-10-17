@@ -1,0 +1,2017 @@
+
+--
+-- This MIB is for 3Com intermediate systems to provide information
+-- about their Ports and Paths.
+--
+-- The 3Com Enterprise Products Proprietary MIB Extensions
+--
+-- Copyright 3Com Corporation, 1991. All rights reserved.
+--
+-- 28-may-91: dtp
+-- 17-aug-92: kxy
+-- 01-sep-92: kxy
+-- 08-dec-92: kxy
+-- 12-dec-92: kxy
+-- 16-dec-92: kxy added dial backup objects
+-- 27-jan-93: kxy added path stats objects
+-- 07-apr-93: hxl seperate dial from port and path
+-- 27-may-93: hxl minor consistency changes.
+-- 29-jun-93: hxl added port owner object.
+-- 07-aug-93: hxl added more baud rates.
+--
+-- changes FOR 7.0 (r2 of MIB) *************************
+-- 20-sep-93: kxy added multiple priority queue objects
+-- 16-oct-93: kxy added support for DataLinkMacAddr
+-- 18-oct-93: kxy added support for auto startup
+-- 20-oct-93: kxy added support for SmartFiltering control
+-- 20-oct-93: kxy added support for Central Mac control
+-- 21-oct-93: kgo added support for Dial on Demand
+-- 02-nov-93: kxy added support for new Path Baud parameter
+-- 15-nov-93: kxy deprecated a3ComDlMacAddr
+-- 09-dec-93: kxy added enums to a3ComPortOwner and a3ComPathDialType
+--                these indicate that current values were determined by autostartup
+-- 13-dec-93: kgo added support for DialMode including modes determined by autostartup
+-- 20-dec-93:     added support for a3ComPortName
+-- 21-dec-93: kxy moved a3ComDefaultPriority from the Port Table to 
+--                { a3ComPort 3 }
+-- 06-jan-94: kxy added a3ComPortVirtual to indicate virtual ports from normal ports
+--
+-- changes for 7.1 (r3 of MIB) ****************
+-- 01-jun-94: kxy added Queue Throttle.
+--
+--
+-- changes for 8.0 (r4 of MIB)
+-- 26-jul-94: kxy added new connector types to a3ComPathConn
+-- 28-jul-94: kgo created new tables, a3ComPortDialPhoneListTable and
+--		  a3ComPortDialPoolPrefTable, to support Dial Pooling
+--		  and also added new objects to PortEntry, PathDialEntry
+--		  and PortDialEntry.
+-- 28-jul-94: syc added objects to support ISDN UI.
+--		  		
+-- 03-Aug-94: rrr Reserved. Not Xmitted Yet.
+-- 29-Aug-94: kxy fixed MIB syntax errors
+-- 12-Sep-94: kgo updated the description of a3ComPathPort, a3ComPortPath 
+--		  and a3ComPortStatus, to include additional information 
+--		  on the use of the dynamic dialpool.
+-- 15-Sep-94: kgo added new object a3ComPathDialExDevType to support Dial
+--		  Pooling.
+--
+-- changes for 8.2 (r5 of MIB)
+-- 19-Apr-95  ppl added a3ComPortDialBODTHreshold to PortDialTable
+-- 18-May-95  frp added a3ComPortIbmTraffic to Port table
+--
+-- changes for 8.3 (r6 of MIB)
+-- 25-Jul-95 yeeping added a3ComPortDuplex to Path table.
+-- 26-Aug-05 kxy added enum x21(11) to a3ComPathConn.
+
+A3Com-PortPath-r6-MIB DEFINITIONS ::= BEGIN
+
+
+IMPORTS
+    enterprises, TimeTicks, Counter
+        FROM RFC1155-SMI
+    DisplayString
+        FROM RFC1213-MIB
+    OBJECT-TYPE
+        FROM RFC-1212;
+
+
+          a3Com         OBJECT IDENTIFIER ::= { enterprises 43 }
+          brouterMIB    OBJECT IDENTIFIER ::= { a3Com 2 }
+          a3ComPath     OBJECT IDENTIFIER ::= { brouterMIB 16 }
+          a3ComPort     OBJECT IDENTIFIER ::= { brouterMIB 17 }
+          a3ComPathDial OBJECT IDENTIFIER ::= { brouterMIB 18 }
+          a3ComPortDial OBJECT IDENTIFIER ::= { brouterMIB 19 }
+
+
+
+      RowStatus ::= INTEGER {
+                         active(1),
+                         notInService(2),
+                         notReady(3),                               
+                         createAndGo(4),
+                         createAndWait(5),
+                         destroy(6)
+      }
+
+      --This data type, which has the same semantics as the rowStatus
+      --textual convention used in SNMPv2, is used to add and 
+      --delete entries from a table.
+
+      --The Port table in this MIB allow a subset of the functionality
+      --provided by the rowStatus textual convention.  In particular
+      --row creation is allowed using only the createAndGo method.
+
+      --That is, when adding entries to this table, this object
+      --must be set to createAndGo(4).  The instance identifier
+      --for this object will define the values of the columns 
+      --that make up the index.  
+
+      --In the same PDU, the appropriate remaining columns
+      --of that row must be set as well.  The agent
+      --will immediately set the value of this object to
+      --active(1) if the row is correct.  If not, the agent
+      --will refuse the SET request and return an
+      --error code.
+
+      --To modify an existing entry, it must be removed
+      --and another entry with the desired changes added. 
+                   
+      --To remove an entry, set the value of this object
+      --to destroy(6).
+
+-- A group to contain all the PATH information
+
+a3ComPathNumber OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The number of entries in the Path Table. These
+        correspond to physical interfaces in a 3Com product.
+
+        Note, any changes made to any entry in this table
+        will affect only the value stored in the configuration
+        files.  To cause the new values to take effect, the
+        Path status must be toggled.  To accomplish this, set
+        the value of a3ComPathAdminStatus.x to active(1).  (x
+        indicates the Path number in question)"
+    ::= { a3ComPath 1 }
+
+a3ComPathTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF A3ComPathEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A table of physical interfaces."
+    ::= { a3ComPath 2 }
+
+a3ComPathEntry OBJECT-TYPE
+    SYNTAX A3ComPathEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    INDEX  { a3ComPathIndex }
+    ::= { a3ComPathTable 1 }
+
+A3ComPathEntry ::= SEQUENCE {
+    a3ComPathIndex
+        INTEGER,
+    a3ComPathName
+        DisplayString,
+    a3ComPathPort
+        INTEGER,
+    a3ComPathItcmOption 
+        INTEGER,
+    a3ComPathT1Mode
+        INTEGER,
+    a3ComPathCryptoResync 
+        INTEGER,
+    a3ComPathCRC
+        INTEGER,
+    a3ComPathAdminStatus
+        INTEGER,
+    a3ComPathOperStatus
+        INTEGER,
+    a3ComPathBaud
+        INTEGER,
+    a3ComPathConn
+        INTEGER, 
+    a3ComPathClock
+        INTEGER,
+    a3ComPathLastChange
+        TimeTicks,
+    a3ComPathSlotIndex
+        INTEGER,
+    a3ComPathConnPos
+        INTEGER,
+    a3ComPathInOctets
+        Counter,
+    a3ComPathInUcastPkts
+        Counter,
+    a3ComPathInNUcastPkts
+        Counter,
+    a3ComPathInDiscards
+        Counter,
+    a3ComPathInErrors
+        Counter,
+    a3ComPathInUnknownProtos
+        Counter,
+    a3ComPathOutOctets
+        Counter,
+    a3ComPathOutUcastPkts
+        Counter,
+    a3ComPathOutNUcastPkts
+        Counter,
+    a3ComPathOutDiscards
+        Counter,
+    a3ComPathOutErrors
+        Counter,
+    a3ComPathBaudRate
+        INTEGER,
+    a3ComPathDuplex
+	INTEGER
+    }
+
+a3ComPathIndex OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A unique identifier for each path.  The
+        value for each path must remain constant at
+        least from one re-initialization of the entity's
+        network management system to the next re-initialization."
+    ::= { a3ComPathEntry 1 }
+
+a3ComPathName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..20))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "A descriptive name for the path"
+    ::= { a3ComPathEntry 2 }
+
+a3ComPathPort OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "The index of the entry in the Port table to which
+        this path entry has been assigned. Unassigned entries
+        have a value of zero. This object allows adding and deleting
+	paths from ports.In order for any modifications to take
+	effect, the path(s) associated with this command must be
+	enabled(re-enabled if it is already enable).
+
+	Paths that have been assigned to the dialpool (pool of dynamic 
+	dial paths) have port values of -1. For a read(get) operation,
+	a value of -1 will be returned if the path is not assigned to 
+	any port but belongs to the dialpool. A write operation with
+	a value of -1 is not legal and will generate an error return."
+    ::= { a3ComPathEntry 3 }
+
+a3ComPathItcmOption OBJECT-TYPE
+    SYNTAX INTEGER {
+        compatible(1),
+        incompatible(2) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object should be set to compatible if the
+        bridge/router is attached via a serial link to a 
+        3Com Series/1 based bridge or bridge/router (IB/3, BR/3)
+        that contains an ITCM board."
+    ::= { a3ComPathEntry 4 }
+
+a3ComPathT1Mode OBJECT-TYPE
+    SYNTAX INTEGER {
+        enabled (1),
+        disabled (2) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Enabling this object allows for better line speed than
+        if this were disabled.  However, do not enable this object
+        when a3ComPathItcmOpt is set to compatible."
+    ::= { a3ComPathEntry 5 }
+
+a3ComPathCryptoResync OBJECT-TYPE
+    SYNTAX INTEGER {
+        enabled(1),
+        disabled(2) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Enabling this parameter causes the router to resynch with
+        any attached KG84/91 devices.  This only applies to the 449
+        interface of a wide area bridge/router."
+    ::= { a3ComPathEntry 6 }
+
+a3ComPathCRC OBJECT-TYPE
+    SYNTAX INTEGER {
+        crc16 (16),
+        crc32 (32) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This controls the type of Cyclic Redundancy Check that
+        is performed on a serial line.  In order for any modifications
+        to take effect, the path must be enabled(re-enabled if it is
+	already enable)."
+    ::= { a3ComPathEntry 7 }
+
+a3ComPathAdminStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+        enabled (1),
+        disabled (2) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object enables or disables a path."
+    ::= { a3ComPathEntry 8 }
+
+a3ComPathOperStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+        up(1),
+        down(2),
+        disabled(3),
+        notAvailable(4),
+        other(5) 
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The actual state of the path."
+    ::= { a3ComPathEntry 9 }
+
+a3ComPathBaud OBJECT-TYPE
+    SYNTAX INTEGER {
+        notApplicable(1),
+        baud1200(2),
+        baud2400(3),
+        baud4800(4),
+        baud9600(5),
+        baud19200(6),
+        baud38400(7),
+        baud56k(8),
+        baud64k(9),
+        baud128k(10),
+        baud256k(11),
+        baud448k(12),
+        baud1536k(13),
+        baud2048k(14), 
+        baud3072k(15), 
+        baud4000k(16), 
+        baud4608k(17), 
+        baud6144k(18), 
+        baud7680k(19), 
+        baud9216k(20), 
+        baud16000k(21), 
+        other(22) 
+    }
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+        "The baud rate for serial paths. For ethernet,
+        token ring, or FDDI connections this has a value
+        notApplicable(1). In order for any modifications
+        to take effect, the path must be enabled(re-enabled
+	if it is already enable).
+
+        Note, this object is being replaced by a3ComPathBaudRate."
+    DEFVAL { baud64k }
+    ::= { a3ComPathEntry 10 }
+
+a3ComPathConn OBJECT-TYPE
+    SYNTAX INTEGER {
+        notApplicable(1),
+        v35(2),
+        rs232(3),
+        rs449(4),
+        g703(5),
+        t3(6),
+        isdnBri(7),
+        isdnPri(8),
+	auto(9),
+	other(10),
+	x21(11)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "The connector for the path. For ethernet,
+        token ring, or FDDI connections this has a value
+        notApplicable(1). In order for any modifications
+        to take effect, the path must be enabled(re-enabled
+	if it is already enable). Do Not change the order of
+        any of these enumerations."
+    ::= { a3ComPathEntry 11 }
+
+a3ComPathClock OBJECT-TYPE
+    SYNTAX INTEGER {
+        notApplicable(1),
+        internal(2),
+        external(3) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "How the transmit clock is derived. For ethernet,
+        token ring, or FDDI connections this has a value
+        notApplicable(1). In order for any modifications
+        to take effect, the path must be enabled(re-enabled
+	if it is already enable)."
+    ::= { a3ComPathEntry 12 }
+
+a3ComPathLastChange OBJECT-TYPE
+    SYNTAX TimeTicks
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The value of sysUpTime at the time the path
+        entered its current operational state."
+    ::= { a3ComPathEntry 13 }
+
+a3ComPathSlotIndex OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The index number of the chassis slot into which the module
+        (or board) that supports this Path is inserted."
+    ::= { a3ComPathEntry 14 }
+
+a3ComPathConnPos OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The relative position on the module (or board) of the
+        physical connector that supports this path.  The position
+        is identified by an index, which starts at one with the upper
+        left connector and continues left to right and top to bottom
+        ending at the lower right  connector."
+    ::= { a3ComPathEntry 15 }
+
+a3ComPathInOctets OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The total number of octets received on the
+            path, including framing characters."
+    ::= { a3ComPathEntry 16 }
+
+a3ComPathInUcastPkts OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The number of subnetwork-unicast packets
+            delivered to a higher-layer protocol."
+    ::= { a3ComPathEntry 17 }
+
+a3ComPathInNUcastPkts OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The number of non-unicast (i.e., subnetwork-
+            broadcast or subnetwork-multicast) packets
+            delivered to a higher-layer protocol."
+    ::= { a3ComPathEntry 18 }
+
+a3ComPathInDiscards OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The number of inbound packets which were chosen
+            to be discarded even though no errors had been
+            detected to prevent their being deliverable to a
+            higher-layer protocol.  One possible reason for
+            discarding such a packet could be to free up
+            buffer space."
+    ::= { a3ComPathEntry 19 }
+
+a3ComPathInErrors OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The number of inbound packets that contained
+            errors preventing them from being deliverable to a
+            higher-layer protocol."
+    ::= { a3ComPathEntry 20 }
+
+a3ComPathInUnknownProtos OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The number of packets received via the path
+            which were discarded because of an unknown or
+            unsupported protocol."
+    ::= { a3ComPathEntry 21 }
+
+a3ComPathOutOctets OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The total number of octets transmitted out of the
+            path, including framing characters."
+    ::= { a3ComPathEntry 22 }
+
+a3ComPathOutUcastPkts OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The total number of packets that higher-level
+            protocols requested be transmitted to a
+            subnetwork-unicast address, including those that
+            were discarded or not sent."
+    ::= { a3ComPathEntry 23 }
+
+a3ComPathOutNUcastPkts OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The total number of packets that higher-level
+            protocols requested be transmitted to a non-
+            unicast (i.e., a subnetwork-broadcast or
+            subnetwork-multicast) address, including those
+            that were discarded or not sent."
+    ::= { a3ComPathEntry 24 }
+
+a3ComPathOutDiscards OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The number of outbound packets which were chosen
+            to be discarded even though no errors had been
+            detected to prevent their being transmitted.  One
+            possible reason for discarding such a packet could
+            be to free up buffer space."
+    ::= { a3ComPathEntry 25 }
+
+a3ComPathOutErrors OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION
+            "The number of outbound packets that could not be
+            transmitted because of errors."
+    ::= { a3ComPathEntry 26 }
+
+a3ComPathBaudRate OBJECT-TYPE
+    SYNTAX  INTEGER (0..100000000)
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+        "The baud rate for serial paths. For ethernet,
+        token ring, or FDDI connections this reports the 
+        actual value, but SETs are not allowed for those
+        Paths. 
+
+        In order for any modifications to take effect, the 
+        path must be enabled(re-enabled if it is already enable).
+
+        Note, this object is replacing a3ComPathBaud, which is
+        being deprecated.  For SW release 7.0, both objects
+        will be supported."
+    ::= { a3ComPathEntry 27 }
+
+a3ComPathDuplex OBJECT-TYPE
+    SYNTAX  INTEGER  {
+	full (1),
+	half (2),
+	auto (3)
+    }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+	"The duplex mode is for SDLC and V3. It describes the physical
+	characteristics of the communication method used to control the 
+	request-to-send signal. It has three values which are full, half
+	and auto.
+
+        The path has to be (re)enabled for any new setting to take effect."
+    DEFVAL { auto }
+    ::= { a3ComPathEntry 28 }
+
+--
+-- This group contains all the PORT information
+-- 
+-- A port is assumed to be equivalent to an "interface" as
+-- defined by MIB2.  As such, additional information about
+-- each port can be obtained from the interface group in 
+-- MIB2.
+--
+
+a3ComPortNumber OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The number of entries in the Port Table. These
+        correspond to attached or remotely connected
+        network segments."
+    ::= { a3ComPort 1 }
+
+a3ComPortTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF A3ComPortEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A table of attached or remotely connect
+        network segments."
+    ::= { a3ComPort 2 }
+
+a3ComPortEntry OBJECT-TYPE
+    SYNTAX A3ComPortEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    INDEX  { a3ComPortIndex }
+    ::= { a3ComPortTable 1 }
+
+A3ComPortEntry ::= SEQUENCE {
+    a3ComPortIndex
+        INTEGER,
+    a3ComPortOwner
+        INTEGER,
+    a3ComPortBoundaryRoute
+        INTEGER,
+    a3ComPortBoundaryEncap
+        INTEGER,
+    a3ComPortCosInterleave
+        INTEGER,
+    a3ComPortMacAddrFmtARP
+        INTEGER,
+    a3ComPortMacAddrFmtIPX
+        INTEGER,
+    a3ComPortMacAddrFmtXNS
+        INTEGER,
+    a3ComPortPath
+        INTEGER,
+    a3ComQueueInterleave1
+        INTEGER,
+    a3ComQueueInterleave2
+        INTEGER,
+    a3ComQueuePattern
+        INTEGER,
+    a3ComPortAsOwnerTimer 
+        INTEGER,
+    a3ComSmartFilteringCtl
+        INTEGER,
+    a3ComBrCentralMacCtl
+        INTEGER,
+    a3ComPortLabel
+        DisplayString,
+    a3ComPortCircuitID
+        OCTET STRING,
+    a3ComPortStatus
+        RowStatus,
+    a3ComPortName
+        DisplayString,
+    a3ComPortVirtual
+        INTEGER,
+    a3ComQueueThrottle 
+        INTEGER,
+    a3ComPortInCallerId
+        DisplayString,
+    a3ComPortCompType
+	INTEGER,
+    a3ComPortX25ProtID
+	INTEGER	(0..255),
+    a3ComPortIbmTraffic
+        INTEGER 
+    }
+
+a3ComPortIndex OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A unique value for each port.  This corresponds to ifIndex
+        for MIB II.  The interface table from MIB II will contain
+        additional information for this port, including its type,
+        its name and its description."
+    ::= { a3ComPortEntry 1 }
+
+a3ComPortOwner OBJECT-TYPE
+    SYNTAX INTEGER {
+        ethernet   (1),
+        tokenRing  (2),
+        fddi	   (3),
+        ppp	   (4), 
+        plg	   (5), 
+        x25	   (6),
+        frameRelay (7),
+        smds	   (8),
+        auto	   (9),
+        autoPpp    (10),
+        autoFr     (11)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object indicates the owner for this port. 
+	User can set the owner using this object, however, if
+	the owner does not match the actual physical interface card
+	associated with this port, it is ignored.
+
+        If this object has been set to auto(9), the system will automatically
+        determine the proper port owner.  In this case, the value of this
+        object when examined via a GET or GETNEXT request will reflect the
+        system determined value, ie. autoPpp(10) or autoFr(11).  It will NOT 
+        return auto(9).  Note, this only applies to High Speed Serial ports."
+    ::= { a3ComPortEntry 2 }
+
+a3ComPortBoundaryRoute OBJECT-TYPE
+    SYNTAX INTEGER {
+        notApplicable (1),
+        enabled       (2),
+        disabled      (3) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object controls whether the Boundary Routing feature is
+        enabled for this port.  Note: this feature only applies to
+        serial ports on a NB2 and will be disabled for non-serial ports.
+
+	Note, when this parameter is enabled/disabled, the port itself
+	must be disabled and then re-enabled for the new value to take
+	effect.  This is done by setting the corresponding instance of 
+	ifAdminStatus to up(1)."
+    ::= { a3ComPortEntry 3 }
+
+a3ComPortBoundaryEncap OBJECT-TYPE
+    SYNTAX INTEGER {
+        notApplicable (1),
+        ethernet      (2),
+        tokenring     (3),
+        fddi          (4),
+        none          (5)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object decides the packet encapsulation rules
+        to be applied to outgoing packets.  If this is set
+        to none (5), the boundary router on the other end of
+        the serial link is capable of supporting translation.
+        In this case, all bridged packets will be sent unchanged.
+        Boundary routed packets will be sent with the default
+        mode: Ethernet.  All other settings of this object
+        implies that the remote device does not support translation. 
+        Therefore, all packets must be encapsulated according to
+        this object. 	In order for any modifications to take 
+	effect, the port associated with this command must be
+	disabled and then enabled.
+
+        Note, this only applies to serial ports on a NB2.  For 
+        all non-serial ports, this object will have the value 
+        notApplicable(1)."
+    ::= { a3ComPortEntry 4 }
+
+a3ComPortCosInterleave OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+        "(For bridging.) The number of high-priority packets
+        that will be transmitted for each low-priority
+        packet. If the value is 0, then low-priority packets
+        will only be transmitted when there are no packets
+        in the high-priority queue.
+
+        This object only applies to serial ports.  Interleaving
+        will not take affect on non-serial ports and this object 
+        will have the value 0 for those ports.
+
+        Note, this object has been deprecated from software versions
+        7.0 and later."
+    ::= { a3ComPortEntry 5 }
+
+a3ComPortMacAddrFmtARP OBJECT-TYPE
+    SYNTAX INTEGER {
+        canonical (1),
+        nonCanonical (2) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object indicates the MAC address format used
+        in ARP packets sent by this port.  Note, nonCanonical(2)
+        is allowed only on Token Ring ports."
+    ::= { a3ComPortEntry 6 }
+
+a3ComPortMacAddrFmtIPX OBJECT-TYPE
+    SYNTAX INTEGER {
+        canonical (1),
+        nonCanonical (2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This determine the MAC address format used in
+        IPX packets sent by this port.  Note, nonCanonical(2)
+        is allowed only on Token Ring ports."
+    ::= { a3ComPortEntry 7 }
+
+a3ComPortMacAddrFmtXNS OBJECT-TYPE
+    SYNTAX INTEGER {
+        canonical(1),
+        nonCanonical(2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This determines the MAC address format used in
+        XNS packets sent by this port.  Note, nonCanonical(2)
+        is allowed only on Token Ring ports."
+    ::= { a3ComPortEntry 8 }
+
+a3ComPortPath OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "The Path which is assigned to this port.  In some cases,
+        one or more Paths will be assigned to a single Port.  This
+        object will return the lowest number Path in that case.
+        For those situations where more than one Port is assigned
+        to a single Path (e.g., nport), this object will return the 
+        Path Index (or Parent Port).
+
+        This object must be specified when adding a new virtual port.
+	
+	In the case where the dialpool (pool of dynamic dial paths)
+	is assigned to a port, a value of -1 will be  used to indicate
+	that. When doing a get(read) of either a virtual or non-virtual
+	dial port, a return value of -1 indicates that the dialpool is 
+	assigned to that port. A write(set) operation using a path number
+	value of -1 is required only in the case of creating a virtual
+	dynamic dial port; to create a non-virtual dynamic dial port,
+	setting this object is not required."
+    ::= { a3ComPortEntry 9 }
+ 
+a3ComQueueInterleave1 OBJECT-TYPE
+    SYNTAX INTEGER (0..10)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object specifies the interleave factor between
+        the high and medium priority port queues.
+
+        Note, this applies only to HSS ports.  For non-HSS ports,
+        this object will have the value 0."
+    ::= { a3ComPortEntry 10 }
+
+a3ComQueueInterleave2 OBJECT-TYPE
+    SYNTAX INTEGER (0..10)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object specifies the interleave factor between
+        the medium and low priority port queues.
+
+        Note, this applies only to HSS ports.  For non-HSS ports,
+        this object will have the value 0."
+    ::= { a3ComPortEntry 11 }
+
+
+-- the following object has been removed from this table and 
+-- moved to { a3ComPort 3 }
+--
+--a3ComDefaultPriority OBJECT-TYPE
+--    SYNTAX INTEGER {
+--        high   (1),
+--        med    (2),
+--        low    (3)
+--    }      
+--    ACCESS read-write
+--    STATUS mandatory
+--    DESCRIPTION
+--        "This object specifies the default priority queue into
+--        which a packet with no preassigned priority is placed.
+--
+--        Note, this applies only to HSS ports.  For non-HSS ports,
+--        this object will return the value med(2)."
+--    ::= { a3ComPortEntry 12 }
+--
+
+a3ComQueuePattern OBJECT-TYPE
+    SYNTAX INTEGER {
+        ratio3to3to2   (1),
+        ratio4to2to2   (2),
+        ratio4to3to1   (3),
+        ratio5to2to1   (4),
+        ratio6to1to1   (5),
+        other          (6)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "This identifies the relative ratios of high priority packets
+        versus medium priority packets versus low priority packets
+        (in that order) that will be transmitted by this port.  These 
+        ratios are based on the current values of a3ComQueueInterleave1 
+        and a3ComQueueInterleave2.
+
+        Note, this applies only to HSS ports."
+    ::= { a3ComPortEntry 13 }
+
+
+a3ComPortAsOwnerTimer OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "This object only applies to High Speed Serial ports.  When 
+	the Owner of this port has been set to Auto, the system will 
+	also automatically determine the proper Owner to assign to 
+	the port.  This object is used to indicate the current status 
+	of the system when it is making these determinations.
+
+	A returned value of -1 indicates auto start-up has failed in
+	determining an owner (path didn't come up).  A value of 0 means
+	either auto start-up has succeded in determining the owner
+	or the owner was set manually.  A value greater than 0 means 
+	the auto start-up is in process and trying to determine the
+        proper port owner."
+    ::= { a3ComPortEntry 15 }
+        
+a3ComSmartFilteringCtl OBJECT-TYPE
+    SYNTAX INTEGER {
+        smartFilter   (1),
+        noSmartFilter (2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to enable or disable the Smart Filtering
+        mechanism on a port.  Note, this only applies to the Central
+        Node in a boundary routing environment.
+
+        Note, when this parameter is enabled/disabled, the Boundary Routing
+	service itself must be disabled and then re-enabled for the new 
+	value to take effect.  This is done by setting the corresponding instance
+	of a3ComPortBoundaryRoute to disabled(3) and then enabled(2)."
+    DEFVAL { smartFilter }
+    ::= { a3ComPortEntry 16 }
+
+a3ComBrCentralMacCtl OBJECT-TYPE
+    SYNTAX INTEGER {
+        centralMac   (1),
+        noCentralMac (2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to enable or disable the Boundary
+        Routing Central MAC feature.  If this feature is enabled,
+        (ie, if this object has the value centralMac(1)), the 
+        Central Node (in a Boundary Routing environment) will use
+        a special internally saved MAC address as its source
+        MAC address on this port.  This will allow certain protocols
+        (such as TCP/IP and IPX) running on the Leaf Nodes to switch 
+        to another Central Node without losing sessions.  
+
+        Note, in order for this feature to operate properly, it must 
+        be enabled on all the Central Nodes attached to the same Leaf 
+        Node.  Also note, this feature only applies to Central Nodes
+        (in a Boundary Routing environment) and doesn't apply to
+        the Leaf Nodes.
+
+	Note, when this parameter is enabled/disabled, the port itself
+	must be disabled and then re-enabled for the new value to take
+	effect.  This is done by setting the corresponding instance of 
+	ifAdminStatus to up(1)."
+    DEFVAL { noCentralMac }
+    ::= { a3ComPortEntry 17 }
+
+a3ComPortLabel OBJECT-TYPE
+    SYNTAX DisplayString
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "This object specifies the descriptive label assigned to this
+        port by the router.  These labels are used by the User Interface
+        and are useful when comparing information retrieved via SNMP with
+        information retrieved via the User Interface."
+    ::= { a3ComPortEntry 18 }
+
+a3ComPortCircuitID OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object applies only to virtual ports and specifies the unique
+        data link circuit or channel identifier assigned to this virtual port.  
+        For example, if this virtual port is attached to a Frame Relay network,
+        this object would specify the DLCI associated with this virtual port.
+        The Parent of this virtual port is identified by a3ComPortPath (which
+        also identifies the physical path that this virtual port is associated
+        with).
+
+        This object must be specified when adding a new virtual port."
+    ::= { a3ComPortEntry 19 }
+
+a3ComPortStatus OBJECT-TYPE
+    SYNTAX RowStatus
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to add or delete virtual ports.  When adding a new
+        virtual port, only the createAndGo method of adding rows is supported.
+        Specifically, all essential elements of the row must be specified in the
+        same SET request PDU. 
+
+	For a non-dialup (PPP) port, these elements are the circuit identifier
+	(a3ComPortCircuitID), the Parent Port (a3ComPortPath), and the virtual 
+	port number (which is specified by the instance identifiers associated with
+	each of these objects). Note, this virtual port number gets mapped uniquely to
+	a port label.  It is these port labels that are used to identify ports via the
+	User Interface.
+	For a diaup (PPP) port, these elements are the IncomingCallerID(a3ComPortInCallerId),
+	the dynamic dialpool (a3ComPortPath with value of -1), and the virtual port number."
+    ::= { a3ComPortEntry 20 }
+
+a3ComPortName OBJECT-TYPE
+    SYNTAX DisplayString
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "The user-assigned name given to this port.  Note, this name
+        may not have any blanks."
+    ::= { a3ComPortEntry 21 }
+
+a3ComPortVirtual OBJECT-TYPE
+    SYNTAX INTEGER {
+        normal  (1),
+        virtual (2)
+    }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION   
+        "This object indicates whether this port is a virtual port or
+        a normal port."
+    ::= { a3ComPortEntry 22 }
+
+a3ComQueueThrottle OBJECT-TYPE
+    SYNTAX INTEGER (0..40)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object specifies the maximum number of medium and low priority
+        packets that can be sent to the line driver each time some packets
+        are sent to the driver.  A value of 0 means that there is no limit."
+    DEFVAL { 0 }
+    ::= { a3ComPortEntry 23 }
+
+a3ComPortInCallerId OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..31))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "A text string to specify the effective Incoming CallerID for the port.
+	This object must be successfully set for a port to use the dynamic dial
+	pool. It is used by the port to decide if an incoming call should be 
+	accepted. An incoming call on a dynamic dial path must provide a CallerID
+	matching this object's value in order for the call to be accepted.
+	For a non-virtual port, setting this object alone is sufficient to 
+	configure the port to use the dynamic dial pool. Note however, that the
+	dynamic pool can only be used as a Secondary dial path, and not as a 
+	Primary path, for a non-virtual port.
+	In the case of a virtual dynamic dial port, this object is used in 
+	conjunction with objects a3ComPortPath and a3ComPortStatus to create
+	a virtual dynamic dial port."
+    ::= { a3ComPortEntry 24 }
+
+a3ComPortCompType OBJECT-TYPE
+    SYNTAX INTEGER{
+	none	  (1),
+	history   (2),
+	perPacket (3)
+    }	
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"This object specifies the type of compression performed on this Port.
+	 NONE indicates that the compression is disabled. HIStory indicates 
+	 that the compression is enabled and preserves the History across the
+	 frames and PerPacket indicates the compression is enabled but history
+	 is not preserved across the frames."
+    DEFVAL { none }
+    ::= { a3ComPortEntry 25 }
+
+a3ComPortX25ProtID OBJECT-TYPE
+    SYNTAX INTEGER(0..255)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object specifies the X25 ProtolID used when running in 
+	 Boundary Routed Mode for establishing the Virtual Circuits
+	 over X25 Link." 
+    DEFVAL { 221 }
+    ::= { a3ComPortEntry 26 }
+
+a3ComPortIbmTraffic OBJECT-TYPE
+    SYNTAX INTEGER {
+        ibmTraffic   (1),
+        noibmTraffic (2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to enable or disable the SmartFiltering
+        of IBM Traffic mechanism on a port. Note, this only applies to 
+        the Central Node in a boundary routing environment.
+
+	Note, when this parameter is enabled/disabled, the port itself
+	must be disabled and then re-enabled for the new value to take
+	effect.  This is done by setting the corresponding instance of 
+	ifAdminStatus to up(1)."
+    DEFVAL { noibmTraffic }
+    ::= { a3ComPortEntry 27 }
+
+--
+-- This next object reflects the default priority for the
+-- system as a whole.
+--
+
+a3ComDefaultPriority OBJECT-TYPE
+    SYNTAX INTEGER {
+        high   (1),
+        med    (2),
+        low    (3),
+        unknown (4)
+    }      
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object specifies the default priority queue into
+        which a packet with no preassigned priority is placed.
+
+        Note, the system retains only a single instance of
+        this parameter and it is relevant only to HSS ports."
+    ::= { a3ComPort 3 }
+
+--
+-- This group contains all the PATH DIAL information
+-- 
+
+a3ComPathDialNumber OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The number of entries in the Path Dial Table. These
+        correspond to physical interfaces in a 3Com product."
+    ::= { a3ComPathDial 1 }
+
+a3ComPathDialTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF A3ComPathDialEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A table of physical interfaces."
+    ::= { a3ComPathDial 2 }
+
+a3ComPathDialEntry OBJECT-TYPE
+    SYNTAX A3ComPathDialEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    INDEX  { a3ComPathDialIndex }
+    ::= { a3ComPathDialTable 1 }
+
+A3ComPathDialEntry ::= SEQUENCE {
+    a3ComPathDialIndex
+        INTEGER,
+    a3ComPathDialType
+        INTEGER,
+    a3ComPathDialCtl 
+        INTEGER,
+    a3ComPathDialAction 
+        INTEGER,
+    a3ComPathDialNum 
+        DisplayString (SIZE(0..30)),
+    a3ComPathDialDodIdleTime
+        INTEGER (1..3600),
+    a3ComPathDialMode
+        INTEGER,
+    a3ComPathDialDynCont
+        INTEGER,
+    a3ComPathDialLocalDialNumber
+        DisplayString (SIZE(0..30)),
+    a3ComPathDialLocalSubAddress
+        DisplayString (SIZE(0..20)),
+    a3ComPathDialSPIDDN1
+	DisplayString (SIZE(0..37)),
+    a3ComPathDialSPIDDN2
+	DisplayString (SIZE(0..37)),
+    a3ComPathDialRateAdaption
+       INTEGER,
+    a3ComPathDialSwitchType
+       INTEGER,
+    a3ComPathDialExDevType
+        INTEGER
+    }
+
+a3ComPathDialIndex OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A unique identifier for each path.  The
+        value for each path must remain constant at
+        least from one re-initialization of the entity's
+        network management system to the next re-initialization."
+    ::= { a3ComPathDialEntry 1 }
+
+a3ComPathDialType OBJECT-TYPE
+    SYNTAX INTEGER {
+        primaryLeased        (1),
+        primaryDial          (2),
+        secondaryDial        (3),
+        other                (4),
+        primaryAuto          (5),
+        secondaryAuto        (6),
+        secondaryLeased      (7),
+        primaryAutoLeased    (8),
+        primaryAutoDial      (9),
+        secondaryAutoLeased  (10),
+        secondaryAutoDial    (11)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "When assigning multiple paths for a single port,
+        and one or more of those paths is a dial-up Path, 
+        this object must identify which Path is the primary
+        Path and whether it is a leased or dial-up Path.
+        Similarly, the other Paths must be identified as
+        secondaryDial. (The secondary Path must be a dial-up
+        Path.)
+
+        Note, if this object has been set to either primaryAuto(5)
+        or secondaryAuto(6), the system will automatically determine
+        the proper line type to use (ie, leased or dial), and the
+        value of this object when examined via a GET or GETNEXT
+        request will reflect the line type determined by the system.
+        It will not return either primaryAuto(5) or secondaryAuto(6).
+
+        In order for any modifications to take effect,
+	the path must be enabled(re-enabled if it is already 
+	enable). 
+
+	This object's values are ignored for non-serial	paths."
+    ::= { a3ComPathDialEntry 2 }
+
+a3ComPathDialCtl OBJECT-TYPE
+    SYNTAX INTEGER {
+        answerOriginate (1),
+        answerNoOriginate (2),
+        noAnswerOriginate (3),
+        noAnswerNoOriginate (4)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "For those Paths for which the value of a3ComPathDialType
+        is primaryDial(2) or secondaryDial(3), this object
+        is used to control whether that Path may originate and/or
+        answer calls.
+
+        If this object has the value answerOriginate(1), this Path
+        can both answer and originate calls.
+
+        If this object has the value answerNoOriginate(2), this Path
+        can answer calls, but it is not allowed to originate them.
+
+        If this object has the value noAnswerOriginate(3), this
+        Path is not allowed to answer calls, but it is allowed to
+        originate them.
+
+        If this object has the value noAnswerNoOriginate(4), this
+        Path is not allowed to answer calls or originate them.
+	In order for any modifications to take effect, the path
+	must be enabled(re-enabled if it is already enable).
+	
+	This object's values are ignored for non serial paths. "
+    ::= { a3ComPathDialEntry 3 }
+
+a3ComPathDialAction OBJECT-TYPE
+    SYNTAX INTEGER {
+        dial   (1),
+        hangUp (2),
+        other  (3)
+    } 
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to initiate an action to be taken
+        by the primary dial-up Path.  If this is set to dial(1),
+        then the Path is brought up using the number stored by
+        a3ComPathDialNum.  This is only allowed for primary 
+        dial-up Paths.  
+
+        If this is set to hangUp(2), then the dial-up Path
+        is brought down.  This applies both to primary and
+        secondary paths.
+         
+        If this object is read, the value other(3) will be returned."
+    ::= { a3ComPathDialEntry 4 }
+
+a3ComPathDialNum OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..30))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object contains the telephone number of the
+        remote sit to be dialed.  This is used whenever
+        a dial-up Path is brought up.  Spaces and hyphens (-)
+        are allowed and ignored, and semi-colons (;) indicate
+        a delay (as supported by the modem).
+
+        If no number is specified by this object, then it
+        is assumed the modem will automatically dial a
+        preconfigured number when DTR is raised." 
+    ::= { a3ComPathDialEntry 5 }
+
+a3ComPathDialDodIdleTime OBJECT-TYPE
+    SYNTAX INTEGER (1..3600)
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+        "This object applies only to a path that is setup as a PrimaryDial
+        path in DialOnDemand mode. It defines the amount of time, in seconds,
+        to wait after detecting the lack of user traffic on the dial path,
+        before bringing the dial line down.
+	note: this object is replaced by a3ComPortDialDodIdleTime."
+    DEFVAL { 180 }
+    ::= { a3ComPathDialEntry 6 }
+
+
+a3ComPathDialMode OBJECT-TYPE
+    SYNTAX INTEGER {
+        v25Dial (1),
+        dtrDial (2),
+	autoV25 (3),
+	autoDTR (4)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used for setting/reading the Dial Mode of a dialup path.
+
+	Only values (1) and (2) can be set to the object:	
+	If the object is (1), the dialup path is configured for V25 mode dialing.
+	If the object is (2), the dialup path is configured for DTR mode dialing.
+	This object cannot be set to autoV25(3) or autoDTR(4), as these are setup automatically
+	by the autostartup dial mode detection logic.
+	The path has to be (re)enabled for any new setting to take effect.
+
+	Reading of the object can return any 1 of the 4 values."
+    ::= { a3ComPathDialEntry 7 }
+
+a3ComPathDialDynCont OBJECT-TYPE
+    SYNTAX INTEGER {
+        static  (1),
+        dynamic (2),
+        other   (3)
+    } 
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to specify whether the dialup path is of 
+	type static(1) or dynamic(3). If a path is made dynamic, it 
+	will automatically be assigned(added) into the pool of dynamic
+	paths. Making a path static will cause it to be removed from the
+	pool."
+    DEFVAL { static }
+    ::= { a3ComPathDialEntry 8 }
+
+a3ComPathDialLocalDialNumber  OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..30))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The telephone number assigned to the local ISDN unit.  This number and the
+	local subaddress number, if present, are used primarily to determine if the
+	unit should answer an incoming call.  Valid only for ISDN. Any ASCII
+	characters up to 40 are acceptable inputs, but only the valid IA5 characters
+	are used in the comparison.
+	The path has to be enabled for the new setting to take effect."
+	::= { a3ComPathDialEntry 9 }
+
+a3ComPathDialLocalSubAddress  OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..20))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The subaddress number assigned to the local ISDN unit.  If the local dial
+	number criterion passes, then the local subaddress number, if present, is
+	the next criterion used to determine if an incoming call should be answered.
+	Valid only for ISDN.  Any ASCII characters are acceptable inputs, but only
+	the valid IA5 characters ( 0 to 9, #,* ) are used in the comparison.
+	The path has to be enabled for the new setting to take effect."
+	::= { a3ComPathDialEntry 10 }
+
+a3ComPathDialSPIDDN1  OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..37))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The Service Profile Identification number assigned by a North American ISDN
+	switch provider to identify the service profile of a ISDN unit.  Valid 
+	characters are numeric IA5 characters ( 0 to 9 ).  Maximum number of
+	characters is 20.
+        The path has to be enabled for the new setting to take effect."
+	::= { a3ComPathDialEntry 11 }
+
+a3ComPathDialSPIDDN2  OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..37))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"The second Service Profile Identification number assigned by a North
+	American ISDN switch provider to identify the service profile of a ISDN
+	unit.  Valid characters are numeric IA5 characters ( 0 to 9 ).  Maximum
+	number of characters is 20.
+        The path has to be enabled for the new setting to take effect."
+	::= { a3ComPathDialEntry 12 }
+
+a3ComPathDialRateAdaption  OBJECT-TYPE
+    SYNTAX INTEGER {
+	auto	(1),
+	rate64	(2),
+	rate56	(3)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"Specifies the data rate to be used on the ISDN B channel. Rate64 and
+	Rate56 specify that the channel be connected at 64K or 56K, respectively.
+	The connection attempt would fail if the ISDN network does not support
+	this.  If Auto is specified, an outgoing call is first attempted at 64K
+	and, if that should fail, the call is retried at 56K. On an incoming call,
+	the call is automatically adapted to the correct rate.
+	The path has to be enabled for the new setting to take effect."
+	::= { a3ComPathDialEntry 13 }
+
+
+a3ComPathDialSwitchType  OBJECT-TYPE
+    SYNTAX INTEGER {
+	etsi 	(1),
+	ntt	(2),
+	ni1	(3),
+	att5ess	(4),
+	dms100	(5)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+	"Specifies the ISDN switch type the unit is connected to.
+
+	 The path has to be enabled for the new setting to take effect."
+	::= { a3ComPathDialEntry 14 }
+
+a3ComPathDialExDevType  OBJECT-TYPE
+    SYNTAX INTEGER {
+	bri 	(1),
+	modem	(2),
+	sw56	(3),
+	other	(4)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object describes the external device type that is 
+	connected to the serial-line type (eg, HSS, HDWAN) path. It is
+	applicable only for a dialup path.
+
+	Use bri(1) setting if the path is connected to a digital modem or
+	terminal adapter for ISDN connectivity.
+
+	Use modem(2) setting if the path is connected to an analog modem.
+
+	Use sw56(3) setting if the path is connected to a SWITCH56 CSU/DSU.
+
+	In order for any modifications to take effect, the path must be
+	enabled(re-enabled if it is already enable)."
+    DEFVAL { modem }
+	::= { a3ComPathDialEntry 15 }
+
+--
+-- This group contains all the PORT DIAL information
+-- 
+-- A port is assumed to be equivalent to an "interface" as
+-- defined by MIB2.  As such, additional information about
+-- each port can be obtained from the interface group in 
+-- MIB2.
+--
+
+a3ComPortDIALNumber OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The number of entries in the Port DIAL Table. These
+        correspond to attached or remotely connected
+        network segments."
+    ::= { a3ComPortDial 1 }
+
+a3ComPortDialTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF A3ComPortDialEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A table of attached or remotely connect
+        network segments."
+    ::= { a3ComPortDial 2 }
+
+a3ComPortDialEntry OBJECT-TYPE
+    SYNTAX A3ComPortDialEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    INDEX  { a3ComPortDialIndex }
+    ::= { a3ComPortDialTable 1 }
+
+A3ComPortDialEntry ::= SEQUENCE {
+    a3ComPortDialIndex
+        INTEGER,
+    a3ComPortDialDisasterCtl 
+        INTEGER, 
+    a3ComPortDialBandOnDmnd 
+        INTEGER, 
+    a3ComPortDialDebounceTimeUp
+        INTEGER (0..3600),
+    a3ComPortDialDebounceTimeDown
+        INTEGER (0..3600),
+    a3ComPortDialInitState
+        INTEGER,
+    a3ComPortDialRcvrState
+        INTEGER,
+    a3ComPortDialAction
+        INTEGER,
+    a3ComPortDialDodIdleTime
+        INTEGER (1..3600),
+    a3ComPortDialIdleTime
+        INTEGER (0..3600),
+    a3ComPortDialDodCallsMade
+        Counter,
+    a3ComPortDialDodCallsFail
+        Counter,
+    a3ComPortDialDodUpTime
+        Counter,
+    a3ComPortDialDodPktsOut
+        Counter,
+    a3ComPortDialBODTHreshold
+        INTEGER
+    }
+
+a3ComPortDialIndex OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "A unique value for each port.  This corresponds to ifIndex
+        for MIB II.  The interface table from MIB II will contain
+        additional information for this port, including its type,
+        its name and its description."
+    ::= { a3ComPortDialEntry 1 }
+
+a3ComPortDialDisasterCtl OBJECT-TYPE
+    SYNTAX INTEGER {
+        disasterRecovery  (1),
+        noDisasterRecovery(2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object applies only to those Ports to which
+        multiple Paths are assigned, at least one of which
+        is a dial-up Path.
+
+        If this is set to disasterRecovery(1), then this
+        Port will switch all its traffic to the secondary
+        Path if the primary Path goes down."
+    ::= { a3ComPortDialEntry 2 }
+
+a3ComPortDialBandOnDmnd OBJECT-TYPE
+    SYNTAX INTEGER {
+        bandwidthOnDemand   (1),
+        noBandwidthOnDemand (2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object applies only to those Ports to which
+        multiple Paths are assigned, at least one of which
+        is a dial-up Path.
+
+        If this is set to bandwidthOnDemand(1), then this Port
+        will switch all its traffic to the secondary
+        Path if the primary Path exceeds a pre-defined
+        threshold."
+    ::= { a3ComPortDialEntry 3 }
+
+a3ComPortDialDebounceTimeUp OBJECT-TYPE
+    SYNTAX INTEGER (0..3600)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object defines the amount of time, in seconds,
+        to wait after the primary Path has gone down before
+        bringing the secondary dial-up Path up.
+
+        If the primary Path stays in the down state for this
+        amount of time, the secondary, dial-up, Path is
+        brought up."
+    DEFVAL { 30 }
+    ::= { a3ComPortDialEntry 4 }
+
+a3ComPortDialDebounceTimeDown OBJECT-TYPE
+    SYNTAX INTEGER (0..3600)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object defines the amount of time, in seconds,
+        to wait after the primary Path has come up before
+        bringing the secondary, dial-up, Path down.
+
+        If the primary Path remains in the up state for this
+        amount of time, the secondary, dial-up, Path is
+        brought down."
+    DEFVAL { 30 }
+    ::= { a3ComPortDialEntry 5 }
+
+a3ComPortDialInitState OBJECT-TYPE
+    SYNTAX INTEGER {
+        noDialOut (1),
+        manualDial (2),
+        dialOnDemand (3)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object applies only to Ports which have paths setup as 
+        PrimaryDial paths. It is used to configure the PrimaryDial 
+        path as a dial initiator operating in one of the following modes:
+
+        noDialOut(1), which disables all dialing out on the path;
+
+        manualDial(2), which requires the user to actively bring 
+          the dial path up; or
+
+        dialOnDemand(3), which will automatically bring the dial 
+          path up whenever there is user traffic, and down after a 
+          configurable period of idleness on the path.
+
+        In order for any modifications to take effect, the port 
+        must be enabled (re-enabled if it is already enabled)."
+    ::= { a3ComPortDialEntry 6 }
+
+a3ComPortDialRcvrState OBJECT-TYPE
+    SYNTAX INTEGER {
+        noAnswer (1),
+        answer (2)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object applies only to Ports which have paths setup as PrimaryDial
+        paths. It is used to configure the PrimaryDial path as a dial receiver
+        operating in one of the following modes:
+
+        noAnswer(1), which disallows incoming calls on the path; or
+
+        answer(2), which allows incoming calls on the path.
+
+        In order for any modifications to take effect, the port
+	must be enabled(re-enabled if it is already enabled).  "
+    ::= { a3ComPortDialEntry 7 }
+
+
+a3ComPortDialAction OBJECT-TYPE
+    SYNTAX INTEGER {
+        dial   (1),
+        hangUp (2),
+        other  (3)
+    } 
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to initiate manual dial or hangup
+	action to be taken by the dialup port. If this is set to
+	dial(1), the port will attempt to dial out on its Primary
+	Dial path using the first destination phone number stored by 
+	a3ComPortDialPhoneListPhoneNo. If no entry exists, then the
+	number stored by a3ComPathDialNum will be used.
+	If this is set to hangUp(2), then port will attempt to hangup
+	all its active dial paths.
+         
+        If this object is read, the value other(3) will be returned."
+    ::= { a3ComPortDialEntry 8 }
+
+a3ComPortDialDodIdleTime OBJECT-TYPE
+    SYNTAX INTEGER (1..3600)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object applies only to a port that is setup as a dial initiator
+        in DialOnDemand mode. It defines the amount of time, in seconds, to
+        wait after detecting the lack of user traffic on its primary dial path
+        before bringing the dial line down. This idle time applies each time
+	the path is brought down due to lack of user traffic, for the entire
+	duration that a port is operating in DialOnDemand mode."
+    DEFVAL { 180 }
+    ::= { a3ComPortDialEntry 9 }
+
+a3ComPortDialIdleTime OBJECT-TYPE
+    SYNTAX INTEGER (0..3600)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object applies only to a port that is setup as a dial initiator
+        in ManualDial mode. It defines the amount of time, in seconds, to wait 
+        after detecting the lack of user traffic on any of its active dial
+	path before bringing the path down. A  value of 0 is used to denote
+	an infinite idle time."
+    DEFVAL { 180 }
+    ::= { a3ComPortDialEntry 10 }
+
+a3ComPortDialDodCallsMade OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The cumulative total number of outgoing calls successfully initiated
+	by the port operating in DialOnDemand mode."
+    ::= { a3ComPortDialEntry 11 }
+
+a3ComPortDialDodCallsFail OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The cumulative total number of outgoing calls unsuccessfully initiated
+	by the port operating in DialOnDemand mode."
+    ::= { a3ComPortDialEntry 12 }
+
+a3ComPortDialDodUpTime OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The cumulative length of time in seconds that the Primary path of a port
+	operating in DialOnDemand mode is Up."
+    ::= { a3ComPortDialEntry 13 }
+
+a3ComPortDialDodPktsOut OBJECT-TYPE
+    SYNTAX Counter
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "The cumulative total number of user-data packets sent out by the port operating
+	in DialOnDemand mode."
+    ::= { a3ComPortDialEntry 14 }
+
+a3ComPortDialBODTHreshold OBJECT-TYPE
+    SYNTAX INTEGER (0..100)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "%BODTHreshold% This object specifies the level of sensitivity to 
+	bring up a BOD path for a port. The larger BODTHreshold value, the
+	less sensitive to bring up BOD path. 
+	For DOD port, when the BODTHreshold is set to 0, the BOD path and the
+	primary path are treated as one path. The port will bring the two
+	paths up and down together.
+
+	Note, when this parameter is enabled/disabled, the port itself
+        must be disabled and then re-enabled for the new value to take
+        effect.  This is done by setting the cirresponding instance of
+        ifAdminStatus to up(1)."
+    DEFVAL { 100 }
+    ::= { a3ComPortDialEntry 15 }
+
+--
+-- This group contains all the PORT DIAL POOL PREFERENCE LIST information
+-- 
+-- A port is assumed to be equivalent to an "interface" as
+-- defined by MIB2.  As such, additional information about
+-- each port can be obtained from the interface group in 
+-- MIB2.
+--
+
+
+a3ComPortDialPoolPrefTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF A3ComPortDialPoolPrefEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A table representing the PoolPreference lists for dynamic
+	dialup ports. A PoolPreference list is a prioritized list of
+	dynamic dial paths that a port can use, and it is optional.
+	Each entry in the list is represented as a row in the table, 
+	and it contains a dynamic dial path number and its priority-
+	postion in the list. Priority is in descending position order
+	and it specifies the preference of the port for a particular path.
+	All objects in this table are applicable only for a dynamic
+	dial port, ie, a port with an effective InCallerID, before these
+	objects are specified. "
+    ::= { a3ComPortDial 3 }
+
+a3ComPortDialPoolPrefEntry OBJECT-TYPE
+    SYNTAX A3ComPortDialPoolPrefEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    INDEX  { a3ComPortDialPoolPrefPort, a3ComPortDialPoolPrefPathPos }
+    ::= { a3ComPortDialPoolPrefTable 1 }
+
+A3ComPortDialPoolPrefEntry ::= SEQUENCE {
+    a3ComPortDialPoolPrefPort
+        INTEGER,
+    a3ComPortDialPoolPrefPathPos
+        INTEGER, 
+    a3ComPortDialPoolPrefPathNum
+        INTEGER, 
+    a3ComPortDialPoolPrefStatus
+        RowStatus	
+    }
+
+a3ComPortDialPoolPrefPort OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Specifies the port number(portid), used as an index
+	together with a3ComPortDialPoolPrefPathPos, to select
+	a particular row entry."
+    ::= { a3ComPortDialPoolPrefEntry 1 }
+
+a3ComPortDialPoolPrefPathPos OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Specifies the position(priority) in the PoolPreference
+	list of a path, for the port. Used as an index together
+	with a3ComPortDialPoolPrefPort to select a particular
+	row entry."
+    ::= { a3ComPortDialPoolPrefEntry 2 }
+
+a3ComPortDialPoolPrefPathNum OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Specifies the path number(pathid) of a dynamic dial
+	path that will be taken out from the dynamic dial pool
+	and added into the PoolPreference list for the port."
+    ::= { a3ComPortDialPoolPrefEntry 3 }
+
+a3ComPortDialPoolPrefStatus OBJECT-TYPE
+    SYNTAX RowStatus
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to add or delete a dynamic dial path
+	in the PoolPreference list of a port. Each path and its
+	position in the list is represented as a row. When adding
+	a new path, only the createAndGo method of adding a row
+	is supported. All essential elements of the row must be 
+	specified in the same SET request PDU. They are: the
+	path number(a3ComPortDialPoolPrefPathNum), the path position
+	(specified by the instance identifier associated with 
+	a3ComPortDialPoolPrefPathPos) and the port number (specified
+	by the instance identifier associated with
+	a3ComPortDialPoolPrefPort)."
+    ::= { a3ComPortDialPoolPrefEntry 4 }
+
+
+
+--
+-- This group contains all the PORT DIAL PHONENUMBER LIST information
+-- 
+-- A port is assumed to be equivalent to an "interface" as
+-- defined by MIB2.  As such, additional information about
+-- each port can be obtained from the interface group in 
+-- MIB2.
+--
+
+
+a3ComPortDialPhoneListTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF A3ComPortDialPhoneListEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+        "A table representing the PhoneNo lists for dialup ports.
+	Setting up a PhoneNo list is optional for static dialup port,
+	but is required for dynamic dialup port. 
+	A PhoneNo list is a prioritized list of destination phone
+	numbers that a port can use to dial out to. Each entry in
+	the list is represented as a row in the table and it contains
+	a phone number, the phone type, its baudrate and its priority
+	(position) in the list. Priority is in descending postion
+	order; and it specifies the preference of the port for a
+	particular phone number.
+	All objects in this table are applicable only for a dialup
+	port. "
+    ::= { a3ComPortDial 4 }
+
+a3ComPortDialPhoneListEntry OBJECT-TYPE
+    SYNTAX A3ComPortDialPhoneListEntry
+    ACCESS not-accessible
+    STATUS mandatory
+    INDEX  { a3ComPortDialPhoneListPort, a3ComPortDialPhoneListPos }
+    ::= { a3ComPortDialPhoneListTable 1 }
+
+A3ComPortDialPhoneListEntry ::= SEQUENCE {
+    a3ComPortDialPhoneListPort
+        INTEGER,
+    a3ComPortDialPhoneListPos
+        INTEGER, 
+    a3ComPortDialPhoneListPhoneNo
+        DisplayString(SIZE(1..51)),
+    a3ComPortDialPhoneListType
+        INTEGER,
+    a3ComPortDialPhoneListBaud
+        INTEGER, 
+    a3ComPortDialPhoneListStatus
+        RowStatus	
+    }
+
+a3ComPortDialPhoneListPort OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Specifies the port number(portid), used as an index
+	together with a3ComPortDialPhoneListPos, to select
+	a particular row entry."
+    ::= { a3ComPortDialPhoneListEntry 1 }
+
+a3ComPortDialPhoneListPos OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "Specifies the position(priority) in the PhoneNo list of
+	a phone number, for this port. Used as an index
+	together with a3ComPortDialPhoneListPort, to select
+	a particular row entry."
+    ::= { a3ComPortDialPhoneListEntry 2 }
+
+a3ComPortDialPhoneListPhoneNo OBJECT-TYPE
+    SYNTAX DisplayString(SIZE(1..51))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "A text string representing a phone number in the PhoneNo list
+	of a port. The phone number is used as the destination phone 
+	number to call for an outgoing call. In the case of an ISDN
+	dial line, this text string may also include the Subaddress
+	string following the phone number string, with a colon as a
+	separator between the two."
+    ::= { a3ComPortDialPhoneListEntry 3 }
+
+a3ComPortDialPhoneListType OBJECT-TYPE
+    SYNTAX INTEGER {
+        iSDN(1),
+        analog(2),
+	other(3) 
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Used to specify the phone type attribute of a phone number
+	in the PhoneNo list - either of type ISDN(1) or type Analog(2)
+	or other(3)."
+    DEFVAL { analog }
+    ::= { a3ComPortDialPhoneListEntry 4 }
+
+a3ComPortDialPhoneListBaud OBJECT-TYPE
+    SYNTAX INTEGER(0..100000000)
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "Used to specify the Baud rate attribute of a phone number in
+	the PhoneList."
+    DEFVAL { 9600 }
+    ::= { a3ComPortDialPhoneListEntry 5 }
+
+a3ComPortDialPhoneListStatus OBJECT-TYPE
+    SYNTAX RowStatus
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "This object is used to add or delete a phone number from the
+	PhoneNo list of a port. Each phone number and its associated 
+	attributes (phone type, Baud rate, and priority-position) is
+	containned in a row. When adding a new phone number, only the
+	createAndGo method of adding row is supported. All essential
+	elements of the row must be specified in the same SET request
+	PDU. They are: phone number(a3ComPortDialPhoneListPhoneNo), 
+	phone number position (specified by the instance identifier of
+	a3ComPortDialPhoneListPos), and the port number (specified by
+	the instance identifier of a3ComPortDialPhoneListPort)."
+    ::= { a3ComPortDialPhoneListEntry 6 }
+
+
+ 
+END
+

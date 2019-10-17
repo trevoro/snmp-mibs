@@ -1,0 +1,1887 @@
+-- extracted from draft-bierman-disman-see-00.txt
+-- at Fri Feb 16 06:04:08 2001
+
+SEE-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+        MODULE-IDENTITY, OBJECT-TYPE, Integer32,
+        Gauge32, Unsigned32, Counter32, NOTIFICATION-TYPE,
+        experimental
+                FROM SNMPv2-SMI
+        MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+                FROM SNMPv2-CONF
+        RowStatus, TimeStamp, TEXTUAL-CONVENTION,
+        TruthValue, StorageType, DateAndTime
+                FROM SNMPv2-TC
+        SnmpAdminString
+                FROM SNMP-FRAMEWORK-MIB
+        SnmpEngineIdOrNone
+                FROM ENTITY-MIB
+        smScriptOwner, smScriptName, smLanguageGroup,
+        smScriptGroup, smCodeGroup
+                FROM DISMAN-SCRIPT-MIB;
+
+seeMIB MODULE-IDENTITY
+        LAST-UPDATED    "200012240000Z"
+        ORGANIZATION    "Cisco Systems, Inc."
+        CONTACT-INFO
+                "       Andy Bierman
+                        Cisco Systems, Inc.
+               Postal: 170 West Tasman Drive
+                        San Jose, CA USA 95134
+                   Tel: +1 408 527-3711
+                E-mail: abierman@cisco.com
+
+                Send comments to <abierman@cisco.com>"
+        DESCRIPTION
+            "This module defines MIB variables related to the operation
+            of the Script Execution Environment."
+    REVISION        "200012240000Z"
+    DESCRIPTION
+            "Initial version of the Script Execution Environment MIB
+            module."
+        ::= { experimental 1 }
+
+
+seeMibObjects     OBJECT IDENTIFIER ::= { seeMIB 1 }
+seeNotifications  OBJECT IDENTIFIER ::= { seeMIB 2 }
+seeConformance    OBJECT IDENTIFIER ::= { seeMIB 3 }
+
+seeCapsObjects    OBJECT IDENTIFIER ::= { seeMibObjects 1 }
+seeEnvObjects     OBJECT IDENTIFIER ::= { seeMibObjects 2 }
+seeExecObjects    OBJECT IDENTIFIER ::= { seeMibObjects 3 }
+seeRegistrations  OBJECT IDENTIFIER ::= { seeMibObjects 4 }
+
+
+--
+-- SEE Textual Conventions
+--
+
+SeeAppProfile ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+            "This TC describes an enumerated integer that identifies an
+            individual application profile.
+
+            The value 'appWatchedVar' indicates the Watched Variable
+            application profile, which allows a script to be executed if
+            instances of a polled MIB object changes value.
+
+            The value 'appPeriodic' indicates the Periodic application
+            profile, which allows a script to be executed repeatedly,
+            once per specified polling interval.
+
+            The value 'appCalendar' indicates the Calendar application
+            profile, which allows a script to be executed on an ad-hoc
+            basis, with the Scheduling MIB.
+
+            The value 'appNotifyFilter' indicates the Notification
+            Filter application profile, which allows a script to be
+            executed just before particular notifications are generated
+            by the SNMP Entity hosting the script execution environment.
+            The value 'appNotifyReceiver' indicates the Notification
+            Receiver application profile, which allows a script to be
+            executed when particular notifications are received by the
+            SNMP Entity hosting the script execution environment.
+
+            The value 'appVirtualGet' indicates the Virtual Get
+            application profile, which allows a read-only script to be
+            executed if an associated MIB object is retrieved by a
+            command generator application.
+
+            The value 'appManual' indicates this the Manual application
+            profile, which allows a script to be executed by management
+            application action only."
+    SYNTAX INTEGER {
+                     appWatchedVar(1),
+                     appPeriodic(2),
+                     appCalendar(3),
+                     appNotifyFilter(4),
+                     appNotifyReceiver(5),
+                     appVirtualGet(6),
+                     appManual(7)
+                   }
+
+
+SeeExecPermissions ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+            "This TC describes a BITS object that identifies the
+            specific runtime permissions on the host SNMP engine for a
+            particular management task execution environment.
+
+            If the 'agentEnvVars' BIT is set, then this task may create
+            and destroy environment variables with agent scope.
+
+            If the 'groupEnvVars' BIT is set, then this task may create
+            and destroy environment variables with group scope, and only
+            for the group identified by the associated
+            seeTaskControlGroupId object.
+
+            If the 'taskEnvVars' BIT is set, then this task may create
+            and destroy environment variables with group scope, and only
+            for this task, identified by the associated
+            seeTaskControlTaskIndex object.
+
+            If the 'notificationPDUs' BIT is set, and the application
+            profile for this entry permits notification generation, then
+            this task may emit notifications via the 'SnmpMsgLib' system
+            library functions.
+
+            If the 'getPDUs' BIT is set, then this task may conduct SNMP
+            data retrieval transactions via the 'SnmpMsgLib' system
+            library functions.
+
+            If the 'setPDUs' BIT is set, then this task may conduct SNMP
+            Set transactions via the system library functions.
+
+            If the 'writeConfig' BIT is set, and write access is
+            permitted by the application profile for this entry, then
+            this task may call system library functions which
+            (potentially) change configuration parameters in the host
+            SNMP engine.
+
+            If the 'diagnostics' BIT is set, and write access is
+            permitted by the application profile for this entry, then
+            this task may call system library functions which invoke
+            (potentially intrusive) diagnostics tests on the host SNMP
+            engine.
+
+            If the 'oidAlias' BIT is set, and write access is permitted
+            by the application profile for this entry, then this task
+            may call system library functions which create, delete, or
+            mmodify the set of OID Alias identifier tokens available to
+            all tasks (i.e. agent scope)."
+    SYNTAX BITS {
+                  agentEnvVars(0),
+                  groupEnvVars(1),
+                  taskEnvVars(2),
+                  notificationPDUs(3),
+                  getPDUs(4),
+                  setPDUs(5),
+                  writeConfig(6),
+                  diagnostics(7),
+                  oidAliases(8)
+                }
+
+
+SeeLogOutput ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+            "This TC describes a log fragment.
+            Because debug log messages may become too large too download
+            in a single SNMP PDU, log files may need to be fragmented in
+            a configurable manner.
+
+            An agent may limit the size of actual MIB instances of this
+            type, based on the resource or transport layer limitations
+            of the operating environment."
+    SYNTAX OCTET STRING (SIZE(0..65535))
+
+
+SeeGroupIdentifier ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+            "This TC describes an integer that represents an
+            administratively assigned 'task group' identifier.  All
+            management tasks in the same group share access to
+            environment variables defined with 'group scope'."
+    SYNTAX Integer32 (1..2147483647)
+
+
+SeeTypeIdentifier ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+            "This TC describes a string that represents a globally
+            unique data type identifier string.  The agent uses this
+            string for type conversion and data validation purposes
+            within the execution environment.
+
+            This is a case-sensitive string that is not null-terminated.
+            It must contain the name of a base data type from the
+            SMIv2-SMI, or a base data type from the SEE language.
+
+            The intrinsic Type Identifier 'Null' is used to
+            differentiate between an empty string and an unset string.
+            There are three 'read-only' variants of the 'Null' Type
+            Identifier, which may be present in Response PDU varbind
+            lists to clarify the semantics of a zero length value
+            string:
+
+              'NoSuchName'
+              'NoSuchInstance'
+              'EndOfMibView'
+
+            The following list contains the list of valid Base Type
+            Identifiers, derived from the SMIv2 [RFC2578], and the SEE
+            language definition.
+
+              'BITS'
+              'char'
+              'Counter32'
+              'Counter64'
+              'EndOfMibView'
+              'float'
+              'Gauge32'
+              'int'
+              'INTEGER'
+              'Integer32'
+              'IpAddress'            (deprecated)
+              'long'
+              'NoSuchInstance'
+              'NoSuchName'
+              'Null'
+              'OBJECT IDENTIFIER'
+              'OCTET STRING'
+              'OID'
+              'Opaque'               (deprecated)
+              'STRING'
+              'TimeTicks'
+              'uint'
+              'ulong'
+              'Unsigned32'    "
+    SYNTAX OCTET STRING (SIZE (1..32))
+
+
+SeeIdentifierString ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+            "This TC describes a string that conforms to the syntax
+            requirements for an <identifier> token in the SEE language
+            specification. Identifiers in the SEE MIB are restricted to
+            the underscore character (_), numeric characters ([0..9]),
+            and the letters of the alphabet ([a..z] | [A..Z])."
+    SYNTAX OCTET STRING (SIZE (1..48))
+
+
+SeeStringLiteral ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+            "This TC describes an arbitrary string value that conforms
+            to the syntax requirements for a <string-literal> token in
+            the SEE language specification, except that the double
+            quotes that start and end the string and not saved in
+            objects of this type, in order to remain consistent with
+            'SNMP strings'."
+    SYNTAX OCTET STRING (SIZE (0..65535))
+
+
+SeeResultCode  ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+            "This TC describes a script or function result code.  This
+            enumerated list is derived from smRunExitCode object in the
+            Script MIB, It is used here as a TC, to allow these
+            semantics to be shared by multiple objects.  The enumeration
+            'noError' has been changed from the value '1' to the value
+            '0' to be consistent with the C programming language. The
+            value '1' as been changed to 'notSet'. An additional
+            enumeration (triggerOverflowError) has also been added.
+
+            An object of this type may have one of the following values:
+
+            - `noError', which indicates that the script or function
+               completed successfully without errors;
+
+            - `notSet', which does not indicate any error condition;
+
+            - `halted', which indicates that the script or function
+               was halted by a request from an authorized manager;
+
+            - `lifeTimeExceeded', which indicates that the script or
+               function exited because a time limit was exceeded;
+
+            - `noResourcesLeft', which indicates that the script or
+               function exited because it ran out of resources,
+               (e.g. memory);
+
+            - `languageError', which indicates that the script or
+               function exited because of a language error (e.g. a
+               syntax error in an interpreted language);
+
+            - `runtimeError', which indicates that the script or
+               function exited due to a runtime error (e.g. a
+               division by zero);
+
+            - `invalidArgument', which indicates that the script or
+               function could not be run because of invalid arguments;
+
+            - `securityViolation', which indicates that the script or
+               function exited due to a security violation;
+
+            - `genericError', which indicates that the script or
+               function exited for an unspecified reason.
+
+            - `triggerOverflowError', which indicates that the
+               management task or function did not execute because an
+               invocation of that task was already in progress, and
+               the trigger event was dropped instead of queued.
+
+            If the script has not yet begun running, or is currently
+            running, the value will be `notSet'."
+    SYNTAX INTEGER {
+                     noError(0),
+                     notSet(1),
+                     halted(2),
+                     lifeTimeExceeded(3),
+                     noResourcesLeft(4),
+                     languageError(5),
+                     runtimeError(6),
+                     invalidArgument(7),
+                     securityViolation(8),
+                     genericError(9),
+                     triggerOverflowError(10)
+                   }
+
+
+
+--
+-- SEE Agent System Resource Capabilities
+--
+
+seeCapsTodClock OBJECT-TYPE
+    SYNTAX INTEGER {
+                     noTodClock(1),
+                     todClock(2),
+                     todClockAndTz(3)
+                   }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "An indication of the Time of Day clock capabilities of this
+            agent.
+
+            If this object is equal to 'noTodClock(1)', then this agent
+            does not have a Time of Day clock, and therefore does not
+            support the 'TimeLib' system library, the schedLocalTime MIB
+            object, or the _TRIGGER_TIME_OF_DAY environment variable.
+
+            If this object is equal to 'todClock(2)', then this agent
+            has a Time of Day clock, but does not know the local
+            timezone, (i.e. supports the 8 octet variant of the
+            TimeAndDate textual convention).  The agent therefore
+            supports the TimeLib system library and _TRIGGER_TIME_OF_DAY
+            environment variable, but does not support the
+            schedLocalTime MIB object.
+
+            If this object is equal to 'todClockAndTz(3)', then this
+            agent has a Time of Day clock, and also knows the local
+            timezone, (i.e. supports the 11 octet variant of the
+            TimeAndDate textual convention).  The agent therefore
+            supports the TimeLib system library, schedLocalTime MIB
+            object, and the _TRIGGER_TIME_OF_DAY environment variable.
+
+            The agent must set this object during system initialization
+            and not change the value without reinitializing the agent."
+    ::= { seeCapsObjects 1 }
+
+seeCapsFloatDataType OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "An indication of the floating point arithmetic capabilities
+            of this agent.
+
+            If this object is equal to 'false', then the agent does not
+            support the 'float' data type defined in the scripting
+            language.
+
+            If this object is equal to 'true', then the agent does
+            support the 'float' data type defined in the scripting
+            language.
+
+            The agent must set this object during system initialization
+            and not change the value without reinitializing the agent."
+    ::= { seeCapsObjects 2 }
+
+seeCapsMinPollInterval OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    UNITS       "seconds"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The minimum polling interval that this SEE agent will
+            support.  Implementations are permitted to set their own
+            minimum polling interval, based on the capabilities of the
+            system.  The agent should set this object as closely as
+            possible to the value '1'.
+
+            The agent must set this object during system initialization
+            and not change it without reinitializing the agent."
+    ::= { seeCapsObjects 3 }
+
+seeCapsMaxEnvStringLen OBJECT-TYPE
+    SYNTAX      Integer32 (64..2147483647)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The maximum length of an individual environment variable
+            string that this SEE agent will support.
+
+            The agent must set this object during system initialization
+            and not change it without reinitializing the agent."
+    ::= { seeCapsObjects 4 }
+
+seeCapsAllowedTargets OBJECT-TYPE
+    SYNTAX      INTEGER {
+                         localTarget(1),
+                         remoteTargets(2),
+                         localAndRemoteTargets(3)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "An indication of the target platform types that this agent
+            can support.
+
+            If this object is equal to 'localTarget(1)', then this agent
+            only supports application profiles which run on behalf of
+            the local SNMP engine.  The agent will only allow the
+            seeTaskControlEngineId object to contain an empty string
+            (indicating that the target SNMP engine is the host SNMP
+            engine).
+
+            If this object is equal to 'remoteTargets(2)', then this
+            agent only supports application profiles which run on behalf
+            of remote SNMP engines (e.g.  the agent is a mid-level
+            manager containing only the MIB objects required to
+            configure itself).  The agent will only allow the
+            seeTaskControlEngineId object to contain a non-zero length
+            string, not equal to the snmpEngineId for the local agent.
+
+            If this object is equal to 'localAndRemoteTargets(3)', then
+            this agent supports application profiles which run on behalf
+            of local or remote SNMP engines.  The agent will allow the
+            seeTaskControlEngineId object to contain any valid value.
+
+            The agent must set this object during system initialization
+            and not change it without reinitializing the agent."
+    ::= { seeCapsObjects 5 }
+
+--
+-- SEE Environment Configuration Scalars
+--
+
+seeTaskAbortNotifyEnabled OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+            "If this object contains the value 'true', then the agent
+            will allow generation of seeTaskAbort notifications to
+            occur.
+
+            Otherwise, the agent will not generate any seeTaskAbort
+            notifications."
+    ::= { seeEnvObjects 1 }
+
+seeTaskAlarmNotifyEnabled OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+            "If this object contains the value 'true', then the agent
+            will allow generation of seeTaskAlarm notifications to
+            occur.
+            Otherwise, the agent will not generate any seeTaskAlarm
+            notifications."
+    ::= { seeEnvObjects 2 }
+
+--
+-- SEE Environment Variable Strings
+--
+
+seeEnvVarTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SeeEnvVarEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Contains the environment variable definitions used on this
+            SEE agent. An environment variable is represented as an
+            array of 'STRING' data elements.  The number of strings is
+            identified by the seeEnvVarArraySize object (in this table)
+            and the maximum size of each string is identified by the
+            seeCapsMaxEnvStringLen scalar object.
+
+            The SEE agent will recognize the SeeIdentifierString
+            specified in each entry as an environment variable array
+            identifier token with the same value.
+
+            The indexing of this table allows three different scopes in
+            which a given environment variable may be visible - agent,
+            group, and task.
+
+                Scope   seeEnvVarGroupId     seeEnvVarTaskId
+                Name       INDEX                  INDEX
+                --------------------------------------------
+                 agent       zero                  zero
+                 group       non-zero              zero
+                 task        zero                  non-zero
+                 INVALID     non-zero              non-zero
+
+                Agent Scope: 1 instance of the env var per agent
+                Group Scope: 1 instance of the env var per group
+                Task Scope:  1 instance of the env var per task
+
+            When a task requests access to an environment variable (via
+            the 'EnvVarLib' System Library), the agent will determine
+            the proper identifier scope by searching this table for the
+            correct task, group, or agent scoped entry.
+            The binding between management task and the proper set of
+            environment variables is done (conceptually) just before
+            each invocation of the associated script.
+
+            Applications should not delete entries which are currently
+            in use by one or more seeTaskControlEntries."
+    ::= { seeEnvObjects 3 }
+
+seeEnvVarEntry OBJECT-TYPE
+    SYNTAX      SeeEnvVarEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A conceptual row in the seeEnvVarTable.
+
+            Entries are created in this table by agent or management
+            station action. Entries may also be created by scripts via
+            the 'env_create' function from the 'EnvVarLib' system
+            library.  Note that the size of this table may be restricted
+            either statically or dynamically, due to limited agent
+            resources.
+
+            An agent should include all environment variables available
+            in the execution environment in this table."
+    INDEX { seeEnvVarGroup, seeEnvVarTask, seeEnvVarName }
+    ::= { seeEnvVarTable 1 }
+
+SeeEnvVarEntry ::= SEQUENCE {
+    seeEnvVarGroup         Integer32,
+    seeEnvVarTask          Integer32,
+    seeEnvVarName          SeeIdentifierString,
+    seeEnvVarArraySize     Integer32,
+    seeEnvVarPermissions   INTEGER,
+    seeEnvVarWriteGroup    Integer32,
+    seeEnvVarWriteTask     Integer32,
+    seeEnvVarInitType      INTEGER,
+    seeEnvVarInitValue     SeeStringLiteral,
+    seeEnvVarStorageType   StorageType,
+    seeEnvVarStatus        RowStatus
+}
+
+seeEnvVarGroup OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The group scope identifier for this environment variable.
+
+            If the associated seeEnvVarTask object is greater than zero,
+            this this object must equal zero.
+
+            If this object is equal to zero, and the associated
+            seeEnvVarTask object is equal to zero, then the indicated
+            environment variable is visible to all groups for read
+            access.
+
+            If this object is greater than zero, and the associated
+            seeEnvVarTask object is equal to zero, then the indicated
+            environment variable is visible in to management tasks with
+            the same seeTaskControlGroupId value."
+    ::= { seeEnvVarEntry 1 }
+
+seeEnvVarTask OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The task scope identifier for this environment variable.
+
+            If this object is equal to zero, then the associated
+            seeEnvVarGroup identifies the scope of this entry (i.e
+            either group or agent scope).
+
+            If this object is greater than zero, then the indicated
+            environment variable is visible only to the management task
+            with the same seeTaskControlIndex value as this object."
+    ::= { seeEnvVarEntry 2 }
+
+seeEnvVarName OBJECT-TYPE
+    SYNTAX      SeeIdentifierString
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The environment variable identifier token value associated
+            with this entry."
+    ::= { seeEnvVarEntry 3 }
+
+seeEnvVarArraySize OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The number of strings contained in the environment variable
+            represented by this entry.  Each array element is identified
+            by an dense index value, starting from zero and ending with
+            'seeEnvVarArraySize - 1'.
+
+            Individual elements can be referenced with the array
+            operator following the Identifier token (e.g. 'foo[3]').  In
+            order to maintain syntax consistency within scripts, the
+            Identifier token may be used alone to indicate the first
+            array element (i.e. 'foo' and 'foo[0]' reference the same
+            string).
+
+            The value of this object may be retrieved by a script with
+            the 'env_string_count' function from the 'EnvVarLib' system
+            library.
+
+            Note that the agent must reserve storage for all the array
+            elements indicated by this object.  Applications should keep
+            array sizes to the minimum required for the particular
+            management task, in order to conserve agent resources.
+
+            This object may not be modified if the associated
+            seeEnvVarStatus object is equal to active."
+    ::= { seeEnvVarEntry 4 }
+
+seeEnvVarPermissions OBJECT-TYPE
+    SYNTAX INTEGER {
+                     readOnly(1),
+                     readWrite(2)
+                   }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The type of access permissions allowed for the environment
+            variable associated with this entry, within the environment
+            variable scope defined for this entry.
+
+            The value 'readOnly(1)' identifies a environment variable
+            which may only be read by scripts.  Any script within the
+            scope of this environment variable which attempts to modify
+            the contents of an environment variable of this type will
+            terminate with an 'securityViolation' error status.  The
+            associated seeEnvVarWriteGroup and seeEnvVarWriteTask
+            objects are not used in this case.
+
+            The value 'readWrite(2)' identifies a environment variable
+            which may be read or modified by one or more scripts,
+            depending on the scope of the environment variable
+            (determined by the seeEnvVarGroup and seeEnvVarTask index
+            values) and the associated seeEnvVarWriteGroup and
+            seeEnvVarWriteTask objects.
+
+            This object may not be modified if the associated
+            seeEnvVarStatus object is equal to active."
+    ::= { seeEnvVarEntry 5 }
+
+seeEnvVarWriteGroup OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object can be used to limit write access of a
+            particular environment variable to a specific task group.
+            It is only relevant if the associated seeEnvVarPermissions
+            object is equal to 'readWrite'.  Otherwise this object is
+            not used.
+
+            If this object is equal to zero, then write access of this
+            entry is not limited to a single task group.  Otherwise, the
+            associated seeEnvVarWriteTask object must be equal to zero,
+            and this object identifies the seeTaskControlGroupId value
+            of the tasks that are allowed to write to this environment
+            variable.
+
+            This object may not be modified if the associated
+            seeEnvVarStatus object is equal to active."
+    ::= { seeEnvVarEntry 6 }
+
+seeEnvVarWriteTask OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object can be used to limit write access of a
+            particular environment variable to a specific management
+            task.  It is only relevant if the associated
+            seeEnvVarPermissions object is equal to 'readWrite'.
+            If this object is equal to zero, then write access to this
+            entry is not restricted to a single task.  Otherwise, the
+            associated seeEnvVarWriteGroup object must be equal to zero,
+            and this object identifies the seeTaskControlIndex value of
+            the one task that is allowed to write to this environment
+            variable.
+
+            This object may not be modified if the associated
+            seeEnvVarStatus object is equal to active."
+    ::= { seeEnvVarEntry 7 }
+
+seeEnvVarInitType OBJECT-TYPE
+    SYNTAX INTEGER {
+                     initAlgorithmic(1),
+                     initStatic(2)
+                   }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The manner in which the agent will initialize this
+            environment variable.
+
+            The value 'initAlgorithmic' identifies a system environment
+            variable which is set by the agent in some algorithmic
+            manner. In this case, the envVarInitValue object is not
+            used.
+
+            The value 'initStatic' identifies an environment variable
+            array which is initialized by the agent with the associated
+            seeEnvVarInitValue, at the time this entry is activated."
+    ::= { seeEnvVarEntry 8 }
+
+seeEnvVarInitValue OBJECT-TYPE
+    SYNTAX      SeeStringLiteral
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The initial value used for the environment variable
+            associated with this entry.
+
+            If the associated seeEnvVarInitType object equals
+            'initStatic', then the agent will initialize each element of
+            the the indicated environment variable with this value.
+
+            This object may not be modified if the associated
+            seeEnvVarStatus object is equal to active."
+    ::= { seeEnvVarEntry 9 }
+
+seeEnvVarStorageType OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The type on non-volatile storage behavior associated with
+            this entry."
+    ::= { seeEnvVarEntry 10 }
+
+seeEnvVarStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this entry.  This object must be equal to
+            active for the associated environment variable to be
+            recognized within the script execution environment.
+
+            Upon activation, the agent will make the environment
+            variable visible in the indicated scope with the specified
+            initial value.
+
+            Note that if this row is activated and later deactivated,
+            scripts which attempt to access the environment variable
+            identified by this entry will terminate with a
+            'runtimeError' error status."
+    ::= { seeEnvVarEntry 11 }
+
+--
+-- SEE OID Alias Table
+--
+
+seeOidAliasTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SeeOidAliasEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Contains the OBJECT IDENTIFIER Alias definitions used on
+            this SEE agent. An OID Alias variable is represented as a
+            single read-only 'STRING' data element.
+
+            The SEE agent will recognize the SeeIdentifierString
+            specified in each entry as an OID Alias identifier token (in
+            agent scope) with the same value.  OID Alias identifier
+            tokens can be used with any 'read-only' operator that is
+            valid for a local variable of type 'OID'."
+    ::= { seeEnvObjects 4 }
+
+seeOidAliasEntry OBJECT-TYPE
+    SYNTAX      SeeOidAliasEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A conceptual row in the seeOidAliasTable.
+
+            Entries are created in this table by agent or management
+            station action. Entries may also be created by scripts via
+            the 'oid_alias_set' function from the 'SysLib' system
+            library.  Note that the size of this table may be restricted
+            either statically or dynamically, due to limited agent
+            resources.
+
+            An agent should include all OID aliases available in the
+            execution environment in this table."
+    INDEX { seeOidAliasString }
+    ::= { seeOidAliasTable 1 }
+
+SeeOidAliasEntry ::= SEQUENCE {
+    seeOidAliasString      SeeIdentifierString,
+    seeOidAliasOID         OBJECT IDENTIFIER,
+    seeOidAliasStorageType StorageType,
+    seeOidAliasStatus      RowStatus
+}
+
+seeOidAliasString OBJECT-TYPE
+    SYNTAX      SeeIdentifierString
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The unique identifier token string that is the target of
+            this entry. When the agent encounters an identifier token in
+            a script that exactly matches this string, that identifier
+            token will be replaced with the contents of the associated
+            seeOidAliasOID object.  This token replacement will be done
+            for processing purposes only, as the script itself will not
+            be modified."
+    ::= { seeOidAliasEntry 1 }
+
+seeOidAliasOID OBJECT-TYPE
+    SYNTAX      OBJECT IDENTIFIER
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The OBJECT IDENTIFIER to use as a replacement token when
+            the identifier token identified by this entry is encountered
+            in a script.
+
+            This object may not be modified if the associated
+            seeOidAliasStatus object is equal to active."
+    ::= { seeOidAliasEntry 2 }
+
+seeOidAliasStorageType OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The type on non-volatile storage behavior associated with
+            this entry."
+    ::= { seeOidAliasEntry 3 }
+
+seeOidAliasStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this entry.  All values must be set
+            appropriately before this row may be activated."
+    ::= { seeOidAliasEntry 4 }
+
+--
+-- SEE Task Control Table
+--
+
+seeTaskControlTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SeeTaskControlEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Controls the operation of each task within the execution
+            environment.  Entries in this table operate independently of
+            one another. Administrators must configure this table
+            carefully, since it is possible for management tasks to
+            interact with each other, since the underlying system
+            parameters and status are shared by all tasks.
+
+            The multi-threading mechanisms required to support multiple
+            active entries in this table are beyond the scope of this
+            document. Read-only scripts should be written to operate in
+            a multi-threaded environment. Read-write scripts may be
+            configured to 'run to completion' or run in a multi-threaded
+            mode."
+    ::= { seeExecObjects 1 }
+
+seeTaskControlEntry OBJECT-TYPE
+    SYNTAX      SeeTaskControlEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A conceptual row in the seeTaskControlTable.
+
+            Entries are created in this table by agent or management
+            station action. Entries are retained by the agent, as
+            indicated by the seeTaskControlStorageType object.
+
+            The smScriptOwner and smScript objects (from the Script MIB)
+            identify the particular script associated with each
+            management task entry."
+    INDEX { smScriptOwner, smScriptName, seeTaskControlIndex }
+    ::= { seeTaskControlTable 1 }
+
+SeeTaskControlEntry ::= SEQUENCE {
+    seeTaskControlIndex             Integer32,
+    seeTaskControlDescr             SnmpAdminString,
+    seeTaskControlAppProfile        SeeAppProfile,
+    seeTaskControlExecPermissions   SeeExecPermissions,
+    seeTaskControlGroupId           SeeGroupIdentifier,
+    seeTaskControlRunMode           INTEGER,
+    seeTaskControlRunButton         INTEGER,
+    seeTaskControlStartFn           SeeIdentifierString,
+    seeTaskControlLifetime          Integer32,
+    seeTaskControlEngineId          SnmpEngineIdOrNone,
+    seeTaskControlContextName       SnmpAdminString,
+    seeTaskControlTriggerOid        OBJECT IDENTIFIER,
+    seeTaskControlTriggerInt        Integer32,
+    seeTaskControlTriggerOvflAct    INTEGER,
+    seeTaskControlScratchpadSize    Integer32,
+    seeTaskControlResultType        SeeTypeIdentifier,
+    seeTaskControlLogWriteMode      INTEGER,
+    seeTaskControlMaxLogSize        Integer32,
+    seeTaskControlMaxLogChunkSize   Integer32,
+    seeTaskControlLogClearButton    INTEGER,
+    seeTaskControlNumExecOks        Counter32,
+    seeTaskControlNumExecFails      Counter32,
+    seeTaskControlLastResCode       SeeResultCode,
+    seeTaskControlLastResult        OCTET STRING,
+    seeTaskControlLastSEIndex       Unsigned32,
+    seeTaskControlLastSEOffset      Integer32,
+    seeTaskControlTaskRunning       TruthValue,
+    seeTaskControlLastTrigTime      TimeStamp,
+    seeTaskControlCurLogSize        Gauge32,
+    seeTaskControlLostLogOctets     Counter32,
+    seeTaskControlLastLogWriteTime  TimeStamp,
+    seeTaskControlStorageType       StorageType,
+    seeTaskControlStatus            RowStatus
+}
+
+seeTaskControlIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary index for this management task entry, which is
+            unique for all values of smScriptOwner and smScriptName.
+            This index allows multiple management tasks to be be
+            configured which use the same script, as well as providing a
+            unique integer identifier for each management task. These
+            index values may be reused by management applications or the
+            agent. There is no requirement to retain the semantics of an
+            active seeTaskControlEntry once the seeTaskControlRowStatus
+            is set to 'destroy'."
+    ::= { seeTaskControlEntry 1 }
+
+seeTaskControlDescr OBJECT-TYPE
+    SYNTAX      SnmpAdminString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "An administratively assigned textual description of this
+            management task."
+    ::= { seeTaskControlEntry 2 }
+
+seeTaskControlAppProfile OBJECT-TYPE
+    SYNTAX      SeeAppProfile
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The application profile for this management task.  The
+            associated script will be invoked, and runtime constraints
+            enforced, according to the rules for the application profile
+            indicated by this object.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 3 }
+
+seeTaskControlExecPermissions OBJECT-TYPE
+    SYNTAX      SeeExecPermissions
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The execution permissions set for this management task.
+            The associated script will be invoked, and runtime
+            constraints enforced, according to the particular
+            permissions enabled in this bit string.  Note that this
+            object does not override any characteristics indicated by
+            the associated seeTaskControlAppProfile object.  Instead, it
+            allows further constraint of the specific execution
+            environment and system library features available to script
+            (on behalf of this entry).
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 4 }
+
+seeTaskControlGroupId OBJECT-TYPE
+    SYNTAX      SeeGroupIdentifier
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The task group identifier for this entry.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 5 }
+
+seeTaskControlRunMode OBJECT-TYPE
+    SYNTAX INTEGER {
+                     normalRunMode(1),
+                     traceRunMode(2),
+                     debugRunMode(3),
+                     validateMode(4)
+                   }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Controls the manner in which the script associated with
+            this task is executed.  There are four run modes defined,
+            which allow some level of control over log messages, script
+            debugging, and system access.
+
+            The value 'normalRunMode' identifies a management task
+            running in the 'normal' operational mode, in which system
+            library function logging is disabled.  Note that a script
+            may emit logging messages via library functions, regardless
+            of the value of this object.  This mode only disables trace
+            logging of system activity.
+
+            The value 'traceRunMode' identifies a management task
+            running in the 'trace' operational mode, in which system
+            activity, such as calls to library functions, are logged in
+            the seeLogControlTable.
+
+            The value 'debugRunMode' identifies a management task
+            running in the 'debug' operational mode, in which trace
+            logging is active, except no read-write library functions
+            are actually invoked. This allows an administrator some
+            ability to determine the impact of a new script on the
+            existing environment, without risking system disruption.
+            Note that scripts which modify and then inspect system
+            behavior may behave unexpectedly in this 'no-op' run mode.
+
+            The value 'validateMode' identifies a management task that
+            is installed in validation mode.  Instead of executing the
+            associated script, the agent will examine the entire script
+            for correctness.  Problems such as syntax errors and
+            unresolved function names should be detected in this mode.
+            Note that an implementation cannot completely validate OID
+            Alias and environment variable identifier usage, since these
+            identifier tokens can be installed dynamically, by scripts
+            or management applications.
+
+            After the validation check is done, the
+            seeTaskControlLastResCode, seeTaskControlLastSEIndex, and
+            seeTaskControlLastSEOffset objects will be set to non-zero
+            values if any problems are found.  The agent will also
+            output error messages to the seeLogTable for the script.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    DEFVAL { normalRunMode }
+    ::= { seeTaskControlEntry 6 }
+
+seeTaskControlRunButton OBJECT-TYPE
+    SYNTAX INTEGER {
+                     runTask(1),
+                     notPressed(2)
+                   }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object allows the associated script to be executed
+            manually by a management application.
+
+            This object is only used if the associated
+            seeTaskControlAppProfile object is equal to 'appManual', or
+            if the associated seeTaskControlRunMode is equal to
+            'validateMode'.  It is ignored by the agent in other
+            situations.
+
+            Setting this object to the value 'runTask(1)' will cause the
+            script for this entry to be executed once, unless it is
+            currently running.  In that case, the agent will return an
+            'inconsistentValue' error instead of starting the script on
+            behalf of this entry.  As soon as the script is restarted,
+            the agent will set this object to the value 'notPressed(2)'.
+            An application may examine the associated
+            seeTaskControlTaskRunning object to determine if the task is
+            currently running.
+
+            Setting this object to the value 'notPressed(2)' has no
+            effect whatsoever."
+    ::= { seeTaskControlEntry 7 }
+
+seeTaskControlStartFn OBJECT-TYPE
+    SYNTAX      SeeIdentifierString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The unique identifier token string that identifies the
+            script entry point for this management task entry.
+
+            Upon script invocation, the agent will attempt to execute
+            the script function with this name. If the function does not
+            exist, or if its inputs or return type does not match the
+            application profile indicated by the associated
+            seeTaskControlAppProfile object, then the agent will
+            terminate the script invocation with a 'languageError'
+            return status.
+
+            Only two function prototype forms are supported at this
+            time.  The specific prototype to use depends on the
+            application profile.
+
+               Without return value:
+                 'void <seeTaskControlStartFn> (void);'
+               With return value:
+                 '<type-specifier> <seeTaskControlStartFn> (void);'
+
+            Note that this object is ignored by the agent if the
+            associated seeTaskControlRunMode is equal to
+            'validateMode(4)', since the agent will validate the entire
+            script, not just this function and all possible code-paths.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 8 }
+
+seeTaskControlLifetime OBJECT-TYPE
+    SYNTAX Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object indicates the maximum number of seconds that
+            may elapse before the script associated with this entry is
+            aborted by the agent with a 'lifeTimeExceeded' error status.
+            This timeout mechanism applies to each invocation of a
+            script on behalf of a specific seeTaskControlEntry.
+
+            If this object is equal to zero, then the timeout mechanism
+            is not used, and no maximum script invocation lifetime will
+            be enforced by the agent.
+
+            If this object is greater than zero, then the agent will
+            wait until at least this number of seconds elapses before
+            terminating the current invocation of the script with a
+            'lifeTimeExceeded' error status.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 9 }
+
+seeTaskControlEngineId OBJECT-TYPE
+    SYNTAX SnmpEngineIdOrNone
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the 'primary target' SNMP engine for
+            this management task entry.  This object, together with the
+            associated seeTaskControlContextName object, defines the
+            context associated with the seeTaskControlTriggerOid object.
+
+            If this object contains a zero length string, then the local
+            agent will be used as the target of management operations
+            executed by the associated script.  The agent will limit the
+            value of this object to a zero-length string if the
+            seeCapsAllowedTargets object is equal to 'localTarget'.
+
+            Otherwise, this object identifies the SNMP entity of the
+            'primary target' for script logic embodied in the associated
+            task. Note that a task is not limited to communication with
+            this target.  The agent will create the _TARGET_ENGINE_ID
+            environment variable in task scope, upon activation of this
+            entry, set to the value of this object.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 10 }
+
+seeTaskControlContextName OBJECT-TYPE
+    SYNTAX SnmpAdminString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the 'primary target' context for
+            this management task entry.  This object, together with the
+            associated seeTaskControlEngineId object, defines the
+            context associated with the seeTaskControlTriggerOid object.
+            The agent will create the _TARGET_CONTEXT_NAME environment
+            variable (array size of one) in task scope, upon activation
+            of this entry, with the value of this object.
+
+            If the associated seeTaskControlAppProfile object is equal
+            to 'appNotifyFilter' or 'appNotifyReceiver', and this object
+            contains a non-zero length string, then this object selects
+            only notifications with the same contextName (or community),
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 11 }
+
+seeTaskControlTriggerOid OBJECT-TYPE
+    SYNTAX  OBJECT IDENTIFIER
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "An OBJECT IDENTIFIER indicating a particular OBJECT
+            IDENTIFIER base fragment associated with the trigger event
+            for this management task entry. This object represents
+            different OBJECT IDENTIFIER parameters in different modes.
+
+            The _TRIGGER_OID_BASE environment variable will be set to
+            the canonical string representation for this object at the
+            start of each trigger frame executed on behalf of this
+            entry.
+
+            Each application profile may define restrictions on the
+            values which may be assigned to this object, such as whether
+            complete or incomplete base fragments are permitted.
+
+            The agent might not be able to validate the contents of this
+            object at the time the object is set, since the
+            seeTaskControlAppProfile may not be known at the time this
+            object is set.  The agent must verify the contents of this
+            object before the associated seeTaskControlStatus is set to
+            'active'.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 12 }
+
+seeTaskControlTriggerInt OBJECT-TYPE
+    SYNTAX Integer32 (0..2147483647)
+    UNITS       "seconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "An interval of time that should pass between successive
+            periodic evaluations of the trigger condition.
+
+            If the associated seeTaskControlAppProfile object is equal
+            to 'appWatchedVar' or 'appPeriodic', then this object
+            identifies the minimum number of seconds that should elapse
+            between trigger events executed on behalf of this control
+            entry, and the value zero is not allowed.
+
+            For other values of seeTaskControlAppProfile, this object is
+            ignored by the agent, and should contain the value zero.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 13 }
+
+seeTaskControlTriggerOvflAct OBJECT-TYPE
+    SYNTAX INTEGER {
+                     dropTrigger(1),
+                     dropNotifyTrigger(2),
+                     queueTrigger(3)
+                   }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Controls how the agent handles a trigger overflow condition
+            on behalf of this management task, i.e. a new trigger event
+            occurs which should be dispatched to this management task,
+            but cannot because the execution on behalf of the previous
+            trigger event has not finished.
+
+            The value 'dropTrigger' indicates that a new trigger event
+            will be dropped if a trigger overflow occurs, and a
+            'triggerOverflow' log message will be generated if logging
+            is active for this entry.
+
+            The value 'dropNotifyTrigger' indicates that a new trigger
+            event will be dropped if a trigger overflow occurs. A
+            'triggerOverflow' log message will be generated if logging
+            is active for this entry, and a 'seeTaskAlarm' notification
+            will also be generated.
+            The value 'queueTrigger' indicates that the agent will
+            attempt to save a new trigger event if a trigger overflow
+            occurs.  If the agent cannot queue the trigger event, then a
+            trigger overflow is handled as defined by the
+            'dropNotifyTrigger' enumeration.  If the agent can queue the
+            trigger event, then the event order must be preserved, and
+            the associated script should be invoked with any queued
+            events as soon as possible.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 14 }
+
+seeTaskControlScratchpadSize OBJECT-TYPE
+    SYNTAX  Integer32 (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the number of array elements that
+            the _SCRATCHPAD environment variable for this task will
+            contain.
+
+            The agent will create this number of strings in the
+            _SCRATCHPAD environment variable. The maximum length of each
+            string is defined by the seeCapsMaxEnvStringLen object.  An
+            agent is not required to allocate (or reserve) the requested
+            data storage until this entry is activated.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    DEFVAL { 1 }
+    ::= { seeTaskControlEntry 15 }
+
+seeTaskControlResultType OBJECT-TYPE
+    SYNTAX  SeeTypeIdentifier
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the base type of the script result
+            stored in the associated seeTaskControlLastResult object.
+            This allows the script result string to be formatted in
+            specific ways, so it can be converted to a type other than
+            'STRING' in a standard way. Refer to the SeeTypeIdentifier
+            TC for more details.
+            Note that the agent is not required to enforce the
+            formatting syntax requirements specified for each Type
+            Identifier value. This object is provided as a 'formatting
+            hint' to applications only.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 16 }
+
+seeTaskControlLogWriteMode OBJECT-TYPE
+    SYNTAX INTEGER {
+                     wrapWhenFull(1),
+                     stopWhenFull(2)
+                   }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The type of behavior the agent will take on behalf of this
+            entry, when the total number of octets of log output in the
+            associated seeLogTable equals or exceeds the associated
+            seeTaskControlMaxLogSize value for this entry.
+
+            If this object contains the value 'wrapWhenFull' and the the
+            maximum log size is exceeded, then the agent will delete
+            enough of the oldest seeLogEntries (with all the same
+            seeTaskControlIndex major index value) to make room for the
+            new entry.
+
+            If this object contains the value 'stopWhenFull(2)', and the
+            the maximum log size is exceeded, then the agent will stop
+            adding seeLogEntries.  Instead, the associated
+            seeTaskControlLostLogOctets object will be incremented by
+            the size of the seeLogChunk object that would have been
+            created.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 17 }
+
+seeTaskControlMaxLogSize OBJECT-TYPE
+    SYNTAX  Integer32 (-1..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The maximum number of octets that may be written to
+            seeLogEntries on behalf of this entry.
+
+            If this object contains the value '-1', then no maximum size
+            will be enforced for the associated seeLogTable.  The size
+            of the log table is subject to only to agent resources.
+
+            If this object contains the value '0', then logging will be
+            disabled for this entry.
+
+            Otherwise, this object identifies the maximum allowed size
+            of the combined lengths of the associated seeLogChunk OCTET
+            STRING objects, created in the seeLogTable on behalf of this
+            entry.  Refer to the seeTaskControlLogWriteMode for a
+            description of agent behavior when the log size is equal or
+            larger in size to the value specified by this object.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 18 }
+
+seeTaskControlMaxLogChunkSize OBJECT-TYPE
+    SYNTAX  Integer32 (255..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The maximum number of octets that may be written to any
+            seeLogChunk object created on behalf of this entry.  An
+            application should limit the value of this object in order
+            to prevent a 'tooBig' SNMP PDU error to be generated for get
+            requests of the seeLogChunk object.
+
+            The agent must not create entries larger than this number of
+            octets in the seeLogTable on behalf of this entry.  Note
+            that an agent may choose to fragment log entries at values
+            lower than indicated by this object.
+
+            This object may not be modified if the associated
+            seeTaskControlStatus object is equal to active."
+    ::= { seeTaskControlEntry 19 }
+
+seeTaskControlLogClearButton OBJECT-TYPE
+    SYNTAX INTEGER {
+                     clearLog(1),
+                     notPressed(2)
+                   }
+
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object allows the contents of the seeLogTable created
+            on behalf of this entry to be deleted.
+
+            If this object is set to the value 'clearLog' the agent will
+            delete all related entries in the seeLogTable, and then set
+            the value of this object to the value 'notPressed'.
+
+            Setting this object to the value 'notPressed(2)' has no
+            effect whatsoever."
+    ::= { seeTaskControlEntry 20 }
+
+seeTaskControlNumExecOks OBJECT-TYPE
+    SYNTAX  Counter32
+    UNITS   "script invocation events"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "This counter is incremented by one, each time the script
+            associated with this control entry is executed, and
+            completed with a return status of 'noError'."
+    ::= { seeTaskControlEntry 21 }
+
+seeTaskControlNumExecFails OBJECT-TYPE
+    SYNTAX  Counter32
+    UNITS   "script invocation events"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "This counter is incremented by one, each time the script
+            associated with this control entry is executed, and
+            completed with a return status other than 'noError'."
+    ::= { seeTaskControlEntry 22 }
+
+seeTaskControlLastResCode OBJECT-TYPE
+    SYNTAX  SeeResultCode
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The system result status value obtained the last time the
+            associated script was executed."
+    ::= { seeTaskControlEntry 23 }
+
+seeTaskControlLastResult OBJECT-TYPE
+    SYNTAX  OCTET STRING
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The string result value obtained the last time the
+            associated script was executed. This object may contain a
+            value in a different data type, string-encoded according to
+            the encoding rules for the Type Identifier indicated by the
+            associated seeTaskControlResultType object.
+
+            If the seeTaskControlAppProfile object for this entry is
+            equal to 'appVirtualGet', and the seeTaskControlStatus is
+            equal to 'active', then the associated script will be be
+            invoked each time this object is retrieved.
+
+            The empty string is returned if no return value is available
+            on behalf of this entry."
+    ::= { seeTaskControlEntry 24 }
+
+seeTaskControlLastSEIndex OBJECT-TYPE
+    SYNTAX  Unsigned32 (1..4294967295)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The smCodeIndex value of the SEE script chunk, in which the
+            first script syntax error was found during the execution of
+            the associated script.
+
+            If no syntax error has been detected, or if a particular
+            script has not yet been executed by the agent, then this
+            object will contain the value zero."
+    ::= { seeTaskControlEntry 25 }
+
+seeTaskControlLastSEOffset OBJECT-TYPE
+    SYNTAX  Integer32 (-1..1023)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The offset position within the associated smCodeText OCTET
+            STRING in which the first script syntax error was found
+            during the execution of the associated script.
+
+            If no syntax error has been detected, or if a particular
+            script has not yet been executed by the agent, then this
+            object will contain the value '-1'.
+
+            Otherwise, this object identifies the number of octets into
+            the script code string identified by the associated
+            seeTaskControlLastSEIndex object.
+
+            Note that position of the first octet in the string is
+            identified by the value '0', not the value '1'."
+    ::= { seeTaskControlEntry 26 }
+
+seeTaskControlTaskRunning OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "Indicates whether the agent is currently running the
+            associated script on behalf of this management task entry.
+
+            The value 'true' indicates this task is currently running."
+    ::= { seeTaskControlEntry 27 }
+
+seeTaskControlLastTrigTime OBJECT-TYPE
+    SYNTAX  TimeStamp
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The value of sysUpTime the last time a trigger event for
+            this entry occurred, or zero if no such event has occurred."
+    ::= { seeTaskControlEntry 28 }
+
+seeTaskControlCurLogSize OBJECT-TYPE
+    SYNTAX  Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The current number of octets contained in all seeLogChunk
+            instances, existing in the seeLogTable on behalf of this
+            entry."
+    ::= { seeTaskControlEntry 29 }
+
+seeTaskControlLostLogOctets OBJECT-TYPE
+    SYNTAX  Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "An indication that log entries on behalf of this task are
+            not being captured in the seeLogTable.
+
+            This counter is incremented by the number of octets which
+            would have been written to the associated seeLogTable on
+            behalf of this entry, but were not written, for whatever
+            reason."
+    ::= { seeTaskControlEntry 30 }
+
+seeTaskControlLastLogWriteTime OBJECT-TYPE
+    SYNTAX  TimeStamp
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The value of sysUpTime the last time an entry was added to
+            the seeLogTable on behalf of this task.
+
+            A management application can use this object to determine
+            when new log output has been written for this task.  This
+            timestamp will be updated when a seeLogEntry is successfully
+            added to the seeLogTable on behalf of this entry.
+
+            Initially, this object will contain the value zero."
+    ::= { seeTaskControlEntry 31 }
+
+seeTaskControlStorageType OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The type on non-volatile storage behavior associated with
+            this entry."
+    ::= { seeTaskControlEntry 32 }
+
+seeTaskControlStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this entry.  All values must be set
+            appropriately before this row may be activated. All valid
+            row creation states should be supported, including
+            'createAndWait' and 'notInService'."
+    ::= { seeTaskControlEntry 33 }
+
+--
+-- SEE Log Table
+--
+-- contains a controlled number of limited length
+-- log chunks for each entry configured in the
+-- seeTaskControlTable
+--
+
+seeLogTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF SeeLogEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Contains the individual output chunks which comprise the
+            log output for the associated seeTaskControlEntry."
+    ::= { seeExecObjects 2 }
+
+seeLogEntry OBJECT-TYPE
+    SYNTAX      SeeLogEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A conceptual row in the seeLogTable.
+
+            Entries are created in this table by agent or script action.
+
+            The management task associated with the log output contained
+            in this table is identified by the seeTaskControlIndex value
+            in the INDEX clause."
+    INDEX { seeTaskControlIndex,
+            seeLogIndex }
+    ::= { seeLogTable 1 }
+
+SeeLogEntry ::= SEQUENCE {
+    seeLogIndex       Integer32,
+    seeLogCreateTOD   DateAndTime,
+    seeLogCreateTime  TimeStamp,
+    seeLogChunk       SeeLogOutput
+}
+
+seeLogIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "The minor index for this log entry.  The agent should use
+            consecutive index values until the maximum value is reached,
+            before reusing index values. However, this object should be
+            'reset' to the value '1' if the associated
+            seeTaskControlLogClearButton object is set to 'clearLog'."
+    ::= { seeLogEntry 1 }
+
+seeLogCreateTOD  OBJECT-TYPE
+    SYNTAX      DateAndTime
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The current time of day (e.g. value of schedLocalTime) at
+            the time this log entry was added to this table.  If the
+            seeCapsTodClock object is equal to 'noTodClock', then this
+            object will contain the empty string."
+    ::= { seeLogEntry 2 }
+
+seeLogCreateTime  OBJECT-TYPE
+    SYNTAX      TimeStamp
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The value of sysUpTime at the time this log entry was added
+            to this table."
+    ::= { seeLogEntry 3 }
+
+seeLogChunk OBJECT-TYPE
+    SYNTAX      SeeLogOutput
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "A log fragment created on behalf of the associated
+            seeTaskControlEntry.  This object will not be greater in
+            length than the associated seeTaskControlMaxLogChunkSize
+            object."
+    ::= { seeLogEntry 4 }
+
+--
+-- Registrations
+--
+
+seeLanguage        OBJECT IDENTIFIER ::= { seeRegistrations 1 }
+
+seeLibraries       OBJECT IDENTIFIER ::= { seeRegistrations 2 }
+--
+-- Notifications Section
+--
+
+seeTraps OBJECT IDENTIFIER ::= { seeNotifications 0 }
+
+
+-- this replaces the smScriptAbort notification
+
+seeTaskAbort NOTIFICATION-TYPE
+    OBJECTS { seeTaskControlAppProfile,
+              seeTaskControlLastResCode }
+    STATUS  current
+    DESCRIPTION
+            "This notification is generated whenever a management task
+            terminates with a result status other than 'noError', if the
+            seeTaskAbortNotifyEnabled object is equal to 'true'.
+
+            The seeTaskControlAppProfile identifies the type of
+            application that terminated with an error status, and the
+            seeTaskControlLastResCode identifies the specific error that
+            occurred.
+
+            An implementation may restrict the frequency that these
+            notifications are actually emitted by the agent."
+    ::= { seeTraps 1 }
+
+-- this replaces the smScriptResult notification
+
+seeTaskAlarm NOTIFICATION-TYPE
+    OBJECTS { seeTaskControlAppProfile }
+    STATUS  current
+    DESCRIPTION
+            "This notification is generated by script action (on behalf
+            of a particular management task) via the 'SnmpMsgLib' system
+            library, if the seeTaskAlarmNotifyEnabled object is equal to
+            'true'.
+
+            The seeTaskControlAppProfile object is always encoded first,
+            as a means of identifying the type of application and the
+            seeTaskControlEntry.  Individual tasks will likely add other
+            varbinds as well.
+
+            An implementation may restrict the frequency that these
+            notifications are actually emitted by the agent."
+    ::= { seeTraps 2 }
+
+--
+-- Conformance Section
+--
+
+seeCompliances OBJECT IDENTIFIER ::= { seeConformance 1 }
+seeGroups      OBJECT IDENTIFIER ::= { seeConformance 2 }
+
+seeCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+            "Describes the requirements for conformance to the Script
+            Execution Environment MIB."
+    MODULE  -- this module
+        MANDATORY-GROUPS { seeCapsGroup,
+                           seeEnvGroup,
+                           seeExecGroup,
+                           seeNotificationsGroup,
+                           smLanguageGroup,
+                           smScriptGroup,
+                           smCodeGroup
+                         }
+    ::= { seeCompliances 1 }
+
+seeCapsGroup OBJECT-GROUP
+    OBJECTS {
+              seeCapsTodClock,
+              seeCapsFloatDataType,
+              seeCapsMinPollInterval,
+              seeCapsMaxEnvStringLen,
+              seeCapsAllowedTargets
+    }
+    STATUS  current
+    DESCRIPTION
+            "A collection of objects used to identify some SEE runtime
+            capabilities provided by this agent."
+    ::= { seeGroups 1 }
+
+seeEnvGroup OBJECT-GROUP
+    OBJECTS {
+              seeTaskAbortNotifyEnabled,
+              seeTaskAlarmNotifyEnabled,
+              seeEnvVarArraySize,
+              seeEnvVarPermissions,
+              seeEnvVarWriteGroup,
+              seeEnvVarWriteTask,
+              seeEnvVarInitType,
+              seeEnvVarInitValue,
+              seeEnvVarStorageType,
+              seeEnvVarStatus,
+              seeOidAliasOID,
+              seeOidAliasStorageType,
+              seeOidAliasStatus
+    }
+    STATUS  current
+    DESCRIPTION
+            "A collection of objects used to control the configuration
+            of the execution environment."
+    ::= { seeGroups 2 }
+
+seeExecGroup OBJECT-GROUP
+    OBJECTS {
+              seeTaskControlDescr,
+              seeTaskControlAppProfile,
+              seeTaskControlExecPermissions,
+              seeTaskControlGroupId,
+              seeTaskControlRunMode,
+              seeTaskControlRunButton,
+              seeTaskControlStartFn,
+              seeTaskControlLifetime,
+              seeTaskControlEngineId,
+              seeTaskControlContextName,
+              seeTaskControlTriggerOid,
+              seeTaskControlTriggerInt,
+              seeTaskControlTriggerOvflAct,
+              seeTaskControlScratchpadSize,
+              seeTaskControlResultType,
+              seeTaskControlLogWriteMode,
+              seeTaskControlMaxLogSize,
+              seeTaskControlMaxLogChunkSize,
+              seeTaskControlLogClearButton,
+              seeTaskControlNumExecOks,
+              seeTaskControlNumExecFails,
+              seeTaskControlLastResCode,
+              seeTaskControlLastResult,
+              seeTaskControlLastSEIndex,
+              seeTaskControlLastSEOffset,
+              seeTaskControlTaskRunning,
+              seeTaskControlLastTrigTime,
+              seeTaskControlCurLogSize,
+              seeTaskControlLostLogOctets,
+              seeTaskControlLastLogWriteTime,
+              seeTaskControlStorageType,
+              seeTaskControlStatus,
+              seeLogCreateTOD,
+              seeLogCreateTime,
+              seeLogChunk
+            }
+    STATUS  current
+    DESCRIPTION
+            "A collection of objects used to control the execution of
+            management tasks."
+    ::= { seeGroups 3 }
+
+seeNotificationsGroup NOTIFICATION-GROUP
+    NOTIFICATIONS {
+              seeTaskAbort,
+              seeTaskAlarm
+    }
+    STATUS  current
+    DESCRIPTION
+            "The notifications emitted by the SEE MIB."
+    ::= { seeGroups 4 }
+
+END
+
+-- 
+-- Copyright (C) The Internet Society (2001).  All Rights Reserved.
+-- 
+-- This document and translations of it may be copied and furnished to
+-- others, and derivative works that comment on or otherwise explain it or
+-- assist in its implementation may be prepared, copied, published and
+-- distributed, in whole or in part, without restriction of any kind,
+-- provided that the above copyright notice and this paragraph are included
+-- on all such copies and derivative works.  However, this document itself
+-- may not be modified in any way, such as by removing the copyright notice
+-- or references to the Internet Society or other Internet organizations,
+-- except as needed for the purpose of developing Internet standards in
+-- which case the procedures for copyrights defined in the Internet
+-- Standards process must be followed, or as required to translate it into
+-- languages other than English.
+-- 
+-- The limited permissions granted above are perpetual and will not be
+-- revoked by the Internet Society or its successors or assigns.
+-- 
+-- This document and the information contained herein is provided on an "AS
+-- IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING TASK
+-- FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+-- LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION HEREIN WILL NOT
+-- INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF MERCHANTABILITY OR
+-- FITNESS FOR A PARTICULAR PURPOSE.
+

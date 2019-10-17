@@ -1,0 +1,5645 @@
+
+--
+-- ===                                                                      ===
+-- ===      Appian Enterprise Version of SONET Object Definitions           ===
+-- ===                                                                      ===
+-- ===                            SONETMIB.txt                              ===
+-- ===                            June  28, 2000                            ===
+-- ============================================================================
+
+-- ============
+-- Action Items
+-- ============
+-- The method of setting thresholds has to be determined.  See the list of
+--    possible standards under sonetSESthresholdSet.
+-- Add threshold crossing alert indications.
+-- The SDP overhead byte channel, via Z4 per path, and V4 per VT needs to be
+--    described in detail.  Any of this available to the user?
+-- Possibly remove various BER reports.  Not really required, and may require
+--      too much work for first release.
+-- Configuration and status of DCC channels.  What else is needed?
+-- Add support for protection switch enable table.
+-- Add support for fault report enable table. 
+--
+-- [dt 2/15/2k] 
+--
+-- Need to add in support to configure J0/J1 bytes used for discovery
+-- Need to add in trap definitions
+-- Need to generate default params (started today)
+--
+
+-------------------------------------------------------------------------------
+--                             ADDITIONAL NOTES  
+-------------------------------------------------------------------------------
+--
+-- This MIB was originally derived from RFC 2558.  It was then extensively
+-- modified.
+-- 
+-- Based on an Oct. 28, 199 meeting with D. Theriault, D. Chiu, B. Johnson,
+-- S. Aggarwal, D. Stahl, the following changes were made:
+--  + An Appian Enterprise MIB would be created independently from the 
+--       other standard (SONET, DS1, DS3, Ethernet, etc.) MIBs.
+--  + The tables would comprise of separate 15 minute and day intervals
+--       which would be indexed.  The current interval would have a 
+--       number = 1.  The current tables of the standard MIB were 
+--       absorbed into the interval tables as a result.
+--  + A new PM counter reset was introduced on a per port basis.
+--       This will make it easier to reset all the PM registers in the
+--       box.
+--
+--  Per the MRD, an intermediate single mode fiber was added to the 
+--            sonetMediumLineType table.
+--
+-- ======== From GR-820, Section 3 Common Monitoring REQUIREMENTS ========
+--
+--   ( PM current register = 
+--     the 15 minute and 1 day current performance monitoring registers)
+--
+-- Reset PM current registers collectively per entity per direction.
+-- Reset all PM current registers collectively.
+--
+-- Reset PM registers collectively per entity per direction.
+-- Reset all PM registers collectively.
+--
+-- Invalid flag for each PM register group per entity per direction.
+-- Cause for invalid flag: time of day change (more than 10 second change), 
+--    alarm, line or system failure, register was reset, overflow. 
+--    (GR-253, 6.2.2.1)
+-- Changing the time of day does not affect the counts in the PM registers.  
+--    But the invalid flag should be raised if the change is more than 10 
+--    seconds.
+--
+-- All PM registers cannot roll over, but rather are pegged at a max value.
+-- All PM 15 minute registers are synchronized to the hour boundary. 
+-- All PM day registers should be able to begin measurement collectively 
+--    at the start of any hour (user defined).
+--
+-- All PM current registers will have a user-settable threshold, which can
+--    vary to any legitimate value.
+-- If the threshold is exceeded, the register count still continues without 
+--    being reset.
+--
+-- =========== From GR-253, Section 6 Maintenance REQUIREMENTS ===========
+--
+-- From 6.2.2.4 - Line Layer PM Criteria
+--    Add failure counts.
+--    Add protection switching counts
+--    Add protection switching durations
+--    Add enable/disable to these PM counters.
+--
+-- From 6.2.2.5 - STS Path Layer PM Criteria
+--    Add failure counts.
+--    Add enable/disable to these PM counters.
+--
+-- From 6.2.2.6 VT Path Layer PM Criteria
+--    Add failure counts.
+--    Add enable/disable to these PM counters.
+--
+-- From 6.2.1.1.7 DCC Failure
+--    Add failure indication.
+--
+-- From 6.2.1.3 Remote Defect Indication
+--    Add RDI/ERDI mode selection to path and VTs.
+--
+-- From 6.2.1.1.9 Path Trace Identifier Mismatch
+--    Add TIM-P capability.
+--
+-- From 6.2.1.1.8 Signal Label Mismatch
+--    Add payload label mismatch, unequipped to path, VTs.
+--
+-- From 5.3, 6.2.1.1.6 Automatic Protection Switching
+--    Add protection switching (also UPSR, GR-1400)
+--
+-- From 5.3.3.1 Switch Initiation Criteria
+--    Add Signal Failure and Signal Degrade thresholds.
+--
+-- Optional - Intermediate node PM 6.2.2.9.
+--
+-- Optional - Payload Defect Indication 6.2.1.4.
+--
+-- Optional - Pointer Justification 6.2.2.5.
+--
+--
+-------------------------------------------------------------------------------
+
+APPIAN-PPORT-SONET-MIB DEFINITIONS ::= BEGIN
+
+
+IMPORTS
+
+    acPport, AcAdminStatus, AcOpStatus, 
+    AcSlotNumber, AcPortNumber, AcNodeId                FROM APPIAN-SMI-MIB
+    
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32             FROM SNMPv2-SMI
+    
+    TEXTUAL-CONVENTION, DisplayString, TruthValue       FROM SNMPv2-TC
+    
+    PerfIntervalCount                                   FROM PerfHist-TC-MIB;
+
+
+acSonet MODULE-IDENTITY
+
+    LAST-UPDATED                "0002231600Z"
+    ORGANIZATION                "Appian Communications, Inc."
+    CONTACT-INFO                "Douglas Stahl"
+    DESCRIPTION                 "The MIB module to describe SONET/SDH objects."
+
+    REVISION                    "0002231600Z"
+    DESCRIPTION                 "Engineering draft, not for release."
+
+    ::= { acPport 6 }
+
+
+    AcTraceString   ::= TEXTUAL-CONVENTION
+                STATUS          current
+                DESCRIPTION
+                        "A string of up to printable characters, followed by padding 
+                        NULL characters, and terminated with <CR> and <LF> characters,
+                        for a total of 64 characters. The maximum number of printable
+                        characters is 62 and if it's less, it's padded with NULL.
+                        Therefore the number of padding NULL characters is 0 to 62."
+                SYNTAX OCTET STRING (SIZE(64))
+
+--
+--  Heirarchy for SONET MIB
+--
+
+acSonetObjects          OBJECT IDENTIFIER ::= { acSonet 1 }
+acSonetObjectsPath      OBJECT IDENTIFIER ::= { acSonet 2 }
+acSonetObjectsVT        OBJECT IDENTIFIER ::= { acSonet 3 }
+-- acSonetTraps            OBJECT IDENTIFIER ::= { acSonet 4 }
+
+--
+-- sub groups within the SONET/SDH MIB module
+--
+
+acSonetPort             OBJECT IDENTIFIER ::= { acSonetObjects 1 }
+acSonetSection          OBJECT IDENTIFIER ::= { acSonetObjects 2 }
+acSonetLine             OBJECT IDENTIFIER ::= { acSonetObjects 3 }
+acSonetFarEndLine       OBJECT IDENTIFIER ::= { acSonetObjects 4 }
+
+acSonetPath             OBJECT IDENTIFIER ::= { acSonetObjectsPath 1 }
+acSonetFarEndPath       OBJECT IDENTIFIER ::= { acSonetObjectsPath 2 }
+
+acSonetVT               OBJECT IDENTIFIER ::= { acSonetObjectsVT 1 }
+acSonetFarEndVT         OBJECT IDENTIFIER ::= { acSonetObjectsVT 2 }
+
+
+
+-------------------------------------------------------------------------------
+--                         the SONET/SDH Port group
+-------------------------------------------------------------------------------
+
+--  The overall status and configuration of a SONET/SDH port belongs in this
+--  group.
+
+-- ==================================
+-- General Port Table
+-- ==================================
+
+acSonetPortTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPortEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+    "The SONET/SDH Port table which must be created by the management 
+    client."
+        
+    ::= { acSonetPort 1 }
+
+acSonetPortEntry OBJECT-TYPE
+    SYNTAX  AcSonetPortEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Port table."
+
+    INDEX   { acSonetPortNodeId, acSonetPortSlot, acSonetPortPort }
+
+    ::= { acSonetPortTable 1 }
+
+AcSonetPortEntry ::=
+    SEQUENCE {
+         acSonetPortNodeId                 AcNodeId,
+         acSonetPortSlot                   AcSlotNumber,
+         acSonetPortPort                   AcPortNumber,
+         acSonetPortAdminStatus            AcAdminStatus,
+         acSonetPortOpStatus               AcOpStatus,
+         acSonetPortOpCode                 INTEGER,
+         acSonetPortMediumType             INTEGER,
+         acSonetPortTimeElapsed            Integer32,
+         acSonetPortValidIntervals         Integer32,
+         acSonetPortMediumLineCoding       INTEGER,
+         acSonetPortMediumLineType         INTEGER,
+         acSonetPortTransmitterEnable      TruthValue,
+         acSonetPortCircuitIdentifier      DisplayString,
+         acSonetPortInvalidIntervals       Integer32,
+         acSonetPortLoopbackConfig         INTEGER,
+         acSonetPortResetCurrentPMregs     TruthValue, 
+         acSonetPortResetAllPMregs         TruthValue,
+         acSonetPortConnectionType         INTEGER,
+         acSonetPortRingIdentifier         INTEGER,
+         acSonetPortRingName               DisplayString
+    }
+
+acSonetPortNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+
+    ::= { acSonetPortEntry 1 }
+
+acSonetPortSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The physical slot number of the port."
+    
+    ::= { acSonetPortEntry 2 }
+
+acSonetPortPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The physical port number of the port."
+
+    ::= { acSonetPortEntry 3 }
+
+acSonetPortAdminStatus OBJECT-TYPE
+    SYNTAX  AcAdminStatus
+    MAX-ACCESS  read-create
+    STATUS  current
+    DESCRIPTION
+    "Appian Administrative Status attribute used to set the provisioning
+    state as either activate(1), inactivate(2) or delete(3).  Refer to
+    the Appian-SMI.mib file for additional information."
+
+    DEFVAL { inactivate }
+        
+    ::= { acSonetPortEntry 4 }
+
+acSonetPortOpStatus OBJECT-TYPE
+    SYNTAX  AcOpStatus
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+    "The current operational status for the SONET module controlling 
+    this port."        
+    ::= { acSonetPortEntry 5 }
+    
+acSonetPortOpCode OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+    "Provides a detailed status code which can be used to isolate a problem
+    or state condition reported in acSonetPortOpStatus."
+        
+    ::= { acSonetPortEntry 6 }
+    
+    
+acSonetPortMediumType OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               sonet(1),
+               sdh(2)
+        }
+    MAX-ACCESS  read-create
+    STATUS  current
+    DESCRIPTION
+    "This variable identifies whether a SONET or a SDH signal is used across
+    this interface."
+
+    DEFVAL { sonet }
+    
+    ::= { acSonetPortEntry 7 }
+
+acSonetPortTimeElapsed OBJECT-TYPE
+    SYNTAX  Integer32 (1..900)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The number of seconds, including partial seconds, that have elapsed 
+       since the beginning of the current measurement period. If, for some 
+       reason, such as an adjustment in the system's time-of-day clock, the
+       current interval exceeds the maximum value, the agent will return the 
+       maximum value."
+
+    ::= { acSonetPortEntry 8 }
+
+acSonetPortValidIntervals OBJECT-TYPE
+    SYNTAX  Integer32 (0..96)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The number of previous 15-minute intervals for which data was 
+        collected.  A SONET/SDH interface must be capable of supporting at 
+        least n intervals.  The minimum value of n is 4.  The default of n is 
+        32. The maximum value of n is 96. The value will be <n> unless the 
+        measurement was (re-)started within the last (<n>*15) minutes, in which
+        case the value will be the number of complete 15 minute intervals for 
+        which the agent has at least some data. In certain cases (e.g., in the 
+        case where the agent is a proxy) it is possible that some intervals 
+        are unavailable.  In this case, this interval is the maximum interval 
+        number for which data is available. "
+
+    ::= { acSonetPortEntry 9 }
+
+acSonetPortMediumLineCoding OBJECT-TYPE
+    SYNTAX  INTEGER {
+                other(1),
+                b3zs(2),
+                cmi(3),
+                nrz(4),
+                rz(5)
+    }
+    MAX-ACCESS  read-create
+    STATUS  current
+    DESCRIPTION
+       "This variable describes the line coding for this interface. The B3ZS 
+       and CMI are used for electrical SONET/SDH signals (STS-1 and STS-3).
+       The Non-Return to Zero (NRZ) and the Return to Zero are used for 
+       optical SONET/SDH signals."
+
+    DEFVAL { nrz }
+    
+    ::= { acSonetPortEntry 10 }
+
+acSonetPortMediumLineType OBJECT-TYPE
+    SYNTAX  INTEGER {
+                other(1),
+                short-single(2),
+                long-single(3),
+                multi(4),
+                coax(5),
+                utp(6),
+                intermediate(7) 
+            }
+    MAX-ACCESS  read-create
+    STATUS  current
+    DESCRIPTION
+       "This variable describes the line type for this interface. The line 
+        types are Short and Long Range Single Mode fiber or Multi-Mode fiber 
+        interfaces, and coax and UTP for electrical interfaces.  The value 
+        acSonetOther should be used when the Line Type is not one of the listed 
+        values."
+        
+    DEFVAL { multi }
+
+    ::= { acSonetPortEntry 11 }
+
+acSonetPortTransmitterEnable OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS read-create
+    STATUS current
+    DESCRIPTION
+       "Turns the laser on and off."
+       
+    DEFVAL { false }
+    
+    ::= { acSonetPortEntry 12 }
+
+acSonetPortCircuitIdentifier OBJECT-TYPE
+    SYNTAX  DisplayString (SIZE (0..255))
+    MAX-ACCESS  read-create
+    STATUS  current
+    DESCRIPTION
+       "This variable contains the transmission vendor's circuit identifier, 
+        for the purpose of facilitating troubleshooting. Note that the circuit
+        identifier, if available, is also represented by ifPhysAddress."
+
+    DEFVAL { "" }
+    
+    ::= { acSonetPortEntry 13 }
+
+acSonetPortInvalidIntervals OBJECT-TYPE
+    SYNTAX  Integer32 (0..96)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+        "The number of intervals in the range from 0 to 
+        acSonetPortValidIntervals for which no data is available. This object 
+        will typically be zero except in cases where the data for some
+        intervals are not available (e.g., in proxy situations)."
+
+    ::= { acSonetPortEntry 14 }
+
+acSonetPortLoopbackConfig OBJECT-TYPE
+    SYNTAX  INTEGER {
+              none(0),
+              facility(1),
+              terminal(2),
+              other(3) 
+           }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+       "The current loopback state of the SONET/SDH interface.  The
+        values mean:
+
+          none(0)
+             Not in the loopback state. A device that is not
+             capable of performing a loopback on this interface
+             shall always return this value.
+
+          facility(1)
+             The received signal at this interface is looped back
+             out through the corresponding transmitter in the return
+             direction.
+
+          terminal(2)
+             The signal that is about to be transmitted is connected
+             to the associated incoming receiver.
+
+          other(3)
+             Loopbacks that are not defined here."
+
+    ::= { acSonetPortEntry 15 }
+
+acSonetPortResetCurrentPMregs  OBJECT-TYPE 
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-create
+    STATUS  current
+    DESCRIPTION
+       "Reset Performance Monitoring Registers for current 15 minute and day 
+       to zero for entity-related statisics.  Reset on receiving a 1, will 
+       automatically go to 0 at next 15 minute or day interval."
+
+    DEFVAL { false }
+    
+    ::= { acSonetPortEntry 16 }
+
+acSonetPortResetAllPMregs    OBJECT-TYPE  
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-create
+    STATUS  current
+    DESCRIPTION
+       "Reset Performance Monitoring Registers to zero for all entity-related 
+       statisics.  Reset on receiving a 1, will automatically go to 0 at next
+       15 minute or day interval."
+
+    DEFVAL { false }
+    
+    ::= { acSonetPortEntry 17 }
+
+acSonetPortConnectionType OBJECT-TYPE
+    SYNTAX  INTEGER {
+               ring(1),
+               interconnect(2)
+            }
+    MAX-ACCESS read-create
+    STATUS current
+    DESCRIPTION
+       "Whether the port is used on the ring side or the interconnect side. 
+        An interconnect interface is the one that connects to the ADM."
+        
+    DEFVAL { interconnect }
+    
+    ::= { acSonetPortEntry 18 }
+
+acSonetPortRingIdentifier OBJECT-TYPE
+    SYNTAX     INTEGER
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+       "This is a number assigned by carrier. It is contained here as a convenience
+        for carrier and the EMS. It is not used by the device.
+
+        When used, this should be set in east facing port row in this table. It can
+        also be optionally set in the west facing port row in this table but it must
+        be the same as the set in the east facing port row."
+        
+    DEFVAL { 1 }
+    
+    ::= { acSonetPortEntry 19 }
+
+acSonetPortRingName OBJECT-TYPE
+    SYNTAX     DisplayString (SIZE (0..32))
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+       "An ASCII text name up to 32 characters in length which is assigned to this
+        optical ring. Like the RingIdentifier, this is contained here as a
+        convenience for the carrier and the EMS. It is not used by the device.
+
+        When used, this should be set in east facing port row in this table. It can
+        also be optionally set in the west facing port row in this table but it must
+        be the same as the set in the east facing port row."
+        
+    DEFVAL { "" }
+    
+    ::= { acSonetPortEntry 20 }
+
+-- ==============
+-- Port Threshold
+-- ==============
+
+acSonetThresholdTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Threshold Table."
+     ::= { acSonetPort 2 }
+
+acSonetThresholdEntry OBJECT-TYPE
+    SYNTAX  AcSonetThresholdEntry
+    MAX-ACCESS  not-accessible 
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Port Table."
+    INDEX  { acSonetThresholdNodeId, 
+             acSonetThresholdSlot, 
+             acSonetThresholdPort }
+      ::= { acSonetThresholdTable 1 }
+
+AcSonetThresholdEntry ::=
+    SEQUENCE {
+         acSonetThresholdNodeId              AcNodeId,
+         acSonetThresholdSlot                AcSlotNumber,
+         acSonetThresholdPort                AcPortNumber,
+         acSonetThresholdSESSet              INTEGER    
+    }
+
+acSonetThresholdNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+
+    ::= { acSonetThresholdEntry 1 }
+
+acSonetThresholdSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    
+    ::= { acSonetThresholdEntry 2 }
+
+acSonetThresholdPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+
+    ::= { acSonetThresholdEntry 3 }
+    
+
+acSonetThresholdSESSet    OBJECT-TYPE    
+    SYNTAX   INTEGER {                
+               other(1),
+               bellcore(2),
+               ansi93(3),
+               itu(4),
+               ansi97(5)     
+             }
+    MAX-ACCESS      read-write
+    STATUS          current
+    DESCRIPTION
+      "An enumerated integer indicating which
+       recognized set of thresholds that
+       the agent uses for determining severely
+       errored seconds and unavailable time.
+
+       other(1)
+         None of the following.
+
+       Bellcore1991(2)
+         Bellcore TR-NWT-000253, 1991 [32], or
+         ANSI T1M1.3/93-005R2, 1993 [22].
+         See also Appendix B.
+
+       ansi1993(3)
+         ANSI T1.231, 1993 [31], or
+         Bellcore GR-253-CORE, Issue 2, 1995 [34]
+
+       itu1995(4)
+         ITU Recommendation G.826, 1995 [33]
+
+       ansi1997(5)
+         ANSI T1.231, 1997 [35]
+
+       If a manager changes the value of this
+       object then the SES statistics collected
+       prior to this change must be invalidated."
+     ::= { acSonetThresholdEntry 4 }
+
+-- ========
+-- Port DCC
+-- ========
+
+acSonetDCCTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetDCCEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH DCC Table."
+     ::= {acSonetPort 3 }
+
+acSonetDCCEntry OBJECT-TYPE
+    SYNTAX  AcSonetDCCEntry
+    MAX-ACCESS  not-accessible 
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Port Table."
+    INDEX  { acSonetDCCNodeId, acSonetDCCSlot, acSonetDCCPort }
+      ::= { acSonetDCCTable 1 }
+
+AcSonetDCCEntry ::=
+    SEQUENCE {
+         acSonetDCCNodeId              AcNodeId,
+         acSonetDCCSlot                AcSlotNumber,
+         acSonetDCCPort                AcPortNumber,
+         acSonetDCCSectionEnable       TruthValue, 
+         acSonetDCCLineEnable          TruthValue, 
+         acSonetDCCAppianEnable        TruthValue, 
+         acSonetDCCSectionFail         TruthValue, 
+         acSonetDCCLineFail            TruthValue,
+         acSonetDCCAppianFail          TruthValue
+    }
+
+acSonetDCCNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+
+    ::= { acSonetDCCEntry 1 }
+
+acSonetDCCSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    
+    ::= { acSonetDCCEntry 2 }
+
+acSonetDCCPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+
+    ::= { acSonetDCCEntry 3 }
+    
+acSonetDCCSectionEnable OBJECT-TYPE
+    SYNTAX  TruthValue 
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates that the DCC for the section is enabled."
+
+    DEFVAL { false }
+        
+    ::= { acSonetDCCEntry 4 }
+
+acSonetDCCLineEnable OBJECT-TYPE
+    SYNTAX  TruthValue 
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates that the DCC for the line is enabled."
+
+    DEFVAL { false }
+    
+    ::= { acSonetDCCEntry 5 }
+
+acSonetDCCAppianEnable OBJECT-TYPE
+    SYNTAX  TruthValue 
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates that the Appian DCC is enabled."
+
+    DEFVAL { true }
+        
+    ::= { acSonetDCCEntry 6 }
+
+acSonetDCCSectionFail OBJECT-TYPE
+    SYNTAX  TruthValue 
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates that the DCC for the section has failed."
+
+    ::= { acSonetDCCEntry 7 }
+
+acSonetDCCLineFail OBJECT-TYPE
+    SYNTAX  TruthValue 
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates that the DCC for the line has failed."
+
+    ::= { acSonetDCCEntry 8 }
+
+acSonetDCCAppianFail OBJECT-TYPE
+    SYNTAX  TruthValue 
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates that the Appian DCC has failed."
+
+    ::= { acSonetDCCEntry 9 }
+
+-------------------------------------------------------------------------------
+--                        the SONET/SDH Section group
+-------------------------------------------------------------------------------
+
+-- this group consists of 3 tables:
+-- - the SONET/SDH Section 15Minute Interval Table
+-- - the SONET/SDH Section Day Interval Table
+-- - the SONET/SDH Section Threshold Table
+
+--  ==============================================
+--  the SONET/SDH Section 15 Minute Interval Table 
+--  ==============================================
+
+-- The SONET/SDH Section 15 minute interval table contains 
+-- various statistics being collected for the current 15 
+-- minute interval, and previously stored 15 minute intervals.
+
+-- The SONET/SDH Section 15 Minute Interval Table
+-- contains various statistics
+-- collected by the system over a maximum
+-- of the previous 24 hours of
+-- operation.  The past 24 hours may be broken into 96
+-- completed 15 minute intervals.
+-- A system is required to store at
+-- least 4 completed 15 minute intervals.
+-- The default value is 32 intervals.
+
+-- The first interval is the current 15 minute register.
+-- IntervalNumber = 2-97 are the completed 15 minute
+-- intervals, with IntervalNumber = 2 being the most recent.
+-- Interval Number 98 is the total of the last 96 intervals of 
+-- 15 minutes.
+
+acSonetSection15MinuteIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetSection15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Section 15Minute Interval table."
+     ::= { acSonetSection 1 }
+
+acSonetSection15MinuteIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetSection15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Section 15Minute Interval table."
+    INDEX   { acSonetSection15MinuteIntervalNodeId,
+              acSonetSection15MinuteIntervalSlot,
+              acSonetSection15MinuteIntervalPort,
+              acSonetSection15MinuteIntervalNumber }
+     ::= { acSonetSection15MinuteIntervalTable 1 }
+
+AcSonetSection15MinuteIntervalEntry ::=     
+    SEQUENCE {
+         acSonetSection15MinuteIntervalNodeId     AcNodeId,
+         acSonetSection15MinuteIntervalSlot       AcSlotNumber,
+         acSonetSection15MinuteIntervalPort       AcPortNumber,
+         acSonetSection15MinuteIntervalNumber     INTEGER,
+         acSonetSection15MinuteIntervalValidStats TruthValue,
+         acSonetSection15MinuteIntervalResetStats TruthValue,
+         acSonetSection15MinuteIntervalStatus     Integer32,
+         acSonetSection15MinuteIntervalESs        PerfIntervalCount,
+         acSonetSection15MinuteIntervalSESs       PerfIntervalCount,
+         acSonetSection15MinuteIntervalSEFSs      PerfIntervalCount,
+         acSonetSection15MinuteIntervalCVs        PerfIntervalCount
+    }
+
+acSonetSection15MinuteIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetSection15MinuteIntervalEntry 1 }
+
+acSonetSection15MinuteIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetSection15MinuteIntervalEntry 2 }
+
+acSonetSection15MinuteIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetSection15MinuteIntervalEntry 3 }
+
+acSonetSection15MinuteIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..98)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 98, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      15 minute interval.
+      The interval identified by 2 is the most recently
+      completed 15 minute interval.  The interval identified
+      by 97 is the oldest 15 minute interval.  The interval
+      identified by 98 is a total of the previous 96 stored
+      15 minute intervals."
+     ::= { acSonetSection15MinuteIntervalEntry 4 }
+
+acSonetSection15MinuteIntervalValidStats OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This flag indicates if the data for this interval is valid."
+    ::= { acSonetSection15MinuteIntervalEntry 5 }
+
+acSonetSection15MinuteIntervalResetStats    OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS      read-write
+    STATUS          current
+    DESCRIPTION
+        "This flag is used to reset the data for a 15 minute interval."
+        
+    DEFVAL { false }
+    
+    ::= { acSonetSection15MinuteIntervalEntry 6 }
+
+acSonetSection15MinuteIntervalStatus OBJECT-TYPE
+    SYNTAX  Integer32 (1..6)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates the status of the interface.  The 
+       acSonetSectionCurrentStatus is a bit map represented as a sum, 
+       therefore, it can represent multiple defects simultaneously.
+       The acSonetSectionNoDefect should be set if and only if no other 
+       flag is set.
+
+       The various bit positions are:
+             1   acSonetSectionNoDefect
+             2   acSonetSectionLOS
+             4   acSonetSectionLOF"
+     ::= { acSonetSection15MinuteIntervalEntry 7 }
+
+acSonetSection15MinuteIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Errored Seconds 
+       encountered by a SONET/SDH Section in a particular 15-minute 
+       interval in the past 24 hours."
+     ::= { acSonetSection15MinuteIntervalEntry 8 }
+
+acSonetSection15MinuteIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Severely Errored 
+       Seconds encountered by a SONET/SDH Section in a particular 
+       15-minute interval in the past 24 hours."
+    ::= { acSonetSection15MinuteIntervalEntry 9 }
+
+acSonetSection15MinuteIntervalSEFSs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Severely Errored 
+       Framing Seconds encountered by a SONET/SDH Section in a particular 
+       15-minute interval in the past 24 hours."
+    ::= { acSonetSection15MinuteIntervalEntry 10 }
+
+acSonetSection15MinuteIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Coding Violations 
+       encountered by a SONET/SDH Section in a particular 15-minute 
+       interval in the past 24 hours."
+    ::= { acSonetSection15MinuteIntervalEntry 11 }
+
+
+--  ========================================
+--  the SONET/SDH Section Day Interval Table 
+--  ========================================
+
+-- The SONET/SDH Section day interval table contains 
+-- various statistics being collected for the current day 
+-- interval, and previously stored day intervals.
+
+-- The SONET/SDH Section day Interval Table
+-- contains various statistics
+-- collected by the system over a maximum
+-- of the previous 30 days of
+-- operation.  
+
+-- The first interval is the current day register.
+-- IntervalNumber = 2-31 are the completed day
+-- intervals, with IntervalNumber = 2 being the most recent.
+
+acSonetSectionDayIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetSectionDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Section Day Interval table."
+     ::= { acSonetSection 2 }
+
+acSonetSectionDayIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetSectionDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Section Day Interval table."
+    INDEX   { acSonetSectionDayIntervalNodeId,
+              acSonetSectionDayIntervalSlot,
+              acSonetSectionDayIntervalPort,
+              acSonetSectionDayIntervalNumber }
+     ::= { acSonetSectionDayIntervalTable 1 }
+
+AcSonetSectionDayIntervalEntry ::=     
+    SEQUENCE {
+         acSonetSectionDayIntervalNodeId     AcNodeId,
+         acSonetSectionDayIntervalSlot       AcSlotNumber,
+         acSonetSectionDayIntervalPort       AcPortNumber,
+         acSonetSectionDayIntervalNumber     INTEGER,
+         acSonetSectionDayIntervalValidStats TruthValue,
+         acSonetSectionDayIntervalResetStats TruthValue,
+         acSonetSectionDayIntervalStatus     Integer32,
+         acSonetSectionDayIntervalESs        PerfIntervalCount,
+         acSonetSectionDayIntervalSESs       PerfIntervalCount,
+         acSonetSectionDayIntervalSEFSs      PerfIntervalCount,
+         acSonetSectionDayIntervalCVs        PerfIntervalCount
+    }
+
+acSonetSectionDayIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetSectionDayIntervalEntry 1 }
+
+acSonetSectionDayIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetSectionDayIntervalEntry 2 }
+
+acSonetSectionDayIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetSectionDayIntervalEntry 3 }
+
+acSonetSectionDayIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 31, which identifies the interval for 
+      which the set of statistics is available.  The interval identified 
+      by 1 is the ongoing, current day performance monitoring interval.
+      The interval identified by 2 is the most recently completed day 
+      interval.  The interval identified by 31 is the oldest day interval."
+     ::= { acSonetSectionDayIntervalEntry 4 }
+
+acSonetSectionDayIntervalValidStats OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This flag indicates if the data for this interval is valid."
+    ::= { acSonetSectionDayIntervalEntry 5 }
+
+acSonetSectionDayIntervalResetStats OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS      read-write
+    STATUS          current
+    DESCRIPTION
+        "Flag used to reset the current day interval stats."
+        
+    DEFVAL { false }
+    
+    ::= { acSonetSectionDayIntervalEntry 6 }
+
+acSonetSectionDayIntervalStatus OBJECT-TYPE
+    SYNTAX  Integer32 (1..6)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates the status of the interface.  The 
+       acSonetSectionCurrentStatus is a bit map represented as a sum, 
+       therefore, it can represent multiple defects simultaneously.
+       The acSonetSectionNoDefect should be set if and only if no other 
+       flag is set.
+
+       The various bit positions are:
+             1   acSonetSectionNoDefect
+             2   acSonetSectionLOS
+             4   acSonetSectionLOF"
+     ::= { acSonetSectionDayIntervalEntry 7 }
+
+acSonetSectionDayIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Errored Seconds 
+       encountered by a SONET/SDH Section in a particular day interval 
+       in the past 30 days."
+     ::= { acSonetSectionDayIntervalEntry 8 }
+
+acSonetSectionDayIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Severely Errored Seconds
+       encountered by a SONET/SDH Section in a particular day interval
+       in the past 30 days."
+    ::= { acSonetSectionDayIntervalEntry 9 }
+
+acSonetSectionDayIntervalSEFSs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Severely Errored 
+       Framing Seconds encountered by a SONET/SDH Section in a particular 
+       day interval in the past 30 days."
+    ::= { acSonetSectionDayIntervalEntry 10 }
+
+acSonetSectionDayIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Coding Violations 
+       encountered by a SONET/SDH Section in a particular day interval
+       in the past 30 days."
+    ::= { acSonetSectionDayIntervalEntry 11 }
+
+
+--  =====================================
+--  the SONET/SDH Section Threshold Table 
+--  =====================================
+
+-- The SONET/SDH Section Threshold Table contains
+-- user selectable thresholds for all of the current
+-- performance monitoring registers (i.e. the current
+-- 15 minute and day registers).  Any legitimate value can 
+-- be written into these registers. 
+
+acSonetSectionThresholdTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetSectionThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Section Threshold Table."
+     ::= { acSonetSection 3 }
+
+acSonetSectionThresholdEntry OBJECT-TYPE
+    SYNTAX  AcSonetSectionThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Section Threshold Table."
+    INDEX   { acSonetSectionThresholdNodeId,
+              acSonetSectionThresholdSlot,
+              acSonetSectionThresholdPort,
+              acSonetSectionThresholdSelectionNum }
+     ::= { acSonetSectionThresholdTable 1 }
+
+AcSonetSectionThresholdEntry ::=     
+    SEQUENCE {
+         acSonetSectionThresholdNodeId            AcNodeId,
+         acSonetSectionThresholdSlot              AcSlotNumber,
+         acSonetSectionThresholdPort              AcPortNumber,
+         acSonetSectionThresholdSelectionNum      INTEGER,
+         acSonetSectionThresholdAdminStatus       AcAdminStatus,
+         acSonetSectionThresholdESs               INTEGER,
+         acSonetSectionThresholdSESs              INTEGER,
+         acSonetSectionThresholdSEFSs             INTEGER,
+         acSonetSectionThresholdCVs               INTEGER
+    }
+
+acSonetSectionThresholdNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetSectionThresholdEntry 1 }
+
+acSonetSectionThresholdSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetSectionThresholdEntry 2 }
+
+acSonetSectionThresholdPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetSectionThresholdEntry 3 }
+
+acSonetSectionThresholdSelectionNum OBJECT-TYPE
+    SYNTAX  INTEGER {
+                minute(1),
+                day(2)
+            }
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number that selects either the 15 thresholds or the day thresholds."
+     ::= { acSonetSectionThresholdEntry 4 }
+
+acSonetSectionThresholdAdminStatus OBJECT-TYPE
+    SYNTAX AcAdminStatus 
+    MAX-ACCESS read-write
+    STATUS  deprecated
+    DESCRIPTION
+       "This field is used by the administrator to ensure only one client 
+       is performing management operations on this sonet port at a time. 
+       When the field is read as available(0), the client can write the 
+       value locked(1) into this field to prevent a second client from
+       performing managment ops on this instance."
+
+    ::= { acSonetSectionThresholdEntry 5 }
+
+acSonetSectionThresholdESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Errored Seconds."
+    DEFVAL { 0 }
+     ::= { acSonetSectionThresholdEntry 6 }
+
+acSonetSectionThresholdSESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Severely Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetSectionThresholdEntry 7 }
+
+acSonetSectionThresholdSEFSs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Severely Errored Framing Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetSectionThresholdEntry 8 }
+
+acSonetSectionThresholdCVs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Coding Violations."
+    DEFVAL { 0 }
+    ::= { acSonetSectionThresholdEntry 9 }
+
+-- =============================
+-- Section TIM Table
+-- =============================
+-- Trace Identifier Mismatch
+
+acSonetSectionTIMTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetSectionTIMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Section Trace Identifier Mismatch Table."
+    ::= { acSonetSection 4 }
+    
+acSonetSectionTIMEntry OBJECT-TYPE
+    SYNTAX  AcSonetSectionTIMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Section Trace Identifier Mismatch Table."
+    INDEX  { acSonetSectionTIMNodeId, 
+             acSonetSectionTIMSlot, 
+             acSonetSectionTIMPort }
+    ::= { acSonetSectionTIMTable 1 }
+    
+AcSonetSectionTIMEntry ::=
+    SEQUENCE {
+         acSonetSectionTIMNodeId            AcNodeId,
+         acSonetSectionTIMSlot              AcSlotNumber,
+         acSonetSectionTIMPort              AcPortNumber,
+         acSonetSectionTIMGenerateEnable    TruthValue,
+         acSonetSectionTIMDetectEnable      TruthValue,
+         acSonetSectionTIMTransmitedString  AcTraceString,
+         acSonetSectionTIMExpectedString    AcTraceString,
+         acSonetSectionTIMReceivedString    AcTraceString,
+         acSonetSectionTIMFailure           TruthValue,
+         acSonetSectionTIMFormat            INTEGER,
+		 acSonetSectionTIMMismatchZeros     TruthValue
+     }
+
+acSonetSectionTIMNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetSectionTIMEntry 1 }
+
+acSonetSectionTIMSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetSectionTIMEntry 2 }
+
+acSonetSectionTIMPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetSectionTIMEntry 3 }
+
+acSonetSectionTIMGenerateEnable OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Enables the generation of the Section Trace Identifier."
+    ::= { acSonetSectionTIMEntry 4 }
+
+acSonetSectionTIMDetectEnable OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Enables the detection of the Section Trace Identifier."
+
+   DEFVAL { false }
+    ::= { acSonetSectionTIMEntry 5 }
+
+acSonetSectionTIMTransmitedString OBJECT-TYPE
+    SYNTAX  AcTraceString
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "The string that gets sent to the destination."
+    ::= { acSonetSectionTIMEntry 6 }
+
+acSonetSectionTIMExpectedString OBJECT-TYPE
+    SYNTAX  AcTraceString
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "The expected string that is to be received."
+    ::= { acSonetSectionTIMEntry 7 }
+
+acSonetSectionTIMReceivedString OBJECT-TYPE
+    SYNTAX  AcTraceString
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "The contents of the string that is received."
+    ::= { acSonetSectionTIMEntry 8 }
+
+acSonetSectionTIMFailure OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "Failure declared of the Section Trace Identifier."
+    ::= { acSonetSectionTIMEntry 9 }
+
+acSonetSectionTIMFormat OBJECT-TYPE
+    SYNTAX  INTEGER {
+          void(0),
+          t64(1),
+		  t64-crlf(2),
+		  t16(3),
+		  t16-msb1(4),
+		  t16-crc7(5)
+       }
+    MAX-ACCESS read-write
+    STATUS  current
+    DESCRIPTION
+       "Format of Path Trace buffer."
+
+   DEFVAL { void }
+    ::= { acSonetSectionTIMEntry 10 }
+
+acSonetSectionTIMMismatchZeros OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Controls whether a received trace message containing 
+       all zeros can cause a mismatch defect."
+
+   DEFVAL { false }
+    ::= { acSonetSectionTIMEntry 11 }
+
+-- =============================
+-- Section SSM Table
+-- =============================
+-- Synchronization Status Message
+
+acSonetSectionSSMTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetSectionSSMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Section Synchronization Status Message Table."
+    ::= { acSonetSection 5 }
+    
+acSonetSectionSSMEntry OBJECT-TYPE
+    SYNTAX  AcSonetSectionSSMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Section Synchronization Status Message Table."
+    INDEX  { acSonetSectionSSMNodeId, 
+             acSonetSectionSSMSlot, 
+             acSonetSectionSSMPort }
+    ::= { acSonetSectionSSMTable 1 }
+    
+AcSonetSectionSSMEntry ::=
+    SEQUENCE {
+         acSonetSectionSSMNodeId            AcNodeId,
+         acSonetSectionSSMSlot              AcSlotNumber,
+         acSonetSectionSSMPort              AcPortNumber,
+         acSonetSectionSSMDetectEnable      TruthValue,
+         acSonetSectionSSMTransmitedValue   INTEGER,
+         acSonetSectionSSMReceivedValue     INTEGER
+     }
+
+acSonetSectionSSMNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetSectionSSMEntry 1 }
+
+acSonetSectionSSMSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetSectionSSMEntry 2 }
+
+acSonetSectionSSMPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetSectionSSMEntry 3 }
+
+acSonetSectionSSMDetectEnable OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Enables the detection of the Synchronization Status Message."
+
+   DEFVAL { false }
+    ::= { acSonetSectionSSMEntry 4 }
+
+acSonetSectionSSMTransmitedValue OBJECT-TYPE
+    SYNTAX  INTEGER	   (0..255)
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "The S1 byte value that gets sent to the destination."
+    ::= { acSonetSectionSSMEntry 5 }
+
+acSonetSectionSSMReceivedValue OBJECT-TYPE
+    SYNTAX  INTEGER        (0..255)
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "The S1 byte value that is received."
+    ::= { acSonetSectionSSMEntry 6 }
+
+-------------------------------------------------------------------------------
+--                      the SONET/SDH Line group
+-------------------------------------------------------------------------------
+
+-- this group consists of 2 tables:
+-- - the SONET/SDH Line 15Minute Interval Table
+-- - the SONET/SDH Line Day Interval Table
+-- - the SONET/SDH Line Threshold Table
+
+-- ===========================================
+-- the SONET/SDH Line 15 Minute Interval Table
+-- ===========================================
+
+-- The SONET/SDH Line
+-- 15Minute Interval Table contains various statistics
+-- being collected for the current 15 minute interval,
+-- and previously stored 15 minute intervals.
+
+acSonetLine15MinuteIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetLine15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+      "The SONET/SDH Line 15Minute Interval Table."
+    ::= { acSonetLine 1 }
+
+acSonetLine15MinuteIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetLine15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Line 15Minute Interval table."
+   INDEX   { acSonetLine15MinuteIntervalNodeId,
+             acSonetLine15MinuteIntervalSlot,
+             acSonetLine15MinuteIntervalPort,
+             acSonetLine15MinuteIntervalNumber }
+   ::= { acSonetLine15MinuteIntervalTable 1 }
+
+AcSonetLine15MinuteIntervalEntry ::=
+    SEQUENCE {
+        acSonetLine15MinuteIntervalNodeId      AcNodeId,
+        acSonetLine15MinuteIntervalSlot        AcSlotNumber,
+        acSonetLine15MinuteIntervalPort        AcPortNumber,
+        acSonetLine15MinuteIntervalNumber      INTEGER,
+        acSonetLine15MinuteIntervalValidStats  TruthValue,
+        acSonetLine15MinuteIntervalResetStats  TruthValue,
+        acSonetLine15MinuteIntervalStatus      Integer32,
+        acSonetLine15MinuteIntervalESs         PerfIntervalCount,
+        acSonetLine15MinuteIntervalSESs        PerfIntervalCount,
+        acSonetLine15MinuteIntervalCVs         PerfIntervalCount,
+        acSonetLine15MinuteIntervalUASs        PerfIntervalCount,
+        acSonetLine15MinuteIntervalBER         PerfIntervalCount
+    }
+
+acSonetLine15MinuteIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetLine15MinuteIntervalEntry 1 }
+
+acSonetLine15MinuteIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetLine15MinuteIntervalEntry 2 }
+
+acSonetLine15MinuteIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetLine15MinuteIntervalEntry 3 }
+
+acSonetLine15MinuteIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..98)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 98, which identifies the interval for 
+      which the set of statistics is available.  The interval identified 
+      by 1 is the ongoing, current 15 minute interval.  The interval 
+      identified by 2 is the most recently completed 15 minute interval.  
+      The interval identified by 97 is the oldest 15 minute interval.  
+      The interval identified by 98 is a total of the previous 96 stored
+      15 minute intervals."
+     ::= { acSonetLine15MinuteIntervalEntry 4 }
+
+acSonetLine15MinuteIntervalValidStats OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates if the data for this interval is valid."
+    ::= { acSonetLine15MinuteIntervalEntry 5 }
+
+acSonetLine15MinuteIntervalResetStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "Flag to reset the 15 minute SONET Line interval statistics."
+        ::= { acSonetLine15MinuteIntervalEntry 6 }
+
+acSonetLine15MinuteIntervalStatus OBJECT-TYPE
+    SYNTAX  Integer32 (1..6)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates the status of the interface.  The 
+       acSonetLineCurrentStatus is a bit map represented as a sum, 
+       therefore, it can represent multiple defects simultaneously.
+       The acSonetLineNoDefect should be set if and only if no other 
+       flag is set.
+
+       The various bit positions are:
+        1   acSonetLineNoDefect
+        2   acSonetLineAIS
+        4   acSonetLineRDI"
+     ::= { acSonetLine15MinuteIntervalEntry 7 }
+
+acSonetLine15MinuteIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Errored Seconds 
+       encountered by a SONET/SDH Line in a particular 15-minute 
+       interval in the past 24 hours."
+     ::= { acSonetLine15MinuteIntervalEntry 8 }
+
+acSonetLine15MinuteIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of Severely Errored Seconds
+       encountered by a SONET/SDH Line in a particular 15-minute interval
+       in the past 24 hours."
+      ::= { acSonetLine15MinuteIntervalEntry 9 }
+
+acSonetLine15MinuteIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the number of Coding Violations 
+      encountered by a SONET/SDH Line in a particular 15-minute interval
+      in the past 24 hours."
+    ::= { acSonetLine15MinuteIntervalEntry 10 }
+
+acSonetLine15MinuteIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the number of Unavailable Seconds
+      encountered by a SONET/SDH Line in a particular 15-minute interval
+      in the past 24 hours."
+    ::= { acSonetLine15MinuteIntervalEntry 11 }
+
+acSonetLine15MinuteIntervalBER OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the max BER encountered by a SONET/SDH 
+      Line in a particular 15-minute interval in the past 24 hours.  "
+    ::= { acSonetLine15MinuteIntervalEntry 12 }
+
+
+
+-- =====================================
+-- the SONET/SDH Line Day Interval Table
+-- =====================================
+
+-- The SONET/SDH Line Interval Table contains 
+-- various statistics being collected for the current day 
+-- interval, and previously stored day intervals.
+
+-- The SONET/SDH Line day Interval Table
+-- contains various statistics
+-- collected by the system over a maximum
+-- of the previous 30 days of
+-- operation.  
+
+-- The first interval is the current day register.
+-- IntervalNumber = 2-31 are the completed day
+-- intervals, with IntervalNumber = 2 being the most recent.
+
+acSonetLineDayIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetLineDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+      "The SONET/SDH Line Day Interval Table."
+    ::= { acSonetLine 2 }
+
+acSonetLineDayIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetLineDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Line Day Interval table."
+   INDEX   { acSonetLineDayIntervalNodeId,
+             acSonetLineDayIntervalSlot,
+             acSonetLineDayIntervalPort,
+             acSonetLineDayIntervalNumber }
+   ::= { acSonetLineDayIntervalTable 1 }
+
+AcSonetLineDayIntervalEntry ::=
+    SEQUENCE {
+        acSonetLineDayIntervalNodeId      AcNodeId,
+        acSonetLineDayIntervalSlot        AcSlotNumber,
+        acSonetLineDayIntervalPort        AcPortNumber,
+        acSonetLineDayIntervalNumber      INTEGER,
+        acSonetLineDayIntervalValidStats  TruthValue,
+        acSonetLineDayIntervalResetStats  TruthValue,
+        acSonetLineDayIntervalStatus      Integer32,
+        acSonetLineDayIntervalESs         PerfIntervalCount,
+        acSonetLineDayIntervalSESs        PerfIntervalCount,
+        acSonetLineDayIntervalCVs         PerfIntervalCount,
+        acSonetLineDayIntervalUASs        PerfIntervalCount,
+        acSonetLineDayIntervalBER         PerfIntervalCount
+    }
+
+acSonetLineDayIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetLineDayIntervalEntry 1 }
+
+acSonetLineDayIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetLineDayIntervalEntry 2 }
+
+acSonetLineDayIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetLineDayIntervalEntry 3 }
+
+acSonetLineDayIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 31, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      day performance monitoring interval.
+      The interval identified by 2 is the most recently
+      completed day interval.  The interval identified
+      by 31 is the oldest day interval."
+     ::= { acSonetLineDayIntervalEntry 4 }
+
+acSonetLineDayIntervalValidStats OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates if the data for this
+        interval is valid."
+    ::= { acSonetLineDayIntervalEntry 5 }
+
+acSonetLineDayIntervalResetStats  OBJECT-TYPE
+    SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "Flag to reset the SONET Line Day interval statistics."
+
+        ::= { acSonetLineDayIntervalEntry 6 }
+
+acSonetLineDayIntervalStatus OBJECT-TYPE
+    SYNTAX  Integer32 (1..6)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates the
+       status of the interface.
+       The acSonetLineCurrentStatus
+       is a bit map represented
+       as a sum, therefore,
+       it can represent multiple defects
+       simultaneously.
+       The acSonetLineNoDefect should be
+       set if and only if
+       no other flag is set.
+
+       The various bit positions are:
+        1   acSonetLineNoDefect
+        2   acSonetLineAIS
+        4   acSonetLineRDI"
+     ::= { acSonetLineDayIntervalEntry 7 }
+
+acSonetLineDayIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of
+       Errored Seconds encountered
+       by a SONET/SDH Line in a
+       particular day interval
+       in the past 30 days."
+     ::= { acSonetLineDayIntervalEntry 8 }
+
+acSonetLineDayIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of
+       Severely Errored Seconds
+       encountered by a SONET/SDH Line in a
+       particular day interval
+       in the past 30 days."
+      ::= { acSonetLineDayIntervalEntry 9 }
+
+acSonetLineDayIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the number of Coding
+      Violations encountered by a
+      SONET/SDH Line in a
+      particular day interval
+      in the past 30 days."
+    ::= { acSonetLineDayIntervalEntry 10 }
+
+acSonetLineDayIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the
+      number of Unavailable Seconds
+      encountered by a SONET/SDH Line in
+      a particular day interval
+      in the past 30 days."
+    ::= { acSonetLineDayIntervalEntry 11 }
+
+acSonetLineDayIntervalBER OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  deprecated
+    DESCRIPTION
+      "The counter associated with the
+      max BER encountered by a SONET/SDH 
+      Line in a particular day interval
+      in the past 30 days."
+    ::= { acSonetLineDayIntervalEntry 12 }
+
+
+
+--  =====================================
+--  the SONET/SDH Line Threshold Table 
+--  =====================================
+
+-- The SONET/SDH Line Threshold Table contains
+-- user selectable thresholds for all of the current
+-- performance monitoring registers (i.e. the current
+-- 15 minute and day registers).  Any legitimate value can 
+-- be written into these registers. 
+
+acSonetLineThresholdTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetLineThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Line Threshold Table."
+     ::= { acSonetLine 3 }
+
+acSonetLineThresholdEntry OBJECT-TYPE
+    SYNTAX  AcSonetLineThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Line Threshold Table."
+    INDEX   { acSonetLineThresholdNodeId,
+              acSonetLineThresholdSlot,
+              acSonetLineThresholdPort, 
+              acSonetLineThresholdSelectionNum }
+     ::= { acSonetLineThresholdTable 1 }
+
+AcSonetLineThresholdEntry ::=     
+    SEQUENCE {
+         acSonetLineThresholdNodeId            AcNodeId,
+         acSonetLineThresholdSlot              AcSlotNumber,
+         acSonetLineThresholdPort              AcPortNumber,
+         acSonetLineThresholdSelectionNum      INTEGER,
+         acSonetLineThresholdAdminStatus       AcAdminStatus,
+         acSonetLineThresholdESs               INTEGER,
+         acSonetLineThresholdSESs              INTEGER,
+         acSonetLineThresholdCVs               INTEGER,
+         acSonetLineThresholdUASs              INTEGER
+    }
+
+
+acSonetLineThresholdNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetLineThresholdEntry 1 }
+
+acSonetLineThresholdSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetLineThresholdEntry 2 }
+
+acSonetLineThresholdPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetLineThresholdEntry 3 }
+
+acSonetLineThresholdSelectionNum OBJECT-TYPE
+    SYNTAX  INTEGER {
+                minute(1),
+                day(2)
+            }
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number that selects either the 15 thresholds or the day 
+      thresholds. "
+     ::= { acSonetLineThresholdEntry 4 }
+
+acSonetLineThresholdAdminStatus OBJECT-TYPE
+    SYNTAX  AcAdminStatus
+    MAX-ACCESS  read-write
+    STATUS  deprecated
+    DESCRIPTION
+       "This field is used by the administrator to ensure
+       only one client is performing management operations
+       on this serial port at a time.  When the field is read
+       as available(0), the client can write the value locked(1)
+       into this field to prevent a second client from
+       performing managment ops on this instance."
+    ::= { acSonetLineThresholdEntry 5 }
+
+acSonetLineThresholdESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Errored Seconds."
+    DEFVAL { 0 }
+     ::= { acSonetLineThresholdEntry 6 }
+
+acSonetLineThresholdSESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Severely Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetLineThresholdEntry 7 }
+
+acSonetLineThresholdCVs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Coding Violations."
+    DEFVAL { 0 }
+    ::= { acSonetLineThresholdEntry 8 }
+
+acSonetLineThresholdUASs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Unavailable Secondss."
+    DEFVAL { 0 }
+    ::= { acSonetLineThresholdEntry 9 }
+
+
+-------------------------------------------------------------------------------
+--                    The SONET/SDH Far End Line group
+-------------------------------------------------------------------------------
+
+-- This group may only be implemented by SONET/SDH (LTEs)
+-- systems that provide for a far end block error (FEBE)
+-- information at the SONET/SDH Line Layer.
+-- This group consists of three tables:
+--  - SONET/SDH Far End Line 15Minute Interval Table
+--  - SONET/SDH Far End Line Day Interval Table
+--  - SONET/SDH Far End Line Threshold Table
+
+-- ===================================================
+-- the SONET/SDH Far End Line 15 Minute Interval Table
+-- ===================================================
+
+-- The SONET/SDH Line
+-- 15Minute Interval Table contains various statistics
+-- being collected for the current 15 minute interval,
+-- and previously stored 15 minute intervals.
+
+-- The statistics are collected from the far end
+-- block error code (FEBE)
+-- within the third Z2 byte of the Line Overhead
+-- in Broadband ISDN applications.
+-- The definitions are the same as described for
+-- the near-end information.
+
+
+acSonetFarEndLine15MinuteIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndLine15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+      "The SONET/SDH FarEndLine 15Minute Interval Table."
+    ::= { acSonetFarEndLine 1 }
+
+acSonetFarEndLine15MinuteIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndLine15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH FarEndLine 15Minute Interval table."
+   INDEX   { acSonetFarEndLine15MinuteIntervalNodeId,
+             acSonetFarEndLine15MinuteIntervalSlot,
+             acSonetFarEndLine15MinuteIntervalPort,
+             acSonetFarEndLine15MinuteIntervalNumber }
+   ::= { acSonetFarEndLine15MinuteIntervalTable 1 }
+
+AcSonetFarEndLine15MinuteIntervalEntry ::=
+    SEQUENCE {
+        acSonetFarEndLine15MinuteIntervalNodeId      AcNodeId,
+        acSonetFarEndLine15MinuteIntervalSlot        AcSlotNumber,
+        acSonetFarEndLine15MinuteIntervalPort        AcPortNumber,
+        acSonetFarEndLine15MinuteIntervalNumber      INTEGER,
+        acSonetFarEndLine15MinuteIntervalValidStats  TruthValue,
+        acSonetFarEndLine15MinuteIntervalResetStats  TruthValue,
+        acSonetFarEndLine15MinuteIntervalESs         PerfIntervalCount,
+        acSonetFarEndLine15MinuteIntervalSESs        PerfIntervalCount,
+        acSonetFarEndLine15MinuteIntervalCVs         PerfIntervalCount,
+        acSonetFarEndLine15MinuteIntervalUASs        PerfIntervalCount
+    }
+
+acSonetFarEndLine15MinuteIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndLine15MinuteIntervalEntry 1 }
+
+acSonetFarEndLine15MinuteIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndLine15MinuteIntervalEntry 2 }
+
+acSonetFarEndLine15MinuteIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndLine15MinuteIntervalEntry 3 }
+
+acSonetFarEndLine15MinuteIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..98)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 98, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      15 minute interval.
+      The interval identified by 2 is the most recently
+      completed 15 minute interval.  The interval identified
+      by 97 is the oldest 15 minute interval.  The interval
+      identified by 98 is a total of the previous 96 stored
+      15 minute intervals."
+     ::= { acSonetFarEndLine15MinuteIntervalEntry 4 }
+
+acSonetFarEndLine15MinuteIntervalValidStats OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates if the data for this
+        interval is valid."
+    ::= { acSonetFarEndLine15MinuteIntervalEntry 5 }
+
+acSonetFarEndLine15MinuteIntervalResetStats OBJECT-TYPE
+    SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "Flag to reset the SONET Far End Line 15 minute interval statistics."
+
+        ::= { acSonetFarEndLine15MinuteIntervalEntry 6 }
+
+acSonetFarEndLine15MinuteIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of
+       Errored Seconds encountered
+       by a SONET/SDH FarEndLine in a
+       particular 15-minute interval
+       in the past 24 hours."
+     ::= { acSonetFarEndLine15MinuteIntervalEntry 7 }
+
+acSonetFarEndLine15MinuteIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of
+       Severely Errored Seconds
+       encountered by a SONET/SDH FarEndLine in a
+       particular 15-minute interval
+       in the past 24 hours."
+      ::= { acSonetFarEndLine15MinuteIntervalEntry 8 }
+
+acSonetFarEndLine15MinuteIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the number of Coding
+      Violations encountered by a
+      SONET/SDH FarEndLine in a
+      particular 15-minute interval
+      in the past 24 hours."
+    ::= { acSonetFarEndLine15MinuteIntervalEntry 9 }
+
+acSonetFarEndLine15MinuteIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the
+      number of Unavailable Seconds
+      encountered by a SONET/SDH FarEndLine in
+      a particular 15-minute interval
+      in the past 24 hours."
+    ::= { acSonetFarEndLine15MinuteIntervalEntry 10 }
+
+
+
+-- =============================================
+-- the SONET/SDH Far End Line Day Interval Table
+-- =============================================
+
+-- The SONET/SDH FarEndLine Interval Table contains 
+-- various statistics being collected for the current day 
+-- interval, and previously stored day intervals.
+
+-- The SONET/SDH FarEndLine day Interval Table
+-- contains various statistics
+-- collected by the system over a maximum
+-- of the previous 30 days of
+-- operation.  
+
+-- The first interval is the current day register.
+-- IntervalNumber = 2-31 are the completed day
+-- intervals, with IntervalNumber = 2 being the most recent.
+
+acSonetFarEndLineDayIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndLineDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+      "The SONET/SDH FarEndLine Day Interval Table."
+    ::= { acSonetFarEndLine 2 }
+
+acSonetFarEndLineDayIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndLineDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH FarEndLine Day Interval table."
+   INDEX   { acSonetFarEndLineDayIntervalNodeId,
+             acSonetFarEndLineDayIntervalSlot,
+             acSonetFarEndLineDayIntervalPort,
+             acSonetFarEndLineDayIntervalNumber }
+   ::= { acSonetFarEndLineDayIntervalTable 1 }
+
+AcSonetFarEndLineDayIntervalEntry ::=
+    SEQUENCE {
+        acSonetFarEndLineDayIntervalNodeId      AcNodeId,
+        acSonetFarEndLineDayIntervalSlot        AcSlotNumber,
+        acSonetFarEndLineDayIntervalPort        AcPortNumber,
+        acSonetFarEndLineDayIntervalNumber      INTEGER,
+        acSonetFarEndLineDayIntervalValidStats  TruthValue,
+        acSonetFarEndLineDayIntervalResetStats  TruthValue,
+        acSonetFarEndLineDayIntervalESs         PerfIntervalCount,
+        acSonetFarEndLineDayIntervalSESs        PerfIntervalCount,
+        acSonetFarEndLineDayIntervalCVs         PerfIntervalCount,
+        acSonetFarEndLineDayIntervalUASs        PerfIntervalCount
+    }
+
+acSonetFarEndLineDayIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndLineDayIntervalEntry 1 }
+
+acSonetFarEndLineDayIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndLineDayIntervalEntry 2 }
+
+acSonetFarEndLineDayIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndLineDayIntervalEntry 3 }
+
+acSonetFarEndLineDayIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 31, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      day performance monitoring interval.
+      The interval identified by 2 is the most recently
+      completed day interval.  The interval identified
+      by 31 is the oldest day interval."
+     ::= { acSonetFarEndLineDayIntervalEntry 4 }
+
+acSonetFarEndLineDayIntervalValidStats OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates if the data for this
+        interval is valid."
+    ::= { acSonetFarEndLineDayIntervalEntry 5 }
+
+acSonetFarEndLineDayIntervalResetStats  OBJECT-TYPE
+    SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "Flag to reset the SONET far end line day interval statistics."
+
+        ::= { acSonetFarEndLineDayIntervalEntry 6 }
+
+acSonetFarEndLineDayIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of
+       Errored Seconds encountered
+       by a SONET/SDH FarEndLine in a
+       particular day interval
+       in the past 30 days."
+     ::= { acSonetFarEndLineDayIntervalEntry 7 }
+
+acSonetFarEndLineDayIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "The counter associated with the number of
+       Severely Errored Seconds
+       encountered by a SONET/SDH FarEndLine in a
+       particular day interval
+       in the past 30 days."
+      ::= { acSonetFarEndLineDayIntervalEntry 8 }
+
+acSonetFarEndLineDayIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the number of Coding
+      Violations encountered by a
+      SONET/SDH FarEndLine in a
+      particular day interval
+      in the past 30 days."
+    ::= { acSonetFarEndLineDayIntervalEntry 9 }
+
+acSonetFarEndLineDayIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "The counter associated with the
+      number of Unavailable Seconds
+      encountered by a SONET/SDH FarEndLine in
+      a particular day interval
+      in the past 30 days."
+    ::= { acSonetFarEndLineDayIntervalEntry 10 }
+
+
+--  ==========================================
+--  the SONET/SDH Far End Line Threshold Table 
+--  ==========================================
+
+-- The SONET/SDH FarEndLine Threshold Table contains
+-- user selectable thresholds for all of the current
+-- performance monitoring registers (i.e. the current
+-- 15 minute and day registers).  Any legitimate value can 
+-- be written into these registers. 
+
+acSonetFarEndLineThresholdTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndLineThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH FarEndLine Threshold Table."
+     ::= { acSonetFarEndLine 3 }
+
+acSonetFarEndLineThresholdEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndLineThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH FarEndLine Threshold Table."
+    INDEX   { acSonetFarEndLineThresholdNodeId,
+              acSonetFarEndLineThresholdSlot,
+              acSonetFarEndLineThresholdPort,
+              acSonetFarEndLineThresholdSelectionNum }
+     ::= { acSonetFarEndLineThresholdTable 1 }
+
+AcSonetFarEndLineThresholdEntry ::=     
+    SEQUENCE {
+         acSonetFarEndLineThresholdNodeId            AcNodeId,
+         acSonetFarEndLineThresholdSlot              AcSlotNumber,
+         acSonetFarEndLineThresholdPort              AcPortNumber,
+         acSonetFarEndLineThresholdSelectionNum      INTEGER,
+         acSonetFarEndLineThresholdAdminStatus       AcAdminStatus,
+         acSonetFarEndLineThresholdESs               INTEGER,
+         acSonetFarEndLineThresholdSESs              INTEGER,
+         acSonetFarEndLineThresholdCVs               INTEGER,
+         acSonetFarEndLineThresholdUASs              INTEGER
+    }
+
+acSonetFarEndLineThresholdNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndLineThresholdEntry 1 }
+
+acSonetFarEndLineThresholdSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber 
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndLineThresholdEntry 2 }
+
+acSonetFarEndLineThresholdPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndLineThresholdEntry 3 }
+
+acSonetFarEndLineThresholdSelectionNum OBJECT-TYPE
+    SYNTAX  INTEGER{
+               minute(1),
+               day(2)
+           }
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number that selects either the 15 thresholds or
+       the day thresholds. "
+     ::= { acSonetFarEndLineThresholdEntry 4 }
+
+acSonetFarEndLineThresholdAdminStatus OBJECT-TYPE
+    SYNTAX  AcAdminStatus
+    MAX-ACCESS  read-write
+    STATUS  deprecated
+    DESCRIPTION
+       "This field is used by the administrator to ensure
+       only one client is performing management operations
+       on this serial port at a time.  When the field is read
+       as available(0), the client can write the value locked(1)
+       into this field to prevent a second client from
+       performing managment ops on this instance."
+     ::= { acSonetFarEndLineThresholdEntry 5 }
+
+acSonetFarEndLineThresholdESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Errored Seconds."
+    DEFVAL { 0 }
+     ::= { acSonetFarEndLineThresholdEntry 6 }
+
+acSonetFarEndLineThresholdSESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Severely Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndLineThresholdEntry 7 }
+
+acSonetFarEndLineThresholdCVs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Coding Violations."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndLineThresholdEntry 8 }
+
+acSonetFarEndLineThresholdUASs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Unavailable Secondss."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndLineThresholdEntry 9 }
+
+-------------------------------------------------------------------------------
+--                      the SONET/SDH Path group
+-------------------------------------------------------------------------------
+
+-- this group consists of 3 tables:
+-- - the SONET/SDH Path 15Minute Interval Table
+-- - the SONET/SDH Path Day Interval Table
+-- - the SONET/SDH Path Threshold Table
+
+-- - There is also a SONET/SDH Path RDI/ERDI selection. 
+
+-- ==========================================
+-- the SONET/SDH Path 15Minute Interval Table
+-- ==========================================
+
+-- The SONET/SDH Path
+-- current table contains various statistics
+-- being collected for the current 15 minute interval.
+
+acSonetPath15MinuteIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPath15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "The SONET/SDH Path 15Minute Interval table."
+
+         ::= { acSonetPath 1 }
+
+acSonetPath15MinuteIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetPath15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "An entry in the SONET/SDH Path 15Minute Interval table."
+
+    INDEX   { acSonetPath15MinuteIntervalNodeId,
+              acSonetPath15MinuteIntervalSlot,
+              acSonetPath15MinuteIntervalPort,
+              acSonetPath15MinuteIntervalPath,
+              acSonetPath15MinuteIntervalNumber }
+
+        ::= { acSonetPath15MinuteIntervalTable 1 }
+
+
+AcSonetPath15MinuteIntervalEntry ::=
+    SEQUENCE {
+         acSonetPath15MinuteIntervalNodeId     AcNodeId,
+         acSonetPath15MinuteIntervalSlot       AcSlotNumber,
+         acSonetPath15MinuteIntervalPort       AcPortNumber,
+         acSonetPath15MinuteIntervalPath       INTEGER,
+         acSonetPath15MinuteIntervalNumber     INTEGER,
+         acSonetPath15MinuteIntervalStatus     Integer32,
+         acSonetPath15MinuteIntervalValidStats TruthValue,
+         acSonetPath15MinuteIntervalResetStats TruthValue,
+         acSonetPath15MinuteIntervalESs        PerfIntervalCount,
+         acSonetPath15MinuteIntervalSESs       PerfIntervalCount,
+         acSonetPath15MinuteIntervalCVs        PerfIntervalCount,
+         acSonetPath15MinuteIntervalUASs       PerfIntervalCount,
+         acSonetPath15MinuteIntervalBER        PerfIntervalCount
+    }
+
+
+acSonetPath15MinuteIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetPath15MinuteIntervalEntry 1 }
+
+acSonetPath15MinuteIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetPath15MinuteIntervalEntry 2 }
+
+acSonetPath15MinuteIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetPath15MinuteIntervalEntry 3 }
+
+acSonetPath15MinuteIntervalPath OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The STS Path for which the set of statistics is available."
+    ::= { acSonetPath15MinuteIntervalEntry 4 }
+
+acSonetPath15MinuteIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..98)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 98, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      15 minute interval.
+      The interval identified by 2 is the most recently
+      completed 15 minute interval.  The interval identified
+      by 97 is the oldest 15 minute interval.  The interval
+      identified by 98 is a total of the previous 96 stored
+      15 minute intervals."
+
+          ::= { acSonetPath15MinuteIntervalEntry 5 }
+
+acSonetPath15MinuteIntervalStatus OBJECT-TYPE
+    SYNTAX  Integer32 (1..62)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "This variable indicates the status of the interface.
+      The acSonetPathCurrentStatus is a bit map represented
+      as a sum, therefore, it can represent multiple defects
+      simultaneously.  The acSonetPathNoDefect should be
+      set if and only if no other flag is set.
+
+      The various bit positions are:
+         1   acSonetPathNoDefect
+         2   acSonetPathSTSLOP
+         4   acSonetPathSTSAIS
+         8   acSonetPathSTSRDI
+        16   acSonetPathUnequipped
+        32   acSonetPathPayloadLabelMismatch"
+
+        ::= { acSonetPath15MinuteIntervalEntry 6 }
+
+acSonetPath15MinuteIntervalValidStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-only
+        STATUS          current
+        DESCRIPTION
+        "This variable indicates if the data for this interval is valid."
+
+        ::= { acSonetPath15MinuteIntervalEntry 7 }
+
+acSonetPath15MinuteIntervalResetStats    OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "This flag is used to reset the data for a 15 minute interval."
+
+        ::= { acSonetPath15MinuteIntervalEntry 8 }
+
+acSonetPath15MinuteIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Errored Seconds
+     encountered by a SONET/SDH Path in the current 15 minute interval."
+
+         ::= { acSonetPath15MinuteIntervalEntry 9 }
+
+acSonetPath15MinuteIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Severely Errored Seconds
+     encountered by a SONET/SDH Path in the current 15 minute interval."
+
+         ::= { acSonetPath15MinuteIntervalEntry 10 }
+
+acSonetPath15MinuteIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Coding Violations 
+     encountered by a SONET/SDH Path in the current 15 minute interval."
+
+         ::= { acSonetPath15MinuteIntervalEntry 11 }
+
+acSonetPath15MinuteIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Unavailable Seconds
+     encountered by a Path in the current 15 minute interval."
+
+         ::= { acSonetPath15MinuteIntervalEntry 12 }
+
+acSonetPath15MinuteIntervalBER OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the BER encountered by a Path in 
+     the current 15 minute interval.  Represents the max value for an 
+     interval for number > 1."
+
+         ::= { acSonetPath15MinuteIntervalEntry 13 }
+
+
+-- =====================================
+-- the SONET/SDH Path Day Interval Table   
+-- =====================================
+
+-- The SONET/SDH Path Day Interval Table contains 
+-- various statistics being collected for the current day 
+-- interval, and previously stored day intervals.
+
+-- The SONET/SDH Path Day Interval Table
+-- contains various statistics
+-- collected by the system over a maximum
+-- of the previous 30 days of
+-- operation.  
+
+-- The first interval is the current day register.
+-- IntervalNumber = 2-31 are the completed day
+-- intervals, with IntervalNumber = 2 being the most recent.
+
+acSonetPathDayIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPathDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "The SONET/SDH Path Day Interval table."
+::= { acSonetPath 2 }
+
+acSonetPathDayIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetPathDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "An entry in the SONET/SDH Path Day Interval table."
+    INDEX   { acSonetPathDayIntervalNodeId,
+              acSonetPathDayIntervalSlot,
+              acSonetPathDayIntervalPort,
+              acSonetPathDayIntervalPath,
+              acSonetPathDayIntervalNumber }
+::= { acSonetPathDayIntervalTable 1 }
+
+
+AcSonetPathDayIntervalEntry ::=
+    SEQUENCE {
+         acSonetPathDayIntervalNodeId     AcNodeId,
+         acSonetPathDayIntervalSlot       AcSlotNumber,
+         acSonetPathDayIntervalPort       AcPortNumber,
+         acSonetPathDayIntervalPath       INTEGER,
+         acSonetPathDayIntervalNumber     INTEGER,
+         acSonetPathDayIntervalStatus     Integer32,
+         acSonetPathDayIntervalValidStats TruthValue,
+         acSonetPathDayIntervalResetStats TruthValue,
+         acSonetPathDayIntervalESs        PerfIntervalCount,
+         acSonetPathDayIntervalSESs       PerfIntervalCount,
+         acSonetPathDayIntervalCVs        PerfIntervalCount,
+         acSonetPathDayIntervalUASs       PerfIntervalCount,
+         acSonetPathDayIntervalBER        PerfIntervalCount
+    }
+
+acSonetPathDayIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetPathDayIntervalEntry 1 }
+
+acSonetPathDayIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetPathDayIntervalEntry 2 }
+
+acSonetPathDayIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetPathDayIntervalEntry 3 }
+
+acSonetPathDayIntervalPath OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The STS Path for which the set of statistics is available."
+    ::= { acSonetPathDayIntervalEntry 4 }
+
+acSonetPathDayIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 31, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      day performance monitoring interval.
+      The interval identified by 2 is the most recently
+      completed day interval.  The interval identified
+      by 31 is the oldest day interval."
+::= { acSonetPathDayIntervalEntry 5 }
+
+acSonetPathDayIntervalStatus OBJECT-TYPE
+    SYNTAX  Integer32 (1..62)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "This variable indicates the status of the interface.  The 
+      acSonetPathCurrentStatus is a bit map represented as a sum, 
+      therefore, it can represent multiple defects simultaneously.
+      The acSonetPathNoDefect should be set if and only if no other 
+      flag is set.
+
+      The various bit positions are:
+         1   acSonetPathNoDefect
+         2   acSonetPathSTSLOP
+         4   acSonetPathSTSAIS
+         8   acSonetPathSTSRDI
+        16   acSonetPathUnequipped
+        32   acSonetPathPayloadLabelMismatch"
+::= { acSonetPathDayIntervalEntry 6 }
+
+acSonetPathDayIntervalValidStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-only
+        STATUS          current
+        DESCRIPTION
+        "This variable indicates if the data for this day is valid."
+::= { acSonetPathDayIntervalEntry 7 }
+
+acSonetPathDayIntervalResetStats    OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "This flag is used to reset the data for day interval."
+::= { acSonetPathDayIntervalEntry 8 }
+
+
+acSonetPathDayIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Errored
+     Seconds encountered by a SONET/SDH
+     Path in the past day interval."
+::= { acSonetPathDayIntervalEntry 9 }
+
+acSonetPathDayIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Severely Errored Seconds
+     encountered by a SONET/SDH Path in the past day
+     interval."
+::= { acSonetPathDayIntervalEntry 10 }
+
+acSonetPathDayIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Coding
+     Violations encountered by a
+     SONET/SDH Path in the past day interval."
+::= { acSonetPathDayIntervalEntry 11 }
+
+acSonetPathDayIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Unavailable Seconds
+     encountered by a Path in the past day
+     interval."
+::= { acSonetPathDayIntervalEntry 12 }
+
+acSonetPathDayIntervalBER OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  deprecated
+    DESCRIPTION
+     "The counter associated with the BER
+     encountered by a Path in the past day
+     interval."
+::= { acSonetPathDayIntervalEntry 13 }
+
+
+--  ==================================
+--  the SONET/SDH Path Threshold Table 
+--  ==================================
+
+-- The SONET/SDH Path Threshold Table contains
+-- user selectable thresholds for all of the current
+-- performance monitoring registers (i.e. the current
+-- 15 minute and day registers).  Any legitimate value can 
+-- be written into these registers. 
+
+acSonetPathThresholdTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPathThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Path Threshold Table."
+     ::= { acSonetPath 3 }
+
+acSonetPathThresholdEntry OBJECT-TYPE
+    SYNTAX  AcSonetPathThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Path Threshold Table."
+    INDEX   { acSonetPathThresholdNodeId,
+              acSonetPathThresholdSlot,
+              acSonetPathThresholdPort, 
+              acSonetPathThresholdPath, 
+              acSonetPathThresholdSelectionNum }
+     ::= { acSonetPathThresholdTable 1 }
+
+AcSonetPathThresholdEntry ::=     
+    SEQUENCE {
+         acSonetPathThresholdNodeId            AcNodeId,
+         acSonetPathThresholdSlot              AcSlotNumber,
+         acSonetPathThresholdPort              AcPortNumber,
+         acSonetPathThresholdPath              INTEGER,
+         acSonetPathThresholdSelectionNum      INTEGER,
+         acSonetPathThresholdAdminStatus       AcAdminStatus,
+         acSonetPathThresholdESs               INTEGER,
+         acSonetPathThresholdSESs              INTEGER,
+         acSonetPathThresholdCVs               INTEGER,
+         acSonetPathThresholdUASs              INTEGER
+    }
+
+acSonetPathThresholdNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetPathThresholdEntry 1 }
+
+acSonetPathThresholdSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetPathThresholdEntry 2 }
+
+acSonetPathThresholdPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetPathThresholdEntry 3 }
+
+acSonetPathThresholdPath OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The STS Path for which the set of statistics is available."
+    ::= { acSonetPathThresholdEntry 4 }
+
+acSonetPathThresholdSelectionNum OBJECT-TYPE
+    SYNTAX  INTEGER {
+               minute(1),
+               day(2)
+           }
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number that selects either the 15 thresholds or
+       the day thresholds. "
+     ::= { acSonetPathThresholdEntry 5 }
+
+acSonetPathThresholdAdminStatus OBJECT-TYPE
+    SYNTAX  AcAdminStatus
+    MAX-ACCESS  read-write
+    STATUS  deprecated
+    DESCRIPTION
+       "This field is used by the administrator to ensure
+       only one client is performing management operations
+       on this serial port at a time.  When the field is read
+       as available(0), the client can write the value locked(1)
+       into this field to prevent a second client from
+       performing managment ops on this instance."
+     ::= { acSonetPathThresholdEntry 6 }
+
+acSonetPathThresholdESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Errored Seconds."
+    DEFVAL { 0 }
+     ::= { acSonetPathThresholdEntry 7 }
+
+acSonetPathThresholdSESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Severely Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetPathThresholdEntry 8 }
+
+acSonetPathThresholdCVs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Coding Violations."
+    DEFVAL { 0 }
+    ::= { acSonetPathThresholdEntry 9 }
+
+acSonetPathThresholdUASs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Unavailable Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetPathThresholdEntry 10 }
+
+
+-- ================================
+-- Path RDI Table
+-- ================================
+-- Remote Defect Indication
+
+acSonetPathRDITable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPathRDIEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Path RDI Table."
+    ::= { acSonetPath 4 }
+    
+acSonetPathRDIEntry OBJECT-TYPE
+    SYNTAX  AcSonetPathRDIEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Path RDI Table."
+    INDEX  { 
+        acSonetPathRDINodeId, 
+        acSonetPathRDISlot, 
+        acSonetPathRDIPort, 
+        acSonetPathRDIPath 
+    }
+    
+    ::= { acSonetPathRDITable 1 }
+    
+AcSonetPathRDIEntry ::=
+    SEQUENCE {
+         acSonetPathRDINodeId            AcNodeId,
+         acSonetPathRDISlot              AcSlotNumber,
+         acSonetPathRDIPort              AcPortNumber,
+         acSonetPathRDIPath              INTEGER,
+         acSonetPathRDIOpMode            INTEGER
+     }
+
+acSonetPathRDINodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetPathRDIEntry 1 }
+
+acSonetPathRDISlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetPathRDIEntry 2 }
+
+acSonetPathRDIPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetPathRDIEntry 3 }
+
+acSonetPathRDIPath OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The STS path instance for this port"
+       
+    ::= { acSonetPathRDIEntry 4 }
+
+acSonetPathRDIOpMode OBJECT-TYPE
+    SYNTAX  INTEGER  {
+          rdi(1),
+          erdi(2)
+       }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+       "The Remote Defect Indiction signals have undergone a number of
+        changes over the years, and now encompass two or even three
+        different versions.  See GR-253 6.2.1.3.2 for more information."
+        
+    ::= { acSonetPathRDIEntry 5 }
+
+-- =============================
+-- Path TIM Table
+-- =============================
+-- Trace Identifier Mismatch
+
+acSonetPathTIMTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPathTIMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Path Trace Identifier Mismatch Table."
+    ::= { acSonetPath 5 }
+    
+acSonetPathTIMEntry OBJECT-TYPE
+    SYNTAX  AcSonetPathTIMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Path Trace Identifier Mismatch Table."
+    INDEX  { acSonetPathTIMNodeId, 
+             acSonetPathTIMSlot, 
+             acSonetPathTIMPort, 
+             acSonetPathTIMPath }
+    ::= { acSonetPathTIMTable 1 }
+    
+AcSonetPathTIMEntry ::=
+    SEQUENCE {
+         acSonetPathTIMNodeId            AcNodeId,
+         acSonetPathTIMSlot              AcSlotNumber,
+         acSonetPathTIMPort              AcPortNumber,
+         acSonetPathTIMPath              INTEGER,
+         acSonetPathTIMGenerateEnable    TruthValue,
+         acSonetPathTIMDetectEnable      TruthValue,
+         acSonetPathTIMTransmitedString  AcTraceString,
+         acSonetPathTIMExpectedString    AcTraceString,
+         acSonetPathTIMReceivedString    AcTraceString,
+         acSonetPathTIMFailure           TruthValue,
+		 acSonetPathTIMFormat            INTEGER,
+		 acSonetPathTIMMismatchZeros     TruthValue
+     }
+
+acSonetPathTIMNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetPathTIMEntry 1 }
+
+acSonetPathTIMSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetPathTIMEntry 2 }
+
+acSonetPathTIMPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetPathTIMEntry 3 }
+
+acSonetPathTIMPath OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The path instance of the port."
+    ::= { acSonetPathTIMEntry 4 }
+
+acSonetPathTIMGenerateEnable OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Enables the generation of the Path Trace Identifier."
+    ::= { acSonetPathTIMEntry 5 }
+
+acSonetPathTIMDetectEnable OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Enables the detection of the Path Trace Identifier."
+
+   DEFVAL { false }
+    ::= { acSonetPathTIMEntry 6 }
+
+acSonetPathTIMTransmitedString OBJECT-TYPE
+    SYNTAX  AcTraceString
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "The string that gets sent to the destination."
+    ::= { acSonetPathTIMEntry 7 }
+
+acSonetPathTIMExpectedString OBJECT-TYPE
+    SYNTAX  AcTraceString
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "The expected string that is to be received."
+    ::= { acSonetPathTIMEntry 8 }
+
+acSonetPathTIMReceivedString OBJECT-TYPE
+    SYNTAX  AcTraceString
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "The contents of the string that is received."
+    ::= { acSonetPathTIMEntry 9 }
+
+acSonetPathTIMFailure OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "Failure declared of the Path Trace Identifier."
+    ::= { acSonetPathTIMEntry 10 }
+
+acSonetPathTIMFormat OBJECT-TYPE
+    SYNTAX  INTEGER {
+          void(0),
+          t64(1),
+		  t64-crlf(2),
+		  t16(3),
+		  t16-msb1(4),
+		  t16-crc7(5)
+       }
+    MAX-ACCESS read-write
+    STATUS  current
+    DESCRIPTION
+       "Format of Path Trace buffer."
+
+   DEFVAL { void }
+    ::= { acSonetPathTIMEntry 11 }
+
+acSonetPathTIMMismatchZeros OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Controls whether a received trace message containing 
+       all zeros can cause a mismatch defect."
+
+   DEFVAL { false }
+    ::= { acSonetPathTIMEntry 12 }
+
+-- ==============================
+-- Path PLM Table
+-- ==============================
+-- Payload Label Mismatch
+
+acSonetPathPLMTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPathPLMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Path Payload Label Mismatch Table."
+    ::= { acSonetPath 6 }
+    
+acSonetPathPLMEntry OBJECT-TYPE
+    SYNTAX  AcSonetPathPLMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Path Payload Label Mismatch Table."
+    INDEX  { acSonetPathPLMNodeId, 
+             acSonetPathPLMSlot, 
+             acSonetPathPLMPort,
+             acSonetPathPLMPath }
+    ::= { acSonetPathPLMTable 1 }
+    
+AcSonetPathPLMEntry ::=
+    SEQUENCE {
+         acSonetPathPLMNodeId            AcNodeId,
+         acSonetPathPLMSlot              AcSlotNumber,
+         acSonetPathPLMPort              AcPortNumber,
+         acSonetPathPLMPath              INTEGER,
+         acSonetPathPLMDetectEnable	 TruthValue,
+         acSonetPathPLMTransmitedValue   INTEGER,
+         acSonetPathPLMExpectedValue     INTEGER,
+         acSonetPathPLMReceivedValue     INTEGER,
+         acSonetPathPLMMismatchFailure   TruthValue,
+         acSonetPathPLMUnequipped        TruthValue
+     }
+
+acSonetPathPLMNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetPathPLMEntry 1 }
+
+acSonetPathPLMSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetPathPLMEntry 2 }
+
+acSonetPathPLMPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetPathPLMEntry 3 }
+
+acSonetPathPLMPath OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The path instance of the port."
+    ::= { acSonetPathPLMEntry 4 }
+
+acSonetPathPLMDetectEnable OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Enables the detection of the Path Payload Label."
+
+   DEFVAL { false }
+    ::= { acSonetPathPLMEntry 5 }
+
+acSonetPathPLMTransmitedValue OBJECT-TYPE
+    SYNTAX  INTEGER        (0..255)
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "The Path Payload Label that gets sent to the destination.
+        See GR-253 Tables 3-2, 3-3."
+    ::= { acSonetPathPLMEntry 6 }
+
+acSonetPathPLMExpectedValue OBJECT-TYPE
+    SYNTAX  INTEGER        (0..255)
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "The expected Path Payload Label that is to be received.
+        See GR-253 Tables 3-2, 3-3."
+    ::= { acSonetPathPLMEntry 7 }
+
+acSonetPathPLMReceivedValue OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "The contents of the Path Payload Label that is received.
+        See GR-253 Tables 3-2, 3-3."
+    ::= { acSonetPathPLMEntry 8 }
+
+acSonetPathPLMMismatchFailure OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "Mismatch failure declared for the Path Payload Label."
+    ::= { acSonetPathPLMEntry 9 }
+
+acSonetPathPLMUnequipped OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "Unequipped failure declared for the Path Payload Label."
+    ::= { acSonetPathPLMEntry 10 }
+
+-------------------------------------------------------------------------------
+--                    The SONET/SDH Far End Path group
+-------------------------------------------------------------------------------
+
+-- this group consists of 3 tables:
+-- - the SONET/SDH FarEndPath 15Minute Interval Table
+-- - the SONET/SDH FarEndPath Day Interval Table
+-- - the SONET/SDH FarEndPath Threshold Table
+
+-- ================================================
+-- the SONET/SDH FarEndPath 15Minute Interval Table
+-- ================================================
+
+-- The SONET/SDH FarEndPath
+-- current table contains various statistics
+-- being collected for the current 15 minute interval.
+
+acSonetFarEndPath15MinuteIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndPath15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "The SONET/SDH FarEndPath 15Minute Interval table."
+::= { acSonetFarEndPath 1 }
+
+acSonetFarEndPath15MinuteIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndPath15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "An entry in the SONET/SDH FarEndPath 15Minute Interval table."
+    INDEX   { acSonetFarEndPath15MinuteIntervalNodeId,
+              acSonetFarEndPath15MinuteIntervalSlot,
+              acSonetFarEndPath15MinuteIntervalPort,
+              acSonetFarEndPath15MinuteIntervalPath,
+              acSonetFarEndPath15MinuteIntervalNumber }
+::= { acSonetFarEndPath15MinuteIntervalTable 1 }
+
+AcSonetFarEndPath15MinuteIntervalEntry ::=
+    SEQUENCE {
+         acSonetFarEndPath15MinuteIntervalNodeId      AcNodeId,
+         acSonetFarEndPath15MinuteIntervalSlot        AcSlotNumber,
+         acSonetFarEndPath15MinuteIntervalPort        AcPortNumber,
+         acSonetFarEndPath15MinuteIntervalPath        INTEGER,
+         acSonetFarEndPath15MinuteIntervalNumber      INTEGER,
+         acSonetFarEndPath15MinuteIntervalValidStats  TruthValue,
+         acSonetFarEndPath15MinuteIntervalResetStats  TruthValue,
+         acSonetFarEndPath15MinuteIntervalESs         PerfIntervalCount,
+         acSonetFarEndPath15MinuteIntervalSESs        PerfIntervalCount,
+         acSonetFarEndPath15MinuteIntervalCVs         PerfIntervalCount,
+         acSonetFarEndPath15MinuteIntervalUASs        PerfIntervalCount
+    }
+
+acSonetFarEndPath15MinuteIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndPath15MinuteIntervalEntry 1 }
+
+acSonetFarEndPath15MinuteIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber 
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndPath15MinuteIntervalEntry 2 }
+
+acSonetFarEndPath15MinuteIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndPath15MinuteIntervalEntry 3 }
+
+acSonetFarEndPath15MinuteIntervalPath OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The STS Path for which the set of statistics is available."
+    ::= { acSonetFarEndPath15MinuteIntervalEntry 4 }
+
+acSonetFarEndPath15MinuteIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..98)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 98, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      15 minute interval.
+      The interval identified by 2 is the most recently
+      completed 15 minute interval.  The interval identified
+      by 97 is the oldest 15 minute interval.  The interval
+      identified by 98 is a total of the previous 96 stored
+      15 minute intervals."
+::= { acSonetFarEndPath15MinuteIntervalEntry 5 }
+
+acSonetFarEndPath15MinuteIntervalValidStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-only
+        STATUS          current
+        DESCRIPTION
+        "This variable indicates if the data for this far end 15 minute 
+        interval is valid."
+::= { acSonetFarEndPath15MinuteIntervalEntry 6 }
+
+acSonetFarEndPath15MinuteIntervalResetStats    OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "This flag is used to reset the data for far end 15 minute interval."
+::= { acSonetFarEndPath15MinuteIntervalEntry 7 }
+
+
+acSonetFarEndPath15MinuteIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Errored
+     Seconds encountered by a SONET/SDH
+     FarEndPath in the current 15 minute interval."
+::= { acSonetFarEndPath15MinuteIntervalEntry 8 }
+
+acSonetFarEndPath15MinuteIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Severely Errored Seconds
+     encountered by a SONET/SDH FarEndPath in the current 15
+     minute
+     interval."
+::= { acSonetFarEndPath15MinuteIntervalEntry 9 }
+
+acSonetFarEndPath15MinuteIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Coding
+     Violations encountered by a
+     SONET/SDH FarEndPath in the current 15 minute interval."
+::= { acSonetFarEndPath15MinuteIntervalEntry 10 }
+
+acSonetFarEndPath15MinuteIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Unavailable Seconds
+     encountered by a FarEndPath in the current
+     15 minute interval."
+::= { acSonetFarEndPath15MinuteIntervalEntry 11 }
+
+
+-- ===========================================
+-- the SONET/SDH FarEndPath Day Interval Table   
+-- ===========================================
+
+-- The SONET/SDH FarEndPath Day Interval Table contains 
+-- various statistics being collected for the current day 
+-- interval, and previously stored day intervals.
+
+-- The SONET/SDH FarEndPath Day Interval Table
+-- contains various statistics
+-- collected by the system over a maximum
+-- of the previous 30 days of
+-- operation.  
+
+-- The first interval is the current day register.
+-- IntervalNumber = 2-31 are the completed day
+-- intervals, with IntervalNumber = 2 being the most recent.
+
+acSonetFarEndPathDayIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndPathDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "The SONET/SDH FarEndPath Day Interval table."
+::= { acSonetFarEndPath 2 }
+
+acSonetFarEndPathDayIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndPathDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "An entry in the SONET/SDH FarEndPath Day Interval table."
+    INDEX   { acSonetFarEndPathDayIntervalNodeId,
+              acSonetFarEndPathDayIntervalSlot,
+              acSonetFarEndPathDayIntervalPort,
+              acSonetFarEndPathDayIntervalPath,
+              acSonetFarEndPathDayIntervalNumber }
+::= { acSonetFarEndPathDayIntervalTable 1 }
+
+
+AcSonetFarEndPathDayIntervalEntry ::=
+    SEQUENCE {
+         acSonetFarEndPathDayIntervalNodeId     AcNodeId,
+         acSonetFarEndPathDayIntervalSlot       AcSlotNumber,
+         acSonetFarEndPathDayIntervalPort       AcPortNumber,
+         acSonetFarEndPathDayIntervalPath       INTEGER,
+         acSonetFarEndPathDayIntervalNumber     INTEGER,
+         acSonetFarEndPathDayIntervalValidStats TruthValue,
+         acSonetFarEndPathDayIntervalResetStats TruthValue,
+         acSonetFarEndPathDayIntervalESs        PerfIntervalCount,
+         acSonetFarEndPathDayIntervalSESs       PerfIntervalCount,
+         acSonetFarEndPathDayIntervalCVs        PerfIntervalCount,
+         acSonetFarEndPathDayIntervalUASs       PerfIntervalCount
+    }
+
+acSonetFarEndPathDayIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndPathDayIntervalEntry 1 }
+
+acSonetFarEndPathDayIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndPathDayIntervalEntry 2 }
+
+acSonetFarEndPathDayIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndPathDayIntervalEntry 3 }
+
+acSonetFarEndPathDayIntervalPath OBJECT-TYPE
+    SYNTAX INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The STS Path for which the set of statistics is available."
+    ::= { acSonetFarEndPathDayIntervalEntry 4 }
+
+acSonetFarEndPathDayIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 31, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      day performance monitoring interval.
+      The interval identified by 2 is the most recently
+      completed day interval.  The interval identified
+      by 31 is the oldest day interval."
+::= { acSonetFarEndPathDayIntervalEntry 5 }
+
+acSonetFarEndPathDayIntervalValidStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-only
+        STATUS          current
+        DESCRIPTION
+        "This variable indicates if the data for this far end day
+        interval is valid."
+::= { acSonetFarEndPathDayIntervalEntry 6 }
+
+acSonetFarEndPathDayIntervalResetStats    OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "This flag is used to reset the data for far end day interval."
+::= { acSonetFarEndPathDayIntervalEntry 7 }
+
+acSonetFarEndPathDayIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Errored
+     Seconds encountered by a SONET/SDH
+     FarEndPath in the current 15 minute interval."
+::= { acSonetFarEndPathDayIntervalEntry 8 }
+
+acSonetFarEndPathDayIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Severely Errored Seconds
+     encountered by a SONET/SDH FarEndPath in the current 15
+     minute
+     interval."
+::= { acSonetFarEndPathDayIntervalEntry 9 }
+
+acSonetFarEndPathDayIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Coding
+     Violations encountered by a
+     SONET/SDH FarEndPath in the current 15 minute interval."
+::= { acSonetFarEndPathDayIntervalEntry 10 }
+
+acSonetFarEndPathDayIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Unavailable Seconds
+     encountered by a FarEndPath in the current
+     15 minute interval."
+::= { acSonetFarEndPathDayIntervalEntry 11 }
+
+
+--  ========================================
+--  the SONET/SDH FarEndPath Threshold Table 
+--  ========================================
+
+-- The SONET/SDH FarEndPath Threshold Table contains
+-- user selectable thresholds for all of the current
+-- performance monitoring registers (i.e. the current
+-- 15 minute and day registers).  Any legitimate value can 
+-- be written into these registers. 
+
+acSonetFarEndPathThresholdTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndPathThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH FarEndPath Threshold Table."
+     ::= { acSonetFarEndPath 3 }
+
+acSonetFarEndPathThresholdEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndPathThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH FarEndPath Threshold Table."
+    INDEX   { acSonetFarEndPathThresholdNodeId,
+              acSonetFarEndPathThresholdSlot,
+              acSonetFarEndPathThresholdPort,
+              acSonetFarEndPathThresholdPath,
+              acSonetFarEndPathThresholdSelectionNum }
+     ::= { acSonetFarEndPathThresholdTable 1 }
+
+AcSonetFarEndPathThresholdEntry ::=     
+    SEQUENCE {
+         acSonetFarEndPathThresholdNodeId            AcNodeId,
+         acSonetFarEndPathThresholdSlot              AcSlotNumber,
+         acSonetFarEndPathThresholdPort              AcPortNumber,
+         acSonetFarEndPathThresholdPath              INTEGER,
+         acSonetFarEndPathThresholdSelectionNum      INTEGER,
+         acSonetFarEndPathThresholdAdminStatus       AcAdminStatus,
+         acSonetFarEndPathThresholdESs               INTEGER,
+         acSonetFarEndPathThresholdSESs              INTEGER,
+         acSonetFarEndPathThresholdCVs               INTEGER,
+         acSonetFarEndPathThresholdUASs              INTEGER
+    }
+
+acSonetFarEndPathThresholdNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndPathThresholdEntry 1 }
+
+acSonetFarEndPathThresholdSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndPathThresholdEntry 2 }
+
+acSonetFarEndPathThresholdPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndPathThresholdEntry 3 }
+
+acSonetFarEndPathThresholdPath OBJECT-TYPE
+    SYNTAX INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The STS Path for which the set of statistics is available."
+    ::= { acSonetFarEndPathThresholdEntry 4 }
+
+acSonetFarEndPathThresholdSelectionNum OBJECT-TYPE
+    SYNTAX  INTEGER{
+               minute(1),
+               day(2)
+            }
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number that selects either the 15 thresholds or
+       the day thresholds. "
+     ::= { acSonetFarEndPathThresholdEntry 5 }
+
+acSonetFarEndPathThresholdAdminStatus OBJECT-TYPE
+    SYNTAX  AcAdminStatus
+    MAX-ACCESS  read-write
+    STATUS  deprecated
+    DESCRIPTION
+       "This field is used by the administrator to ensure
+       only one client is performing management operations
+       on this serial port at a time.  When the field is read
+       as available(0), the client can write the value locked(1)
+       into this field to prevent a second client from
+       performing managment ops on this instance."
+     ::= { acSonetFarEndPathThresholdEntry 6 }
+
+acSonetFarEndPathThresholdESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndPathThresholdEntry 7 }
+
+acSonetFarEndPathThresholdSESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Severely Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndPathThresholdEntry 8 }
+
+acSonetFarEndPathThresholdCVs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Coding Violations."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndPathThresholdEntry 9 }
+
+acSonetFarEndPathThresholdUASs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Unavailable Secondss."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndPathThresholdEntry 10 }
+
+-------------------------------------------------------------------------------
+--                  the SONET/SDH Virtual Tributary group
+-------------------------------------------------------------------------------
+
+-- this group consists of 3 tables:
+-- - the SONET/SDH VT 15Minute Interval Table
+-- - the SONET/SDH VT Day Interval Table
+-- - the SONET/SDH VT Threshold Table
+
+-- For SDH signals, virtual tributaries are
+-- called VCs instead of VTs
+
+-- A VT1.5 = VC11
+-- A VT2 = VC12
+-- A VT3 = none
+-- A VT6 = VC3
+
+-- ========================================
+-- the SONET/SDH VT 15Minute Interval Table
+-- ========================================
+
+-- The SONET/SDH VT
+-- current table contains various statistics
+-- being collected for the current 15 minute interval.
+
+acSonetVT15MinuteIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetVT15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "The SONET/SDH VT 15Minute Interval table."
+::= { acSonetVT 1 }
+
+acSonetVT15MinuteIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetVT15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "An entry in the SONET/SDH VT 15Minute Interval table."
+    INDEX   { acSonetVT15MinuteIntervalNodeId,
+              acSonetVT15MinuteIntervalSlot,
+              acSonetVT15MinuteIntervalPort,
+              acSonetVT15MinuteIntervalVT,
+              acSonetVT15MinuteIntervalNumber }
+::= { acSonetVT15MinuteIntervalTable 1 }
+
+
+AcSonetVT15MinuteIntervalEntry ::=
+    SEQUENCE {
+         acSonetVT15MinuteIntervalNodeId     AcNodeId,
+         acSonetVT15MinuteIntervalSlot       AcSlotNumber,
+         acSonetVT15MinuteIntervalPort       AcPortNumber,
+         acSonetVT15MinuteIntervalVT         INTEGER,
+         acSonetVT15MinuteIntervalNumber     INTEGER,
+         acSonetVT15MinuteIntervalStatus     Integer32,
+         acSonetVT15MinuteIntervalValidStats TruthValue,
+         acSonetVT15MinuteIntervalResetStats TruthValue,
+         acSonetVT15MinuteIntervalESs        PerfIntervalCount,
+         acSonetVT15MinuteIntervalSESs       PerfIntervalCount,
+         acSonetVT15MinuteIntervalCVs        PerfIntervalCount,
+         acSonetVT15MinuteIntervalUASs       PerfIntervalCount,
+         acSonetVT15MinuteIntervalBER        PerfIntervalCount
+    }
+
+acSonetVT15MinuteIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetVT15MinuteIntervalEntry 1 }
+
+acSonetVT15MinuteIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetVT15MinuteIntervalEntry 2 }
+
+acSonetVT15MinuteIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetVT15MinuteIntervalEntry 3 }
+
+acSonetVT15MinuteIntervalVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The VT for which the set of statistics is available."
+    ::= { acSonetVT15MinuteIntervalEntry 4 }
+
+acSonetVT15MinuteIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..98)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 98, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      15 minute interval.
+      The interval identified by 2 is the most recently
+      completed 15 minute interval.  The interval identified
+      by 97 is the oldest 15 minute interval.  The interval
+      identified by 98 is a total of the previous 96 stored
+      15 minute intervals."
+::= { acSonetVT15MinuteIntervalEntry 5 }
+
+acSonetVT15MinuteIntervalStatus OBJECT-TYPE
+    SYNTAX  Integer32 (1..192)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "This variable indicates the status of the interface.
+      The acSonetVTCurrentStatus is a bit map represented
+      as a sum, therefore, it can represent multiple defects and failures
+      simultaneously.  The acSonetVTNoDefect should be set if and only if
+      no other flag is set.
+
+      The various bit positions are:
+         1   acSonetVTNoDefect
+         2   acSonetVTLOP
+         4   acSonetVTPathAIS
+         8   acSonetVTPathRDI
+        16   acSonetVTPathRFI
+        32   acSonetVTUnequipped
+        64   acSonetVTPayloadLabelMismatch"
+::= { acSonetVT15MinuteIntervalEntry 7 }
+
+acSonetVT15MinuteIntervalValidStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-only
+        STATUS          current
+        DESCRIPTION
+        "This variable indicates if the data for this VT 15 minute 
+        interval is valid."
+::= { acSonetVT15MinuteIntervalEntry 8 }
+
+acSonetVT15MinuteIntervalResetStats    OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "This flag is used to reset the data for this VT 15 minute interval."
+::= { acSonetVT15MinuteIntervalEntry 9 }
+
+acSonetVT15MinuteIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Errored
+     Seconds encountered by a SONET/SDH
+     VT in the current 15 minute interval."
+::= { acSonetVT15MinuteIntervalEntry 10 }
+
+acSonetVT15MinuteIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Severely Errored Seconds
+     encountered by a SONET/SDH VT in the current 15
+     minute
+     interval."
+::= { acSonetVT15MinuteIntervalEntry 11 }
+
+acSonetVT15MinuteIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Coding
+     Violations encountered by a
+     SONET/SDH VT in the current 15 minute interval."
+::= { acSonetVT15MinuteIntervalEntry 12 }
+
+acSonetVT15MinuteIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Unavailable Seconds
+     encountered by a VT in the current
+     15 minute interval."
+::= { acSonetVT15MinuteIntervalEntry 13 }
+
+acSonetVT15MinuteIntervalBER OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the BER
+     encountered by a VT in the current
+     15 minute interval.  Represents the
+     max BER for the interval when number > 1."
+::= { acSonetVT15MinuteIntervalEntry 14 }
+
+
+-- ===================================
+-- the SONET/SDH VT Day Interval Table   
+-- ===================================
+
+-- The SONET/SDH VT Day Interval Table contains 
+-- various statistics being collected for the current day 
+-- interval, and previously stored day intervals.
+
+-- The SONET/SDH VT Day Interval Table
+-- contains various statistics
+-- collected by the system over a maximum
+-- of the previous 30 days of
+-- operation.  
+
+-- The first interval is the current day register.
+-- IntervalNumber = 2-31 are the completed day
+-- intervals, with IntervalNumber = 2 being the most recent.
+
+acSonetVTDayIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetVTDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "The SONET/SDH VT Day Interval table."
+::= { acSonetVT 2 }
+
+acSonetVTDayIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetVTDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "An entry in the SONET/SDH VT Day Interval table."
+    INDEX   { acSonetVTDayIntervalNodeId,
+              acSonetVTDayIntervalSlot,
+              acSonetVTDayIntervalPort,
+              acSonetVTDayIntervalVT,
+              acSonetVTDayIntervalNumber }
+::= { acSonetVTDayIntervalTable 1 }
+
+
+AcSonetVTDayIntervalEntry ::=
+    SEQUENCE {
+         acSonetVTDayIntervalNodeId     AcNodeId,
+         acSonetVTDayIntervalSlot       AcSlotNumber,
+         acSonetVTDayIntervalPort       AcPortNumber,
+         acSonetVTDayIntervalVT         INTEGER,
+         acSonetVTDayIntervalNumber     INTEGER,
+         acSonetVTDayIntervalStatus     Integer32,
+         acSonetVTDayIntervalValidStats TruthValue,
+         acSonetVTDayIntervalResetStats TruthValue,
+         acSonetVTDayIntervalESs        PerfIntervalCount,
+         acSonetVTDayIntervalSESs       PerfIntervalCount,
+         acSonetVTDayIntervalCVs        PerfIntervalCount,
+         acSonetVTDayIntervalUASs       PerfIntervalCount,
+         acSonetVTDayIntervalBER        PerfIntervalCount
+    }
+
+acSonetVTDayIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetVTDayIntervalEntry 1 }
+
+acSonetVTDayIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetVTDayIntervalEntry 2 }
+
+acSonetVTDayIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber 
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetVTDayIntervalEntry 3 }
+
+acSonetVTDayIntervalVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The VT for which the set of statistics is available."
+    ::= { acSonetVTDayIntervalEntry 4 }
+
+acSonetVTDayIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 31, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      day performance monitoring interval.
+      The interval identified by 2 is the most recently
+      completed day interval.  The interval identified
+      by 31 is the oldest day interval."
+::= { acSonetVTDayIntervalEntry 5 }
+
+acSonetVTDayIntervalStatus OBJECT-TYPE
+    SYNTAX  Integer32 (1..192)
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+      "This variable indicates the status of the interface.
+      The acSonetVTCurrentStatus is a bit map represented
+      as a sum, therefore, it can represent multiple defects and failures
+      simultaneously.  The acSonetVTNoDefect should be set if and only if
+      no other flag is set.
+
+      The various bit positions are:
+         1   acSonetVTNoDefect
+         2   acSonetVTLOP
+         4   acSonetVTPathAIS
+         8   acSonetVTPathRDI
+        16   acSonetVTPathRFI
+        32   acSonetVTUnequipped
+        64   acSonetVTPayloadLabelMismatch"
+::= { acSonetVTDayIntervalEntry 6 }
+
+acSonetVTDayIntervalValidStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-only
+        STATUS          current
+        DESCRIPTION
+        "This variable indicates if the data for this VT Day interval 
+        is valid."
+::= { acSonetVTDayIntervalEntry 7 }
+
+acSonetVTDayIntervalResetStats    OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "This flag is used to reset the data for this VT Day interval."
+::= { acSonetVTDayIntervalEntry 8 }
+
+acSonetVTDayIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Errored
+     Seconds encountered by a SONET/SDH
+     VT in the last day interval."
+::= { acSonetVTDayIntervalEntry 9 }
+
+acSonetVTDayIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Severely Errored Seconds
+     encountered by a SONET/SDH VT in the last day
+     interval."
+::= { acSonetVTDayIntervalEntry 10 }
+
+acSonetVTDayIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Coding
+     Violations encountered by a
+     SONET/SDH VT in the last day interval."
+::= { acSonetVTDayIntervalEntry 11 }
+
+acSonetVTDayIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Unavailable Seconds
+     encountered by a VT in the last day interval."
+::= { acSonetVTDayIntervalEntry 12 }
+
+acSonetVTDayIntervalBER OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  deprecated
+    DESCRIPTION
+     "The counter associated with the max BER
+     encountered by a VT in a day."
+::= { acSonetVTDayIntervalEntry 13 }
+
+--  ================================
+--  the SONET/SDH VT Threshold Table 
+--  ================================
+
+-- The SONET/SDH VT Threshold Table contains
+-- user selectable thresholds for all of the current
+-- performance monitoring registers (i.e. the current
+-- 15 minute and day registers).  Any legitimate value can 
+-- be written into these registers. 
+
+acSonetVTThresholdTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetVTThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH VT Threshold Table."
+     ::= { acSonetVT 3 }
+
+acSonetVTThresholdEntry OBJECT-TYPE
+    SYNTAX  AcSonetVTThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH VT Threshold Table."
+    INDEX   { acSonetVTThresholdNodeId,
+              acSonetVTThresholdSlot,
+              acSonetVTThresholdPort, 
+              acSonetVTThresholdVT, 
+              acSonetVTThresholdSelectionNum }
+     ::= { acSonetVTThresholdTable 1 }
+
+AcSonetVTThresholdEntry ::=     
+    SEQUENCE {
+         acSonetVTThresholdNodeId            AcNodeId,
+         acSonetVTThresholdSlot              AcSlotNumber,
+         acSonetVTThresholdPort              AcPortNumber,
+         acSonetVTThresholdVT                INTEGER,
+         acSonetVTThresholdSelectionNum      INTEGER,
+         acSonetVTThresholdAdminStatus       AcAdminStatus,
+         acSonetVTThresholdESs               INTEGER,
+         acSonetVTThresholdSESs              INTEGER,
+         acSonetVTThresholdCVs               INTEGER,
+         acSonetVTThresholdUASs              INTEGER
+    }
+
+
+acSonetVTThresholdNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetVTThresholdEntry 1 }
+
+acSonetVTThresholdSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetVTThresholdEntry 2 }
+
+acSonetVTThresholdPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetVTThresholdEntry 3 }
+
+acSonetVTThresholdVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The VT for which the set of statistics is available." 
+    ::= { acSonetVTThresholdEntry 4 }
+
+acSonetVTThresholdSelectionNum OBJECT-TYPE
+    SYNTAX  INTEGER{
+               minute(1),
+               day(2)
+            }
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number that selects either the 15 thresholds or
+       the day thresholds. "
+     ::= { acSonetVTThresholdEntry 5 }
+
+acSonetVTThresholdAdminStatus OBJECT-TYPE
+    SYNTAX  AcAdminStatus
+    MAX-ACCESS  read-write
+    STATUS  deprecated
+    DESCRIPTION
+       "This field is used by the administrator to ensure
+       only one client is performing management operations
+       on this serial port at a time.  When the field is read
+       as available(0), the client can write the value locked(1)
+       into this field to prevent a second client from
+       performing managment ops on this instance."
+     ::= { acSonetVTThresholdEntry 6 }
+
+acSonetVTThresholdESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Errored Seconds."
+    DEFVAL { 0 }
+     ::= { acSonetVTThresholdEntry 7 }
+
+acSonetVTThresholdSESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Severely Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetVTThresholdEntry 8 }
+
+acSonetVTThresholdCVs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Coding Violations."
+    DEFVAL { 0 }
+    ::= { acSonetVTThresholdEntry 9 }
+
+acSonetVTThresholdUASs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Unavailable Secondss."
+    DEFVAL { 0 }
+    ::= { acSonetVTThresholdEntry 10 }
+
+-- =============================
+-- VT RDI Table
+-- =============================
+-- Virtual Tributary Remote Defect Indication
+
+acSonetVTRDITable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetVTRDIEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH VT RDI Table."
+    ::= { acSonetVT 4 }
+    
+acSonetVTRDIEntry OBJECT-TYPE
+    SYNTAX  AcSonetVTRDIEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH VT RDI Table."
+    
+    INDEX  { 
+        acSonetVTRDINodeId, 
+        acSonetVTRDISlot, 
+        acSonetVTRDIPort, 
+        acSonetVTRDIVT 
+    }
+    
+    ::= { acSonetVTRDITable 1 }
+    
+AcSonetVTRDIEntry ::=
+    SEQUENCE {
+         acSonetVTRDINodeId            AcNodeId,
+         acSonetVTRDISlot              AcSlotNumber,
+         acSonetVTRDIPort              AcPortNumber,
+         acSonetVTRDIVT                INTEGER,
+         acSonetVTRDIOpMode            INTEGER
+     }
+
+acSonetVTRDINodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+    "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetVTRDIEntry 1 }
+
+acSonetVTRDISlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetVTRDIEntry 2 }
+
+acSonetVTRDIPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+       
+    ::= { acSonetVTRDIEntry 3 }
+
+acSonetVTRDIVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The Virtual Tributary (VT) instance."
+       
+    ::= { acSonetVTRDIEntry 4 }
+
+acSonetVTRDIOpMode OBJECT-TYPE
+    SYNTAX  INTEGER  {
+          rdi(1),
+          erdi(2)
+       }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+       "The Remote Defect Indiction signals have undergone a number of
+        changes over the years, and now encompass two or even three
+        different versions.  See GR-253 6.2.1.3.3 for more information."
+        
+    ::= { acSonetVTRDIEntry 5 }
+
+-- ============================
+-- VT PLM Table
+-- ============================
+
+acSonetVTPLMTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetVTPLMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH VT Payload Label Mismatch Table."
+    ::= { acSonetVT 5 }
+    
+acSonetVTPLMEntry OBJECT-TYPE
+    SYNTAX  AcSonetVTPLMEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH VT Payload Label Mismatch Table."
+    INDEX  { acSonetVTPLMNodeId, acSonetVTPLMSlot, acSonetVTPLMPort, acSonetVTPLMVT }
+    ::= { acSonetVTPLMTable 1 }
+    
+AcSonetVTPLMEntry ::=
+    SEQUENCE {
+         acSonetVTPLMNodeId            AcNodeId,
+         acSonetVTPLMSlot              AcSlotNumber,
+         acSonetVTPLMPort              AcPortNumber,
+         acSonetVTPLMVT                INTEGER,
+         acSonetVTPLMDetectEnable      TruthValue,
+         acSonetVTPLMTransmitedValue   INTEGER,
+         acSonetVTPLMExpectedValue     INTEGER,
+         acSonetVTPLMReceivedValue     INTEGER,
+         acSonetVTPLMMismatchFailure   TruthValue,
+         acSonetVTPLMUnequipped        TruthValue
+     }
+
+acSonetVTPLMNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetVTPLMEntry 1 }
+
+
+acSonetVTPLMSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetVTPLMEntry 2 }
+
+acSonetVTPLMPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetVTPLMEntry 3 }
+
+acSonetVTPLMVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The Virtual Tributary (VT) instance."
+       
+    ::= { acSonetVTPLMEntry 4 }
+
+acSonetVTPLMDetectEnable OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "Enables the detection of the VT Payload Label."
+
+   DEFVAL { false }
+    ::= { acSonetVTPLMEntry 5 }
+
+acSonetVTPLMTransmitedValue OBJECT-TYPE
+    SYNTAX  INTEGER        (0..255)
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "The VT Payload Label that gets sent to the destination.
+        See GR-253 Tables 3-4."
+        
+    ::= { acSonetVTPLMEntry 6 }
+
+acSonetVTPLMExpectedValue OBJECT-TYPE
+    SYNTAX  INTEGER        (0..255)
+    MAX-ACCESS  read-write
+    STATUS current
+    DESCRIPTION
+       "The expected VT Payload Label that is to be received.
+        See GR-253 Tables 3-4."
+        
+    ::= { acSonetVTPLMEntry 7 }
+
+acSonetVTPLMReceivedValue OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "The contents of the VT Payload Label that is received.
+        See GR-253 Tables 3-4."
+        
+    ::= { acSonetVTPLMEntry 8 }
+
+acSonetVTPLMMismatchFailure OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "Mismatch failure declared for the VT Payload Label."
+       
+    ::= { acSonetVTPLMEntry 9 }
+
+acSonetVTPLMUnequipped OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS current
+    DESCRIPTION
+       "Unequipped failure declared for the VT Payload Label."
+       
+    ::= { acSonetVTPLMEntry 10 }
+
+
+-------------------------------------------------------------------------------
+--                    The SONET/SDH Far End VT group
+-------------------------------------------------------------------------------
+
+-- this group consists of 3 tables:
+-- - the SONET/SDH FarEndVT 15Minute Interval Table
+-- - the SONET/SDH FarEndVT Day Interval Table
+-- - the SONET/SDH FarEndVT Threshold Table
+
+-- ==========================================
+-- SONET/SDH FarEndVT 15Minute Interval Table
+-- ==========================================
+
+-- The SONET/SDH FarEndVT
+-- current table contains various statistics
+-- being collected for the current 15 minute interval.
+
+acSonetFarEndVT15MinuteIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndVT15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "The SONET/SDH FarEndVT 15Minute Interval table."
+::= { acSonetFarEndVT 1 }
+
+acSonetFarEndVT15MinuteIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndVT15MinuteIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "An entry in the SONET/SDH FarEndVT 15Minute Interval table."
+    INDEX   { acSonetFarEndVT15MinuteIntervalNodeId,
+              acSonetFarEndVT15MinuteIntervalSlot,
+              acSonetFarEndVT15MinuteIntervalPort,
+              acSonetFarEndVT15MinuteIntervalVT,
+              acSonetFarEndVT15MinuteIntervalNumber }
+::= { acSonetFarEndVT15MinuteIntervalTable 1 }
+
+AcSonetFarEndVT15MinuteIntervalEntry ::=
+    SEQUENCE {
+         acSonetFarEndVT15MinuteIntervalNodeId     AcNodeId,
+         acSonetFarEndVT15MinuteIntervalSlot       AcSlotNumber,
+         acSonetFarEndVT15MinuteIntervalPort       AcPortNumber,
+         acSonetFarEndVT15MinuteIntervalVT         INTEGER,
+         acSonetFarEndVT15MinuteIntervalNumber     INTEGER,
+         acSonetFarEndVT15MinuteIntervalValidStats TruthValue,
+         acSonetFarEndVT15MinuteIntervalResetStats TruthValue,
+         acSonetFarEndVT15MinuteIntervalESs        PerfIntervalCount,
+         acSonetFarEndVT15MinuteIntervalSESs       PerfIntervalCount,
+         acSonetFarEndVT15MinuteIntervalCVs        PerfIntervalCount,
+         acSonetFarEndVT15MinuteIntervalUASs       PerfIntervalCount
+    }
+
+acSonetFarEndVT15MinuteIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndVT15MinuteIntervalEntry 1 }
+
+acSonetFarEndVT15MinuteIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndVT15MinuteIntervalEntry 2 }
+
+acSonetFarEndVT15MinuteIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndVT15MinuteIntervalEntry 3 }
+
+acSonetFarEndVT15MinuteIntervalVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The VT for which the set of statistics is available."
+    ::= { acSonetFarEndVT15MinuteIntervalEntry 4 }
+
+acSonetFarEndVT15MinuteIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..98)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 98, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      15 minute interval.
+      The interval identified by 2 is the most recently
+      completed 15 minute interval.  The interval identified
+      by 97 is the oldest 15 minute interval.  The interval
+      identified by 98 is a total of the previous 96 stored
+      15 minute intervals."
+::= { acSonetFarEndVT15MinuteIntervalEntry 5 }
+
+acSonetFarEndVT15MinuteIntervalValidStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-only
+        STATUS          current
+        DESCRIPTION
+        "This variable indicates if the data for this VT FE 15 
+        minute interval is valid."
+::= { acSonetFarEndVT15MinuteIntervalEntry 6 }
+
+acSonetFarEndVT15MinuteIntervalResetStats    OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "This flag is used to reset the data for this VT FE 15
+        minute interval."
+::= { acSonetFarEndVT15MinuteIntervalEntry 7 }
+
+acSonetFarEndVT15MinuteIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Errored
+     Seconds encountered by a SONET/SDH
+     FarEndVT in the current 15 minute interval."
+::= { acSonetFarEndVT15MinuteIntervalEntry 8 }
+
+acSonetFarEndVT15MinuteIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Severely Errored Seconds
+     encountered by a SONET/SDH FarEndVT in the current 15
+     minute
+     interval."
+::= { acSonetFarEndVT15MinuteIntervalEntry 9 }
+
+acSonetFarEndVT15MinuteIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Coding
+     Violations encountered by a
+     SONET/SDH FarEndVT in the current 15 minute interval."
+::= { acSonetFarEndVT15MinuteIntervalEntry 10 }
+
+acSonetFarEndVT15MinuteIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Unavailable Seconds
+     encountered by a FarEndVT in the current
+     15 minute interval."
+::= { acSonetFarEndVT15MinuteIntervalEntry 11 }
+
+-- =========================================
+-- the SONET/SDH FarEndVT Day Interval Table   
+-- =========================================
+
+-- The SONET/SDH FarEndVT Day Interval Table contains 
+-- various statistics being collected for the current day 
+-- interval, and previously stored day intervals.
+
+-- The SONET/SDH FarEndVT Day Interval Table
+-- contains various statistics
+-- collected by the system over a maximum
+-- of the previous 30 days of
+-- operation.  
+
+-- The first interval is the current day register.
+-- IntervalNumber = 2-31 are the completed day
+-- intervals, with IntervalNumber = 2 being the most recent.
+
+acSonetFarEndVTDayIntervalTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndVTDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "The SONET/SDH FarEndVT Day Interval table."
+::= { acSonetFarEndVT 2 }
+
+acSonetFarEndVTDayIntervalEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndVTDayIntervalEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+     "An entry in the SONET/SDH FarEndVT Day Interval table."
+    INDEX   { acSonetFarEndVTDayIntervalNodeId,
+              acSonetFarEndVTDayIntervalSlot,
+              acSonetFarEndVTDayIntervalPort,
+              acSonetFarEndVTDayIntervalVT,
+              acSonetFarEndVTDayIntervalNumber }
+::= { acSonetFarEndVTDayIntervalTable 1 }
+
+
+AcSonetFarEndVTDayIntervalEntry ::=
+    SEQUENCE {
+         acSonetFarEndVTDayIntervalNodeId     AcNodeId,
+         acSonetFarEndVTDayIntervalSlot       AcSlotNumber,
+         acSonetFarEndVTDayIntervalPort       AcPortNumber,
+         acSonetFarEndVTDayIntervalVT         INTEGER,
+         acSonetFarEndVTDayIntervalNumber     INTEGER,
+         acSonetFarEndVTDayIntervalValidStats TruthValue,
+         acSonetFarEndVTDayIntervalResetStats TruthValue,
+         acSonetFarEndVTDayIntervalESs        PerfIntervalCount,
+         acSonetFarEndVTDayIntervalSESs       PerfIntervalCount,
+         acSonetFarEndVTDayIntervalCVs        PerfIntervalCount,
+         acSonetFarEndVTDayIntervalUASs       PerfIntervalCount
+    }
+
+acSonetFarEndVTDayIntervalNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndVTDayIntervalEntry 1 }
+
+acSonetFarEndVTDayIntervalSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndVTDayIntervalEntry 2 }
+
+acSonetFarEndVTDayIntervalPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndVTDayIntervalEntry 3 }
+
+acSonetFarEndVTDayIntervalVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The VT for which the set of statistics is available."
+    ::= { acSonetFarEndVTDayIntervalEntry 4 }
+
+acSonetFarEndVTDayIntervalNumber OBJECT-TYPE
+    SYNTAX  INTEGER (1..31)
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number between 1 and 31, which identifies the
+      interval for which the set of statistics is available.
+      The interval identified by 1 is the ongoing, current
+      day performance monitoring interval.
+      The interval identified by 2 is the most recently
+      completed day interval.  The interval identified
+      by 31 is the oldest day interval."
+::= { acSonetFarEndVTDayIntervalEntry 5 }
+
+acSonetFarEndVTDayIntervalValidStats  OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-only
+        STATUS          current
+        DESCRIPTION
+        "This variable indicates if the data for this VT Day interval 
+        is valid."
+::= { acSonetFarEndVTDayIntervalEntry 6 }
+
+acSonetFarEndVTDayIntervalResetStats    OBJECT-TYPE
+        SYNTAX  TruthValue
+        MAX-ACCESS      read-write
+        STATUS          current
+        DESCRIPTION
+        "This flag is used to reset the data for this VT Day interval."
+::= { acSonetFarEndVTDayIntervalEntry 7 }
+
+acSonetFarEndVTDayIntervalESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Errored
+     Seconds encountered by a SONET/SDH
+     FarEndVT in the current 15 minute interval."
+::= { acSonetFarEndVTDayIntervalEntry 8 }
+
+acSonetFarEndVTDayIntervalSESs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Severely Errored Seconds
+     encountered by a SONET/SDH FarEndVT in the current 15
+     minute
+     interval."
+::= { acSonetFarEndVTDayIntervalEntry 9 }
+
+acSonetFarEndVTDayIntervalCVs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of Coding
+     Violations encountered by a
+     SONET/SDH FarEndVT in the current 15 minute interval."
+::= { acSonetFarEndVTDayIntervalEntry 10 }
+
+acSonetFarEndVTDayIntervalUASs OBJECT-TYPE
+    SYNTAX  PerfIntervalCount
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+     "The counter associated with the number of
+     Unavailable Seconds
+     encountered by a FarEndVT in the current
+     15 minute interval."
+::= { acSonetFarEndVTDayIntervalEntry 11 }
+
+
+--  ======================================
+--  the SONET/SDH FarEndVT Threshold Table 
+--  ======================================
+
+-- The SONET/SDH FarEndVT Threshold Table contains
+-- user selectable thresholds for all of the current
+-- performance monitoring registers (i.e. the current
+-- 15 minute and day registers).  Any legitimate value can 
+-- be written into these registers. 
+
+acSonetFarEndVTThresholdTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetFarEndVTThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH FarEndVT Threshold Table."
+     ::= { acSonetFarEndVT 3 }
+
+acSonetFarEndVTThresholdEntry OBJECT-TYPE
+    SYNTAX  AcSonetFarEndVTThresholdEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH FarEndVT Threshold Table."
+    INDEX   { acSonetFarEndVTThresholdNodeId,
+              acSonetFarEndVTThresholdSlot,
+              acSonetFarEndVTThresholdPort, 
+              acSonetFarEndVTThresholdVT, 
+              acSonetFarEndVTThresholdSelectionNum }
+     ::= { acSonetFarEndVTThresholdTable 1 }
+
+AcSonetFarEndVTThresholdEntry ::=     
+    SEQUENCE {
+         acSonetFarEndVTThresholdNodeId            AcNodeId,
+         acSonetFarEndVTThresholdSlot              AcSlotNumber,
+         acSonetFarEndVTThresholdPort              AcPortNumber,
+         acSonetFarEndVTThresholdVT                INTEGER,
+         acSonetFarEndVTThresholdSelectionNum      INTEGER,
+         acSonetFarEndVTThresholdAdminStatus       AcAdminStatus,
+         acSonetFarEndVTThresholdESs               INTEGER,
+         acSonetFarEndVTThresholdSESs              INTEGER,
+         acSonetFarEndVTThresholdCVs               INTEGER,
+         acSonetFarEndVTThresholdUASs              INTEGER
+    }
+
+acSonetFarEndVTThresholdNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetFarEndVTThresholdEntry 1 }
+
+acSonetFarEndVTThresholdSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetFarEndVTThresholdEntry 2 }
+
+acSonetFarEndVTThresholdPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetFarEndVTThresholdEntry 3 }
+
+acSonetFarEndVTThresholdVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The VT for which the set of statistics is available."
+    ::= { acSonetFarEndVTThresholdEntry 4 }
+
+acSonetFarEndVTThresholdSelectionNum OBJECT-TYPE
+    SYNTAX  INTEGER{
+               minute(1),
+               day(2)
+            }
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+      "A number that selects either the 15 thresholds or
+       the day thresholds. "
+     ::= { acSonetFarEndVTThresholdEntry 5 }
+
+acSonetFarEndVTThresholdAdminStatus OBJECT-TYPE
+    SYNTAX  AcAdminStatus
+    MAX-ACCESS  read-write
+    STATUS  deprecated
+    DESCRIPTION
+       "This field is used by the administrator to ensure
+       only one client is performing management operations
+       on this serial port at a time.  When the field is read
+       as available(0), the client can write the value locked(1)
+       into this field to prevent a second client from
+       performing managment ops on this instance."
+     ::= { acSonetFarEndVTThresholdEntry 6 }
+
+acSonetFarEndVTThresholdESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndVTThresholdEntry 7 }
+
+acSonetFarEndVTThresholdSESs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Severely Errored Seconds."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndVTThresholdEntry 8 }
+
+acSonetFarEndVTThresholdCVs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Coding Violations."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndVTThresholdEntry 9 }
+
+acSonetFarEndVTThresholdUASs OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Unavailable Secondss."
+    DEFVAL { 0 }
+    ::= { acSonetFarEndVTThresholdEntry 10 }
+
+-------------------------------------------------------------------------------
+--                    The SONET/SDH Protection Switching group
+-------------------------------------------------------------------------------
+
+-- This group handles the configuration and status for the various
+-- protection switching schemes available to the SONET port.
+
+-- ====================================
+-- Port Config for Protection Switching  
+-- ====================================
+
+acSonetPortProtectionTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPortProtectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Port Protection table."
+     ::= { acSonetPort 4 }
+
+acSonetPortProtectionEntry OBJECT-TYPE
+    SYNTAX  AcSonetPortProtectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Port Protection table."
+    INDEX   { acSonetPortProtectionNodeId,
+              acSonetPortProtectionSlot,
+              acSonetPortProtectionPort }
+     ::= { acSonetPortProtectionTable 1 }
+
+AcSonetPortProtectionEntry ::=
+    SEQUENCE {
+         acSonetPortProtectionNodeId         AcNodeId,
+         acSonetPortProtectionSlot           AcSlotNumber,
+         acSonetPortProtectionPort           AcPortNumber,
+         acSonetPortProtectionType           INTEGER
+    }
+
+acSonetPortProtectionNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetPortProtectionEntry 1 }
+
+acSonetPortProtectionSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetPortProtectionEntry 2 }
+
+acSonetPortProtectionPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetPortProtectionEntry 3 }
+
+acSonetPortProtectionType OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               working(1),
+               protection(2),
+               west(3),
+               east(4),
+               match(5),
+               ring(6)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable statically defines the purpose of the 
+        physical port connection as the working or protection port.  
+        It does not convey whether the system has undergone a protection
+        switch."
+    ::= { acSonetPortProtectionEntry 4 }
+
+-- ====================================
+-- Line Protection Table for Linear APS  
+-- ====================================
+
+acSonetLineProtectionTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetLineProtectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Line Protection table."
+     ::= { acSonetLine 4 }
+
+acSonetLineProtectionEntry OBJECT-TYPE
+    SYNTAX  AcSonetLineProtectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Line Protection table."
+    INDEX   { acSonetLineProtectionNodeId,
+              acSonetLineProtectionSlot,
+              acSonetLineProtectionPort }
+     ::= { acSonetLineProtectionTable 1 }
+
+AcSonetLineProtectionEntry ::=
+    SEQUENCE {
+         acSonetLineProtectionNodeId                AcNodeId,
+         acSonetLineProtectionSlot                  AcSlotNumber,
+         acSonetLineProtectionPort                  AcPortNumber,
+         acSonetLineProtectionArchitecture          INTEGER,
+         acSonetLineProtectionOpMode                INTEGER,
+         acSonetLineProtectionSwitchType            INTEGER,
+         acSonetLineProtectionSFThreshold           Integer32,
+         acSonetLineProtectionSDThreshold           Integer32,
+         acSonetLineProtectionActiveTraffic         TruthValue,
+         acSonetLineProtectionProtectionSwitch      TruthValue,
+         acSonetLineProtectionFail                  TruthValue,
+         acSonetLineProtectionChannelMismatchFail   TruthValue,
+         acSonetLineProtectionModeMismatchFail      TruthValue,
+         acSonetLineProtectionFarEndLineFail        TruthValue,
+         acSonetLineProtectionWTRTime               Integer32,
+         acSonetLineProtectionManCommand            INTEGER
+    }
+
+
+acSonetLineProtectionNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetLineProtectionEntry 1 }
+
+acSonetLineProtectionSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetLineProtectionEntry 2 }
+
+acSonetLineProtectionPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetLineProtectionEntry 3 }
+
+acSonetLineProtectionArchitecture OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               none(1),
+               one-plus-one(2),
+               one-to-one(3)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the APS architecture as
+        either 1+1 or 1:1."
+    ::= { acSonetLineProtectionEntry 4 }
+
+acSonetLineProtectionOpMode OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               unidirectional(1),
+               bidirectional(2)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the APS mode as
+        either unidirectional or bidirectional."
+    ::= { acSonetLineProtectionEntry 5 }
+
+acSonetLineProtectionSwitchType OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               revertive(1),
+               nonrevertive(2)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the APS switch type as
+        either revertive or nonrevertive."
+    ::= { acSonetLineProtectionEntry 6 }
+
+
+acSonetLineProtectionSFThreshold OBJECT-TYPE
+    SYNTAX  Integer32 (3..5)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Signal Fail (SF).
+        This value determines the BER level for protection
+        switching."
+     DEFVAL { 3 }
+    ::= { acSonetLineProtectionEntry 7 }
+
+acSonetLineProtectionSDThreshold OBJECT-TYPE
+    SYNTAX  Integer32 (5..9)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Signal Degrade (SD).
+        This value determines the BER level for protection
+        switching."
+    DEFVAL { 6 }
+    ::= { acSonetLineProtectionEntry 8 }
+
+acSonetLineProtectionActiveTraffic OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when active traffic is on
+        this line."
+
+	DEFVAL { false }
+    ::= { acSonetLineProtectionEntry 9 }
+
+acSonetLineProtectionProtectionSwitch OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when a protection switch
+        is currently affecting this line."
+    ::= { acSonetLineProtectionEntry 10 }
+
+acSonetLineProtectionFail OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when a protection switching
+        failure has taken place.  See GR-253, 6.2.1.1.6."
+    ::= { acSonetLineProtectionEntry 11 }
+
+acSonetLineProtectionChannelMismatchFail OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when a protection switching
+        channel mismatch failure has taken place.  See GR-253, 6.2.1.1.6."
+    ::= { acSonetLineProtectionEntry 12 }
+
+acSonetLineProtectionModeMismatchFail OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when a protection switching
+        mode mismatch failure has taken place.  See GR-253, 6.2.1.1.6."
+    ::= { acSonetLineProtectionEntry 13 }
+
+acSonetLineProtectionFarEndLineFail OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when a protection switching
+        far-end protection-line failure has taken place.  See 
+        GR-253, 6.2.1.1.6."
+    ::= { acSonetLineProtectionEntry 14 }
+
+acSonetLineProtectionWTRTime OBJECT-TYPE
+    SYNTAX  Integer32 (300..720)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the APS Wait To Restore time.
+            The time has one second granularity and may have a 
+        value in the range from 300 seconds (5 minutes) to 
+        720 seconds (12 minutes)."
+    ::= { acSonetLineProtectionEntry 15 }
+
+acSonetLineProtectionManCommand OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               clear(1),
+               lockout-protection(2),
+               force-working(3),
+               force-protection(4),
+               manual-working(5),
+               manual-protection(6),
+               exercise(7),
+               lockout-working(8),
+               clear-lockout-working(9)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the APS manually initiated commands."
+    ::= { acSonetLineProtectionEntry 16 }
+
+-- ==============================
+-- Ring Protection Table for Path 
+-- ==============================
+
+acSonetPathProtectionTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetPathProtectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH Path Protection table."
+     ::= { acSonetPath 7 }
+
+acSonetPathProtectionEntry OBJECT-TYPE
+    SYNTAX  AcSonetPathProtectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH Path Protection table."
+    INDEX   { acSonetPathProtectionNodeId,
+              acSonetPathProtectionSlot, 
+              acSonetPathProtectionPort,
+              acSonetPathProtectionPath}
+     ::= { acSonetPathProtectionTable 1 }
+
+AcSonetPathProtectionEntry ::=
+    SEQUENCE {
+         acSonetPathProtectionNodeId               AcNodeId,
+         acSonetPathProtectionSlot                 AcSlotNumber,
+         acSonetPathProtectionPort                 AcPortNumber,
+         acSonetPathProtectionPath                 INTEGER,
+         acSonetPathProtectionSwitchType           INTEGER,
+         acSonetPathProtectionSFThreshold          Integer32,
+         acSonetPathProtectionSDThreshold          Integer32,
+         acSonetPathProtectionActiveTraffic        TruthValue,
+         acSonetPathProtectionProtectionSwitch     TruthValue,
+         acSonetPathProtectionWTRTime              Integer32,
+         acSonetPathProtectionWTITime              Integer32,
+         acSonetPathProtectionWTCTime              Integer32,
+         acSonetPathProtectionWTRelTime            Integer32,
+         acSonetPathProtectionManSwitch            INTEGER,
+         acSonetPathProtectionSwitchOpStatus       INTEGER,
+         acSonetPathProtectionProtectionMode       INTEGER
+    }
+
+acSonetPathProtectionNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetPathProtectionEntry 1 }
+
+acSonetPathProtectionSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetPathProtectionEntry 2 }
+
+acSonetPathProtectionPort OBJECT-TYPE
+    SYNTAX  AcPortNumber 
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetPathProtectionEntry 3 }
+
+acSonetPathProtectionPath OBJECT-TYPE
+    SYNTAX  INTEGER 
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The STS-1 path for the port."
+    ::= { acSonetPathProtectionEntry 4 }
+
+acSonetPathProtectionSwitchType OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               revertive(1),
+               nonrevertive(2)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the path switch type as
+        either revertive or nonrevertive."
+    ::= { acSonetPathProtectionEntry 5 }
+
+acSonetPathProtectionSFThreshold OBJECT-TYPE
+    SYNTAX  Integer32 (3..5)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Signal Fail (SF).
+        This value determines the BER level for protection
+        switching.  The value used is the exponent to a 
+        power of 10, so 3 means 10E-3."
+    DEFVAL { 3 }
+    ::= { acSonetPathProtectionEntry 6 }
+
+acSonetPathProtectionSDThreshold OBJECT-TYPE
+    SYNTAX  Integer32 (5..9)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Signal Degrade (SD).
+        This value determines the BER level for protection
+        switching.  The value used is the exponent to a 
+        power of 10, so 6 means 10E-6."
+    DEFVAL { 6 }
+    ::= { acSonetPathProtectionEntry 7 }
+
+acSonetPathProtectionActiveTraffic OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when ODP or UPSR active traffic is on
+        this path."
+    ::= { acSonetPathProtectionEntry 8 }
+
+acSonetPathProtectionProtectionSwitch OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when either a UPSR or an ODP 
+        protection switch is currently affecting this path."
+    ::= { acSonetPathProtectionEntry 9 }
+
+acSonetPathProtectionWTRTime OBJECT-TYPE
+    SYNTAX  Integer32 (1..720)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the ODP or UPSR Wait To Restore time.
+        The time has one second granularity and may have a 
+        value in the range from 1 second to 720 seconds(12 minutes)."
+    ::= { acSonetPathProtectionEntry 10 }
+
+acSonetPathProtectionWTITime OBJECT-TYPE
+    SYNTAX  Integer32 (1..50)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the ODP Wait To Idle time.
+        The time has one second granularity and may have a 
+        value in the range from 1 to 50 seconds."
+    ::= { acSonetPathProtectionEntry 11 }
+
+acSonetPathProtectionWTCTime OBJECT-TYPE
+    SYNTAX  Integer32 (1..720)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the ODP Wait To Clear time.
+        The time has one second granularity and may have a 
+        value in the range from 1 second to 720 seconds (12 minutes)."
+    ::= { acSonetPathProtectionEntry 12 }
+
+acSonetPathProtectionWTRelTime OBJECT-TYPE
+    SYNTAX  Integer32 (1..50)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the ODP Wait To Release time.
+        The time has one second granularity and may have a 
+        value in the range from 1 to 50 seconds."
+    ::= { acSonetPathProtectionEntry 13 }
+
+acSonetPathProtectionManSwitch OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               clear(1),
+               lockout-protection(2),
+               force-working(3),
+               force-protection(4),
+               manual-working(5),
+               manual-protection(6),
+               exercise(7),
+               lockout-working(8),
+               clear-lockout-working(9),
+               extra-traffic(10)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the ODP and UPSR manually initiated 
+        commands. Entries 7..10 are used in ODP only."
+    ::= { acSonetPathProtectionEntry 14 }
+
+acSonetPathProtectionSwitchOpStatus OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               idle(1),
+               bridged(2),
+               switched(3),
+			   passthrough(4),
+               extra-traffic(5)
+            }
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the current switch condition of an
+	    ODP path."
+    ::= { acSonetPathProtectionEntry 15 }
+
+acSonetPathProtectionProtectionMode  OBJECT-TYPE
+    SYNTAX  INTEGER {
+                odp(1),
+                upsr(2)
+            }
+    MAX-ACCESS  read-write
+    STATUS      deprecated
+    DESCRIPTION
+    " !! This object *MUST* be set before any other object is accessed. !!    
+    This is the type of protection switching to be used if independent path 
+    level protection switching is enabled.  This is similar to the 
+    acTimeSlotPathProtectionMode object that resides in the timeslot table.
+    Refer to it for a description of the enumerations."
+
+    ::= { acSonetPathProtectionEntry 16 }
+
+-- ============================
+-- Ring Protection Table for VT
+-- ============================
+
+acSonetVTProtectionTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF AcSonetVTProtectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "The SONET/SDH VT Protection table."
+     ::= { acSonetVT 6 }
+
+acSonetVTProtectionEntry OBJECT-TYPE
+    SYNTAX  AcSonetVTProtectionEntry
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION
+       "An entry in the SONET/SDH VT Protection table."
+    INDEX   { acSonetVTProtectionNodeId,
+              acSonetVTProtectionSlot,  
+              acSonetVTProtectionPort,
+              acSonetVTProtectionVT }
+     ::= { acSonetVTProtectionTable 1 }
+
+AcSonetVTProtectionEntry ::=
+    SEQUENCE {
+         acSonetVTProtectionNodeId               AcNodeId,
+         acSonetVTProtectionSlot                 AcSlotNumber,
+         acSonetVTProtectionPort                 AcPortNumber,
+         acSonetVTProtectionVT                   INTEGER,
+         acSonetVTProtectionSwitchType           INTEGER,
+         acSonetVTProtectionSFThreshold          Integer32,
+         acSonetVTProtectionSDThreshold          Integer32,
+         acSonetVTProtectionProtectionSwitch     TruthValue,
+         acSonetVTProtectionWTRTime              Integer32,
+         acSonetVTProtectionManSwitch            INTEGER,
+         acSonetVTProtectionActiveTraffic        TruthValue
+    }
+
+acSonetVTProtectionNodeId OBJECT-TYPE
+    SYNTAX  AcNodeId
+    MAX-ACCESS  accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The node id is the id for this specific node in the OSAP ring."
+    ::= { acSonetVTProtectionEntry 1 }
+
+acSonetVTProtectionSlot OBJECT-TYPE
+    SYNTAX  AcSlotNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical slot number of the port."
+    ::= { acSonetVTProtectionEntry 2 }
+
+acSonetVTProtectionPort OBJECT-TYPE
+    SYNTAX  AcPortNumber
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The physical port number of the port."
+    ::= { acSonetVTProtectionEntry 3 }
+
+acSonetVTProtectionVT OBJECT-TYPE
+    SYNTAX  INTEGER
+    MAX-ACCESS accessible-for-notify
+    STATUS  current
+    DESCRIPTION
+       "The VT path instance for the port."
+    ::= { acSonetVTProtectionEntry 4 }
+
+acSonetVTProtectionSwitchType OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               revertive(1),
+               nonrevertive(2)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the VT path switch type as
+        either revertive or nonrevertive."
+    ::= { acSonetVTProtectionEntry 5 }
+
+acSonetVTProtectionSFThreshold OBJECT-TYPE
+    SYNTAX  Integer32 (3..5)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Signal Fail (SF).
+        This value determines the BER level for protection
+        switching."
+    DEFVAL { 3 }
+    ::= { acSonetVTProtectionEntry 6 }
+
+acSonetVTProtectionSDThreshold OBJECT-TYPE
+    SYNTAX  Integer32 (5..8)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "The threshold associated with Signal Degrade (SD).
+        This value determines the BER level for protection
+        switching."
+    DEFVAL { 6 }
+    ::= { acSonetVTProtectionEntry 7 }
+
+acSonetVTProtectionProtectionSwitch OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when a protection switch
+        is currently affecting this path."
+    ::= { acSonetVTProtectionEntry 8 }
+
+acSonetVTProtectionWTRTime OBJECT-TYPE
+    SYNTAX  Integer32 (1..720)
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the UPSR Wait To Restore time.
+        The time has one second granularity and may have a 
+        value in the range from 1 second to 720 seconds(12 minutes)."
+    ::= { acSonetVTProtectionEntry 9 }
+
+acSonetVTProtectionManSwitch OBJECT-TYPE
+    SYNTAX  INTEGER  {
+               clear(1),
+               lockout-protection(2),
+               force-working(3),
+               force-protection(4),
+               manual-working(5),
+               manual-protection(6)
+            }
+    MAX-ACCESS  read-write
+    STATUS  current
+    DESCRIPTION
+       "This variable defines the UPSR manually initiated 
+        commands."
+    ::= { acSonetVTProtectionEntry 10 }
+
+acSonetVTProtectionActiveTraffic OBJECT-TYPE
+    SYNTAX  TruthValue
+    MAX-ACCESS  read-only
+    STATUS  current
+    DESCRIPTION
+       "This variable indicates when UPSR active traffic is on
+        this path."
+    ::= { acSonetVTProtectionEntry 11 }
+
+END
+
+

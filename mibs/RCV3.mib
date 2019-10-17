@@ -1,0 +1,2989 @@
+RCV3 DEFINITIONS ::= BEGIN
+
+-- RedCreek Enterprise MIB for all Ravlin products with embedded SNMP agent.
+
+-- Date 05/12/98
+-- Last Modified        Author
+-- -------------        ------
+-- 02/03/99             Ramesh Kamath
+-- 05/25/98             For release 3.30 and up, added following MIB objects: 
+--                      rc3DHCPServerIP, rc3DHCPRequest
+-- 05/25/98             For release 3.30 and up, changed password based encryption
+--                      objects to be FIPS compliant. Deprecated rc3Password,  
+--                      rc3ReadCommunityString, rc3WriteCommunityString, ,
+--                      rc3RadiusAuthServerSharedSecret, rc3PdeManualInboundEncryptKey,
+--                      rc3PdeManualOutboundEncryptKey,	rc3PdeManualInboundAuthKey,
+--                      rc3PdeManualOutboundAuthKey 
+--                      and replaced with the following
+--                      rc3PasswordFips, rc3ReadCommunityStringFips, rc3WriteCommunityStringFips,
+--                      rc3RadiusAuthServerSharedSecretFips, rc3PdeManualInboundEncryptKeyFips,
+--                      rc3PdeManualOutboundEncryptKeyFips,	rc3PdeManualInboundAuthKeyFips,
+--                      rc3PdeManualOutboundAuthKeyFips.
+
+-- 05/25/99             For release 3.30 and up, Deprecated rc3SysLogServerIP, rc3SysLogPortNum, 
+--                      rc3SysLogMsgLevel and replaced it with a syslog server table.
+
+-- 06/09/99             Firmware 3.40 update.
+-- 06/09/99             Implemented rc3CACertTable
+-- 06/21/99             Deprecated rc3EspProposalGroup and rc3AhProposalGroup
+-- 06/30/99             Added new object for user name in client statistics
+-- 07/26/99             Deprecated rc3PdePeerIssuerDN
+-- 07/29/99             Added rcLocalAuthTable.
+-- 08/03/99             Added one more control to packet handling options. Ignore don't frag bit.
+-- 09/02/99             Deprecated rc3PdePeerPreference, and rc3PdeSelectProtocolTable
+-- 09/09/99             Added object rc3DHCPRelayIpAddr
+-- 10/21/99             Added net BIT to control NAT packets matching bypass PDE
+-- 10/26/99             Added support for local authentication in rc3ClientAuthentication object
+-- 11/02/99             Deprecated following objects. rc3PdePeerContinue
+--                      rc3PdeFilterProtocol, rc3PdeLocalPort, rc3PdeRemotePort
+--                      Release 3.47
+-- 03/03/00             Added support for HostName.
+-- 06/14/00             Added enum des-mac(3) for object rc3EspProposalAuth
+-- 09/21/00             Added Bit to enable/disable SNMP to remote port in the clear
+--                      Added object rc3UlaAuthenticationTimer and rc3PdeULA
+-- 10/25/00             Added support for PPPoE objects.
+-- 11/27/00             Added definition for new bits in packet handling options.
+-- 11/29/00             Added new objects rcPPPoEDnsServer1 and rcPPPoEDnsServer2.
+
+-- 01/24/2001           Changes after 3.50 release.
+--                      Added object rc3PdePeerLocalInterfaceIpAddr, rc3SAStatPollsSent
+--                      rc3SAStatPollsReceived, rc3SAStatPollsAverageTime
+--                      rc3SAStatPollsMaxTime, rc3SAStatPollsMinTime
+--                      Added following objects. rc3SystemTime, rc3SysPerfTimeBetweenPolls,
+--                      rc3SysPerfTimeBetweenReports, rc3SysPerfTrapThreshold.
+-- 01/31/2001           Added object rc3DHCPBroadcastIntf
+-- 02/21/2001           Added object rc3StateLessDHCP to enable/disable Stateless DHCP feature.
+-- 02/26/2001           Deprecated EIP proposal Table.
+
+-- Copyright(C) RedCreek Communications.
+-- All rights reserved.
+-- This RedCreek Communications SNMP Management Information Base
+-- Specification is RedCreek Communications' confidential and
+-- proprietary intellectual property. RedCreek Communications retains
+-- all title and ownership in the Specification, including any
+-- revisions.
+
+-- This Specification is supplied "AS IS," and RedCreek Communications
+-- makes no warranty, either express or implied, as to the use,
+-- operation, condition, or performance of the Specification.
+
+-- Imports
+
+IMPORTS
+		enterprises,
+		IpAddress,
+		Counter
+		    FROM RFC1155-SMI
+
+		DisplayString FROM RFC1213-MIB
+		OBJECT-TYPE
+		    FROM RFC-1212
+
+		ifIndex
+		    FROM RFC1213-MIB;
+
+-- Top Branches under RedCreek
+
+redCreek		OBJECT IDENTIFIER ::= { enterprises 1958 }
+
+products		OBJECT IDENTIFIER ::= { redCreek 1 }
+registration	OBJECT IDENTIFIER ::= { redCreek 2 }
+
+-- rcRavlin is common to both Ravlin 10, Ravlin 4, PCI
+rcRavlin    	OBJECT IDENTIFIER ::= { products 1 }
+
+-- Groups defined under the RedCreek Ravlin Product
+rcAdmin			OBJECT IDENTIFIER ::= { rcRavlin 1 }
+rcSecure		OBJECT IDENTIFIER ::= { rcRavlin 2 }
+rcBoot			OBJECT IDENTIFIER ::= { rcRavlin 3 }
+rcStatus		OBJECT IDENTIFIER ::= { rcRavlin 4 }
+rcTrap			OBJECT IDENTIFIER ::= { rcRavlin 5 }
+rcDebug			OBJECT IDENTIFIER ::= { rcRavlin 6 }
+rcEsp           OBJECT IDENTIFIER ::= { rcRavlin 7 }
+rcMgmt          OBJECT IDENTIFIER ::= { rcRavlin 8 }
+rcPolicy        OBJECT IDENTIFIER ::= { rcRavlin 9 }
+
+-- Branches under registration, will be all the different products. 
+-- (OID used for sysObjectId)
+
+rcRavlin10  	OBJECT IDENTIFIER ::= { registration 1 }
+rcRavlin4   	OBJECT IDENTIFIER ::= { registration 2 }
+rcPCI           OBJECT IDENTIFIER ::= { registration 3 }
+
+-- New OID for for products that support 3.0 MIBS.
+
+rcRavlin10Ver3  OBJECT IDENTIFIER ::= { registration 4 }
+rcRavlin4Ver3   OBJECT IDENTIFIER ::= { registration 5 }
+rcPCIVer3       OBJECT IDENTIFIER ::= { registration 6 }
+
+-- Textual Conventions
+
+RowStatus ::= INTEGER
+{
+     -- the following two values are states:
+     -- these values may be read or written
+     active(1),
+     notInService(2),
+     -- the following value is a state:
+     -- this value may be read, but not written
+     notReady(3),
+     -- the following three values are
+     -- actions: these values may be written,
+     --   but are never read
+     createAndGo(4),
+     createAndWait(5),
+     destroy(6)
+}
+
+PbeShaEncryptedObject ::= OCTET STRING
+--{
+--	STATUS	current
+--	DESCRIPTION
+--		"An object of this type is formed by taking the original data, and
+--         encrypting the object using password based encryption (PKCS5) where
+--        the algorithm is 'PBEwithSHA1andDES'.  The password required by the
+--        PbeShaEncryptedObject textual convention is that stored internally
+--        as rc3PasswordSha. The length of object of this type is specified 
+--        in the description clause of the specific object.
+
+--        Unless otherwise specified, an object of this type returns an 
+--        OCTET STRING of SIZE(0) upon read regardless of the actual internal
+--        value."
+--}
+
+-- Group under Management.
+
+rc3System           OBJECT IDENTIFIER ::= { rcMgmt 1 }
+rc3Network          OBJECT IDENTIFIER ::= { rcMgmt 2 }
+rc3Control          OBJECT IDENTIFIER ::= { rcMgmt 3 }
+rc3Stat             OBJECT IDENTIFIER ::= { rcMgmt 4 }
+rc3Snmp             OBJECT IDENTIFIER ::= { rcMgmt 5 }
+rc3ClientCfg        OBJECT IDENTIFIER ::= { rcMgmt 6 }
+rc3Download         OBJECT IDENTIFIER ::= { rcMgmt 7 }
+rc3Misc             OBJECT IDENTIFIER ::= { rcMgmt 8 }
+rc3Cert             OBJECT IDENTIFIER ::= { rcMgmt 9 }
+
+-- Group under Policy Database.
+
+rc3Proposals        OBJECT IDENTIFIER ::= { rcPolicy 1 }
+rc3Pde              OBJECT IDENTIFIER ::= { rcPolicy 2 }
+rc3PdMisc           OBJECT IDENTIFIER ::= { rcPolicy 3 }
+
+-- Begin Group under Management.
+rc3BootRomVer OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..12))
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Boot Rom Software version, in the form 'major.minor[letters]'.
+		If the version is unknown or not avaliable then the value
+		should be a zero length string."
+	::= { rc3System 1 }
+
+rc3FirmwareVer OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..12))
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"Software version, in the form 'major.minor[letters]'. If
+		the version is unknown or not avaliable then the value
+		should be a zero length string."
+    ::= { rc3System 2 }
+
+rc3FirmwareID OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..24))
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"A Textual description to identify the firmware on the Ravlin."
+	::= { rc3System 3 }
+
+rc3HardwareVer OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(0..12))
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"Hardware version, in the form 'major.minor[letters]'. If
+		the version is unknown or not avaliable then the value
+		should be a zero length string."
+    ::= { rc3System 4 }
+
+rc3DistinguishedName	OBJECT-TYPE
+	SYNTAX DisplayString
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Factory Assigned Unique Security ID for the Ravlin Unit.
+		It consists of three parts of the form 'mmmCK-xxx-sssss'.
+		mmm - is the model number.
+		CK - is a single digit checksum
+		xxx,sssss - is a sequence number."
+	::= { rc3System 5 }
+
+rc3HostName	OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..15))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Host name assigned to the Ravlin unit. If host name exists,
+		then it is used as the DHCP host name, else rcDistinguishedName
+		is used. Hence the name must be unique in a single DHCP scope.
+		Max Size for Host name is 15 characters."
+	::= { rc3System 6 }
+
+-- -------------
+-- NETWORK GROUP
+-- -------------
+
+-- =======================
+-- Interface Table
+-- =======================
+
+rc3InterfaceTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3InterfaceEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Interface table, for the Ravlin unit. This is a fixed sized table. The
+		size of the table is determined by the value of ifNumber. Entries cannot
+		be added or deleted."
+	::= { rc3Network 1 }
+
+rc3InterfaceEntry OBJECT-TYPE
+	SYNTAX Rc3InterfaceEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An interface entry containing objects at the
+		subnetwork layer and below for a particular
+		interface."
+	INDEX { ifIndex }
+	::= { rc3InterfaceTable 1 }
+
+Rc3InterfaceEntry ::= SEQUENCE {
+--	rc3InterfaceIfIndex	INTEGER,
+	rc3InterfaceIp		IpAddress,
+	rc3InterfaceMask		IpAddress,
+	rc3InterfaceMac		OCTET STRING
+    }
+
+-- rc3InterfaceIfIndex OBJECT-TYPE
+--  SYNTAX INTEGER
+--  ACCESS not-accessible
+--	ACCESS read-only
+--  STATUS mandatory
+--	DESCRIPTION
+--		"A unique value for each interface.  Its value 
+--		ranges between 1 and the value of ifNumber. 
+--		The interface identified by a particular value
+--		of this index is the same interface as identified
+--		by the same value of ifIndex."
+--	::= { rc3InterfaceEntry 1 }
+
+rc3InterfaceIp OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The interface's address at the network layer
+		in the protocol stack."
+	::= { rc3InterfaceEntry 2 }
+
+rc3InterfaceMask OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The subnet mask associated with the IP address of
+		this entry.  The value of the mask is an IP
+		address with all the network bits set to 1 and all
+		the hosts bits set to 0."
+	::= { rc3InterfaceEntry 3 }
+
+rc3InterfaceMac	OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The interface's address at the protocol layer
+		immediately `below' the network layer in the
+		protocol stack.  For interfaces which do not have
+		such an address (e.g., a serial line), this object
+		should contain an octet string of zero length."
+	::= { rc3InterfaceEntry 4 }
+
+-- =======================
+-- Routing Table
+-- =======================
+
+rc3IpRouteTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3IpRouteEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"The routing table for this Ravlin."
+	::= { rc3Network 2 }
+
+rc3IpRouteEntry OBJECT-TYPE
+	SYNTAX Rc3IpRouteEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"A route to a particular destination."
+	INDEX { rc3IpRouteDest, rc3IpRouteMask }
+	::= { rc3IpRouteTable 1 }
+
+Rc3IpRouteEntry ::= SEQUENCE {
+	rc3IpRouteDest           IpAddress,
+	rc3IpRouteMask           IpAddress,
+    rc3IpRouteIfIndex        INTEGER,
+    rc3IpRouteNextHop        IpAddress,
+    rc3IpRouteMetric         INTEGER,
+    rc3IpRouteProto          INTEGER,
+    rc3IpRouteAge            INTEGER,
+	rc3IpRouteRowStatus   	RowStatus
+	}
+
+rc3IpRouteDest OBJECT-TYPE
+    SYNTAX IpAddress
+	ACCESS not-accessible
+--	ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"The destination IP address of this route.  An entry with
+		a value of 0.0.0.0 is considered a default route.  This
+		value should be logical-ANDed with the rc3IpRouteMask
+		prior to being added to the table."
+    ::= { rc3IpRouteEntry 1 }
+
+rc3IpRouteMask OBJECT-TYPE
+    SYNTAX IpAddress
+	ACCESS not-accessible
+--	ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"Indicates the mask that will be logical-ANDed with the
+		destination address before being compared to the value in
+		the rc3IpRouteDest field."
+    ::= { rc3IpRouteEntry 2 }
+
+rc3IpRouteIfIndex OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"The index value which uniquely identifies the local
+		interface through which the next hop of this route
+		should be reached."
+    ::= { rc3IpRouteEntry 3 }
+
+rc3IpRouteNextHop OBJECT-TYPE
+    SYNTAX IpAddress
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"The IP address of the next hop of this route."
+    ::= { rc3IpRouteEntry 4 }
+
+rc3IpRouteMetric OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"The primary routing metric for this route."
+    ::= { rc3IpRouteEntry 5 }
+
+rc3IpRouteProto OBJECT-TYPE
+    SYNTAX INTEGER {
+		other(1),		-- none of the following
+
+						-- non-protocol information,
+						-- e.g., manually configured
+		local(2),		-- entries
+
+						-- set via a network
+		netmgmt(3),		-- management protocol
+
+						-- obtained via ICMP,
+		icmp(4),		-- e.g., Redirect
+
+						-- the remaining values are
+						-- all gateway routing
+						-- protocols
+		egp(5),
+		ggp(6),
+		hello(7),
+		rip(8),
+		is-is(9),
+		es-is(10),
+		ciscoIgrp(11),
+		bbnSpfIgp(12),
+		ospf(13),
+		bgp(14)
+	}
+	ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"The routing mechanism via which this route was learned."
+    ::= { rc3IpRouteEntry 6 }
+
+rc3IpRouteAge OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"The number of seconds since this route was last updated
+		or otherwise determined to be correct."
+    ::= { rc3IpRouteEntry 7 }
+
+rc3IpRouteRowStatus OBJECT-TYPE
+    SYNTAX RowStatus
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"This object is used to create/delete rows from the IP
+		Route Table. See the definition for RowStatus for a range
+		of valid values used. On read status indicates ACTIVE."
+    ::= { rc3IpRouteEntry 8 }
+
+rc3PacketHandlingOptions OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"This is Bit Masked Object. Zero or more bits can be set or cleared.
+		Bit 0 - Forward non-IP Traffic in Bridge Mode
+		Bit 1 - Forward Local IP Traffic in Bridge Mode
+		Bit 2 - Forward MAC Broadcast in Bridge Mode
+		Bit 3 - Forward IP Broadcast in Router Mode
+		Bit 4 - Send ICMP Re-Direct Messages in Router Mode
+		Bit 5 - Forward Multicast
+        Bit 6 - ARP proxy on the Remote Port
+        Bit 7 - Ignore Don't frag bit. Default is disable. In default mode, if
+              - the Don't frag bit is set, and packets needs to be fragmented 
+              - then Ravlin will send ICMP back to the sender and drop the packet.
+        Bit 8 - NAT packets matching bypass selector list.
+		
+        Bit 9 - SNMP access on Remote port in clear. Default is enabled. If 
+                disabled then the ONLY way to access the device from the Remote 
+                side is to manage it via a tunnel.
+                Note - 0 Allow SNMP on remote in the clear.
+                     - 1 Allow SNMP on remote thru. the tunnel.
+                -- Enable/Disable is reversed for bit 9 to avoid hassles in backward
+                -- compatibility
+        Bit 10 - Enable/Disable PPPoE on Remote Port - Default is disable.
+                Note - 1 Enable
+                     - 0 Disable
+ 
+        Bit 11 - Enable/Disable PPPoE connect on Demand - Default is disable.
+                Note - 1 Enable
+                     - 0 Disable
+
+        Bit 29 - Enable/Disable listening to unsolicited ARP on local port.
+                Default is disable.
+                Note - 1 Enable
+                     - 0 Disable
+
+        Bit 30 - Enable/Disable cascading packets from one gateway to another.
+                Default is disable.
+                Note - 1 Enable
+                     - 0 Disable
+
+		The flags specifying behavior for bridge mode are ignored
+		when the device is in router mode, and the flags specifying
+		behavior for router mode are ignored when the device is in
+		bridge mode."
+    ::= { rc3Network 3 }
+
+-- =======================
+-- PPPoE Group
+-- =======================
+
+rc3PPPoEUserName	OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..20))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"User name "
+	::= { rc3Network 4 }
+
+rc3PPPoEUserPassword	OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..20))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"User Password. Password will be encrypted by RNM when doing a set.
+        Get for user password"
+	::= { rc3Network 5 }
+
+rc3PPPoEServiceName	OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..20))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Service Name."
+	::= { rc3Network 6 }
+
+rc3PPPoEConcentratorName	OBJECT-TYPE
+	SYNTAX DisplayString (SIZE(0..20))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"PPPoE Concentrator Name."
+	::= { rc3Network 7 }
+
+rc3PPPoEIdleTimeout OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The duration in minutes to timeout PPPoE connection when there
+        is no traffic.Default is 10 minutes."
+	::= { rc3Network 8 }
+
+rc3PPPoERetryCount OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Retry count for PPPoE. Default is 10."
+	::= { rc3Network 9 }
+
+rc3PPPoEDnsServer1 OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"IP address of DNS server1. When Ravlin is enabled to get its remote interface
+        attributes via PPPoE, it will also provide DNS server IP address. This is a 
+        read-only attribute, the user can use to setup his end host."
+	::= { rc3Network 10 }
+
+rc3PPPoEDnsServer2 OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"IP address of DNS server1. When Ravlin is enabled to get its remote interface
+        attributes via PPPoE, it will also provide DNS server IP address. This is a 
+        read-only attribute, the user can use to setup his end host."
+	::= { rc3Network 11 }
+
+-- =======================
+-- Control Group
+-- =======================
+
+rc3Reset OBJECT-TYPE
+    SYNTAX INTEGER {
+		other(1),
+		warmstart(2),
+		clearallactiveSA(3),
+		clearARPcache(4),
+		clearmessagetable(5),
+		resettodefaults(6),
+		resettofactorydefaults(7),
+		eraseflash(8),
+        disablebox(9)
+	}
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"Action object to do the following:
+		
+		warmstart - Reboots the device. Firmware and configuration
+			information is maintained.
+		
+		clearallactiveSA - All active SA entries are removed.
+
+		clearARPcache - All entries in the ARP cache are removed.
+
+		clearmessagetable - All entries in the status message table
+			will be removed.
+
+		resettodefaults -   IP address and subnet mask are maintained.  All
+			other configuration information is removed.  Firmware is maintained.
+
+		resettofactorydefaults - All configuration information is removed.
+			Firmware is maintained.
+
+		eraseflash - Firmware is removed and the device will be in BOOT
+			ROM mode.  Configuration information is maintained.
+
+		disablebox - Delete Box's manufactured certificate and private key.
+        **
+        ** WARNING: this function will render the Ravlin box useless.  
+        ** Use only when device is no longer required to be in service FOREVER.
+        **
+        "
+    ::= { rc3Control 1 }
+
+rc3ArpCacheCleanupInterval OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The duration in minutes to cleanup ARP cache."
+    ::= { rc3Control 2 }
+
+-- =======================
+-- Security Control Group
+-- =======================
+
+rc3Password OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(1..16))
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+		"Object used to set new password for the box. For SNMP set operations
+		the password is encrypted. The key for encrypt/Decrypt is generated
+		by hashing the old password and a selector value. The default password
+		is 1234. On read an octet string of zero length is returned."
+	::= { rc3Control 3 }
+
+rc3OperationalMode OBJECT-TYPE
+	SYNTAX INTEGER {
+	passall(1),
+	blockall(2),
+	vpnready(3),
+    standby(4)
+	}
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The desired state of the Ravlin.  For the passall and vpnready
+		modes, the device will act as either a router or a bridge depending
+		on the configuration of the network interfaces.  If the two
+		interfaces are on the same network, then the device will function
+		as a bridge, otherwise it will function as a router.
+
+		passall - all traffic either in bridge or router mode.
+
+		blockall - drop all incoming packets.
+
+		vpnready - use the policy database and configuration flags to
+			determine which traffic to pass, block, or apply security.
+
+        standby  - (READ-ONLY) drop all incoming packets, until the device 
+                   configuration is not complete. EUse this mode, when the remote
+                   interface has DHCP or PPPoE enabled."
+	::= { rc3Control 4 }
+
+rc3InactiveClientTimeout OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The duration in minutes to tear down the SA between the RavSoft
+		client and Ravlin server."
+	::= { rc3Control 5 }
+
+rc3DHCPServerIP OBJECT-TYPE
+    SYNTAX IpAddress
+    ACCESS read-write
+	STATUS mandatory
+    DESCRIPTION
+		"IP Address of the DHCP server. This address can ONLY configured 
+        manually by SNMP. "
+    ::= { rc3Control 6 }
+
+rc3DHCPRequest OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"This is Bit Masked Object. Zero or more bits can be set or cleared.
+		Bit 0 - Enable/Disable DHCP on the Local Port
+		Bit 1 - Enable/Disable DHCP on the Remote Port
+        Bit 2 - Tunnel local host's DHCP request
+		
+		If the Bit is set, then DHCP is enabled, else it is disabled. By default
+        DHCP is enabled on both ports."
+    ::= { rc3Control 7 }
+
+rc3PasswordFips OBJECT-TYPE
+ 	SYNTAX PbeShaEncryptedObject
+    ACCESS read-write
+    STATUS mandatory
+ 	DESCRIPTION
+		"Available for release 3.30 and up. Object used to set new password for
+        the box. Refer to the textual convention of PbeShaEncryptedObject, for 
+        the process used to set this object. The default password is 1234. 
+        On read an octet string of zero length is returned. Password 
+        string size (1..20)"
+    ::= { rc3Control 8 }
+
+rc3DHCPRelayIpAddr OBJECT-TYPE
+    SYNTAX IpAddress
+    ACCESS read-write
+	STATUS mandatory
+    DESCRIPTION
+		"IP Address to be used for DHCP Relay. This is used when the Ravlin
+        unit redeives a DHCP request from the Ravsoft client."
+    ::= { rc3Control 9 }
+
+-- =========================
+-- System Performance objects under the control group.
+-- =========================
+rc3SysPerfTimeBetweenPolls  OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Time in seconds after which the polling will occur. A value of 0
+        means that this Ravlin will not poll. Default value is zero(0). The
+        minimum value can be set is 30 seconds and maximum is 600 seconds."
+    ::= { rc3Control 10 }
+
+rc3SysPerfTimeBetweenReports OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Time in seconds after  which reporting will occur."
+    ::= { rc3Control 11 }
+
+rc3SysPerfTrapThreshold OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This is the threshold of packet loss below which a warning trap will
+        be generated. This threshold is measured in percentage of packets sent
+        versus packets received."
+    ::= { rc3Control 12 }
+
+rc3DHCPBroadcastIntf OBJECT-TYPE
+    SYNTAX INTEGER {
+		local(1),
+		remote(2),
+        notApplicable(3)
+    }
+    ACCESS read-write
+	STATUS mandatory
+    DESCRIPTION
+		"Indentify the interface to broadcast DHCP requests. When the DHCP server IP
+        Address is not a broadcast address, then SNMP agent will return a value of
+        notApplicable. Manager CANNOT set this object to notApplicable."
+    ::= { rc3Control 13 }
+
+rc3StateLessDHCP OBJECT-TYPE
+    SYNTAX INTEGER {
+		enable(1),
+		disable(2)
+    }
+    ACCESS read-write
+	STATUS mandatory
+    DESCRIPTION
+		"Enables a head end device not to keep state information for DHCP
+        records, used in DHCP relay. This will allow head end to be in 
+        cluster topology. When enabled, DHCP records will exchanged via
+        ISAKMP private notify messages after ISAKMP SA is established. If
+        disabled then DHCP records are saved in NVM."
+    ::= { rc3Control 14 }
+
+-- =======================
+-- Stat Group
+-- =======================
+
+rc3ActiveSAcount OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Number of active Secure Associations(SA)."
+	::= { rc3Stat 1 }
+
+rc3PendingSAcount OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Number of pending Secure Associations."
+	::= { rc3Stat 2 }
+
+rc3SigFailCount OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Indicates number of times the signature failed."
+	::= { rc3Stat 3 }
+
+-- =======================
+-- STATUS Messages Table
+-- =======================
+
+rc3StatusMsgTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3StatusMsgEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"The table containing the status messages for this device.  This
+		entire table is read-only."
+	::= { rc3Stat 4 }
+
+rc3StatusMsgEntry OBJECT-TYPE
+	SYNTAX Rc3StatusMsgEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An entry in the status message table.  For status messages
+		that repeat, only one entry is used, and the rc3EventCodeRepetitions
+		filed identifies the number of consecutive messages of that type
+		that have occurred.  This should prevent the table from being wiped
+		out by a series of consecutive messages of the same type.  The
+		entire table can be cleared using rc3Reset."
+	INDEX { rc3StatusMsgIndex }
+	::= { rc3StatusMsgTable 1 }
+
+Rc3StatusMsgEntry ::= SEQUENCE {
+	rc3StatusMsgIndex		INTEGER,
+	rc3FirstInTimeStamp		INTEGER,
+	rc3LastInTimeStamp		INTEGER,
+	rc3EventCode				INTEGER,
+	rc3EventCodeRepetitions	INTEGER,
+	rc3EventSpecificDescr1	OCTET STRING,
+	rc3EventSpecificDescr2	OCTET STRING
+	}
+
+rc3StatusMsgIndex OBJECT-TYPE
+    SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"This value is used as a unique identifier for each entry."
+	::= { rc3StatusMsgEntry 1 }
+
+rc3FirstInTimeStamp OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"The time when this message was first generated."
+	::= { rc3StatusMsgEntry 2 }
+
+rc3LastInTimeStamp OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"The time when this message was last generated."
+	::= { rc3StatusMsgEntry 3 }
+
+rc3EventCode OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"An identifier of the event caused the status message to be generated."
+	::= { rc3StatusMsgEntry 4 }
+
+rc3EventCodeRepetitions OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"The number of times in a row this event occurred."
+	::= { rc3StatusMsgEntry 5 }
+
+rc3EventSpecificDescr1 OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"If the event code maps to a string that contains '%1', this value will
+		be substituted for the '%1' when the string is displayed."
+	::= { rc3StatusMsgEntry 6 }
+
+rc3EventSpecificDescr2 OBJECT-TYPE
+    SYNTAX OCTET STRING
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"If the event code maps to a string that contains '%2', this value will
+		be substituted for the '%2' when the string is displayed."
+	::= { rc3StatusMsgEntry 7 }
+
+rc3SysLogServerIP OBJECT-TYPE
+    SYNTAX IpAddress
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+		"IP Address of the syslog server."
+    ::= { rc3Stat 5 }
+
+rc3SysLogPortNum OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+		"Port number for the syslog service."
+    ::= { rc3Stat 6 }
+
+rc3SysLogMsgLevel OBJECT-TYPE
+    SYNTAX INTEGER {
+    critical(1),
+    severe(2),
+    error(3),
+    warning(4),
+    normal(5),
+    debug(6),
+    invalid(7)
+    }
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+		"Specify how verbose the message logging should be."
+    ::= { rc3Stat 7 }
+
+-- =======================
+-- SYSLOG SERVER Table
+-- =======================
+
+rc3SysLogServerTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3SysLogServerEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"The table containing the list of syslog server IP Address, 
+        syslog port, and priority of syslog message it will receive."
+	::= { rc3Stat 8 }
+
+rc3SysLogServerEntry OBJECT-TYPE
+	SYNTAX Rc3SysLogServerEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An entry in the syslog server table.  This table can have
+        zero to five entries."
+	INDEX { rc3SysLogServerIp, rc3SysLogServerPort }
+	::= { rc3SysLogServerTable 1 }
+
+Rc3SysLogServerEntry ::= SEQUENCE {
+	rc3SysLogServerIp		IpAddress,
+	rc3SysLogServerPort		INTEGER,
+    rc3SysLogPriorityLevel  INTEGER,
+    rc3SysLogMsgStatus      RowStatus
+	}
+
+rc3SysLogServerIp OBJECT-TYPE
+    SYNTAX IpAddress
+	ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+		"This value is used as a unique identifier for each entry."
+	::= { rc3SysLogServerEntry 1 }
+
+rc3SysLogServerPort OBJECT-TYPE
+    SYNTAX INTEGER
+	ACCESS not-accessible
+    STATUS mandatory
+    DESCRIPTION
+		"This value is used as a unique identifier for each entry."
+	::= { rc3SysLogServerEntry 2 }
+
+rc3SysLogPriorityLevel OBJECT-TYPE
+    SYNTAX INTEGER {
+    critical(1),
+    severe(2),
+    error(3),
+    warning(4),
+    normal(5),
+    debug(6)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"Specify how verbose the message logging should be."
+	::= { rc3SysLogServerEntry 3 }
+
+rc3SysLogMsgStatus OBJECT-TYPE
+    SYNTAX RowStatus
+	ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"This object is used to create/delete rows from the SYSLOG
+		server Table. See the definition for RowStatus for a
+		range of valid values used. On read status indicates ACTIVE."
+	::= { rc3SysLogServerEntry 4 }
+
+-- =======================
+-- SNMP Group
+-- =======================
+
+rc3ReadCommunityString OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(1..20))
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+		"This object is used to change Read Community string public.
+		For SNMP set operations the string is encrypted. The key for
+		encrypt/Decrypt is generated by hashing the password and a 
+		selector value. This object will return NULL for get/getnext."
+    ::= { rc3Snmp 1 }
+
+rc3WriteCommunityString OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(1..20))
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+		"This object is used to change Write Community string private.
+		For SNMP set operations the string is encrypted. The key for
+		encrypt/Decrypt is generated by hashing the password and a 
+		selector value. This object will return NULL for get/getnext."
+    ::= { rc3Snmp 2 }
+
+-- =======================
+-- TRAP recipient SNMP Managers
+-- =======================
+
+rc3TrapRcvrTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF Rc3TrapRcvrEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"A Table to register SNMP Manager IP Address and
+		community string to receive TRAP's from Ravlin Unit. 
+		This table can have a maximum of 5 entries."
+    ::= { rc3Snmp 3 }
+
+rc3TrapRcvrEntry OBJECT-TYPE
+    SYNTAX Rc3TrapRcvrEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"A row in the Trap Receiver Table. Rows in this
+		table can be created or Deleted."
+	INDEX { rc3TrapRcvrIpAddr }
+	::= { rc3TrapRcvrTable 1 }
+
+Rc3TrapRcvrEntry ::= SEQUENCE {
+	rc3TrapRcvrIpAddr	IpAddress,
+	rc3TrapRcvrComm		OCTET STRING,
+    rc3TrapRcvrType      INTEGER,
+	rc3TrapRcvrStatus	RowStatus
+}
+
+rc3TrapRcvrIpAddr OBJECT-TYPE
+    SYNTAX IpAddress
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The IP Address of the SNMP Manager that would receive
+		TRAP."
+	::= { rc3TrapRcvrEntry 1 }
+	
+rc3TrapRcvrComm OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE(0..20))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Community string used by SNMP Manager."
+	::= { rc3TrapRcvrEntry 2 }
+
+rc3TrapRcvrType OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Specifies the types of TRAPS that this manager should received."
+	::= { rc3TrapRcvrEntry 3 }
+
+rc3TrapRcvrStatus OBJECT-TYPE
+    SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the TRAP
+		Receiver Table. See the definition for RowStatus for a
+		range of valid values used. On read status indicates ACTIVE."
+	::= { rc3TrapRcvrEntry 4 }
+
+rc3SnmpErrorCode OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"This object will return the reason for the last SNMP SET error.
+		Since SNMPv1 has a limited number of error codes, this object 
+		provides an extension to report specific enterprise errors."
+	::= { rc3Snmp 4 }
+
+rc3ReadCommunityStringFips OBJECT-TYPE
+    SYNTAX PbeShaEncryptedObject
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"Available for release 3.30 and up. Object used to set read community
+        string for this device. Refer to the textual convention of PbeShaEncryptedObject,
+        for the process used to set this object. The default ReadCommunityString is 
+        'public'. On read an octet string of zero length is returned.
+        read community string SIZE(1..20)"
+    ::= { rc3Snmp 5 }
+
+rc3WriteCommunityStringFips OBJECT-TYPE
+    SYNTAX PbeShaEncryptedObject
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"Available for release 3.30 and up. Object used to set write community
+        string for this device. Refer to the textual convention of PbeShaEncryptedObject,
+        for the process used to set this object. The default WriteCommunityString is 
+        'private'. On read an octet string of zero length is returned.
+        write community string SIZE(1..20)"
+    ::= { rc3Snmp 6 }
+
+-- =======================
+-- Client Configuration Group
+-- =======================
+
+rc3ClientAuthentication OBJECT-TYPE
+	SYNTAX INTEGER {
+		enableRadius(1),
+		disableAuthentication(2),
+        enableLocal (3)
+	}
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+        "Enable or Disable client Authentication. There are two Authentication methods.
+        Either RADIUS or LOCAL. Client Authentication is not avaliable on the 
+        personal Ravlin."
+	::= { rc3ClientCfg 1 }
+
+rc3ActiveRadiusServer OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Specify the current active RADIUS server by its IP Address. If this
+		RADIUS server is not responding, then the agent will direct RADIUS
+		requests to the next preferred RADIUS server in the list, and
+		accordingly change the value of this object to indicate the active server."
+	::= { rc3ClientCfg 2 }
+
+rc3RadiusPriority OBJECT-TYPE
+	SYNTAX OCTET STRING (SIZE(1..3))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Specify the priority of the Radius servers in the table.  Each octet
+		will specify one of the entries in order of preference."
+	::= { rc3ClientCfg 3 }
+
+-- =======================
+-- Radius Server Table
+-- =======================
+
+rc3RadiusAuthServerTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3RadiusAuthServerEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Table, to setup Primary and/or Secondary Authentication Server.
+		This is a fixed sized table. RADIUS packets will be routed to
+		their destination using the Route Table."
+	::= { rc3ClientCfg 4 }
+
+rc3RadiusAuthServerEntry OBJECT-TYPE
+	SYNTAX Rc3RadiusAuthServerEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"RADIUS Auth Server entry containing all the attributes
+		required to configure Auth Server. There will be a
+        maximum of three entries in the table. If 
+        rc3RadiusAuthServerIP is 0.0.0.0, then that row is not used."
+	INDEX  { rc3RadiusAuthServerEntryIndx }
+	::= { rc3RadiusAuthServerTable 1 }
+
+Rc3RadiusAuthServerEntry ::= SEQUENCE {
+    rc3RadiusAuthServerEntryIndx         INTEGER,
+	rc3RadiusAuthServerIP				IpAddress,
+	rc3RadiusAuthServerPort				INTEGER,
+    rc3RadiusAttributeOffset             INTEGER,
+	rc3RadiusAuthServerSharedSecret		OCTET STRING,
+	rc3RadiusAuthServerRetries			INTEGER,
+    rc3RadiusAuthServerSharedSecretFips PbeShaEncryptedObject
+	}
+
+rc3RadiusAuthServerEntryIndx OBJECT-TYPE
+	SYNTAX INTEGER (1..3)
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"A unique identifier for the entry in this table.  Valid values
+		are 1-3."	
+	::= { rc3RadiusAuthServerEntry 1 }
+
+rc3RadiusAuthServerIP OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The IP Address (Network Address), of the RADIUS Authentication
+		server."	
+	::= { rc3RadiusAuthServerEntry 2 }
+
+rc3RadiusAuthServerPort OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Specifies the UDP port number used by the RADIUS service on the
+		Authentication Server."
+	::= { rc3RadiusAuthServerEntry 3 }
+
+rc3RadiusAttributeOffset OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"If zero, then use vendor specific attributes. Otherwise this object
+		specifies the first offset to use for the RedCreek attribute values."
+    ::= { rc3RadiusAuthServerEntry 4 }
+
+rc3RadiusAuthServerSharedSecret OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"This is the shared secret between the Ravlin and Radius Server.
+		For SNMP set operations the string is encrypted. The key for
+		encrypt/Decrypt is generated by hashing the password and a 
+		selector value. This object will return NULL for get/getnext."
+	::= { rc3RadiusAuthServerEntry 5 }
+
+rc3RadiusAuthServerRetries OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This limits the number of retries with the Authentication Server.
+		Default is 3. Maximum is 5. Min is 1"
+	::= { rc3RadiusAuthServerEntry 6 }
+
+rc3RadiusAuthServerSharedSecretFips OBJECT-TYPE
+	SYNTAX PbeShaEncryptedObject
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Available for release 3.30 and up. Object used to set shared secret
+        key between the Ravlin and Radius Server. Refer to the textual convention of 
+        PbeShaEncryptedObject, for the process used to set this object.
+        If the preshared key exists, then on read a dummy string is 
+        returned. shared secret key length is (0..32)"
+	::= { rc3RadiusAuthServerEntry 7 }
+
+-- =======================
+-- Local Authentication Table.
+-- =======================
+rc3LocalAuthTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3LocalAuthEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Table to maintain the database of user name, password and static
+        virtual IP Address and Mask."
+	::= { rc3ClientCfg 5 }
+
+rc3LocalAuthEntry OBJECT-TYPE
+	SYNTAX Rc3LocalAuthEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Entries in this table can be added and deleted."
+	INDEX  { rc3LocalAuthId }
+	::= { rc3LocalAuthTable 1 }
+
+Rc3LocalAuthEntry ::= SEQUENCE {
+    rc3LocalAuthId           INTEGER,
+    rc3LocalAuthName         DisplayString,
+	rc3LocalAuthPassword     PbeShaEncryptedObject,
+	rc3LocalAuthIpAddr       IpAddress,				
+    rc3LocalAuthIpMask       IpAddress,
+    rc3LocalAuthRowStatus    RowStatus
+	}
+
+rc3LocalAuthId OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS not-accessible
+    STATUS mandatory
+	DESCRIPTION
+		"A unique value for each entry."
+	::= { rc3LocalAuthEntry 1 }
+
+rc3LocalAuthName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(1..16))
+	ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"User name, used to logon and get authenticated. When password is
+        read it will return a NULL string."
+    ::= { rc3LocalAuthEntry 2 }
+
+rc3LocalAuthPassword OBJECT-TYPE
+    SYNTAX PbeShaEncryptedObject
+	ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"Password for the user, to authenticated with"
+    ::= { rc3LocalAuthEntry 3 }
+
+rc3LocalAuthIpAddr OBJECT-TYPE
+    SYNTAX IpAddress
+	ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"Static virtual IP address."
+    ::= { rc3LocalAuthEntry 4 }
+
+rc3LocalAuthIpMask OBJECT-TYPE
+    SYNTAX IpAddress
+	ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"Static virtual Mask"
+    ::= { rc3LocalAuthEntry 5 }
+
+rc3LocalAuthRowStatus OBJECT-TYPE
+    SYNTAX RowStatus
+	ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"This object is used to create/delete rows from the IP
+		Route Table. See the definition for RowStatus for a range
+		of valid values used. On read status indicates ACTIVE."
+    ::= { rc3LocalAuthEntry 6 }
+
+-- =======================
+-- Software Download Group
+-- =======================
+
+rc3ImageSize OBJECT-TYPE
+    SYNTAX INTEGER 
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+	    "Size of Image in bytes. SNMP manager must send this value before
+		it can do a software download. On receipt of this object the AGENT 
+		will allocate the memory of rc3ImageSize, and start a 60 second timer.
+		If the Agent does not receive the actual software block within the 
+		timeout period, it will assume the software download is aborted."
+	::= { rc3Download 1 }
+
+rc3SoftwareBlock OBJECT-TYPE
+    SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+	    "A block of software image to be downloaded to the flash. AGENT uses
+		a 60 second timer to timeout and abort software download, if no 
+		more block is received. On read the AGENT returns a zero length
+		(NULL) string."
+	::= { rc3Download 2 }
+
+rc3SoftwareBlockNumber OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+        "A sequential counter to keep track of the block number of the 
+        image that is sent by the SNMP Manager."
+	::= { rc3Download 3 }
+
+-- =======================
+-- Misc Group
+-- =======================
+
+rc3RandomNumber OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+		"A new Random number is used for every set hash computation.
+		After the set operation is successful, the Ravlin changes the
+		random number value, thus preventing replay."
+	::= { rc3Misc 1 }
+
+rc3HashObject OBJECT-TYPE
+    SYNTAX OCTET STRING 
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+	    "Image checksum/hash, after the last block of Image download is
+		completed. On this indication the AGENT will do a checksum
+		verification, and if correct will write the Image to the flash.
+		If download Image checksum is incorrect then returns 'Gen Err'."
+	::= { rc3Misc 2 }
+
+rc3UlaAuthenticationTimer OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The duration in minutes to re-authenticate a user for gateway access.
+        Minimum is 30 minutes."
+	::= { rc3Misc 3 }
+
+rc3UlaAuthenticationPort OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"UDP port used for ULA authentication. By default the Ravlin will send
+        to the RADIUS port 1812."
+	::= { rc3Misc 4 }
+
+rc3SystemTime OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object reads the current system time in GMT."
+	::= { rc3Misc 5 }
+
+-- =======================
+-- Certificate Group
+-- =======================
+
+-- =======================
+-- Certificate Authority Table
+-- =======================
+
+rc3CACertTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3CACertEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Table containing the CA certificates and public keys that
+		can be used to verify User Certificate. The index value of
+        1 and 2 is reserved for RedCreek CA certificate that is manufactured
+        into the box.  Attempts to modify this entry will return generic error.
+        A total of upto 6 CA certificates can be added. "
+	::= { rc3Cert 1 }
+
+rc3CACertEntry OBJECT-TYPE
+	SYNTAX Rc3CACertEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"The entries in this table indicate that trust has been
+		established for this root CA.  Entries in the Policy Database
+		will list an issuer name that is trusted, and the certificate
+		for that issuer should reside in this table."
+	INDEX { rc3CACertIndex }
+	::= { rc3CACertTable 1 }
+
+Rc3CACertEntry ::= SEQUENCE {
+	rc3CACertIndex	INTEGER,
+	rc3CACertName	DisplayString,
+	rc3CACertData	OCTET STRING,
+	rc3CACertStatus	RowStatus
+	}
+
+rc3CACertIndex OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"A unique identifier for this certificate in this table."
+	::= { rc3CACertEntry 1 }
+
+rc3CACertName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(1..16))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Textual string used to identify a CA certificate."
+	::= { rc3CACertEntry 2 }
+
+rc3CACertData OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The x509v3 DER encoded CA certificate."
+	::= { rc3CACertEntry 3 }
+
+rc3CACertStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the CA
+		Certificate Table. See the definition for RowStatus for a
+		range of valid values used."
+	::= { rc3CACertEntry 4 }
+
+-- =======================
+-- User Certificate Table
+-- =======================
+
+rc3UserCertTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3UserCertEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Table containing the User certificates and public keys that
+		can be used to identify this device to its peers.  A public/private
+		key pair will be generated for each entry as it is added to the
+		table.  The private keys are stored on the device, but are not
+		readable via SNMP.  The index value of 1 is reserved for the
+		User certificate signed by RedCreek CA and is manufactured into
+        the box.  Attempts to modify that entry will cause an error."
+	::= { rc3Cert 2 }
+
+rc3UserCertEntry OBJECT-TYPE
+	SYNTAX Rc3UserCertEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"The entries in this table can be used as a cache for peer
+		certificates.  An attempt to verify the certificate is made
+		when the entry is added to the table."
+	INDEX { rc3UserCertIndex }
+	::= { rc3UserCertTable 1 }
+
+Rc3UserCertEntry ::= SEQUENCE {
+	rc3UserCertIndex    INTEGER,
+	rc3UserCertName     OCTET STRING,
+	rc3UserCertData     OCTET STRING,
+	rc3UserCertStatus	RowStatus
+	}
+
+rc3UserCertIndex OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"A unique identifier for this certificate in this table."
+	::= { rc3UserCertEntry 1 }
+
+rc3UserCertName OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Textual string used to identify a User certificate."
+	::= { rc3UserCertEntry 2 }
+
+rc3UserCertData OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The x509v3 DER encoded user certificate."
+	::= { rc3UserCertEntry 3 }
+
+rc3UserCertStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the User 
+		Certificate Table. See the definition for RowStatus for a
+		range of valid values used."
+	::= { rc3UserCertEntry 4 }
+
+rc3UserCertRDN OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"User Certificate info. used to generate a PKCS10 info.
+        This info. a public/private key pair."
+	::= { rc3Cert 3 }
+
+rc3UserCertAlgoId OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Algorithm used to sign the hash."
+	::= { rc3Cert 4 }
+
+rc3GenerateKeyPair OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"If the two items above are set then is used to actually to 
+        start generating the key pair."
+	::= { rc3Cert 5 }
+
+rc3UserCertGetPkcs10 OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+    " "
+	::= { rc3Cert 6 }
+
+-- Group under Policy Database.
+-- =======================
+-- ISAKMP proposal Table
+-- =======================
+
+rc3IsakmpProposalTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3IsakmpProposalEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"This table contains a list of ISAKMP phase one proposals."
+	::= { rc3Proposals 1 }
+
+rc3IsakmpProposalEntry OBJECT-TYPE
+	SYNTAX Rc3IsakmpProposalEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An entry in the ISAKMP phase one proposal table."
+	INDEX { rc3IsakmpProposalIndx }
+	::= { rc3IsakmpProposalTable 1 }
+
+Rc3IsakmpProposalEntry ::= SEQUENCE {
+	rc3IsakmpProposalIndx            INTEGER,
+	rc3IsakmpProposalEncryption      INTEGER,
+	rc3IsakmpProposalHash            INTEGER,
+	rc3IsakmpProposalAuthMode        INTEGER,
+	rc3IsakmpProposalDhGroup         INTEGER
+	}
+
+rc3IsakmpProposalIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"This value is used as a unique identifier for entries in this table."
+	::= { rc3IsakmpProposalEntry 1 }
+
+rc3IsakmpProposalEncryption OBJECT-TYPE
+	SYNTAX INTEGER{
+        des-cbc(1),
+		triple-des-cbc(5),
+		des-cbc-40(249)
+	}
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The encryption type.  Currently only des-cbc-56 and 3des-cbc
+		and des-cbc-40 are supported."
+	::= { rc3IsakmpProposalEntry 2 }
+
+rc3IsakmpProposalHash OBJECT-TYPE
+	SYNTAX INTEGER{
+		md5(1),
+		sha(2)
+	}
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The hash type.  Currently md5 and sha are supported."
+	::= { rc3IsakmpProposalEntry 3 }
+
+rc3IsakmpProposalAuthMode OBJECT-TYPE
+	SYNTAX INTEGER{
+		pre-sharedkey(1),
+		dss-signature(2),
+		rsa-signature(3),
+		rsa-encryption(4)
+	}
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3IsakmpProposalEntry 4 }
+
+rc3IsakmpProposalDhGroup OBJECT-TYPE
+	SYNTAX INTEGER{
+		group1(1),
+		group(2)
+	}
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3IsakmpProposalEntry 5 }
+
+-- =======================
+-- ESP proposal Table
+-- =======================
+
+rc3EspProposalTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3EspProposalEntry 
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"This table contains a list of ESP proposals."
+	::= { rc3Proposals 2 }
+
+rc3EspProposalEntry OBJECT-TYPE
+	SYNTAX Rc3EspProposalEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An entry in the ESP proposal table."
+	INDEX { rc3EspProposalIndx }
+	::= { rc3EspProposalTable 1 }
+
+Rc3EspProposalEntry ::= SEQUENCE {
+	rc3EspProposalIndx                INTEGER,
+    rc3EspProposalCipherAlgo          INTEGER,
+	rc3EspProposalEncapsulation       INTEGER,
+    rc3EspProposalAuth                INTEGER,
+    rc3EspProposalGroup               INTEGER
+    }
+
+rc3EspProposalIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"This value is used as a unique identifier for entries in this table."
+   ::= { rc3EspProposalEntry 1 }
+
+rc3EspProposalCipherAlgo OBJECT-TYPE
+    SYNTAX INTEGER{
+		esp-null(0),
+        esp-des(2),
+		esp-3des(3),
+        esp-40des(249)
+		}
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+	"later"
+	::= { rc3EspProposalEntry 2 }
+	
+rc3EspProposalEncapsulation OBJECT-TYPE
+	SYNTAX INTEGER{
+		tunnel(1),
+		transport(2)
+	}
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3EspProposalEntry 3 }
+
+rc3EspProposalAuth  OBJECT-TYPE
+	SYNTAX INTEGER{
+        no-auth(0),
+        hmac-md5(1),
+        hmac-sha-1(2),
+        des-mac(3)
+    }
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3EspProposalEntry 4 }	
+
+rc3EspProposalGroup  OBJECT-TYPE
+	SYNTAX INTEGER{
+		group1(1),
+		group(2)
+	}
+	ACCESS read-only
+	STATUS deprecated
+	DESCRIPTION
+		"later"
+	::= { rc3EspProposalEntry 5 }	
+
+-- =======================
+-- AH Proposal Table
+-- =======================
+
+rc3AhProposalTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3AhProposalEntry 
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"This table contains a list of AH proposals."
+	::= { rc3Proposals 3 }
+
+rc3AhProposalEntry OBJECT-TYPE
+	SYNTAX Rc3AhProposalEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An entry in the AH proposal table."
+	INDEX { rc3AhProposalIndx }
+	::= { rc3AhProposalTable 1 }
+
+Rc3AhProposalEntry ::= SEQUENCE {
+	rc3AhProposalIndx                 INTEGER,
+    rc3AhProposalAuth                 INTEGER,
+    rc3AhProposalEncapsulation        INTEGER,
+    rc3AhProposalGroup                INTEGER
+}
+
+rc3AhProposalIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"This value is used as a unique identifier for entries in this table."
+	::= { rc3AhProposalEntry 1 }
+
+rc3AhProposalAuth OBJECT-TYPE
+	SYNTAX INTEGER{
+        reserved(1),
+        ah-md5(2),
+        ah-sha(3)
+    }
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3AhProposalEntry 2 }
+
+rc3AhProposalEncapsulation OBJECT-TYPE
+	SYNTAX INTEGER{
+		tunnel(1),
+		transport(2)
+	}
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3AhProposalEntry 3 }
+
+rc3AhProposalGroup  OBJECT-TYPE
+	SYNTAX INTEGER{
+		group1(1),
+		group(2)
+	}
+	ACCESS read-only
+	STATUS deprecated
+	DESCRIPTION
+		"later"
+	::= { rc3AhProposalEntry 4 }	
+
+-- =======================
+-- EIP proposal Table
+-- =======================
+
+rc3EipProposalTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3EipProposalEntry 
+	ACCESS not-accessible
+	STATUS deprecated
+	DESCRIPTION
+		"This table contains a list of EIP proposals."
+	::= { rc3Proposals 4 }
+
+rc3EipProposalEntry OBJECT-TYPE
+	SYNTAX Rc3EipProposalEntry
+	ACCESS not-accessible
+	STATUS deprecated
+	DESCRIPTION
+		"An entry in the EIP proposal table."
+	INDEX { rc3EipProposalIndx }
+	::= { rc3EipProposalTable 1 }
+
+Rc3EipProposalEntry ::= SEQUENCE {
+	rc3EipProposalIndx                INTEGER,
+    rc3EipProposalCipherAlgo          INTEGER
+    }
+
+rc3EipProposalIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS deprecated
+	DESCRIPTION
+		"This value is used as a unique identifier for entries in this table."
+   ::= { rc3EipProposalEntry 1 }
+
+rc3EipProposalCipherAlgo OBJECT-TYPE
+    SYNTAX INTEGER{
+        eip-des(2),
+		eip-3des(3),
+        eip-40des(249)
+		}
+	ACCESS read-only
+	STATUS deprecated
+	DESCRIPTION
+	"later"
+	::= { rc3EipProposalEntry 2 }
+
+-- Policy Database Entry
+
+-- =======================
+-- Peer Info Table
+-- =======================
+
+rc3PdePeerInfoTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3PdePeerInfoEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"This table contains info. about the remote unit.
+		Remote unit type determines the attributes that
+		are required to be configured. Entries in this
+		table can be added or deleted."
+	::= { rc3Pde 1 }
+
+rc3PdePeerInfoEntry OBJECT-TYPE
+	SYNTAX Rc3PdePeerInfoEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"A Remote unit info entry containing objects to
+		identify remote unit type, DN, Key Mgmt method used,
+		IPSEC protocol to be negotiated, and Next Hop if there
+		is a need to OVERRIDE the routing table."
+	INDEX { rc3PdePeerIndx }
+	::= { rc3PdePeerInfoTable 1 }
+
+Rc3PdePeerInfoEntry ::= SEQUENCE {
+	rc3PdePeerIndx                       INTEGER,
+	rc3PdePeerType                       INTEGER,
+    rc3PdePeerAddr                       IpAddress,
+	rc3PdePeerDN                         OCTET STRING,
+	rc3PdePeerIssuerDN                   OCTET STRING,
+	rc3PdePeerLocalCertIndx              INTEGER,
+    rc3PdePeerKeyMgmtType                INTEGER,
+    rc3PdePeerKeyMgmtIndx                INTEGER,
+    rc3PdePeerIpsecProtocolIndx          INTEGER,
+    rc3PdePeerIfIndex                    INTEGER,
+    rc3PdePeerNextHop                    IpAddress,
+    rc3PdePeerContinue                   INTEGER,
+    rc3PdePeerIsakmpLifeType             INTEGER,
+    rc3PdePeerIsakmpLifeTimeSeconds      INTEGER,
+    rc3PdePeerIsakmpLifeTimeKiloBytes    INTEGER,
+    rc3PdePeerIpsecLifeType              INTEGER,
+    rc3PdePeerIpsecLifeTimeSeconds       INTEGER,
+    rc3PdePeerIpsecLifeTimeKiloBytes     INTEGER,
+	rc3PdePeerRowStatus                  RowStatus,
+    rc3PdeFilterProtocol                 INTEGER,
+    rc3PdeLocalPort                      INTEGER,
+    rc3PdeRemotePort                     INTEGER,
+    rc3PdeName                           DisplayString,
+    rc3PdeULA                            INTEGER,
+    rc3PdePeerLocalInterfaceIpAddr       IpAddress
+	}
+		
+rc3PdePeerIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"A unique numeric ID value for each Pde. This value
+		is used to index into the table."
+	::= { rc3PdePeerInfoEntry 1 }
+
+rc3PdePeerType OBJECT-TYPE
+	SYNTAX INTEGER {
+		host(1),
+		gateway(2),
+		bypassboth(3),
+		bypassoutbound(4)
+	}
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The semantics for the different remote unit type is
+			host - need to specify DN, KeyMgmt, and IpsecProtocol (Addr optional)
+			gateway - need to specify DN, KeyMgmt, and IpsecProtocol (Addr optional)
+			bypassboth - need to specify nothing else in this table
+			bypassoutbound - need to specify nothing else in this table"
+	::= { rc3PdePeerInfoEntry 2 }
+
+rc3PdePeerAddr OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"IP Address of the remote Ravlin unit. This is used for hosts and
+		gateways that have static IP addresses.  A value of 0.0.0.0 indicates
+		that the peer is has a dynamic IP address."
+	::= { rc3PdePeerInfoEntry 3 }
+
+rc3PdePeerDN OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The Distinguished Name of the peer.  Can be a Security ID (SID),
+		DER encoded DN,	or a DN filter."
+	::= { rc3PdePeerInfoEntry 4 }
+
+rc3PdePeerIssuerDN OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"The Distinguished Name of the issuer that signed the peer's certificate.
+		If the SID is being used, then the issuer DN should be null."
+	::= { rc3PdePeerInfoEntry 5 }
+
+rc3PdePeerLocalCertIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This index corresponds to an entry in the local certificate table, which
+		will determine which local certificate will be used to identify this device
+		to the peer device."
+	::= { rc3PdePeerInfoEntry 6 }
+
+rc3PdePeerKeyMgmtType OBJECT-TYPE
+	SYNTAX INTEGER {
+		manual(1),
+		isakmp(2)
+    }
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"manual - use manual method to derive session keys.
+		isakmp - use IETF protocol ISAKMP to derive session keys."
+	::= { rc3PdePeerInfoEntry 7 }
+
+rc3PdePeerKeyMgmtIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This index corresponds to an entry in either the rc3PdeManualKeyMgmtTable,
+		or an entry in the rc3PdeIsakmpKeyMgmtTable depending on the value of
+		rc3PdePeerKeyMgmtType."
+	::= { rc3PdePeerInfoEntry 8 }
+
+rc3PdePeerIpsecProtocolIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This index corresponds to an entry in the rc3PdeIpsecProtocolTable, use
+		a value of zero for eip."
+	::= { rc3PdePeerInfoEntry 9 }
+
+rc3PdePeerIfIndex OBJECT-TYPE
+    SYNTAX INTEGER {
+		none(1),
+--		local(2),
+		remote(3)
+    }
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"This indicates the interface to use in order to deliver
+		the packet to the Remote unit.  If none is specified, then
+		the routing table will be used to determine the next hop."
+    ::= { rc3PdePeerInfoEntry 10 }
+
+rc3PdePeerNextHop OBJECT-TYPE
+    SYNTAX IpAddress
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+		"If non-zero, then this represents the next hop IP Address
+		used by this Pde. If this value is zero, then use the next hop
+		from the Routing table."
+    ::= { rc3PdePeerInfoEntry 11 }
+
+rc3PdePeerContinue OBJECT-TYPE
+    SYNTAX INTEGER {
+        enable(1),
+        disable(2)
+    }
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+		"Allow the packet to continue the Pde selection process when
+		rc3StatConnStatus is failed or dropped."
+    ::= { rc3PdePeerInfoEntry 12 }
+
+rc3PdePeerIsakmpLifeType OBJECT-TYPE
+	SYNTAX INTEGER{
+		seconds(1)
+--		kilobytes(2),
+--		both(3)
+	}
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The type of key lifetime for ISAKMP phase one."
+	::= { rc3PdePeerInfoEntry 13 }
+
+rc3PdePeerIsakmpLifeTimeSeconds OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The lifetime in seconds for ISAKMP phase one."
+	::= { rc3PdePeerInfoEntry 14 }
+
+rc3PdePeerIsakmpLifeTimeKiloBytes OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The lifetime in kilobytes for ISAKMP phase one."
+	::= { rc3PdePeerInfoEntry 15 }
+
+rc3PdePeerIpsecLifeType OBJECT-TYPE
+	SYNTAX INTEGER{
+		seconds(1)
+--		kilobytes(2),   - Not supported
+--		both(3)         - Not Supported
+	}
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The type of key lifetime for IPsec."
+	::= { rc3PdePeerInfoEntry 16 }
+
+rc3PdePeerIpsecLifeTimeSeconds OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The lifetime in seconds for IPsec."
+	::= { rc3PdePeerInfoEntry 17 }
+
+rc3PdePeerIpsecLifeTimeKiloBytes OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"The lifetime in kilobytes for IPsec."
+	::= { rc3PdePeerInfoEntry 18 }
+
+rc3PdePeerRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the Policy Database
+		Entry Peer Info Table. See the definition for RowStatus for a range
+		of valid values used. On read status indicates ACTIVE."
+	::= { rc3PdePeerInfoEntry 19 }
+
+rc3PdeFilterProtocol OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"Value specifying an associated IP protocol ID (e.g UDP/TCP).
+        A value of zero means that the protocol ID field should be 
+        ignored."
+	::= { rc3PdePeerInfoEntry 20 }
+
+rc3PdeLocalPort OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"Value specifying an associated port. A value of zero means
+        that the port field should be ignored."
+	::= { rc3PdePeerInfoEntry 21 }
+
+rc3PdeRemotePort OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"Value specifying an associated port. A value of zero means
+        that the port field should be ignored."
+	::= { rc3PdePeerInfoEntry 22 }
+
+rc3PdeName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE(1..15))
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION
+    "Name used to uniquely identify a PDE. Ravlin firmware will 
+    assign a unique Default pdeName value for each PDE inserted,
+    and can be changed."
+	::= { rc3PdePeerInfoEntry 23 }
+
+rc3PdeULA OBJECT-TYPE
+	SYNTAX INTEGER{
+        enable(1),
+        disable(2)
+	}
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"If enabled for a gateway PDE ONLY, then each user needs to be
+         authenticated after SA is established. This bit has no meaning
+         for any other type of PDE."
+	::= { rc3PdePeerInfoEntry 24 }
+
+rc3PdePeerLocalInterfaceIpAddr OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Specifies remote ravlin's local IP Address. A value of 0 means
+        that this PDE does not participate in polling. "
+	::= { rc3PdePeerInfoEntry 25 }
+
+-- =======================
+-- Local Selector table.
+-- =======================
+
+rc3PdeLocalNetworkTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3PdeLocalNetworkEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"This table provides the selector list containing 1..n
+		entry pair(s) of network number and mask for the local
+		interface. Entries in this table can be added or deleted."
+	::= { rc3Pde 2 }
+
+rc3PdeLocalNetworkEntry OBJECT-TYPE
+	SYNTAX Rc3PdeLocalNetworkEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An entry in the Local Network Selector Table. Rows are created
+		by an SNMP SET request seeting the value of rc3PdeLocalNetworkRowStatus
+		to 'createAndGo' or 'createAndWait'. Rows are deleted by an SNMP SET
+		request setting the value of rc3PdeLocalNetworkRowStatus to 'destroy'."
+	INDEX { rc3PdePeerIndx, rc3PdeLocalNetworkNumber, rc3PdeLocalNetworkMask }
+	::= { rc3PdeLocalNetworkTable 1 }
+
+Rc3PdeLocalNetworkEntry ::= SEQUENCE {
+	rc3PdeLocalNetworkNumber		IpAddress,
+	rc3PdeLocalNetworkMask		IpAddress,
+	rc3PdeLocalNetworkRowStatus	RowStatus
+	}
+		
+rc3PdeLocalNetworkNumber OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The local network address that will be used to match packets for
+		this entry in the Policy Database."
+	::= { rc3PdeLocalNetworkEntry 1 }
+
+rc3PdeLocalNetworkMask OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The local network mask that will be used to match packets for
+		this entry in the Policy Database."
+	::= { rc3PdeLocalNetworkEntry 2 }
+
+rc3PdeLocalNetworkRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the Policy Database
+		Entry Local Network Table. See the definition for RowStatus for a range
+		of valid values used. On read status indicates ACTIVE."
+	::= { rc3PdeLocalNetworkEntry 3 }
+
+-- =======================
+-- Remote Selector table.
+-- =======================
+
+rc3PdeRemoteNetworkTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3PdeRemoteNetworkEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"This table provides the selector list containing 1..n
+		entry pair(s) of network number and mask for the Remote
+		interface."
+	::= { rc3Pde 3 }
+
+rc3PdeRemoteNetworkEntry OBJECT-TYPE
+	SYNTAX Rc3PdeRemoteNetworkEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An entry in the Remote Network Selector Table. Rows are created
+		by an SNMP SET request seeting the value of rc3PdeRemoteNetworkRowStatus
+		to createAndGo or createAndWait. Rows are deleted by an SNMP SET
+		request setting the value of rc3PdeRemoteNetworkRowStatus to destroy."
+	INDEX { rc3PdePeerIndx, rc3PdeRemoteNetworkNumber, rc3PdeRemoteNetworkMask }
+	::= { rc3PdeRemoteNetworkTable 1 }
+
+Rc3PdeRemoteNetworkEntry ::= SEQUENCE {
+	rc3PdeRemoteNetworkNumber 	    IpAddress,
+	rc3PdeRemoteNetworkMask		    IpAddress,
+	rc3PdeRemoteNetworkRowStatus     RowStatus
+	}
+
+rc3PdeRemoteNetworkNumber OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The remote network address that will be used to match packets for
+		this entry in the Policy Database."
+	::= { rc3PdeRemoteNetworkEntry 1 }
+
+rc3PdeRemoteNetworkMask OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The remote network mask that will be used to match packets for
+		this entry in the Policy Database."
+	::= { rc3PdeRemoteNetworkEntry 2 }
+
+rc3PdeRemoteNetworkRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the Policy Database
+		Entry Remote Network Table. See the definition for RowStatus for a range
+		of valid values used. On read status indicates ACTIVE."
+	::= { rc3PdeRemoteNetworkEntry 3 }
+
+-- =======================
+-- Statistics Table
+-- =======================
+
+rc3SAStatTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3SAStatEntry 
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"This table provides statistics for each Security Association(Pde)."
+	::= { rc3Pde 4 }
+
+rc3SAStatEntry OBJECT-TYPE
+	SYNTAX Rc3SAStatEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Entries in table cannot be added or deleted. This table is
+		completely controlled by the agent. Each Pde statistics will be
+		represented by an entry in this table. "
+	INDEX { rc3PdePeerIndx, rc3SAStatPeerAddr }
+	::= { rc3SAStatTable 1 }
+
+Rc3SAStatEntry ::= SEQUENCE {
+	rc3SAStatPeerAddr            IpAddress,
+	rc3SAStatConnStatus          INTEGER,
+    rc3SAStatCreateTime          INTEGER,
+	rc3SAStatEncryptPktCount     Counter,
+	rc3SAStatEncryptByteCount    Counter,
+	rc3SAStatDecryptPktCount     Counter,
+	rc3SAStatDecryptByteCount    Counter,
+	rc3SAStatFragPktCount        Counter,
+    rc3SAStatReset               INTEGER,
+    rc3SAStatUserName            DisplayString,
+    rc3SAStatPollsSent           Counter,
+    rc3SAStatPollsReceived       Counter,
+    rc3SAStatPollsAverageTime    INTEGER,
+    rc3SAStatPollsMaxTime        INTEGER,
+    rc3SAStatPollsMinTime        INTEGER
+	}
+
+rc3SAStatPeerAddr OBJECT-TYPE
+	SYNTAX IpAddress
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Second index into the stat table. Currently since multiple
+		clients share the policy database entry, this allows stat from
+		all clients sharing this database entry."
+	::= { rc3SAStatEntry 1 }
+
+rc3SAStatConnStatus OBJECT-TYPE
+	SYNTAX INTEGER{
+		inactive(1),
+		active(2),
+		pending(3),
+		failed(4),
+		block(5),
+		rebuild(6)
+	}
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Values 1..4 are controlled by the agent. ONLY value 5, 6, is a
+		read-write value from the manager. Value 5, will block all traffic
+        and 6, will initiate ISAKMP with the remote when it receives the next
+        IP packet that matches the selector."
+	::= { rc3SAStatEntry 2 }
+
+rc3SAStatCreateTime OBJECT-TYPE
+	SYNTAX INTEGER
+    ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+	"Time this Pde was actually established."
+	::= { rc3SAStatEntry 3 }
+
+rc3SAStatEncryptPktCount OBJECT-TYPE
+	SYNTAX Counter
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Total encrypted packet count for this Pde,
+		identified by Pde indx."
+	::= { rc3SAStatEntry 4 }
+
+rc3SAStatEncryptByteCount OBJECT-TYPE
+	SYNTAX Counter
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Total encrypted byte count for this Pde,
+		identified by Pde indx."
+	::= { rc3SAStatEntry 5 }
+
+rc3SAStatDecryptPktCount OBJECT-TYPE
+	SYNTAX Counter
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Total decrypted packet count for this Pde, 
+		identified by Pde indx."
+	::= { rc3SAStatEntry 6 }
+
+rc3SAStatDecryptByteCount OBJECT-TYPE
+	SYNTAX Counter
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"Total decrypted byte count for this Pde,
+		identified by Pde indx."
+	::= { rc3SAStatEntry 7 }
+
+rc3SAStatFragPktCount OBJECT-TYPE
+	SYNTAX Counter
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3SAStatEntry 8 }
+
+rc3SAStatReset OBJECT-TYPE
+	SYNTAX INTEGER {
+    other(1),
+    reset(2)
+    }
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"SNMP GET/GET NEXT for this object will return value other. SNMP
+		SET request of reset will clear the stat values for row index
+		by rc3PdePeerIndx, and rc3SAStatPeerAddr."
+	::= { rc3SAStatEntry 9 }
+
+rc3SAStatUserName  OBJECT-TYPE
+    SYNTAX DisplayString
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION
+        "User name used for RADIUS authentication."
+	::= { rc3SAStatEntry 10 }
+
+rc3SAStatPollsSent OBJECT-TYPE
+	SYNTAX Counter
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The number of ICMP polling packets sent through
+        this PDE's tunnel."
+	::= { rc3SAStatEntry 11 }
+
+rc3SAStatPollsReceived OBJECT-TYPE
+	SYNTAX Counter
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The number of ICMP polling packet responses recieved through
+        this PDE's tunnel."
+	::= { rc3SAStatEntry 12 }
+
+rc3SAStatPollsAverageTime OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The average round trip time on milliseconds of all polling packets."
+	::= { rc3SAStatEntry 13 }
+
+rc3SAStatPollsMaxTime OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The maximum round trip time on milliseconds for a ICMP polling packet."
+	::= { rc3SAStatEntry 14 }
+
+rc3SAStatPollsMinTime OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The minimum round trip time on milliseconds for a ICMP polling packet."
+	::= { rc3SAStatEntry 15 }
+
+-- =======================
+-- Manual Key Management Table
+-- =======================
+
+rc3PdeManualKeyMgmtTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3PdeManualKeyMgmtEntry 
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Table contains all the required parameters if manual
+		keying method is used to establish an Pde. Entries in this
+		table can be added or deleted.  The initial release will
+		allow only one entry (rc3PdeManualIndx = 1)."
+	::= { rc3Pde 5 }
+
+rc3PdeManualKeyMgmtEntry OBJECT-TYPE
+	SYNTAX Rc3PdeManualKeyMgmtEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Row Entry for Manual Key Mgmt Table."
+	INDEX { rc3PdeManualKeyMgmtIndx }
+	::= { rc3PdeManualKeyMgmtTable 1 }
+
+Rc3PdeManualKeyMgmtEntry ::= SEQUENCE {
+	rc3PdeManualKeyMgmtIndx              INTEGER,
+	rc3PdeManualInboundEncryptKey        OCTET STRING,
+	rc3PdeManualOutboundEncryptKey       OCTET STRING,
+	rc3PdeManualInboundAuthKey           OCTET STRING,
+	rc3PdeManualOutboundAuthKey          OCTET STRING,
+	rc3PdeManualInboundSpi               INTEGER,
+	rc3PdeManualOutboundSpi              INTEGER,
+	rc3PdeManualKeyMgmtRowStatus         RowStatus,
+	rc3PdeManualInboundEncryptKeyFips    PbeShaEncryptedObject,
+	rc3PdeManualOutboundEncryptKeyFips   PbeShaEncryptedObject,
+	rc3PdeManualInboundAuthKeyFips       PbeShaEncryptedObject,
+	rc3PdeManualOutboundAuthKeyFips      PbeShaEncryptedObject
+	}
+
+rc3PdeManualKeyMgmtIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"This value is used as a unique identifier for entries in this table."
+	::= { rc3PdeManualKeyMgmtEntry 1 }
+
+rc3PdeManualInboundEncryptKey OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"later"
+	::= { rc3PdeManualKeyMgmtEntry 2 }
+
+rc3PdeManualOutboundEncryptKey OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"later"
+	::= { rc3PdeManualKeyMgmtEntry 3 }
+
+rc3PdeManualInboundAuthKey OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"later"
+	::= { rc3PdeManualKeyMgmtEntry 4 }
+
+rc3PdeManualOutboundAuthKey OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"later"
+	::= { rc3PdeManualKeyMgmtEntry 5 }
+
+rc3PdeManualInboundSpi OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3PdeManualKeyMgmtEntry 6 }
+
+rc3PdeManualOutboundSpi OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3PdeManualKeyMgmtEntry 7 }
+
+rc3PdeManualKeyMgmtRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the Policy Database
+		Entry Manual Key Management Table. See the definition for RowStatus for
+		a range	of valid values used. On read status indicates ACTIVE."
+	::= { rc3PdeManualKeyMgmtEntry 8 }
+
+rc3PdeManualInboundEncryptKeyFips OBJECT-TYPE
+	SYNTAX PbeShaEncryptedObject
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Available for release 3.30 and up. Object used to set manual inbound
+        encryption key. Refer to the textual convention of PbeShaEncryptedObject,
+        for the process used to set this object. If the manual inbound encryption
+        key exists, then on read a dummy string is returned. manual inbound
+        encryption key length is (0..24)"
+	::= { rc3PdeManualKeyMgmtEntry 9 }
+
+rc3PdeManualOutboundEncryptKeyFips OBJECT-TYPE
+	SYNTAX PbeShaEncryptedObject
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Available for release 3.30 and up. Object used to set manual outbound
+        encryption key. Refer to the textual convention of PbeShaEncryptedObject,
+        for the process used to set this object. If the manual outbound encryption
+        key exists, then on read a dummy string is returned. manual outbound
+        encryption key length is (0..24)"
+	::= { rc3PdeManualKeyMgmtEntry 10 }
+
+rc3PdeManualInboundAuthKeyFips OBJECT-TYPE
+	SYNTAX PbeShaEncryptedObject
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Available for release 3.30 and up. Object used to set manual inbound
+        authentication key. Refer to the textual convention of PbeShaEncryptedObject,
+        for the process used to set this object. If the manual inbound authentication
+        key exists, then on read a dummy string is returned. manual inbound
+        authentication key length is (0..20)"
+	::= { rc3PdeManualKeyMgmtEntry 11 }
+
+rc3PdeManualOutboundAuthKeyFips OBJECT-TYPE
+	SYNTAX PbeShaEncryptedObject
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Available for release 3.30 and up. Object used to set manual inbound
+        authentication key. Refer to the textual convention of PbeShaEncryptedObject,
+        for the process used to set this object. If the manual inbound authentication
+        key exists, then on read a dummy string is returned. manual outbound
+        authentication key length is (0..20)"
+	::= { rc3PdeManualKeyMgmtEntry 12 }
+
+-- =======================
+-- ISAKMP KEY Management Table
+-- =======================
+
+rc3PdeIsakmpKeyMgmtTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3PdeIsakmpKeyMgmtEntry 
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Table contains all the required parameters if ISAKMP
+		keying method is used to establish a Security Association
+		for a Policy Database Entry.  The rc3PdeIsakmpIndx value
+		is referenced by the rc3PdePeerKeyMgmtIndx value in the
+		rc3PdePeerInfoTable.  Entries in this table can be added
+		or deleted."
+	::= { rc3Pde 6 }
+
+rc3PdeIsakmpKeyMgmtEntry OBJECT-TYPE
+	SYNTAX Rc3PdeIsakmpKeyMgmtEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"An entry in the ISAKMP Key Management Table."
+	INDEX { rc3PdeIsakmpIndx }
+	::= { rc3PdeIsakmpKeyMgmtTable 1 }
+
+Rc3PdeIsakmpKeyMgmtEntry ::= SEQUENCE {
+	rc3PdeIsakmpIndx                 INTEGER,
+	rc3PdeIsakmpProposals            OCTET STRING,
+	rc3PdeIsakmpRetries              INTEGER,
+	rc3PdeIsakmpAuthPresharedKey     OCTET STRING,
+	rc3PdeIsakmpPfs                  INTEGER,
+	rc3PdeIsakmpRowStatus            RowStatus,
+    rc3PdeIsakmpAuthPresharedKeyFips PbeShaEncryptedObject
+	}
+
+rc3PdeIsakmpIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"This value is used as a unique identifier for entries in this table."
+	::= { rc3PdeIsakmpKeyMgmtEntry 1 }
+
+rc3PdeIsakmpProposals OBJECT-TYPE
+	SYNTAX OCTET STRING (SIZE(1..8))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Each byte in the octet string will specify (in order of preference)
+		the index into the ISAKMP proposal table (rc3IsakmpProposalTable).
+		Up to eight proposals can be entered.  These values are used when
+		negotiating the ISAKMP phase one session."
+	::= { rc3PdeIsakmpKeyMgmtEntry 2 }
+
+rc3PdeIsakmpRetries OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3PdeIsakmpKeyMgmtEntry 3 }
+
+rc3PdeIsakmpAuthPresharedKey OBJECT-TYPE
+	SYNTAX OCTET STRING
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"later"
+	::= { rc3PdeIsakmpKeyMgmtEntry 4 }
+
+rc3PdeIsakmpPfs OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	::= { rc3PdeIsakmpKeyMgmtEntry 5 }
+
+rc3PdeIsakmpRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the Policy Database
+		Entry ISAKMP Table. See the definition for RowStatus for
+		a range	of valid values used. On read status indicates ACTIVE."
+	::= { rc3PdeIsakmpKeyMgmtEntry 6 }
+
+rc3PdeIsakmpAuthPresharedKeyFips OBJECT-TYPE
+	SYNTAX PbeShaEncryptedObject
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Available for release 3.30 and up. Object used to set preshared
+        Authentication key. Refer to the textual convention of PbeShaEncryptedObject,
+        for the process used to set this object. If the preshared key exists,
+        then on read a dummy  string is returned. Preshared key length
+        is (0..32)"
+	::= { rc3PdeIsakmpKeyMgmtEntry 7 }
+
+-- =======================
+-- IPSEC Protocol Table
+-- =======================
+
+rc3PdeIpsecProtocolTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3PdeIpsecProtocolEntry 
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"This table contains sets of IPsec proposals for use
+		when negotiating ESP, AH, or mixed mode Security
+		Associations.  The rc3PdeIpsecProtocolIndx value is
+		referenced by the rc3PdePeerIpsecProtocolIndx value
+		in the rc3PdePeerInfoTable."
+	::= { rc3Pde 7}
+
+rc3PdeIpsecProtocolEntry OBJECT-TYPE
+	SYNTAX Rc3PdeIpsecProtocolEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"later"
+	INDEX { rc3PdeIpsecProtocolIndx }
+	::= { rc3PdeIpsecProtocolTable 1 }
+
+Rc3PdeIpsecProtocolEntry ::= SEQUENCE {
+	rc3PdeIpsecProtocolIndx			INTEGER,
+    rc3PdeIpsecProtocolType          INTEGER,
+	rc3PdeIpsecProposals				OCTET STRING,
+	rc3PdeIpsecProtocolRowStatus     RowStatus
+	}
+
+rc3PdeIpsecProtocolIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"This value is used as a unique identifier for entries in this table."
+	::= { rc3PdeIpsecProtocolEntry 1 }
+
+rc3PdeIpsecProtocolType OBJECT-TYPE
+	SYNTAX INTEGER {
+		ah(1),
+		esp(2),
+		mixed(3),
+		proprietaryeip(4)
+    }
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Indicates the protocol type that the list of Proposals refer to."
+	::= { rc3PdeIpsecProtocolEntry 2 }
+
+rc3PdeIpsecProposals OBJECT-TYPE
+	SYNTAX OCTET STRING (SIZE(1..8))
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"Each byte in the octet string will specify (in order of preference)
+		the index into the ESP or AH proposal table (rc3EspProposalTable or
+		rc3AhProposalTable).  Up to eight proposals can be entered.  If mixed
+		mode is used, then the first four bytes will specify ESP proposals,
+		and the last four bytes will specify AH proposals.  These values
+		are used when negotiating the IPsec session."
+	::= { rc3PdeIpsecProtocolEntry 3 }
+
+rc3PdeIpsecProtocolRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS mandatory
+	DESCRIPTION
+		"This object is used to create/delete rows from the Policy Database
+		Entry IPsec Protocol Table. See the definition for RowStatus for
+		a range	of valid values used. On read status indicates ACTIVE."
+	::= { rc3PdeIpsecProtocolEntry 4 }
+
+-- =======================
+-- Selected Protocol Table
+-- =======================
+
+rc3PdeSelectProtocolTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF Rc3PdeSelectProtocolTableEntry 
+	ACCESS not-accessible
+	STATUS deprecated
+	DESCRIPTION
+		"This table contains a set of filters for each entry in the
+		Policy Database.  If one or more filters exist for a given
+		policy entry, then those filters will be check after a packet
+		has matched the local and remote network selectors.  The filters
+		can specify whether to block the packet, pass it in the clear,
+		or use the action specified in the policy entry."
+	::= { rc3Pde 8 }
+
+rc3PdeSelectProtocolTableEntry OBJECT-TYPE
+	SYNTAX Rc3PdeSelectProtocolTableEntry
+	ACCESS not-accessible
+	STATUS deprecated
+	DESCRIPTION
+		"The table index includes the index from the corresponding policy
+		database entry, as well as the protocol and port.  All entries
+		in this table that have the same rc3PdePeerIndx value will be
+		used to determine the disposition of packets that match that
+		policy entry."
+	INDEX { rc3PdePeerIndx, rc3PdeSelectProtocol, rc3PdeSelectPort }
+	::= { rc3PdeSelectProtocolTable 1 }
+
+Rc3PdeSelectProtocolTableEntry ::= SEQUENCE {
+	rc3PdeSelectProtocol             INTEGER,
+	rc3PdeSelectPort                 INTEGER,
+	rc3PdeSelectAction               INTEGER,
+	rc3PdeSelectRowStatus            RowStatus
+	}
+
+rc3PdeSelectProtocol OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS deprecated
+	DESCRIPTION
+		"The IP protocol number."
+	::= { rc3PdeSelectProtocolTableEntry 1 }
+
+rc3PdeSelectPort OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+--	ACCESS read-only
+	STATUS deprecated
+	DESCRIPTION
+		"The TCP/UDP port number."
+	::= { rc3PdeSelectProtocolTableEntry 2 }
+
+rc3PdeSelectAction OBJECT-TYPE
+	SYNTAX INTEGER{
+		block(1),
+		pass(2),
+		operational(3)
+	}
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"This variable determines how the packet should be handled if
+		it matches this selection entry.
+			block - drop the packet
+			pass - pass the packet in the clear
+			operational - use the rc3PdePeerType value in the corresponding
+				rc3PdePerrInfoTable to determine how to handle the packet"
+	::= { rc3PdeSelectProtocolTableEntry 3 }
+
+rc3PdeSelectRowStatus OBJECT-TYPE
+	SYNTAX RowStatus
+	ACCESS read-write
+	STATUS deprecated
+	DESCRIPTION
+		"This object is used to create/delete rows from the Policy Database
+		Entry Select Protocol Table. See the definition for RowStatus for
+		a range	of valid values used. On read status indicates ACTIVE."
+	::= { rc3PdeSelectProtocolTableEntry 4 }
+
+-- Global Object.
+
+rc3PdeCount  OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The count of number of Pde(s) completely configured on
+		the Ravlin unit."
+	::= { rc3PdMisc 1 } 
+
+rc3PdePeerPreference OBJECT-TYPE
+	SYNTAX OCTET STRING
+    ACCESS read-write
+    STATUS deprecated
+    DESCRIPTION
+		"This indicates the searc3h order for the Pde list. The list is
+		ordered in the ascending order; i.e Pde with the lowest preference
+		value has the highest priority."
+	::= { rc3PdMisc 2 } 
+
+rc3PdeNextAvailableIndx OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The next available unique indx for the manager to create a instance
+        of the PDE Peer Info. table entry."
+	::= { rc3PdMisc 3 } 
+
+END
+

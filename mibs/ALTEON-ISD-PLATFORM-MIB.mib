@@ -1,0 +1,706 @@
+ALTEON-ISD-PLATFORM-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    NOTIFICATION-TYPE, MODULE-IDENTITY, OBJECT-IDENTITY, OBJECT-TYPE,
+        Counter32, Gauge32, Integer32, TimeTicks, IpAddress FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, DisplayString, DateAndTime FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+        FROM SNMPv2-CONF
+    platform
+    FROM ALTEON-ROOT-MIB
+    ;
+
+alteonPlatformISDModule MODULE-IDENTITY
+    LAST-UPDATED "0205130000Z"                  -- May 13, 2002
+    ORGANIZATION "Alteon Web Systems Inc."
+    CONTACT-INFO
+    "Contact:  Alteon Support
+    
+          E-mail: support@alteon.com"
+    DESCRIPTION
+    "MIB Module for object and notification definitions for
+    event and alarms common to Alteon iSD products."
+
+    REVISION    "0205130000Z"
+    DESCRIPTION
+    "MIB unification across the various Alteon iSD platforms."
+
+    REVISION    "0102091700Z"
+    DESCRIPTION
+    "The initial revision of MIB module ALTEON-ISD-PLATFORM-MIB."
+    ::= { platform 1 }
+
+--
+-- MIB Structure
+--
+
+alteonISDPlatformMIB OBJECT-IDENTITY
+    STATUS      current
+    DESCRIPTION
+    "Toplevel ID of Alteon Platform ISD MIB."
+    ::= { platform 2 }
+
+isdObjects OBJECT-IDENTITY
+    STATUS      current
+    DESCRIPTION
+    "Object definitions for the Alteon ISD Platform MIB."
+    ::= { alteonISDPlatformMIB 1 }
+
+isdCluster OBJECT-IDENTITY
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects to configure and monitor the iSDs
+        in the system."
+    ::= { isdObjects 1 }
+
+currentAlarm OBJECT-IDENTITY
+    STATUS      current
+    DESCRIPTION
+        "A collection of objects for monitoring of active alarms
+        in the iSD system."
+    ::= { isdObjects 3 }
+
+
+isdMonitor OBJECT-IDENTITY
+    STATUS      current
+    DESCRIPTION
+    "A collection of objects for monitoring the performance
+    and resource utilization of the iSDs in the system."
+    ::= { isdObjects 5 }
+
+--
+-- Textual Conventions
+--
+
+AlarmSeverity ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "The AlarmSeverity defines four severity levels,
+        which provide an indication of how it is perceived that the
+        capability of the managed object has been affected.  Those
+        severity levels which represent service affecting conditions
+        ordered from most severe to least severe are critical,
+        major, minor and warning.  The levels used are a subset of
+        the levels found in X.733, ITU Alarm Reporting Function:
+
+            o The Indeterminate severity level indicates that the
+              severity level cannot be determined.
+
+            o The Critical severity level indicates that a service
+              affecting condition has occurred and an immediate
+              corrective action is required.  Such a severity can be
+              reported, for example, when a managed object becomes
+              totally out of service and its capability must be restored.
+
+            o The Major severity level indicates that a service
+              affecting condition has developed and an urgent corrective
+              action is required.  Such a severity can be reported, for
+              example, when there is a severe degradation in the
+              capability of the managed object and its full capability
+              must be restored.
+
+            o The Warning severity level indicates the detection of a
+              potential or impending service affecting fault, before any
+              significant effects have been felt.  Action should be taken
+              to further diagnose (if necessary) and correct the problem
+              in order to prevent it from becoming a more serious service
+              affecting fault.
+
+        When an alarm is cleared, an alarmCleared event is generated.
+        This event clears the alarm with the currentAlarmFaultId
+        contained in the event.  It is not required that the clearing
+        of previously reported alarms are reported.  Therefore, a managing
+        system cannot assume that the absence of an alarmedCleared event
+        for a fault means that the condition that caused the generation
+        of previous alarms is still present.  Managed object definers
+        shall state if, and under which conditions, the alarmedCleared
+        event is used.
+
+        The clear value of AlarmSeverity is an action which is used when
+        a management station wants to clear an active alarm.  This is not
+        possible on all systems, and thus an agent does not have support
+        write access for this value."
+    REFERENCE
+        "X.733, ITU Alarm Reporting Function"
+    SYNTAX INTEGER 
+           {
+                indeterminate (0),
+                critical (1),
+                major (2),
+                warning (4),
+                clear (5)   -- Written, not read
+           }
+        
+--
+-- Object definitions
+--
+
+-- Cluster group
+
+isdClusterTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF IsdClusterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "Table of iSDs in this iSD cluster."
+    ::= { isdCluster 1 }
+
+isdClusterEntry OBJECT-TYPE
+    SYNTAX      IsdClusterEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    ""
+    INDEX { isdIndex }
+::= { isdClusterTable 1 }
+
+IsdClusterEntry ::= SEQUENCE {
+    isdIndex       Integer32 (1..2147483647),
+    isdIP          IpAddress,
+    isdType        INTEGER,
+    isdOperStatus  INTEGER
+    }
+
+isdIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "A unique index for this iSD."
+    ::= { isdClusterEntry 1 }
+
+isdIP OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The IP address of the iSD box"
+    ::= { isdClusterEntry 2 }
+
+isdType OBJECT-TYPE
+    SYNTAX      INTEGER 
+                {
+                    master (1),
+                    slave (2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+    "Defines if a iSD is a master in the cluster, or a slave.
+    Note that there must be at least one master in the cluster.
+    A master iSD keeps copies of the configuration database and
+    software on its flash disk.  Slave iSDs reads this info from
+    the masters."
+    ::= { isdClusterEntry 3 }
+      
+isdOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER 
+                {
+                    up (1),         -- the iSD is up and running
+                    down (2)        -- the iSD is down
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The current operational status of the iSD.
+
+    'swMismatch' means that the iSD is up, but the software
+        version does not match the rest of the system.  The correct
+        software version must be installed on this iSD to make it
+        enter the 'up' state.
+    
+    'appError' means that the iSD is up, but the applicaion
+    is not functioning, i.e. the iSD does not handle traffic
+    correctly.  Check the application specific MIBs for further
+    diagnostics."
+    ::= { isdClusterEntry 4 }
+
+isdMIPOwner  OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The IP address of the iSD that currently holds the MIP."
+    ::= { isdCluster 2 }
+
+isdCurrentTime OBJECT-TYPE
+    SYNTAX      DateAndTime
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The current time on the cluster."
+    ::= { isdCluster 3 }
+
+isdVersion OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The version of the image on the cluster."
+    ::= { isdCluster 4 }
+
+isdImageTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF IsdImageEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "A table with resource utilization metrics for the running iSDs.  This
+    table extends isdClusterTable."
+    ::= { isdCluster 5 }
+
+isdImageEntry OBJECT-TYPE
+    SYNTAX      IsdImageEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "A set of Resource utilization metrics for the iSDs."
+    INDEX { isdImageIndex }
+::= { isdImageTable 1 }
+
+IsdImageEntry ::= SEQUENCE {
+    isdImageIndex      Integer32 (1..2147483647),
+    isdImageVersion    DisplayString,
+    isdImageName       DisplayString,
+    isdImageStatus     INTEGER
+    }
+
+isdImageIndex OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "A unique index for the images installed on the cluster."
+    ::= { isdImageEntry 1 }
+
+isdImageVersion OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Version of the installed image"
+    ::= { isdImageEntry 2 }
+
+isdImageName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Name of the installed image"
+    ::= { isdImageEntry 3 }
+
+isdImageStatus OBJECT-TYPE
+    SYNTAX      INTEGER 
+                {
+                    permanent (1),
+                    current (2),
+                    old (3),
+                    unpacked (4)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Status of the installed images
+         1 - Image that has been verified to work correctly.
+         2 - Image that is starting up for the first time; it will
+                eventually become permanent.
+         2 - Previously installed image
+         3 - Newly downloaded image"
+    ::= { isdImageEntry 4 }
+
+isdClusterMIP  OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The Management IPaddress of the cluster."
+    ::= { isdCluster 6 }
+
+isdClusterMask  OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Network mask of the cluster."
+    ::= { isdCluster 7 }
+
+isdResourceTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF IsdResourceEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "A table with resource utilization metrics for the running iSDs.  This
+    table extends isdClusterTable."
+    ::= { isdMonitor 1 }
+
+isdResourceEntry OBJECT-TYPE
+    SYNTAX      IsdResourceEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "A set of Resource utilization metrics for the iSDs."
+    INDEX { isdIndex }
+::= { isdResourceTable 1 }
+
+IsdResourceEntry ::= SEQUENCE {
+    isdResourceUptime  TimeTicks,
+    isdResourceCpu     Gauge32 (0..100),
+    isdResourceMemory  Gauge32 (0..100),
+    isdResourceDisk    Gauge32 (0..100)
+    }
+
+isdResourceUptime OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Uptime of the iSD."
+    ::= { isdResourceEntry 1 }
+
+isdResourceCpu OBJECT-TYPE
+    SYNTAX      Gauge32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Resource load in percent."
+    ::= { isdResourceEntry 2 }
+
+isdResourceMemory OBJECT-TYPE
+    SYNTAX      Gauge32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Memory utilization in percent."
+    ::= { isdResourceEntry 3 }
+
+isdResourceDisk OBJECT-TYPE
+    SYNTAX      Gauge32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Disk utilization in percent.  This value is the utilization of the
+       partition with the least percentage of free space."
+    ::= { isdResourceEntry 4 }
+
+-- Trap Definitions updated June 3rd, 2002
+
+isdNotifications OBJECT-IDENTITY
+    STATUS      current
+    DESCRIPTION
+    "Notification definitions for the Alteon ISD Platform MIB."
+    ::= { alteonISDPlatformMIB 3 }
+
+isdNotificationObjects OBJECT-IDENTITY
+    STATUS      current
+    DESCRIPTION
+    "Notification objects for the Alteon ISD Platform MIB."
+    ::= { alteonISDPlatformMIB 4 }
+
+-- Current Alarm group
+
+numberOfCurrentAlarms OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Number of currently active alarms in the system."
+    ::= { currentAlarm 1 }
+
+currentAlarmLastTimeChanged OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The time an entry in the currentAlarmTable was changed.
+        It may be used by a management station as a value to
+        poll.  If the value is changed, the management station
+        knows that the currentAlarmTable has been updated.
+        This will have the value of sysUpTime at the time which
+	alarm table was last updated."
+    ::= { currentAlarm 2 }
+
+currentAlarmTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF CurrentAlarmEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A list of currently active alarms in the system."
+    ::= { currentAlarm 3 }
+
+currentAlarmEntry OBJECT-TYPE
+    SYNTAX      CurrentAlarmEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A set of parameters that describe a currently active
+        alarm."
+    INDEX { currentAlarmIndex }
+    ::= { currentAlarmTable 1 }
+
+CurrentAlarmEntry ::= SEQUENCE {
+    currentAlarmIndex       Integer32 (1..2147483647),
+    currentAlarmSeverity    AlarmSeverity,
+    currentAlarmOid         OBJECT IDENTIFIER,
+    currentAlarmObject      OBJECT IDENTIFIER,
+    currentAlarmCause       DisplayString,
+    currentAlarmTime        DateAndTime
+    }
+
+currentAlarmIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An id that uniquely identifies an alarm. Each active alarm is
+        represented as one an entry in the currentAlarmTable."
+    ::= { currentAlarmEntry 1 }
+
+currentAlarmSeverity OBJECT-TYPE
+    SYNTAX      AlarmSeverity
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The perceived severity of the fault.  A manager can set
+        this value to clear only.  When set to clear, the alarm
+        is removed from this table, and a 'clearAlarm' event is
+        generated."
+    ::= { currentAlarmEntry 2 }
+
+currentAlarmOid OBJECT-TYPE
+    SYNTAX      OBJECT IDENTIFIER
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The SNMP Notification which was sent to represent the alarm."
+    ::= { currentAlarmEntry 3 }
+
+currentAlarmObject OBJECT-TYPE
+    SYNTAX      OBJECT IDENTIFIER
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The alarming object."
+    ::= { currentAlarmEntry 4 }
+
+currentAlarmCause OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The probable cause of the alarm."
+    ::= { currentAlarmEntry 5 }
+
+currentAlarmTime OBJECT-TYPE
+    SYNTAX      DateAndTime
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The time the fault was detected."
+    ::= { currentAlarmEntry 6 }
+
+
+--
+-- Notification definitions
+--
+
+-- Event notifications
+--
+-- All events contain the following object as the first object:
+--   eventTime
+
+
+-- Alarm notifications
+--
+-- All alarms contain the following three objects as the first
+-- objects:
+--   currentAlarmSeverity
+--   currentAlarmTime
+--   currentAlarmCause
+-- Note that the currentAlarmIndex is implicitly sent as the
+-- instance identifier for these objects.
+-- If additional variable bindings are defined, the OID of the
+-- first of these is stored as the currentAlarmObject in the
+-- currentAlarmTable.
+
+isdEvents OBJECT-IDENTITY
+    STATUS           current
+    DESCRIPTION      "This group lists events generated by iSDs in the
+                      cluster."
+    ::= { isdNotifications 1 }
+
+isdAlarms OBJECT-IDENTITY
+    STATUS           current
+    DESCRIPTION      "This group lists alarms generates by iSDs in the cluster.
+                      An alarm is a special form of event which represents a
+                      fault in the system that needs to be reported."
+    ::= { isdNotifications 2 }
+
+isdAlarmCleared NOTIFICATION-TYPE
+    OBJECTS     { 
+                    isdEventTime,
+                    currentAlarmOid 
+                }
+    STATUS      current
+    DESCRIPTION
+        "This event is sent when an alarm has been cleared,
+        either by the system or by an operator.  Note that the
+        currentAlarmIndex is implicitly sent as the instance identifier
+        for currentAlarmOid.  All alarm-specific variables sent in the
+    alarm notification is also sent in this notifications."
+    ::= { isdEvents 1 }
+
+isdTopologyChange NOTIFICATION-TYPE
+    OBJECTS     { 
+                    isdEventTime,
+                    isdEventDescription
+                }
+    STATUS      current
+    DESCRIPTION
+        "This event signals that the topology of the iSD cluster has
+         changed."
+    ::= { isdEvents 2 }
+
+ isdAuthenticationFailure NOTIFICATION-TYPE
+    OBJECTS     { 
+                    isdEventTime
+                }
+    STATUS      current
+    DESCRIPTION
+        "This event signals that an authentication failure has occurred."
+    ::= { isdEvents 4 }
+
+isdMipMigration NOTIFICATION-TYPE
+    OBJECTS     { 
+                    isdEventTime,
+                  isdIP
+                }
+    STATUS      current
+    DESCRIPTION
+        "This event signals that the master IP has migrated to another iSD."
+    ::= { isdEvents 5 }
+
+isdDown NOTIFICATION-TYPE
+    OBJECTS     { 
+                  currentAlarmSeverity,
+                  currentAlarmTime,
+                  currentAlarmCause,
+                  isdIP
+                }
+    STATUS      current
+    DESCRIPTION
+        "This alarm is sent when the iSD goes down."
+    ::= { isdAlarms 1 }
+
+isdUp NOTIFICATION-TYPE
+    OBJECTS     { 
+                  currentAlarmSeverity,
+                  currentAlarmTime,
+                  currentAlarmCause,
+                  isdIP
+                }
+    STATUS      current
+    DESCRIPTION
+        "This alarm is sent when the iSD comes back online."
+    ::= { isdAlarms 2 }
+
+isdSingleMaster NOTIFICATION-TYPE
+    OBJECTS     { currentAlarmSeverity,
+                  currentAlarmTime,
+                  currentAlarmCause
+                }
+    STATUS      current
+    DESCRIPTION
+        "This alarm is sent when there is just a sindle iSD master
+    left in the system.  The fault tolerance level of the system
+    is severly degraded - if the last master fails, the system
+    cannot be reconfigured.
+
+    This alarm is only set if there are more than two masters
+    configured in the system."
+    ::= { isdAlarms 3 }
+
+isdMemoryStateChange NOTIFICATION-TYPE
+    OBJECTS     { currentAlarmSeverity,
+                  currentAlarmTime,
+                  currentAlarmCause,
+                  isdIP,
+                  isdUtilization
+                }
+    STATUS      current
+    DESCRIPTION
+        "This alarm is sent when there is a change in the current 
+         status of the memory.  It is expected that the user will be able
+         to configure this.  The defaults could be that 75% would signal
+         a warning and 90% would be an error.  The user would be able to 
+         specify these values themselves as well as be able to rearm the
+         system."
+    ::= { isdAlarms 4 }
+
+isdCpuStateChange NOTIFICATION-TYPE
+    OBJECTS     { currentAlarmSeverity,
+                  currentAlarmTime,
+                  currentAlarmCause,
+                  isdIP,
+                  isdLoad
+                }
+    STATUS      current
+    DESCRIPTION
+        "This alarm is sent when there is a change in the current 
+         status of the CPU.  It is expected that the user will be able
+         to configure this.  The defaults could be that 75% would signal
+         a warning and 90% would be an error.  The user would be able to 
+         specify these values themselves as well as be able to rearm the
+         system."
+    ::= { isdAlarms 5 }
+
+isdDiskStateChange NOTIFICATION-TYPE
+    OBJECTS     { currentAlarmSeverity,
+                  currentAlarmTime,
+                  currentAlarmCause,
+                  isdIP,
+                  isdUtilization
+                }
+    STATUS      current
+    DESCRIPTION
+        "This alarm is sent when there is a change in the current 
+         status of the Disk.  The partition with the greatest utilization
+         is examined.  It is expected that the user will be able
+         to configure this.  The defaults could be that 75% would signal
+         a warning and 90% would be an error.  The user would be able to 
+         specify these values themselves as well as be able to rearm the
+         system."
+    ::= { isdAlarms 6 }
+
+isdEventTime OBJECT-TYPE
+    SYNTAX      DateAndTime
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+        "This object may be included in a notification definition for
+    an event.  It specifies the time the event was generated."
+    ::= { isdNotificationObjects 1 }
+
+isdEventDescription OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+        "This object may be included in a notification definition for
+    an event.  It specifies extra information."
+    ::= { isdNotificationObjects 2 }
+
+isdUtilization  OBJECT-TYPE
+    SYNTAX           Gauge32 (0..100)
+    MAX-ACCESS       accessible-for-notify
+    STATUS           current
+    DESCRIPTION      "Resource utilization in percent."
+    ::= { isdNotificationObjects 3 }
+
+isdLoad  OBJECT-TYPE
+    SYNTAX           Gauge32 
+    MAX-ACCESS       accessible-for-notify
+    STATUS           current
+    DESCRIPTION      "Resource load.  200 means in essence 2 processes want 
+                      the CPU; this is considered a warning level.  300 means
+                      three processes want the CPU; this is considered a
+                      critical level."
+    ::= { isdNotificationObjects 4 }
+END

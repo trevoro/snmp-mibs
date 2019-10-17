@@ -1,0 +1,500 @@
+--	Quantum Bridge VLAN Management Information Base
+--	Version 1.0.0
+--
+--	Quantum Bridge Corporation
+--	Two Tech Drive
+--	Andover, MA 01845
+--	(978) 983-2617
+--
+--------------------------------------------------------------------------------------
+--  01/07/2001	Initial version	
+--
+
+   QB-VLAN-MGMT-MIB DEFINITIONS ::= BEGIN
+   IMPORTS 
+    MODULE-IDENTITY, OBJECT-TYPE, Gauge32, Integer32, Counter32, TimeTicks, IpAddress,
+    NOTIFICATION-TYPE, Unsigned32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, DisplayString, TruthValue, RowStatus
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    ifIndex
+        FROM IF-MIB
+--  VlanIndex
+--	 FROM Q-BRIDGE-MIB
+    QbAtmAal5EncapsType
+      FROM QB-DWS-MIB	 
+    qbMibs
+       FROM QUANTUMBRIDGE-REG
+    ;
+
+  qbVlanMIB MODULE-IDENTITY
+    LAST-UPDATED "0107022155Z" -- July 2, 2001      
+    ORGANIZATION "Quantum Bridge"
+    CONTACT-INFO
+        "mvaysman@quantumbridge.com"
+    DESCRIPTION
+        "This module defines objects for the management of QB's
+        proprietary VLAN capability. This capability is
+        based on Policing and Thresholding.
+
+        The purpose of the QBVLAN function is
+        to provide provisioning and monitoring of VLANs
+        set up by the administrator."
+    ::= { qbMibs 15 }
+
+    --
+    -- Overview of Quantum Bridge VLAN MIB
+    --
+    --
+    -- The Quantum Bridge System MIB defines the MIB objects for provisioning
+    -- and monitoring VLAN information. 
+    -- This provisioning includes configuration bandwidth parameters
+    -- The monitoring presents VLAN statistics from each of the 
+    -- VLAN.
+
+-- ================================================================
+-- Textual Conventions (datatypes)
+-- ================================================================
+   QbVlanPort  ::= TEXTUAL-CONVENTION
+    STATUS          current
+    DESCRIPTION
+        "VLAN port range"
+    SYNTAX          INTEGER  (1..128)
+
+   VlanIndex ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A value used to index per-VLAN tables: values of 0 and
+        4095 are not permitted; if the value is between 1 and
+        4094 inclusive, it represents an IEEE 802.1Q VLAN-ID with
+        global scope within a given bridged domain (see VlanId
+        textual convention).  If the value is greater than 4095
+        then it represents a VLAN with scope local to the
+        particular agent, i.e. one without a global VLAN-ID
+        assigned to it. Such VLANs are outside the scope of
+        IEEE 802.1Q but it is convenient to be able to manage them
+        in the same way using this MIB."
+    SYNTAX      Unsigned32
+
+-- ================================================================
+-- Top-level organization of the MIB
+-- ================================================================
+
+   qbVlanObjects          OBJECT IDENTIFIER ::= { qbVlanMIB  1 }
+   qbVlanNotifications    OBJECT IDENTIFIER ::= { qbVlanMIB  2 }
+   qbVlanConformance      OBJECT IDENTIFIER ::= { qbVlanMIB  3 }
+
+--
+-- The Interface Configuration Table. This table contains VLAN
+-- configuration parammeters and statistic information 
+-- parameter for QB3000 and QB5000 Ethernet Switching interface.
+--
+
+-- -------------------------------------------------------------
+-- The QBVLAN  Configuration Group
+-- -------------------------------------------------------------
+
+   qbVlanConfGroup  	OBJECT IDENTIFIER ::= { qbVlanObjects  1}
+
+   qbNextFreeVlanIndex OBJECT-TYPE      
+	SYNTAX      VlanIndex
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"This is the lowest unused vlan index for the system.
+		The next available value for qbNextFreeVlanIndex of a local
+		VLAN entry in qbVlanConfTableTable.  This will report
+		values >=4096 if a new Local VLAN may be created or else
+	        the value 0 if this is not possible."
+   	 ::= { qbVlanConfGroup 1 }
+
+   qbVlanNumVlans OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The total number of provisioned VLANs."
+        ::= { qbVlanConfGroup  2 }
+
+    qbVlanConfTableLastUpdate OBJECT-TYPE
+        SYNTAX  TimeTicks
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The value of sysUpTime at the time of the last
+                  creation, deletion or modification of an entry in
+		  the  qbVlanConfTable. 
+		  If the number of entries has been unchanged since the
+		  last re-initialization of the agent,
+		  then this object contains a zero value."
+        ::= { qbVlanConfGroup  3 }
+
+    qbVlanConfTable OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbVlanConfEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This table contains the data pertaining to Vlans. 
+		The table contains configuration information for
+		each VLAN configured into the device.
+		All entries are permanent and will
+		be restored after the device is reset."
+	::= { qbVlanConfGroup  4 }
+
+    qbVlanConfEntry OBJECT-TYPE
+	SYNTAX      QbVlanConfEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"Each row provides data for a single vlan."
+	INDEX       { qbVlanConfIndex }
+	::= { qbVlanConfTable 1 }
+
+   QbVlanConfEntry ::=
+    	SEQUENCE {
+          	qbVlanConfIndex		VlanIndex, -- import from rfc 2674
+		qbVlanConfName		DisplayString,
+		qbVlanConfSlot		INTEGER,
+		qbVlanConfNextPort	QbVlanPort,
+		qbVlanConfRowstatus	RowStatus
+      }
+                        
+    qbVlanConfIndex OBJECT-TYPE      
+	SYNTAX      VlanIndex
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This is the Vlan index for this VLAN.  If the value is between 1 and
+		4094, it represents an IEEE 802.1Q VLAN-ID with
+		global scope within a given bridged domain (see VlanId
+		textual convention).  If the value is greater than 4095
+		then it represents a VLAN with scope local to the
+		particular agent. Note that for Release 3.0 the
+		qbVlanConfIndex value ranges between 1 and 4095."
+   	 ::= { qbVlanConfEntry  1 }
+
+    qbVlanConfName OBJECT-TYPE      
+	SYNTAX      DisplayString(SIZE(1..20))
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the unique user name assigned to this VLAN."
+   	 ::= { qbVlanConfEntry  2 }
+
+    qbVlanConfSlot OBJECT-TYPE      
+	SYNTAX      INTEGER
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This is the slot where this VLAN has been created."
+   	 ::= { qbVlanConfEntry  3 }
+
+    qbVlanConfNextPort OBJECT-TYPE      
+	SYNTAX      QbVlanPort
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"This returns the lowest free VLAN port to be used."
+   	 ::= { qbVlanConfEntry  4 }
+
+    qbVlanConfRowstatus OBJECT-TYPE      
+	SYNTAX      RowStatus
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"The row status column for this Vlan.
+	   	 This OBJECT can be set to:
+
+		createAndGo(4)
+            		destroy(6)
+
+            		The following values may be read:
+            		active(1)
+	
+		Setting this object to createAndGo(4) causes the agent
+		to attempt to create and commit the row based on
+		the contents of the objects in the row.  If all necessary
+		information is present in the row and the values are
+		acceptable to the agent, the agent will change the
+		status to active(1).  If any of the necessary objects
+		are not available, the agent will reject the creation
+		request.	
+
+		Setting this object to destroy(6) will remove the corresponding
+		entry in this table, and disable data traffic."
+   ::= { qbVlanConfEntry  5 }
+
+-- -------------------------------------------------------------
+-- The QBVLAN Port Configuration Group
+-- -------------------------------------------------------------
+
+   qbVlanPortGroup  	OBJECT IDENTIFIER ::= { qbVlanObjects  2}
+
+    qbVlanPortConfTableLastUpdate OBJECT-TYPE
+        SYNTAX  TimeTicks
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The value of sysUpTime at the time of the last
+                  creation, deletion or modification of an entry in
+		  the  qbVlanConfTable. 
+		  If the number of entries has been unchanged since the
+		  last re-initialization of the agent,
+		  then this object contains a zero value."
+        ::= { qbVlanPortGroup   1 }
+
+    qbVlanPortConfTable OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbVlanPortConfEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This table contains the data pertaining to Vlan ports 
+		and their connections.  The table contains per port control and status
+		information for VLAN configuration in the device."
+	::= { qbVlanPortGroup   2 }
+
+    qbVlanPortConfEntry OBJECT-TYPE
+	SYNTAX      QbVlanPortConfEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"Each row provides data for a single vlan port."
+	INDEX       { qbVlanConfIndex, qbVlanPortConfPort}
+	::= { qbVlanPortConfTable 1 }
+
+   QbVlanPortConfEntry ::=
+    	SEQUENCE {
+          	qbVlanPortConfPort  			QbVlanPort,
+		qbVlanPortConfPolicing			INTEGER,
+		qbVlanPortConfEncapsulation		QbAtmAal5EncapsType,
+		qbVlanPortConfAdmitFrameTypes 		INTEGER,
+		qbVlanPortConfTagging 			INTEGER
+      }
+                        
+    qbVlanPortConfPort  OBJECT-TYPE      
+	SYNTAX      QbVlanPort
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This is the Vlan port for this connection end-point."
+   	 ::= { qbVlanPortConfEntry  1 }
+
+   qbVlanPortConfPolicing  OBJECT-TYPE
+	SYNTAX      INTEGER {
+		     enable(1),
+		     disable(2)
+		    }
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+		"The object is used to enable or disable policing
+		policy on a given port."
+	DEFVAL      { disable }	
+	::= { qbVlanPortConfEntry  2 }
+
+    qbVlanPortConfEncapsulation OBJECT-TYPE
+	SYNTAX      QbAtmAal5EncapsType
+       	MAX-ACCESS  read-write
+        STATUS      current
+       	DESCRIPTION
+		"The type of data encapsulation used over
+		the AAL5 SSCS layer. The definitions reference
+		RFC 1483 Multiprotocol Encapsulation
+		over ATM AAL5 and to the ATM Forum
+		LAN Emulation specification."
+	DEFVAL  { qbRoutedEncapsNoHdrNoFcs }
+   ::= { qbVlanPortConfEntry  3}
+
+    qbVlanPortConfAdmitFrameTypes OBJECT-TYPE
+        SYNTAX     INTEGER {
+		        admitAll(1), 
+		        admitOnlyVlanTagged(2)
+		    }
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+		"When this is admitOnlyVlanTagged the device will
+		discard any untagged frames or priority-tagged frames
+		received on this port. When admitAll, untagged frames
+		or priority-tagged frames received will be accepted and
+		tagged with the VLAN id. This applies to the traffic from 
+		the GigE card to the backplane only."
+	DEFVAL      { admitAll }
+    ::= { qbVlanPortConfEntry  4}
+
+    qbVlanPortConfTagging OBJECT-TYPE
+         	SYNTAX     INTEGER {
+		        enable(1), 
+		        dissable(2)
+		       }
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+		"When this value is set to disable, the VLAN tags
+		will be removed from the outgoing packets. This applies
+		to the traffic from the GigE card to the backplane only."
+	DEFVAL      { enable }
+   ::= { qbVlanPortConfEntry  5 }
+
+    qbVlanPortStatsTable OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbVlanPortStatsEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"This table contains the statistics pertaining to
+		connection end-points on a VLAN port."
+	::= { qbVlanPortGroup 3 }
+
+    qbVlanPortStatsEntry OBJECT-TYPE
+	SYNTAX      QbVlanPortStatsEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		"Each row provides stats data for a single VLAN port."
+	AUGMENTS       { qbVlanPortConfEntry}
+	::= { qbVlanPortStatsTable 1 }
+
+   QbVlanPortStatsEntry ::=
+    	SEQUENCE {
+	qbVlanPortStatsAal5CRCErrors		Counter32,
+	qbVlanPortStatsAal5SarTimeouts 		Counter32,
+	qbVlanPortStatsAal5OversizeSDUs 	Counter32,
+	qbVlanPortStatsAal5UpstreamPkts 	Counter32,
+	qbVlanPortStatsAal5DownstreamPkts 	Counter32,
+	qbVlanPortStatsAal5UpstreamOctets 	Counter32,
+	qbVlanPortStatsAal5DownStreamOctets 	Counter32,
+	qbVlanPortStatsUpstreamPktDiscards 	Counter32,
+	qbVlanPortStatsDownsteamPktDiscards 	Counter32
+      }
+                        
+    qbVlanPortStatsAal5CRCErrors OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"A count of the number of AAL5 CRC errors."
+	::= {  qbVlanPortStatsEntry  1}
+
+    qbVlanPortStatsAal5SarTimeouts OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"A count of the number of AAL5 SAR timeouts."
+	::= { qbVlanPortStatsEntry  2}
+
+    qbVlanPortStatsAal5OversizeSDUs OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"A count of the number of AAL5 oversized SDUs."
+	::= {  qbVlanPortStatsEntry  3}
+
+   qbVlanPortStatsAal5UpstreamPkts OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"A count of the number of packets passed in the upstream
+		direction. (i.e. from GigE card to backplane)"
+	::= {  qbVlanPortStatsEntry  4}
+
+   qbVlanPortStatsAal5DownstreamPkts OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"A count of the number of packets passed in the downstream
+		direction. (i.e. from the backplane to GigE card on this port) "
+	::= {  qbVlanPortStatsEntry  5}
+
+   qbVlanPortStatsAal5UpstreamOctets OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		" A count of the number of octets passed in the upstream
+direction. (i.e. from GigE card to backplane)"
+::= {  qbVlanPortStatsEntry  6}
+
+   qbVlanPortStatsAal5DownStreamOctets OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		" A count of the number of octets passed in the downstream
+		direction. (i.e. from the backplane to GigE card on this port) "
+	::= {   qbVlanPortStatsEntry  7}
+
+   qbVlanPortStatsUpstreamPktDiscards OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		" A count of the number of packets discarded in the upstream
+		direction. (i.e. from GigE card to backplane)"
+	::= {  qbVlanPortStatsEntry  8}
+
+   qbVlanPortStatsDownsteamPktDiscards OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		" A count of the number of packets discarded in the downstream
+		direction. (i.e. from the backplane to GigE card on this port) "
+	::= {  qbVlanPortStatsEntry  9}
+
+-- *****************************************************************************
+-- qbvlan Notifications - defines a group of traps for use by this MIB.
+--
+-- *****************************************************************************
+
+    qbVlanNotificationPrefix OBJECT IDENTIFIER ::= { qbVlanNotifications 0 }
+
+    -- At this point there are not notifications 
+    --	
+    --
+    -- Compliance Statements
+    --
+
+    qbVlanCompliances OBJECT IDENTIFIER ::= { qbVlanConformance 1 }
+    qbVlanGroups      OBJECT IDENTIFIER ::= { qbVlanConformance 2 }
+
+   qbVlanCompliance MODULE-COMPLIANCE
+	STATUS      current
+	DESCRIPTION
+		"The compliance statement for all agents that support this
+		MIB. A compliant agent implements all objects defined in this
+		MIB."
+	MODULE  -- this module
+	MANDATORY-GROUPS {
+        qbVlanClassGroup
+    }
+    ::= { qbVlanCompliances 1 }
+
+--
+-- Object Groups
+--
+
+  qbVlanGroupInfo OBJECT-GROUP
+    OBJECTS {
+	qbVlanConfName,
+	qbVlanConfSlot,
+	qbVlanConfNextPort,
+	qbVlanConfRowstatus,
+	qbVlanPortConfPolicing,
+	qbVlanPortConfEncapsulation,
+	qbVlanPortConfAdmitFrameTypes,
+	qbVlanPortConfTagging
+	}
+    STATUS      current
+    DESCRIPTION
+        "The set of all accessible objects in this MIB."
+    ::= { qbVlanGroups 1 }
+
+END
+
+

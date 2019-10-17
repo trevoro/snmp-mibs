@@ -1,0 +1,2555 @@
+--	Quantum Bridge ATM Management Information Base
+--	Version 1.0.0
+--	October 15, 2000
+--
+--	Quantum Bridge Corporation
+--	One High Street
+--	North Andover, MA 01845
+--	(978) 688-9100
+--
+----------------------------------------------------------------------------------------   
+--						
+-- 07/10/2001 - dqin				added qbAtmDefaultPCBE
+-- 07/09/2001 - bfardy		modify last changes to adhere to standard MIB
+-- 06/17/2001 - bfardy 		added support for hierarchical pnni design (anni)
+--
+-- 05/24/2001 - bfardy 		added in-band mgmt table, deprecated some duplicate
+--							objects in vcl table.
+--
+-- 03/28/2001  - mvaysman  added qbAtmInterfaceStatTable.
+--			       Added 
+--			       qbAtmVplF4F5TxStatus,qbAtmVplF4F5TxLastChange,
+--			       qbAtmVplF4F5RxStatus,
+--			       qbAtmVplF4F5RxLastChange to
+--			       qbAtmVplTable and qbAtmVclTable
+--
+--  03/01/2001 - bfardy 	created qbAtmPnniNbrPeerTable, based on (the very large)
+--							atm forum pnni 0055 table.
+--  01/02/2001 - mvaysman	changed default in qbAtmPnniIfTable
+-- 
+--  12/13/2000 - mvaysman	corrected comments
+-- 
+--  12/07/200  - mvaysman	 added qbAtmPnniRouteAddrProto object
+--
+--  08/10/200  - mvaysman        added qbAtmInterfaceConfTable and qbAtmTrafficDescrParamDefault
+--				
+--  07/06/2000 - mvaysman    	Original version
+--
+----------------------------------------------------------------------------------------
+--
+
+	QB-ATM-MIB DEFINITIONS ::= BEGIN
+
+	IMPORTS 
+	OBJECT-IDENTITY, MODULE-IDENTITY, OBJECT-TYPE, Counter32, IpAddress, Integer32
+		 FROM SNMPv2-SMI 
+	atmTrafficDescrParamEntry, atmVcCrossConnectEntry,
+	atmVpCrossConnectEntry, atmInterfaceConfEntry,
+	atmVclEntry, atmVplEntry
+		FROM ATM-MIB 
+	AtmAddr, AtmConnKind, AtmConnCastType,
+        AtmServiceCategory, AtmTrafficDescrParamIndex,
+        AtmVpIdentifier, AtmVcIdentifier,
+        AtmVorXAdminStatus, AtmVorXLastChange,
+        AtmVorXOperStatus, atmNoClpNoScr
+            FROM ATM-TC-MIB
+	TEXTUAL-CONVENTION,  DisplayString, RowStatus, TruthValue
+        	FROM SNMPv2-TC
+    InterfaceIndex, InterfaceIndexOrZero, ifIndex
+		FROM IF-MIB
+	MODULE-COMPLIANCE, OBJECT-GROUP
+		FROM SNMPv2-CONF
+	TimeStamp	
+		FROM QBSYS-SYSTEM-MIB
+	qbMibs
+		FROM QUANTUMBRIDGE-REG
+	QbEnableStatus,QbPvcConnKind
+		FROM QB-DWS-MIB
+	;    
+
+    qbAtmMIB MODULE-IDENTITY
+	    LAST-UPDATED "0101022155Z" -- January 2, 2001
+	    ORGANIZATION "Quantum Bridge Inc."
+	    CONTACT-INFO
+		"mvaysman@quantumbridge.com"
+	DESCRIPTION
+		"This module defines additional objects for management of ATM 
+		links in Quantum Bridge devices, above and beyond what is defined in the
+		standard ATM mib, and proposed drafts."
+    ::= { qbMibs 7 }
+
+-- Top-level organization of the MIB
+
+   qbAtmObjects          OBJECT IDENTIFIER ::= { qbAtmMIB 1 }
+   qbAtmConformance      OBJECT IDENTIFIER ::= { qbAtmMIB 2 }
+   qbAtmBaseGroup	 OBJECT IDENTIFIER ::= { qbAtmMIB 3 }
+
+-- a truth value
+   Boolean ::=   INTEGER { true(1), false(2) }
+
+ QbAtmPnniWeight ::= TEXTUAL-CONVENTION
+        STATUS        current
+        DESCRIPTION
+            "The ATM administrative weight of the ATM interface used
+	    by the PNNI Routing Control"
+        SYNTAX        INTEGER (100..1000000)   
+        
+ QbAtmPnniNodeId ::= TEXTUAL-CONVENTION
+        STATUS        current
+        DESCRIPTION
+            "Global PNNI Node Id used in the QB PNNI system."
+        SYNTAX        OCTET STRING (SIZE (22))
+      
+
+  QbAtmSigSpec ::= TEXTUAL-CONVENTION
+        STATUS        current
+        DESCRIPTION
+            "The ATM interface signalling spec."
+        SYNTAX        INTEGER { 	
+		        other(1),
+			uni30(2),
+			uni31(3),
+			uni40(4),
+			pnni(5),
+			iisp30(6),
+			iisp31(7),
+			aini(8)
+			}
+
+  QbAtmPnniHelloState ::= TEXTUAL-CONVENTION    
+  		STATUS	current
+		DESCRIPTION
+            "The state of an instance of the PNNI Hello State machine."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.6.2.1.2"
+        SYNTAX        INTEGER {
+                                notApplicable(1),
+                                down(2),
+                                attempt(3),
+                                oneWayInside(4),
+                                twoWayInside(5),
+                                oneWayOutside(6),
+                                twoWayOutside(7),
+                                commonOutside(8)
+                                }
+
+    QbAtmPnniAtmAddr ::= TEXTUAL-CONVENTION
+        STATUS        current
+        DESCRIPTION
+            "The ATM address used by the network entity.  The address
+             types are: no address (0 octets), and NSAP (20 octets)."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.2"
+        SYNTAX        OCTET STRING (SIZE(0|20))
+
+
+    QbAtmPnniNodeIndex ::= TEXTUAL-CONVENTION
+        STATUS        current
+        DESCRIPTION
+            "An index that identifies a logical PNNI entity within the
+             managed system.
+
+             The distinguished value zero indicates the null instance or
+             no instance in the qbAtmPnniNodeCfgParentNodeIndex.  In all
+             other cases, the distinguished value zero indicates a
+             logical entity within the switching system that manages
+             routes only over non-PNNI interfaces.
+
+             By default, only the node identified by node index one is
+             created, and all PNNI interfaces are associated with that
+             node."
+        SYNTAX        Integer32 (0..65535)
+
+    QbAtmPnniPeerGroupId ::= TEXTUAL-CONVENTION
+        STATUS        current
+        DESCRIPTION
+            "A PNNI peer group ID."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.3.2"
+        SYNTAX        OCTET STRING (SIZE(14))
+ 
+
+  QbF4F5LoopbackStatus 	::= TEXTUAL-CONVENTION
+		STATUS          current
+   		DESCRIPTION	"in-progress(1) or success(2) or
+				timeout(3)." 
+    		SYNTAX          INTEGER {
+					in-progress(1),
+					success(2),
+					timeout(3)	
+					}
+
+ QbF4F5Status 	::= TEXTUAL-CONVENTION
+		STATUS          current
+   		DESCRIPTION	
+   		   "Definition of F4/F5 OperStatus"	
+    		SYNTAX          BITS {
+    		                      cc-seg(0),
+    		                      cc-ete(1),
+    		                      rdi-seg(2),
+    		                      rdi-ete(3),
+    		                      ais-seg(4),
+    		                      ais-ete(5),
+					good(6),
+					unavailable(7)
+					}			                					
+
+-- **************************************************************
+-- General QB ATM System wide group
+-- **************************************************************
+
+   qbAtmF4F5LLID OBJECT-TYPE
+	SYNTAX      OCTET STRING (SIZE(1..16))
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+		"This object stores Loopback Location ID (LLID)."
+    ::= {  qbAtmBaseGroup  1 }
+
+  qbAtmDefaultPCBE OBJECT-TYPE
+	SYNTAX      INTEGER (10..70)
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+		"This object stores the default atm cell tax to be used by the system."
+    ::= {  qbAtmBaseGroup  2 }
+    
+-- **************************************************************
+-- Extensions to the ATM Interface Configuration Parameters Group
+-- **************************************************************
+  
+    qbAtmInterfaceConfTable       OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbAtmInterfaceConfEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "The Quantum Bridge ATM Interface Configuration Table contains 
+             extensions to the ATM Interface Configuration Table,
+             one entry per ATM interface."
+    ::= {  qbAtmObjects 1  }
+ 
+   qbAtmInterfaceConfEntry        OBJECT-TYPE
+	SYNTAX      QbAtmInterfaceConfEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "An entry in the Quantum ATM Interface Configuration
+	    Table. Every ATM interface contains a corresponding
+	    entry in the table."
+    AUGMENTS    { atmInterfaceConfEntry }
+    ::= { qbAtmInterfaceConfTable 1 }
+
+   QbAtmInterfaceConfEntry ::=
+	SEQUENCE {
+		qbAtmInterfaceConfPolicingStatus INTEGER,
+		qbAtmInterfaceConfMaxPvcVci	 INTEGER,
+		qbAtmInterfaceConfMinPvcVci	 INTEGER,
+		qbAtmInterfaceConfMaxPvcVpi	 INTEGER,
+		qbAtmInterfaceConfMinPvcVpi	 INTEGER,
+		qbAtmInterfaceConfMaxPvpVpi	 INTEGER,
+		qbAtmInterfaceConfMinPvpVpi	 INTEGER
+    }
+
+    qbAtmInterfaceConfPolicingStatus OBJECT-TYPE
+        SYNTAX        INTEGER {
+		      enable(1),
+		      disable(2)
+	}
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "If this object is set to 'enable' the policing is enabled on this
+	    interface. If the object set to 'disable,' the policing is
+	    disabled. Note: policing can be set on the S622 and 155
+	    cards  only."
+	DEFVAL  { disable }
+        ::= { qbAtmInterfaceConfEntry  1 }
+
+   qbAtmInterfaceConfMaxPvcVpi OBJECT-TYPE
+        SYNTAX        INTEGER 
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "This object indicates the maximum value of VPI that can be
+	    used to create a VC on a given ATM native interface."
+        ::= { qbAtmInterfaceConfEntry  2 }
+
+   qbAtmInterfaceConfMinPvcVpi OBJECT-TYPE
+        SYNTAX        INTEGER 
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "This object indicates the minimum value of VPI that can be
+	    used to create a VC on a given ATM native interface."
+        ::= { qbAtmInterfaceConfEntry  3 }
+
+ qbAtmInterfaceConfMaxPvcVci OBJECT-TYPE
+        SYNTAX        INTEGER 
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "This object indicates the maximum value of VCI that can be
+	    used to create a VC on a given ATM native interface."
+        ::= { qbAtmInterfaceConfEntry  4 }
+
+  qbAtmInterfaceConfMinPvcVci OBJECT-TYPE
+        SYNTAX        INTEGER 
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "This object indicates the minimum value of VCI that can be
+	    used to create a VC on a given ATM native interface."
+        ::= { qbAtmInterfaceConfEntry  5 }
+
+ qbAtmInterfaceConfMaxPvpVpi OBJECT-TYPE
+        SYNTAX        INTEGER 
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "This object indicates the maximum value of VPI that can be
+	    used to create a VP on a given ATM native interface."
+        ::= { qbAtmInterfaceConfEntry  6 }
+
+  qbAtmInterfaceConfMinPvpVpi OBJECT-TYPE
+        SYNTAX        INTEGER 
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "This object indicates the minimum value of VPI that can be
+	    used to create a VP on a given ATM native interface."
+        ::= { qbAtmInterfaceConfEntry  7 }
+ 
+-- **************************************************************
+-- Extensions to the ATM Traffic Descriptor Parameter Table
+-- **************************************************************
+
+    qbAtmTrafficDescrParamTable      OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbAtmTrafficDescrParamEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "The Quantum Bridge ATM Traffic Descriptor Table contains 
+             extensions to the ATM Traffic Descriptor Table."
+    ::= {  qbAtmObjects 2 }
+ 
+    qbAtmTrafficDescrParamEntry   OBJECT-TYPE
+	SYNTAX      QbAtmTrafficDescrParamEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "An entry in the Quantum Bridge ATM Traffic Descriptor Table."
+	AUGMENTS    { atmTrafficDescrParamEntry }
+    ::= { qbAtmTrafficDescrParamTable  1 }
+
+     QbAtmTrafficDescrParamEntry ::=
+	SEQUENCE {
+		 qbAtmTrafficDescrParamName		DisplayString,
+		 qbAtmTrafficDescrParamDefault		Boolean
+	}
+
+    qbAtmTrafficDescrParamName OBJECT-TYPE
+	SYNTAX      DisplayString (SIZE (0..20))
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"A textual description of the traffic descriptor."
+	DEFVAL  { "" }
+    ::= { qbAtmTrafficDescrParamEntry 1 }
+
+   qbAtmTrafficDescrParamDefault OBJECT-TYPE
+	SYNTAX      Boolean
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"The object indicates whether or not this is a default 
+		traffic descriptor.
+		Traffic descriptor with indexes from 1 to 20
+		are default traffic descriptors and cannot be 
+		deleted."
+	DEFVAL  { false }
+    ::= { qbAtmTrafficDescrParamEntry 2 }
+    
+-- ****************************************************************
+-- Extension to the ATM VCL Table 
+-- ****************************************************************
+
+    qbAtmVclTable        OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbAtmVclEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		    "The Quantum Bridge Table contains an extension to
+		    the atmVclConnectTable,		
+		    An entry in this table models VCLs."
+    ::= {  qbAtmObjects 3 }
+ 
+    qbAtmVclEntry   OBJECT-TYPE
+	SYNTAX      QbAtmVclEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "An entry in the QB ATM atmVclConnectTable."
+	AUGMENTS    {  atmVclEntry }
+    ::= { qbAtmVclTable  1 }
+
+   QbAtmVclEntry  ::=
+	SEQUENCE {
+	qbAtmVclLoopback		QbEnableStatus,
+	qbAtmVclF4F5LoopbackInsert	OCTET STRING,
+	qbAtmVclF4F5LoopbackStatus	QbF4F5LoopbackStatus,
+	qbAtmVclF4F5LoopbackTimestamp	TimeStamp,
+	qbAtmVclMgmtIpAddr		IpAddress,
+	qbAtmVclMgmtIpMask		IpAddress,
+	qbAtmVclMgmtNeighborIP		IpAddress,
+	qbAtmVclConnKind		QbPvcConnKind,	 
+	qbAtmVclF4F5TxStatus		QbF4F5Status,
+	qbAtmVclF4F5TxLastChange	TimeStamp,
+	qbAtmVclF4F5RxStatus		QbF4F5Status,
+	qbAtmVclF4F5RxLastChange	TimeStamp        
+    }
+
+   qbAtmVclLoopback OBJECT-TYPE
+	SYNTAX      QbEnableStatus
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+		"Enable loopback on this ATM VCL"
+	DEFVAL  { disable }
+    ::= {  qbAtmVclEntry  1 }
+
+   qbAtmVclF4F5LoopbackInsert	OBJECT-TYPE
+	SYNTAX      OCTET STRING (SIZE(16))
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+		"This is a loopback Insert object for LLID.  
+		 Start loopback Insert by setting this to an LLID value."
+    ::= {  qbAtmVclEntry  2 }
+
+    qbAtmVclF4F5LoopbackStatus	OBJECT-TYPE
+	SYNTAX	QbF4F5LoopbackStatus
+	MAX-ACCESS	read-only
+	STATUS	current
+	DESCRIPTION
+		"Status of loopback Insert command: in-progress, success, timeout."
+	::= { qbAtmVclEntry 3 }
+
+    qbAtmVclF4F5LoopbackTimestamp	OBJECT-TYPE
+	SYNTAX	TimeStamp
+	MAX-ACCESS	read-only
+	STATUS	current
+	DESCRIPTION
+		"Value of sysUptime when last Insert completed."
+	::= { qbAtmVclEntry 4 }
+
+   qbAtmVclMgmtIpAddr OBJECT-TYPE
+        SYNTAX  IpAddress
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+            "Active IP Address for in-band Management SNMP of this chassis."
+    ::= { qbAtmVclEntry 5 }
+
+    qbAtmVclMgmtIpMask OBJECT-TYPE
+        SYNTAX  IpAddress
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+            "This is the IP network mask associated with the in-band
+	    Management interface." 
+    ::= { qbAtmVclEntry 6 }  
+
+   qbAtmVclMgmtNeighborIP OBJECT-TYPE
+        SYNTAX  IpAddress
+        MAX-ACCESS  read-write
+        STATUS  current
+        DESCRIPTION
+                "This is the neighbor IP address associated with the in-band 
+                  Management interface."
+    ::= { qbAtmVclEntry 7 }
+
+  qbAtmVclConnKind   OBJECT-TYPE
+    SYNTAX        QbPvcConnKind 
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The VCL connection type."
+    ::= { qbAtmVclEntry 8 }
+
+ qbAtmVclF4F5TxStatus   OBJECT-TYPE
+    SYNTAX        QbF4F5Status 
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The transmitted OAM status for the PVC."
+    ::= { qbAtmVclEntry 9 }
+
+ qbAtmVclF4F5TxLastChange   OBJECT-TYPE
+    SYNTAX        TimeStamp 
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The value of sysUPtime when qbAtmVclF4F5TxStatus last changed."
+    ::= { qbAtmVclEntry 10 }
+
+ qbAtmVclF4F5RxStatus   OBJECT-TYPE
+    SYNTAX        QbF4F5Status 
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The received OAM status of the PVC."
+    ::= { qbAtmVclEntry 11 }
+
+ qbAtmVclF4F5RxLastChange   OBJECT-TYPE
+    SYNTAX        TimeStamp  
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The value of sysUPtime when qbAtmVclF4F5TxStatus last changed."
+    ::= { qbAtmVclEntry 12 }
+
+
+-- ****************************************************************
+-- Extension to the ATM VPL Table 
+-- ****************************************************************
+
+    qbAtmVplTable        OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbAtmVplEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		    "The Quantum Bridge Table contains an extension to
+		    the atmVclConnectTable,		
+		    An entry in this table models VPLs."
+    ::= {  qbAtmObjects 4 }
+ 
+    qbAtmVplEntry   OBJECT-TYPE
+	SYNTAX      QbAtmVplEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "An entry in the QB ATM qbAtmVpTable."
+	AUGMENTS    {  atmVplEntry }
+    ::= { qbAtmVplTable  1 }
+
+   QbAtmVplEntry  ::=
+	SEQUENCE {
+	qbAtmVplLoopback		QbEnableStatus,
+	qbAtmVplF4F5LoopbackInsert	OCTET STRING,
+	qbAtmVplF4F5LoopbackStatus	QbF4F5LoopbackStatus,
+	qbAtmVplF4F5LoopbackTimestamp	TimeStamp,
+	qbAtmVplF4F5TxStatus		QbF4F5Status,
+	qbAtmVplF4F5TxLastChange	TimeStamp,
+	qbAtmVplF4F5RxStatus		QbF4F5Status,
+	qbAtmVplF4F5RxLastChange	TimeStamp    
+    }
+
+   qbAtmVplLoopback OBJECT-TYPE
+	SYNTAX      QbEnableStatus
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+ 		"Enable loopback on this ATM VPL"
+	DEFVAL  { disable }
+    ::= {  qbAtmVplEntry  1 }
+
+   qbAtmVplF4F5LoopbackInsert	OBJECT-TYPE
+	SYNTAX      OCTET STRING (SIZE(16))
+	MAX-ACCESS  read-write
+	STATUS      current
+	DESCRIPTION
+		"This is a loopback Insert object for LLID.  
+		 Start loopback Insert by setting this to an LLID value."
+    ::= {  qbAtmVplEntry  2 }
+
+    qbAtmVplF4F5LoopbackStatus	OBJECT-TYPE
+	SYNTAX	QbF4F5LoopbackStatus
+	MAX-ACCESS	read-only
+	STATUS	current
+	DESCRIPTION
+		"Status of loopback Insert command: in-progress, success, timeout."
+	::= { qbAtmVplEntry 3 }
+
+    qbAtmVplF4F5LoopbackTimestamp	OBJECT-TYPE
+	SYNTAX	TimeStamp
+	MAX-ACCESS	read-only
+	STATUS	current
+	DESCRIPTION
+		"Value of sysUptime when last Insert completed."
+	::= { qbAtmVplEntry 4 }
+
+ qbAtmVplF4F5TxStatus   OBJECT-TYPE
+    SYNTAX        QbF4F5Status 
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The transmitted OAM status for the PVP."
+    ::= { qbAtmVplEntry 5 }
+
+ qbAtmVplF4F5TxLastChange   OBJECT-TYPE
+    SYNTAX        TimeStamp 
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The value of sysUPtime when qbAtmVclF4F5TxStatus last changed."
+    ::= { qbAtmVplEntry 6 }
+
+ qbAtmVplF4F5RxStatus   OBJECT-TYPE
+    SYNTAX        QbF4F5Status 
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The received OAM status of the PVP."
+    ::= { qbAtmVplEntry 7 }
+
+ qbAtmVplF4F5RxLastChange   OBJECT-TYPE
+    SYNTAX        TimeStamp  
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+	 "The value of sysUPtime when qbAtmVclF4F5TxStatus last changed."
+    ::= { qbAtmVplEntry 8 }
+
+-- ****************************************************************
+-- Extension to the ATM VC Cross Connect Table 
+-- ****************************************************************
+
+    qbAtmVcCrossConnectTable        OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbAtmVcCrossConnectEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		    "The Quantum Bridge Table contains an extension to
+		    the atmVcCrossConnectTable,		
+		    An entry in this table models two cross-connected VCLs."
+    ::= {  qbAtmObjects 5 }
+ 
+    qbAtmVcCrossConnectEntry        OBJECT-TYPE
+	SYNTAX      QbAtmVcCrossConnectEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "An entry in the QB ATM atmVcCrossConnectTable."
+	AUGMENTS    {  atmVcCrossConnectEntry }
+    ::= { qbAtmVcCrossConnectTable  1 }
+
+   QbAtmVcCrossConnectEntry  ::=
+	SEQUENCE {
+	qbAtmVcCrossConnectName			DisplayString,
+	qbAtmVcCrossConnectRxTrafficDescrIndex	AtmTrafficDescrParamIndex,
+	qbAtmVcCrossConnectTxTrafficDescrIndex	AtmTrafficDescrParamIndex
+    }
+
+   qbAtmVcCrossConnectName OBJECT-TYPE
+	SYNTAX      DisplayString (SIZE (0..20))
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"A textual description for the cross connect."
+	DEFVAL  { "" }
+    ::= { qbAtmVcCrossConnectEntry 1 }
+
+   qbAtmVcCrossConnectRxTrafficDescrIndex  OBJECT-TYPE
+          SYNTAX         AtmTrafficDescrParamIndex
+          MAX-ACCESS     read-create
+          STATUS         current
+          DESCRIPTION
+           "The value of this object identifies the row
+            in the ATM Traffic Descriptor Table which
+            applies to the receive direction of this VCLs cross-connect."
+          DEFVAL { 0 }
+           ::= { qbAtmVcCrossConnectEntry 2}
+
+   qbAtmVcCrossConnectTxTrafficDescrIndex  OBJECT-TYPE
+          SYNTAX         AtmTrafficDescrParamIndex
+          MAX-ACCESS     read-create
+          STATUS         current
+          DESCRIPTION
+           "The value of this object identifies the row
+            of the ATM Traffic Descriptor Table which applies
+            to the transmit direction of this VCLs cross-connect"
+          DEFVAL { 0 }
+           ::= { qbAtmVcCrossConnectEntry 3 }
+  
+--
+--	Augments atmVpCrossConnectTable
+--
+    qbAtmVpCrossConnectTable        OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbAtmVpCrossConnectEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+		    "The Quantum Bridge Table contains an extension to
+		    the atmVpCrossConnectTable,		
+		    An entry in this table models two cross-connected VPLs."
+    ::= {  qbAtmObjects 6 }
+ 
+    qbAtmVpCrossConnectEntry        OBJECT-TYPE
+	SYNTAX      QbAtmVpCrossConnectEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "An entry in the QB ATM atmVpCrossConnectTable."
+	AUGMENTS    {  atmVpCrossConnectEntry }
+    ::= { qbAtmVpCrossConnectTable  1 }
+
+   QbAtmVpCrossConnectEntry  ::=
+	SEQUENCE {
+	qbAtmVpCrossConnectName			DisplayString,
+	qbAtmVpCrossConnectRxTrafficDescrIndex	AtmTrafficDescrParamIndex,
+	qbAtmVpCrossConnectTxTrafficDescrIndex	AtmTrafficDescrParamIndex
+    }
+
+   qbAtmVpCrossConnectName OBJECT-TYPE
+	SYNTAX      DisplayString (SIZE (0..20))
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"A textual description for the cross connect."
+	DEFVAL  { "" }
+    ::= { qbAtmVpCrossConnectEntry 1 }
+
+   qbAtmVpCrossConnectRxTrafficDescrIndex  OBJECT-TYPE
+          SYNTAX         AtmTrafficDescrParamIndex
+          MAX-ACCESS     read-create
+          STATUS         current
+          DESCRIPTION
+           "The value of this object identifies the row
+            in the ATM Traffic Descriptor Table which
+            applies to the receive direction of this VPLs cross-connect."
+          DEFVAL { 0 }
+           ::= { qbAtmVpCrossConnectEntry 2}
+
+   qbAtmVpCrossConnectTxTrafficDescrIndex  OBJECT-TYPE
+          SYNTAX         AtmTrafficDescrParamIndex
+          MAX-ACCESS     read-create
+          STATUS         current
+          DESCRIPTION
+           "The value of this object identifies the row
+            of the ATM Traffic Descriptor Table which applies
+            to the transmit direction of this VPLs cross-connect"
+          DEFVAL { 0 }
+           ::= { qbAtmVpCrossConnectEntry 3 }
+
+   --
+   -- Signalling specific group information 
+   --
+
+   qbAtmSigGroup OBJECT IDENTIFIER ::= { qbAtmObjects 7 }
+
+   qbAtmPnniNodeTable  OBJECT-TYPE
+      SYNTAX        SEQUENCE OF QbAtmPnniNodeEntry
+      MAX-ACCESS    not-accessible
+      STATUS        current
+      DESCRIPTION
+            "The QbAtmpnniNodeTable contains attributes that affect the
+             operation of a PNNI logical node.
+             There is a single row in this table for each PNNI peer
+             group that the managed system is expected or eligible
+             to become a member of."
+        ::= { qbAtmSigGroup 1 }
+
+   qbAtmPnniNodeEntry OBJECT-TYPE
+	SYNTAX        QbAtmPnniNodeEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the table, containing information about a PNNI
+             logical node in this switching system."
+        INDEX         { qbAtmPnniNodeIndex }
+        ::= { qbAtmPnniNodeTable 1 }
+
+   QbAtmPnniNodeEntry ::=
+        SEQUENCE {
+        qbAtmPnniNodeIndex			INTEGER,
+		qbAtmPnniNodeNetAddrPrefix	OCTET STRING,
+		qbAtmPnniNodeEndSysId		OCTET STRING,
+        qbAtmPnniNodeLevel			INTEGER,
+		qbAtmPnniNodeRowStatus		RowStatus,
+		qbAtmPnniNodeOperStatus		INTEGER,
+		qbAtmPnniNodeAtmAddress		QbAtmPnniAtmAddr,
+        qbAtmPnniNodePeerGroupId	QbAtmPnniPeerGroupId
+	}
+
+    qbAtmPnniNodeIndex OBJECT-TYPE
+        SYNTAX        INTEGER (0..65535)
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "A value assigned to a node in this switching system that
+             uniquely identifies it in the MIB."
+	DEFVAL  { 1 }
+        ::= { qbAtmPnniNodeEntry 1 }
+
+   qbAtmPnniNodeNetAddrPrefix OBJECT-TYPE
+	SYNTAX     OCTET STRING  (SIZE (13))
+	MAX-ACCESS read-create
+	STATUS     current
+	DESCRIPTION
+		"Indicates the Network Prefix to use for the ATM End
+		System Address. The value is 13 bytes long, and is
+		specified in the hexadecimal format. If less than 13
+		bytes(26 chars) are received, the agent appends
+		trailing zero's. The object can be set to ''h, if PNNI 
+		protocol is desirable on all interfaces."  
+	DEFVAL  {''h }
+    ::= { qbAtmPnniNodeEntry 2 }   
+
+   qbAtmPnniNodeEndSysId OBJECT-TYPE
+	SYNTAX     OCTET STRING  (SIZE (7))
+	MAX-ACCESS read-create
+	STATUS     current
+	DESCRIPTION
+                "Indicates the End System Identifier for ATM End
+		System Address. The value is 7 bytes long, and is
+		specified in the hexadecimal format.
+		The object can be set to ''h, if PNNI 
+		protocol is desirable on all interfaces."  
+	DEFVAL  {''h }
+    ::= { qbAtmPnniNodeEntry 3 }   
+ 
+    qbAtmPnniNodeLevel OBJECT-TYPE
+        SYNTAX        INTEGER(1..104)
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The level of PNNI hierarchy at which this node exists. This
+             attribute is used to determine the default node ID and the
+             default peer group ID for this node. This object may only
+             be written when pnniNodeAdminStatus has the value down."
+        DEFVAL { 80 }
+        ::= { qbAtmPnniNodeEntry 4 }
+ 
+     qbAtmPnniNodeRowStatus OBJECT-TYPE
+        SYNTAX        RowStatus
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "To create, delete, activate and de-activate a Node.
+				Setting this object to createAndGo(4) causes 
+				the corresponding row to be created.
+
+				Setting this object to destroy(6) causes the corresponding
+				row to be deleted.
+						
+				Note that -- currently-- only a single instance of a row 
+				can be created in this table."
+        ::= { qbAtmPnniNodeEntry 5 }
+
+    qbAtmPnniNodeOperStatus OBJECT-TYPE
+        SYNTAX        INTEGER {
+        				up(1),
+        				down(2)
+        			}
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "Indicates the Operational Status of the PNNI Node. For Logical Group 
+            Nodes, the Operational Status will be up only if the child becomes the
+            PGL."
+        ::= { qbAtmPnniNodeEntry 6 }     
+
+	qbAtmPnniNodeAtmAddress OBJECT-TYPE
+        SYNTAX        QbAtmPnniAtmAddr
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "This node's ATM End System Address.  Remote systems wishing
+             to exchange PNNI protocol packets with this node should
+             direct packets or calls to this address.
+
+             The current Qb implementation does not support writing this value."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.2.2"
+        ::= { qbAtmPnniNodeEntry 7 }
+
+	qbAtmPnniNodePeerGroupId OBJECT-TYPE
+        SYNTAX        QbAtmPnniPeerGroupId
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The Peer Group Identifier of the peer group that the given
+             node is to become a member of."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.3.2, Annex F"
+        ::= { qbAtmPnniNodeEntry 8 }
+        
+
+  --
+  -- Interface table
+  ---
+
+    qbAtmPnniIfTable OBJECT-TYPE
+        SYNTAX        SEQUENCE OF QbAtmPnniIfEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "The qbAtmPnniIfTable contains the attributes necessary to
+             configure a physical interface on a switching system 
+             capable of being used for PNNI routing.
+
+             An ifIndex is used as the instance ID to uniquely identify
+             the interface on the local switching system. This index has
+             the same value as the ifIndex object defined in RFC 1573
+             for the same interface, since this table correlates with
+             the ifTable in RFC 1573.
+
+             One row in this table is created by the managed system for
+             each row in the ifTable that has an ifType of atm(37) or
+             atmLogical(80)."
+        ::= { qbAtmSigGroup 2 }
+
+    qbAtmPnniIfEntry OBJECT-TYPE
+        SYNTAX        QbAtmPnniIfEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the table, containing PNNI specific interface
+             information in this switching system."
+        INDEX         { ifIndex }
+        ::= {  qbAtmPnniIfTable 1 }
+
+     QbAtmPnniIfEntry ::=
+        SEQUENCE {
+                qbAtmPnniIfNodeIndex         INTEGER,
+                qbAtmPnniIfAdmWeightCbr      QbAtmPnniWeight,
+                qbAtmPnniIfAdmWeightRtVbr    QbAtmPnniWeight,
+                qbAtmPnniIfAdmWeightNrtVbr   QbAtmPnniWeight,
+                qbAtmPnniIfAdmWeightAbr      QbAtmPnniWeight,
+                qbAtmPnniIfAdmWeightUbr      QbAtmPnniWeight,
+                qbAtmPnniIfRccServiceCategory    AtmServiceCategory,
+                qbAtmPnniIfRccTrafficDescrIndex AtmTrafficDescrParamIndex,
+		qbAtmPnniIfPolicingStatus	INTEGER
+                }
+
+    qbAtmPnniIfNodeIndex OBJECT-TYPE
+        SYNTAX        INTEGER (1..1)
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "Identifies the node within the switching system that the
+             interface is directly attached to.  Note: For this release
+             this value can be set only to 1."
+        DEFVAL { 1 }
+        ::= { qbAtmPnniIfEntry 1 }
+
+    qbAtmPnniIfAdmWeightCbr OBJECT-TYPE
+        SYNTAX        QbAtmPnniWeight
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "The administrative weight of this interface for the
+             constant bit rate service category."
+        DEFVAL { 5040 }
+        ::= { qbAtmPnniIfEntry  2 }
+
+    qbAtmPnniIfAdmWeightRtVbr OBJECT-TYPE
+        SYNTAX        QbAtmPnniWeight
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "The administrative weight of this interface for the
+             real-time variable bit rate service category."
+        DEFVAL { 5040 }
+        ::= { qbAtmPnniIfEntry  3 }
+
+   qbAtmPnniIfAdmWeightNrtVbr OBJECT-TYPE
+        SYNTAX        QbAtmPnniWeight
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "The administrative weight of this interface for the
+             non-real-time variable bit rate service category."
+        DEFVAL { 5040 }
+        ::= { qbAtmPnniIfEntry 4 }
+
+    qbAtmPnniIfAdmWeightAbr OBJECT-TYPE
+        SYNTAX        QbAtmPnniWeight
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "The administrative weight of this interface for the
+             available bit rate service category."
+        DEFVAL { 5040 }
+        ::= { qbAtmPnniIfEntry 5 }
+
+   qbAtmPnniIfAdmWeightUbr OBJECT-TYPE
+        SYNTAX        QbAtmPnniWeight
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "The administrative weight of this interface for the
+             unspecified bit rate service category."
+        DEFVAL { 5040 }
+        ::= { qbAtmPnniIfEntry 6 }
+
+  qbAtmPnniIfRccServiceCategory OBJECT-TYPE
+        SYNTAX        AtmServiceCategory
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "The service category used for the PNNI routing control
+             channel (VCI=18) on this interface."
+	 DEFVAL { 4 }
+         ::= { qbAtmPnniIfEntry 7 }
+
+  qbAtmPnniIfRccTrafficDescrIndex OBJECT-TYPE
+        SYNTAX        AtmTrafficDescrParamIndex
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "The traffic descriptor index referring to the entry in the
+             atmTrafficDescrParamTable defined in RFC 1695 that
+             specifies the traffic allocation for the PNNI routing
+             control channel (VCI=18) on this interface."
+	DEFVAL  { 7 }
+        ::= { qbAtmPnniIfEntry 8 }
+
+    qbAtmPnniIfPolicingStatus OBJECT-TYPE
+        SYNTAX        INTEGER {
+		      enable(1),
+		      disable(2)
+	}
+        MAX-ACCESS    read-write
+        STATUS        deprecated
+        DESCRIPTION
+            "If this object is set to enable, the policing is enabled on this
+	    interface. If the object is set to 'disable' the policing is
+	    disabled."
+	DEFVAL  { disable }
+        ::= { qbAtmPnniIfEntry 9 }
+
+ --
+ -- Table of routes from nodes to reachable addresses
+ --
+   qbAtmPnniRouteAddrTable OBJECT-TYPE
+       SYNTAX        SEQUENCE OF QbAtmPnniRouteAddrEntry
+       MAX-ACCESS    not-accessible
+       STATUS        current
+       DESCRIPTION
+            "A table containing all the attributes necessary to
+             determine what the PNNI entity believes is reachable in
+             terms of ATM End System Addresses, and to determine which
+             nodes are advertising this reachability.  This table is
+             also used to configure static routes to reachable address
+             prefixes.  The local node index that receives the
+             reachability information, reachable address, address prefix
+             length, and an index that distinguishes between multiple
+             listings of connectivity to a given address prefix from a
+             given local node are combined to form an instance ID for
+             this object."
+        ::= { qbAtmSigGroup 3 }
+
+    qbAtmPnniRouteAddrEntry OBJECT-TYPE
+        SYNTAX        QbAtmPnniRouteAddrEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the table, containing information about a
+             reachable address prefix."
+        INDEX         { qbAtmPnniNodeIndex,
+			qbAtmPnniRouteAddrIfIndex,
+                        qbAtmPnniRouteAddrAddress
+		     }
+        ::= { qbAtmPnniRouteAddrTable 1}
+
+    QbAtmPnniRouteAddrEntry ::=
+        SEQUENCE {
+                qbAtmPnniRouteAddrAddress            OCTET STRING,
+		qbAtmPnniRouteAddrIfIndex	     InterfaceIndex,
+                qbAtmPnniRouteAddrPrefixLength       INTEGER,
+ 		qbAtmPnniRouteAddrRowStatus          RowStatus,
+                qbAtmPnniRouteAddrProto              INTEGER
+	}
+
+
+    qbAtmPnniRouteAddrIfIndex OBJECT-TYPE
+        SYNTAX        InterfaceIndex
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "The local interface over which the reachable address can be
+             reached. "
+        ::= { qbAtmPnniRouteAddrEntry 1 }
+
+   qbAtmPnniRouteAddrAddress OBJECT-TYPE
+        SYNTAX        OCTET STRING (SIZE(19))
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "The value of the ATM End System Address prefix."
+        ::= { qbAtmPnniRouteAddrEntry 2 }
+
+   qbAtmPnniRouteAddrPrefixLength OBJECT-TYPE
+        SYNTAX        INTEGER (1..152)
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "Indicates the number of bits to be applied to the ATM End System
+             Address prefix."
+	DEFVAL       { 104 }
+        ::= { qbAtmPnniRouteAddrEntry 3 }
+
+    qbAtmPnniRouteAddrRowStatus OBJECT-TYPE
+       SYNTAX        RowStatus
+       MAX-ACCESS    read-create
+       STATUS        current
+       DESCRIPTION
+            "To create, delete, activate and de-activate a reachable
+             address prefix."
+        ::= { qbAtmPnniRouteAddrEntry 4 }
+
+    qbAtmPnniRouteAddrProto OBJECT-TYPE
+        SYNTAX        INTEGER {
+			      iisp(1),
+			      pnni(2)
+		      }	
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "This object indicates the Routing mechanism through which 
+	    the connectivity from the advertising node to the
+	    reachable address prefix was learned."
+        ::= { qbAtmPnniRouteAddrEntry 5 }
+
+   -- ****************************************************************
+   -- ATM Intraface Signalling Parameters Table 
+   -- Extensions to the ATM Interface Configuration Table 
+   -- ****************************************************************
+   qbAtmInterfaceConfSigTable OBJECT-TYPE
+	SYNTAX     SEQUENCE OF QbAtmInterfaceConfSigEntry
+	MAX-ACCESS not-accessible
+	STATUS     current
+	DESCRIPTION
+		"This table contains ATM local interface configuration 
+		parameters, one entry per ATM interface port."
+    ::= { qbAtmSigGroup 4 }
+
+   qbAtmInterfaceConfSigEntry OBJECT-TYPE
+    SYNTAX     QbAtmInterfaceConfSigEntry
+    MAX-ACCESS not-accessible
+    STATUS     current
+    DESCRIPTION
+        " This list contains additonal ATM interface configuration
+          parameters and state variables."
+    AUGMENTS { atmInterfaceConfEntry }
+    ::= { qbAtmInterfaceConfSigTable 1 }
+
+    QbAtmInterfaceConfSigEntry ::=
+	SEQUENCE {
+		qbAtmInterfaceConfSigMode	QbAtmSigSpec,
+		qbAtmInterfaceConfSigSide       INTEGER,
+		qbAtmInterfaceConfSigParseMode  INTEGER,
+		qbAtmInterfaceConfSigAdminStatus      INTEGER,
+		qbAtmInterfaceConfSigSvcMinVci        INTEGER,
+		qbAtmInterfaceConfSigSvcMaxVci        INTEGER,
+		qbAtmInterfaceConfSigSvcMinVpi        INTEGER,
+		qbAtmInterfaceConfSigSvcMaxVpi        INTEGER,
+		qbAtmInterfaceConfSigSvpMinVpi        INTEGER,
+		qbAtmInterfaceConfSigSvpMaxVpi        INTEGER,
+		qbAtmInterfaceConfSigLastChange AtmVorXLastChange,
+		qbAtmInterfaceConfSigIlmiEnable      Boolean
+ 	}
+
+    qbAtmInterfaceConfSigMode    OBJECT-TYPE
+	SYNTAX        QbAtmSigSpec
+	MAX-ACCESS   read-write
+	STATUS       current
+	DESCRIPTION
+		"The type of ATM interface which is either a UNI 
+		(User to Network), PNNI or IISP.
+		To modify the qbAtmInterfaceConfSignType, ifAdminStatus has 
+		to be down."
+	DEFVAL {uni31}
+	::= { qbAtmInterfaceConfSigEntry 1 } 
+
+   qbAtmInterfaceConfSigSide    OBJECT-TYPE
+	SYNTAX       INTEGER {
+			user(1),
+			network(2),
+			notApplicable(3)
+	}
+	MAX-ACCESS   read-write
+	STATUS       current
+	DESCRIPTION
+	       "The side of ATM interface which is either a user or 
+	       network side. NotApplicable value implies that 
+	       qbAtmInterfaceConfSignType is other than uni or iisp."
+	DEFVAL {network}
+	::= {  qbAtmInterfaceConfSigEntry 2 }
+
+     qbAtmInterfaceConfSigParseMode    OBJECT-TYPE
+	SYNTAX       INTEGER {
+			on(1),
+			off(2)
+	}
+	MAX-ACCESS   read-write
+	STATUS       current
+	DESCRIPTION
+	       "Indicates to the signalling stack to use strict
+	       parsing of the INformation Elements (IEs) within
+	       signalling messages. This parameter is set to 'on' for
+	       conformance testing. For systems that do not test
+	       conformance it is recommended to set the object to
+	       'off'." 
+ 	DEFVAL { off }
+	::= {  qbAtmInterfaceConfSigEntry 3 }
+
+    qbAtmInterfaceConfSigAdminStatus OBJECT-TYPE
+        SYNTAX       INTEGER {
+			enabled(1), 
+			disabled(2)
+			}
+        MAX-ACCESS   read-write
+        STATUS       current
+        DESCRIPTION
+		"Enable/Disable signalling/sscop on this interface. 
+		To modify the  qbAtmInterfaceConfSignAdminStatus, 
+		ifAdminStatus has to be down."
+        DEFVAL {disabled}
+        ::= { qbAtmInterfaceConfSigEntry  4}
+
+	qbAtmInterfaceConfSigSvcMinVci OBJECT-TYPE
+        SYNTAX       INTEGER (32..16383)
+	MAX-ACCESS   read-write
+        STATUS       current
+        DESCRIPTION
+		"The minimum value of SVC connection for vci."
+        ::= { qbAtmInterfaceConfSigEntry  5}
+
+	qbAtmInterfaceConfSigSvcMaxVci OBJECT-TYPE
+        SYNTAX        INTEGER (32..16383)
+	MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+		"The maximum value of SVC connection for vci."
+        ::= { qbAtmInterfaceConfSigEntry  6}
+
+	qbAtmInterfaceConfSigSvcMinVpi OBJECT-TYPE
+        SYNTAX        INTEGER (0..255)
+	MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+		"The minimum value of SVC connection for vpi."
+        ::= { qbAtmInterfaceConfSigEntry  7}
+
+	qbAtmInterfaceConfSigSvcMaxVpi OBJECT-TYPE
+        SYNTAX        INTEGER (0..255)
+	MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+		"The maximum value of SVC connection for vpi."
+        ::= { qbAtmInterfaceConfSigEntry  8}
+
+	qbAtmInterfaceConfSigSvpMinVpi OBJECT-TYPE
+        SYNTAX        INTEGER (0..255)
+	MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+		"The minimum value of SVP connection for vpi."
+        ::= { qbAtmInterfaceConfSigEntry  9}
+
+	qbAtmInterfaceConfSigSvpMaxVpi OBJECT-TYPE
+        SYNTAX        INTEGER (0..255)
+	MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+		"The maximum value of SVP connection for vpi."
+        ::= { qbAtmInterfaceConfSigEntry  10}
+
+    qbAtmInterfaceConfSigLastChange    OBJECT-TYPE
+	SYNTAX         AtmVorXLastChange
+        MAX-ACCESS     read-only
+        STATUS         current
+        DESCRIPTION
+              "The value of sysUpTime at the time this
+               interface changed its current administrative state."
+          ::= { qbAtmInterfaceConfSigEntry  11 }
+                                                    
+   qbAtmInterfaceConfSigIlmiEnable    OBJECT-TYPE
+	SYNTAX         Boolean
+        MAX-ACCESS     read-write
+        STATUS         current
+        DESCRIPTION
+              "Can be enabled only if signaling is configured. ILMI is enabled by default when signaling
+              is configured on the system and the user may enter the disable option ."
+          ::= { qbAtmInterfaceConfSigEntry  12 }                                               
+------------------------------- qb adaptation of atm forum pnni 0055 table ---------------------
+
+qbAtmPnniNbrPeerTable OBJECT-TYPE
+        SYNTAX        SEQUENCE OF QbAtmPnniNbrPeerEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "The qbAtmPnniNbrPeer Object contains all the attributes
+             necessary to describe the relationship a node in this
+             switching system has with a neighboring node within the
+             same peer group.  A concatenation of the Node Identifier of
+             the node within the local switching system and the
+             neighboring peer's Node Identifier is used to form the
+             instance ID for this object.
+
+             The entire qbAtmPnniNbrPeer object is read-only, reflecting the
+             fact that neighboring peers are discovered dynamically by
+             the PNNI protocol rather than configured."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Sections 5.7, 5.8"
+        ::= { qbAtmSigGroup 5 }
+
+qbAtmPnniNbrPeerEntry OBJECT-TYPE
+        SYNTAX        QbAtmPnniNbrPeerEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the table, containing information about this
+             node's relationship with a neighboring peer node."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Sections 5.7, 5.8"
+        INDEX         { qbAtmPnniNodeIndex,
+                        qbAtmPnniPeerRemoteNodeId }
+        ::= { qbAtmPnniNbrPeerTable 1 }
+
+QbAtmPnniNbrPeerEntry ::=
+        SEQUENCE {   
+                qbAtmPnniPeerRemoteNodeId         QbAtmPnniNodeId,
+                qbAtmPnniPeerState                INTEGER,
+                qbAtmPnniPeerSvccRccIndex         INTEGER,
+                qbAtmPnniPeerPortCount            INTEGER,
+                qbAtmPnniPeerRcvDbSums            Counter32,
+                qbAtmPnniPeerXmtDbSums            Counter32,
+                qbAtmPnniPeerRcvPtsps             Counter32,
+                qbAtmPnniPeerXmtPtsps             Counter32,
+                qbAtmPnniPeerRcvPtseReqs          Counter32,
+                qbAtmPnniPeerXmtPtseReqs          Counter32,
+                qbAtmPnniPeerRcvPtseAcks          Counter32,
+                qbAtmPnniPeerXmtPtseAcks          Counter32
+                }
+
+qbAtmPnniPeerRemoteNodeId OBJECT-TYPE
+        SYNTAX        QbAtmPnniNodeId
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "The Node Identifier of the neighboring peer node."
+        ::= { qbAtmPnniNbrPeerEntry 1 }
+
+qbAtmPnniPeerState OBJECT-TYPE
+        SYNTAX        INTEGER {
+                                npdown(1),
+                                negotiating(2),
+                                exchanging(3),
+                                loading(4),
+                                full(5)
+                                }
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "Indicates the state of this node's Neighboring Peer State
+             Machine associated with qbAtmPnniPeerRemoteNodeId."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.7.2"
+        ::= { qbAtmPnniNbrPeerEntry 2 }
+
+qbAtmPnniPeerSvccRccIndex OBJECT-TYPE
+        SYNTAX        INTEGER
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "Identifies the SVCC-based RCC being used to communicate
+             with the neighboring peer if one exists.  If both the local
+             node and the neighboring peer node are lowest-level nodes,
+             this attribute is set to zero."
+        ::= { qbAtmPnniNbrPeerEntry 3 }
+
+qbAtmPnniPeerPortCount OBJECT-TYPE
+        SYNTAX        INTEGER
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the total number of ports that connect to the
+             neighboring peer.  If the neighboring peer only
+             communicates via an SVCC-based RCC, the value of this
+             attribute is set to zero.  Otherwise it is set to the total
+             number of ports to the neighboring peer in the Hello state
+             2-WayInside."
+        ::= { qbAtmPnniNbrPeerEntry 4 }
+
+qbAtmPnniPeerRcvDbSums OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the number of Database Summary Packets received
+             from the neighboring peer."
+        ::= { qbAtmPnniNbrPeerEntry 5 }
+
+qbAtmPnniPeerXmtDbSums OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the number of Database Summary Packets
+             transmitted to the neighboring peer."
+        ::= { qbAtmPnniNbrPeerEntry 6 }
+
+qbAtmPnniPeerRcvPtsps OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the number of PTSPs received from the
+             neighboring peer."
+        ::= { qbAtmPnniNbrPeerEntry 7 }
+
+qbAtmPnniPeerXmtPtsps OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the number of PTSPs (re)transmitted to the
+             neighboring peer."
+        ::= { qbAtmPnniNbrPeerEntry 8 }
+
+qbAtmPnniPeerRcvPtseReqs OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the number of PTSE Request packets received from
+             the neighboring peer."
+        ::= { qbAtmPnniNbrPeerEntry 9 }
+
+qbAtmPnniPeerXmtPtseReqs OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the number of PTSE Request packets transmitted
+             to the neighboring peer."
+        ::= { qbAtmPnniNbrPeerEntry 10 }
+
+qbAtmPnniPeerRcvPtseAcks OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the number of PTSE Ack packets received from the
+             neighboring peer."
+        ::= { qbAtmPnniNbrPeerEntry 11 }
+
+qbAtmPnniPeerXmtPtseAcks OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "A count of the number of PTSE Ack packets transmitted to
+             the neighboring peer."
+        ::= { qbAtmPnniNbrPeerEntry 12 }
+
+-- qbAtmPnniNodePgl Table - based on ATM Forum PGL election table
+
+qbAtmPnniNodePglTable OBJECT-TYPE
+        SYNTAX        SEQUENCE OF QbAtmPnniNodePglEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "Peer group leader election information for a PNNI node in
+             this switching system."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.10.1"
+        ::= { qbAtmSigGroup 6 }
+
+qbAtmPnniNodePglEntry OBJECT-TYPE
+        SYNTAX        QbAtmPnniNodePglEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the table, containing PGL election information
+             of a PNNI logical node in this switching system."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.10.1"
+        AUGMENTS      { qbAtmPnniNodeEntry }
+        ::= { qbAtmPnniNodePglTable 1 }
+
+QbAtmPnniNodePglEntry ::=
+        SEQUENCE {
+                qbAtmPnniNodePglLeadershipPriority   INTEGER,
+                qbAtmPnniNodeCfgParentNodeIndex      Integer32,
+                qbAtmPnniNodePglInitTime             Integer32,
+                qbAtmPnniNodePglOverrideDelay        Integer32,
+                qbAtmPnniNodePglReelectTime          Integer32,
+                qbAtmPnniNodePglState                INTEGER,
+                qbAtmPnniNodePreferredPgl            QbAtmPnniNodeId,
+                qbAtmPnniNodePeerGroupLeader       	 QbAtmPnniNodeId,
+                qbAtmPnniNodePglTimeStamp            TimeStamp,
+                qbAtmPnniNodeActiveParentNodeId      QbAtmPnniNodeId
+                }
+
+qbAtmPnniNodePglLeadershipPriority OBJECT-TYPE
+        SYNTAX        INTEGER (0..205)
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The Leadership priority value this node should advertise in
+             its nodal information group for the given peer group.  Only
+             the value zero can be used with nodes that are not PGL/LGN
+             capable.  If there is no configured parent node index or no
+             corresponding entry in the pnniNodeTable, then the
+             advertised leadership priority is zero regardless of this
+             value."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.10.1.2"
+        DEFVAL { 0 }
+        ::= { qbAtmPnniNodePglEntry 1 }
+
+qbAtmPnniNodeCfgParentNodeIndex OBJECT-TYPE
+        SYNTAX        Integer32
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The local node index used to identify the node that will
+             represent this peer group at the next higher level of
+             hierarchy, if this node becomes peer group leader.  The
+             value 0 indicates that there is no parent node."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex F"
+        DEFVAL { 0 }
+        ::= { qbAtmPnniNodePglEntry 2 }
+
+qbAtmPnniNodePglInitTime OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "seconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The amount of time in seconds this node will delay
+             advertising its choice of preferred PGL after having
+             initialized operation and reached the full state with at
+             least one neighbor in the peer group."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G PGLInitTime"
+        DEFVAL  { 15 }
+        ::= { qbAtmPnniNodePglEntry 3 }
+
+qbAtmPnniNodePglOverrideDelay OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "seconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The amount of time in seconds a node will wait for itself
+             to be declared the preferred PGL by unanimous agreement
+             among its peers.  In the absence of unanimous agreement
+             this will be the amount of time that will pass before this
+             node considers a two thirds majority as sufficient
+             agreement to declare itself peer group leader, abandoning
+             the attempt to get unanimous agreement."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G OverrideDelay"
+        DEFVAL  { 30 }
+        ::= { qbAtmPnniNodePglEntry 4 }
+
+qbAtmPnniNodePglReelectTime OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "seconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The amount of time in seconds after losing connectivity to
+             the current peer group leader, that this node will wait
+             before re-starting the process of electing a new peer group
+             leader."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G ReElectionInterval"
+        DEFVAL  { 15 }
+        ::= { qbAtmPnniNodePglEntry 5 }
+
+qbAtmPnniNodePglState OBJECT-TYPE
+        SYNTAX        INTEGER {
+                                starting(1),
+                                awaiting(2),
+                                awaitingFull(3),
+                                initialDelay(4),
+                                calculating(5),
+                                awaitUnanimity(6),
+                                operPgl(7),
+                                operNotPgl(8),
+                                hungElection(9),
+                                awaitReElection(10),
+                                other(11)
+                                }
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "Indicates the state that this node is in with respect to
+             the Peer Group Leader election that takes place in the
+             node's peer group. The values are enumerated in the Peer
+             Group Leader State Machine."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.10.1.1.2"
+        ::= { qbAtmPnniNodePglEntry 6 }
+
+qbAtmPnniNodePreferredPgl OBJECT-TYPE
+        SYNTAX        QbAtmPnniNodeId
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The Node ID of
+             the node which the local node believes should be or become
+             the peer group leader.  This is also the value the local
+             node is currently advertising in the `Preferred Peer Group
+             Leader Node ID' field of its nodal information group within
+             the given peer group.  If a Preferred PGL has not been
+             chosen, this attribute's value is set to (all) zero(s)."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.10.1.1.6"
+        ::= { qbAtmPnniNodePglEntry 7 }
+
+qbAtmPnniNodePeerGroupLeader OBJECT-TYPE
+        SYNTAX        QbAtmPnniNodeId
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The Node Identifier of the node which is currently
+             operating as peer group leader of the peer group this node
+             belongs to. If a PGL has not been elected, this attribute's
+             value is set to (all) zero(s)."
+        ::= { qbAtmPnniNodePglEntry 8 }
+
+qbAtmPnniNodePglTimeStamp OBJECT-TYPE
+        SYNTAX        TimeStamp
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The time at which the current Peer Group Leader established
+             itself."
+        ::= { qbAtmPnniNodePglEntry 9 }
+
+qbAtmPnniNodeActiveParentNodeId OBJECT-TYPE
+        SYNTAX        QbAtmPnniNodeId
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The Node Identifier value being used by the Peer Group
+             Leader to represent this peer group at the next higher
+             level of the hierarchy. If this node is at the highest
+             level of the hierarchy or if no PGL has yet been elected
+             the PNNI Protocol Entity sets the value of this attribute
+             to (all) zero(s)."
+        ::= { qbAtmPnniNodePglEntry 10 }
+
+
+-- initial timer values table - based on atm forum's qbAtmPnniNodeTimerTable
+
+qbAtmPnniNodeTimerTable OBJECT-TYPE
+        SYNTAX        SEQUENCE OF QbAtmPnniNodeTimerEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "A table of initial PNNI timer values and significant
+             change thresholds."
+        ::= { qbAtmSigGroup 7 }
+
+qbAtmPnniNodeTimerEntry OBJECT-TYPE
+        SYNTAX        QbAtmPnniNodeTimerEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the table, containing initial PNNI timer values
+             and significant change thresholds of a PNNI logical node in
+             this switching system."
+        AUGMENTS      { qbAtmPnniNodeEntry }
+        ::= { qbAtmPnniNodeTimerTable 1 }
+
+QbAtmPnniNodeTimerEntry ::=
+        SEQUENCE {
+                qbAtmPnniNodePtseHolddown            Integer32,
+                qbAtmPnniNodeHelloHolddown           Integer32,
+                qbAtmPnniNodeHelloInterval           Integer32,
+                qbAtmPnniNodeHelloInactivityFactor   Integer32,
+                qbAtmPnniNodeHlinkInact              Integer32,
+                qbAtmPnniNodePtseRefreshInterval     Integer32,
+                qbAtmPnniNodePtseLifetimeFactor      INTEGER,
+                qbAtmPnniNodeRxmtInterval            Integer32,
+                qbAtmPnniNodePeerDelayedAckInterval  Integer32,
+                qbAtmPnniNodeAvcrPm                  INTEGER,
+                qbAtmPnniNodeAvcrMt                  INTEGER,
+                qbAtmPnniNodeCdvPm                   INTEGER,
+                qbAtmPnniNodeCtdPm                   INTEGER
+                }
+
+qbAtmPnniNodePtseHolddown OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "100 milliseconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The initial value for the PTSE hold down timer that will be
+             used by the given node to limit the rate at which it can
+             re-originate PTSEs. It must be a positive non-zero number."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G MinPTSEInterval"
+        DEFVAL { 10 }
+        ::= { qbAtmPnniNodeTimerEntry 1 }
+
+qbAtmPnniNodeHelloHolddown OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "100 milliseconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The initial value for the Hello hold down timer that will
+             be used by the given node to limit the rate at which it
+             sends Hellos. It must be a positive non-zero number."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G MinHelloInterval"
+        DEFVAL { 10 }
+        ::= { qbAtmPnniNodeTimerEntry 2 }
+
+qbAtmPnniNodeHelloInterval OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "seconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The initial value for the Hello Timer.
+             In the absence of triggered Hellos, this node will send one
+             Hello packet on each of its ports on this interval."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G HelloInterval"
+        DEFVAL { 15 }
+        ::= { qbAtmPnniNodeTimerEntry 3 }
+
+qbAtmPnniNodeHelloInactivityFactor OBJECT-TYPE
+        SYNTAX        Integer32
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The value for the Hello Inactivity factor that this
+             node will use to determine when a neighbor has gone down."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G InactivityFactor"
+        DEFVAL { 5 }
+        ::= { qbAtmPnniNodeTimerEntry 4 }
+
+qbAtmPnniNodeHlinkInact OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "seconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The amount of time a node will continue to
+             advertise a horizontal (logical) link for which it has
+             not received and processed a LGN Horizontal Link
+             information group."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G HorizontalLinkInactivityTime"
+        DEFVAL { 120 }
+        ::= { qbAtmPnniNodeTimerEntry 5 }
+
+qbAtmPnniNodePtseRefreshInterval OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "seconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The initial value for the Refresh timer that this node will
+             use to drive (re-)origination of PTSEs in the absence of
+             triggered updates."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G PTSERefreshInterval"
+        DEFVAL  { 1800 }
+        ::= { qbAtmPnniNodeTimerEntry 6 }
+
+qbAtmPnniNodePtseLifetimeFactor OBJECT-TYPE
+        SYNTAX        INTEGER (101..1000)
+        UNITS         "percent"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The value for the lifetime multiplier, expressed as a
+             percentage.  The result of multiplying the
+             qbAtmPnniNodePtseRefreshInterval attribute value by this
+             attribute value is used as the initial lifetime that this
+             node places into self-originated PTSEs."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G PTSELifetimeFactor"
+        DEFVAL  { 200 }
+        ::= { qbAtmPnniNodeTimerEntry 7 }
+
+qbAtmPnniNodeRxmtInterval OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "seconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The period between retransmissions of unacknowledged
+             Database Summary packets, PTSE Request packets, and PTSPs."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G DSRxmtInterval,
+             RequestRxmtInterval, PTSERetransmissionInterval"
+        DEFVAL { 5 }
+        ::= { qbAtmPnniNodeTimerEntry 8 }
+
+qbAtmPnniNodePeerDelayedAckInterval OBJECT-TYPE
+        SYNTAX        Integer32
+        UNITS         "100 milliseconds"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The minimum amount of time between transmissions of
+             delayed PTSE acknowledgement packets."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Annex G PeerDelayedAckInterval,
+             Appendix G"
+        DEFVAL { 10 }
+        ::= { qbAtmPnniNodeTimerEntry 9 }
+
+qbAtmPnniNodeAvcrPm OBJECT-TYPE
+        SYNTAX        INTEGER (1..99)
+        UNITS         "percent"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The proportional multiplier used in the algorithms that
+             determine significant change for AvCR parameters, expressed
+             as a percentage."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.5.2.5.4, Annex G AvCR_PM"
+        DEFVAL  { 50 }
+        ::= { qbAtmPnniNodeTimerEntry 10 }
+
+qbAtmPnniNodeAvcrMt OBJECT-TYPE
+        SYNTAX        INTEGER (1..99)
+        UNITS         "percent"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The minimum threshold used in the algorithms that determine
+             significant change for AvCR parameters, expressed as a
+             percentage."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.5.2.5.4, Annex G AvCR_mT"
+        DEFVAL  { 3 }
+        ::= { qbAtmPnniNodeTimerEntry 11 }
+
+qbAtmPnniNodeCdvPm OBJECT-TYPE
+        SYNTAX        INTEGER (1..99)
+        UNITS         "percent"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The proportional multiplier used in the algorithms that
+             determine significant change for CDV metrics, expressed as
+             a percentage."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.5.2.5.6, Annex G CDV_PM"
+        DEFVAL  { 25 }
+        ::= { qbAtmPnniNodeTimerEntry 12 }
+
+qbAtmPnniNodeCtdPm OBJECT-TYPE
+        SYNTAX        INTEGER (1..99)
+        UNITS         "percent"
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The proportional multiplier used in the algorithms that
+             determine significant change for CTD metrics, expressed as
+             a percentage."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.8.5.2.5.5, Annex G maxCTD_PM"
+        DEFVAL  { 50 }
+        ::= { qbAtmPnniNodeTimerEntry 13 }   
+        
+-- qbAtmPnniLink table - based on ATM Forum PNNI Link Table
+
+qbAtmPnniLinkTable OBJECT-TYPE
+        SYNTAX        SEQUENCE OF QbAtmPnniLinkEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "This table contains the attributes necessary to describe
+             the operation of logical links attached to the local
+             switching system and the relationship with the neighbor
+             nodes on the other end of the links.  Links are attached to
+             a specific node within the switching system.  A
+             concatenation of the Node Index of the node within the
+             local switching system and the port ID are used as the
+             instance ID to uniquely identify the link.  Links may
+             represent horizontal links between lowest level neighboring
+             peers, outside links, uplinks, or horizontal links to/from
+             LGNs.
+
+             The entire qbAtmPnniLink object is read-only, reflecting the
+             fact that this information is discovered dynamically by the
+             PNNI protocol rather than configured."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.6"
+        ::= { qbAtmSigGroup 8 }
+
+qbAtmPnniLinkEntry OBJECT-TYPE
+        SYNTAX        QbAtmPnniLinkEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the table, containing information about a link
+             attached to a PNNI logical node in this switching system."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.6"
+        INDEX         { qbAtmPnniNodeIndex,
+                        qbAtmPnniLinkPortId }
+        ::= { qbAtmPnniLinkTable 1 }
+
+QbAtmPnniLinkEntry ::=
+        SEQUENCE {
+                qbAtmPnniLinkPortId          Integer32,
+                qbAtmPnniLinkType            INTEGER,
+                qbAtmPnniLinkHelloState      QbAtmPnniHelloState
+                }
+
+qbAtmPnniLinkPortId OBJECT-TYPE
+        SYNTAX        Integer32
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "The Port Identifier of the link as selected by the local
+             node.  This value has meaning only within the context of
+             the node to which the port is attached."
+        ::= { qbAtmPnniLinkEntry 1 }
+
+qbAtmPnniLinkType OBJECT-TYPE
+        SYNTAX        INTEGER {
+                                unknown(1),
+                                lowestLevelHorizontalLink(2),
+                                horizontalLinkToFromLgn(3),
+                                lowestLevelOutsideLink(4),
+                                uplink(5),
+                                outsideLinkAndUplink(6)
+                                }
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "Indicates the type of link being described."
+        ::= { qbAtmPnniLinkEntry 2 }
+
+
+qbAtmPnniLinkHelloState OBJECT-TYPE
+        SYNTAX        QbAtmPnniHelloState
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "For horizontal and outside links between lowest-level nodes
+             and for links of unknown type, this attribute indicates the
+             state of the Hello protocol exchange over this link.  For
+             links to/from LGNs, this attribute indicates the state of
+             the corresponding LGN Horizontal Link Hello State Machine.
+             For uplinks (where the port ID is not also used for the
+             underlying outside link), this attribute is set to
+             notApplicable."
+        REFERENCE
+            "ATM Forum PNNI 1.0 Section 5.6.2.1.2"
+        ::= { qbAtmPnniLinkEntry 3 }
+                                                   
+-- ****************************************************************
+-- Extension to the ATM VCL Table for hidden interfaces
+-- ****************************************************************
+
+qbAtmHiddenVclTable	OBJECT-TYPE
+	SYNTAX	SEQUENCE OF QbAtmHiddenVclEntry
+	MAX-ACCESS	not-accessible
+	STATUS	current
+	DESCRIPTION
+		"The QB table with extensions to atmVclTable"
+	::= { qbAtmObjects 8 }
+
+qbAtmHiddenVclEntry OBJECT-TYPE 
+	SYNTAX QbAtmHiddenVclEntry 
+        MAX-ACCESS not-accessible 
+        STATUS current 
+        DESCRIPTION "Entry in qbAtmHiddenVclTable" 
+	AUGMENTS { atmVclEntry }
+		
+	::= { qbAtmHiddenVclTable 1 }
+
+QbAtmHiddenVclEntry ::=
+	SEQUENCE	{
+		qbAtmHiddenVclName		DisplayString,
+		qbAtmHiddenVclType		INTEGER,
+		qbAtmHiddenVclIfIndex		InterfaceIndex,
+		qbAtmHiddenVclVtIndex		INTEGER
+		}
+
+
+qbAtmHiddenVclName OBJECT-TYPE
+	SYNTAX      DisplayString (SIZE (0..20))
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"A textual description for the SPVC name."
+	DEFVAL  { "" }
+    ::= { qbAtmHiddenVclEntry 1 }
+
+
+qbAtmHiddenVclType OBJECT-TYPE
+	SYNTAX      INTEGER {
+			 native (1),
+			 non-native (2)
+		    }
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"Value for the interface type.  
+                 Native ATM - Q155, S622; 
+		 non-native - E1, DS1, ENET, VT"
+    ::= { qbAtmHiddenVclEntry 2 }
+
+
+qbAtmHiddenVclIfIndex OBJECT-TYPE
+	SYNTAX      InterfaceIndex
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"ifIndex value for IOT interface.  This
+	         value is not used for native ATM interfaces."
+    ::= { qbAtmHiddenVclEntry 3 }
+
+  qbAtmHiddenVclVtIndex OBJECT-TYPE
+	SYNTAX      INTEGER
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"Address information for a VT card.  This
+	         value is used for VT cards only."
+    ::= { qbAtmHiddenVclEntry 4 }
+                               
+                                                              
+                               
+-- ****************************************************************
+-- This section defines the swicth statistics collected
+-- ****************************************************************
+
+qbAtmSwitchModuleGroup OBJECT IDENTIFIER ::= { qbAtmObjects 9 }
+	
+qbAtmStatsBuffOverCells OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"This object gives the number of cells discarded due to
+		buffer overflows."
+    ::= {  qbAtmSwitchModuleGroup 1 }
+    
+qbAtmStatsInvalidCells OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"This object gives the number of cells discarded due to
+		unknown VPI/VCI."
+    ::= {  qbAtmSwitchModuleGroup 2 }
+    
+qbAtmStatsInvUpdateCells OBJECT-TYPE
+	SYNTAX      Counter32
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		"This object gives the number of cells discarded due to
+		internal switch errors."
+    ::= {  qbAtmSwitchModuleGroup 3 }
+
+-- **************************************************************
+-- ATM Interface Statistics Table
+-- **************************************************************
+
+   qbAtmInterfaceStatTable       OBJECT-TYPE
+	SYNTAX      SEQUENCE OF QbAtmInterfaceStatEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "The Quantum Bridge ATM Interface Statistic Table contains 
+	    ATM layer statistics for each ATM interface."
+    ::= {  qbAtmObjects 10 }
+ 
+   qbAtmInterfaceStatEntry    OBJECT-TYPE
+	SYNTAX      QbAtmInterfaceStatEntry
+	MAX-ACCESS  not-accessible
+	STATUS      current
+	DESCRIPTION
+            "An entry in the Quantum ATM Interface Table. 
+	    Every ATM interface contains a corresponding
+	    entry in the table."
+    INDEX   { ifIndex }
+    ::=  { qbAtmInterfaceStatTable 1 }
+
+   QbAtmInterfaceStatEntry ::=
+	SEQUENCE {
+		qbAtmInterfaceStatTxOAMCells     Counter32,
+		qbAtmInterfaceStatRxOAMCells	 Counter32
+    }
+
+    qbAtmInterfaceStatTxOAMCells  OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The total number of valid OAM cells transmitted  by this
+	    atm layer interface." 
+        ::= { qbAtmInterfaceStatEntry  1 }
+
+   qbAtmInterfaceStatRxOAMCells  OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The total number of OAS ATM cells received by this atm
+	    layer interface."
+        ::= { qbAtmInterfaceStatEntry  2 }
+
+   --
+   --  This table defines a set of in-band management IP addresses and the ATM connections
+   --  that can access them. It is based largely on the MIB defined in Sudha Mulpur's document
+   --  'Multiple In-Band Management PVC/Soft PVC Functional and Design Specification'.
+   --
+
+   qbAtmInBandMgtTable  OBJECT-TYPE
+      SYNTAX        SEQUENCE OF QbAtmInBandMgtEntry
+      MAX-ACCESS    not-accessible
+      STATUS        current
+      DESCRIPTION
+            "The QbAtmInBandMgtTable defines in-band Management IP channels for use by ATM connections."
+        ::= { qbAtmObjects 11 }
+        
+  qbAtmTrafficDescriptorTypes OBJECT IDENTIFIER ::= {qbAtmObjects 12}
+  
+  qbAtmPkt  OBJECT-IDENTITY
+    STATUS  current
+    DESCRIPTION
+        "This traffic descriptor type is to define a connection with an Ethernet endpoint, and
+        it is for a user that does not want to use ATM parameters directly.  The EtherNet bandwidth 
+        will be converted to a nrtVbr traffic descriptor. The conversion from Ethernet bandwidth to 
+        ATM cell rate must add an ATM cell tax. This is defined using the pcbe (packet-to-cell bandwidth expansion)
+        factor. If this is not defined for the traffic descriptor, then the system default (qbAtmDefaultPCBE)should be used.
+         
+        The use of the parameter vector for this type:
+        Parameter 1: minbw, the minimum guarnteed bandwidth fo rthe connection. This is defined in Mb/sec. (0-100).            
+        Parameter 2: maxbw, the maximum bursting capability of the connection. This is defined in Mb/sec (1-100).
+                                 It is default to minbw.
+        Parameter 3: bw, indicates the bandwidth  for the PON segment. Vaules are expressed in Mb, and may take 
+                                 interger value between 1 and 100. (only apply to 155Mb PON). It is default to minbw.
+        Parameter 4: pcbe, it defines the packed-to-cell bandwidth expansion. This is the percentage overhead that
+                                 is used to convert Ethernet bandwidth to ATM cell rates. It is default to qbAtmDefaultPCBE.
+        Parameter 5: not used."
+    REFERENCE
+        ""
+    ::= {qbAtmTrafficDescriptorTypes 1}
+
+
+   qbAtmInBandMgtEntry OBJECT-TYPE
+	SYNTAX        QbAtmInBandMgtEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the table, containing information about an in-band Management
+             channel."
+        INDEX         { qbAtmInBandMgtIpAddr }
+        ::= { qbAtmInBandMgtTable 1 }
+
+   QbAtmInBandMgtEntry ::=
+        SEQUENCE {
+		qbAtmInBandMgtIpAddr		IpAddress,                  
+		qbAtmInBandMgtIpMask		IpAddress,  
+		qbAtmInBandMgtIpIfIndex		InterfaceIndex,
+		qbAtmInBandMgtNeighborIp	IpAddress,
+		qbAtmInBandMgtIfIndex		InterfaceIndex,
+		qbAtmInBandMgtVpi			AtmVpIdentifier,
+		qbAtmInBandMgtVci			AtmVcIdentifier,
+		qbAtmInBandMgtConnKind		AtmConnKind,
+		qbAtmInBandMgtTxTd			AtmTrafficDescrParamIndex,
+		qbAtmInBandMgtRxTd          AtmTrafficDescrParamIndex,   			
+		qbAtmInBandMgtTargetNsapAddr		AtmAddr,
+		qbAtmInBandMgtRowStatus		RowStatus
+	}
+
+    qbAtmInBandMgtIpAddr OBJECT-TYPE
+        SYNTAX        IpAddress
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An IP Address for in-band SNMP Management of this chassis."
+        ::= { qbAtmInBandMgtEntry 1 }    
+        
+    qbAtmInBandMgtIpMask OBJECT-TYPE
+        SYNTAX        IpAddress
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The IP Network Mask associated with this in-band SNMP Management IP Address."
+        ::= { qbAtmInBandMgtEntry 2 }
+        
+    qbAtmInBandMgtIpIfIndex OBJECT-TYPE
+        SYNTAX        InterfaceIndex
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The Interface associated with this in-band management address."
+        ::= { qbAtmInBandMgtEntry 3 }       
+        
+    qbAtmInBandMgtNeighborIp OBJECT-TYPE
+        SYNTAX        IpAddress
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "This is the neighbor IP address associated with the in-band Management Interface. If the
+            qbAtmInBandMgtConnKind is any value other than pvc(1), this object is non-applicable."
+        ::= { qbAtmInBandMgtEntry 4 }
+
+    qbAtmInBandMgtIfIndex OBJECT-TYPE
+        SYNTAX        InterfaceIndex
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "This is the interface index associated with the in-band Management connection. If the
+            qbAtmInBandMgtConnKind is any value other than pvc(1), this object is non-applicable."
+        ::= { qbAtmInBandMgtEntry 5 }  
+        
+    qbAtmInBandMgtVpi OBJECT-TYPE
+        SYNTAX        AtmVpIdentifier
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "If the value of qbAtmInBandMgtConnKind is pvc(1), this is the VPI associated with 
+            this in-band management connection. If the value of qbAtmInBandMgtConnKind is spvcInitiator(4),
+            this object is target VPI. In all other cases, the value of this object is non-applicable."
+        ::= { qbAtmInBandMgtEntry 6 }
+        
+    qbAtmInBandMgtVci OBJECT-TYPE
+        SYNTAX        AtmVcIdentifier
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "If the value of qbAtmInBandMgtConnKind is pvc(1), this is the VCI associated with 
+            this in-band management connection. If the value of qbAtmInBandMgtConnKind is spvcInitiator(4),
+            this object is target VCI. In all other cases, the value of this object is non-applicable."
+        ::= { qbAtmInBandMgtEntry 7 }
+        
+    qbAtmInBandMgtConnKind OBJECT-TYPE
+        SYNTAX        AtmConnKind
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "This is the connection type associated with the in-band Management connection. The currently 
+            accepted types are pvc(1), spvcInitiator(4) and spvcTarget(5)."
+        ::= { qbAtmInBandMgtEntry 8 }
+
+    qbAtmInBandMgtTxTd OBJECT-TYPE
+        SYNTAX        AtmTrafficDescrParamIndex
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The Transmit traffic descriptor associated with this in-band management channel."
+        ::= { qbAtmInBandMgtEntry 9 }   
+        
+    qbAtmInBandMgtRxTd OBJECT-TYPE
+        SYNTAX        AtmTrafficDescrParamIndex
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "The Receive traffic descriptor associated with this in-band management channel."
+        ::= { qbAtmInBandMgtEntry 10 }
+                                         
+	qbAtmInBandMgtTargetNsapAddr OBJECT-TYPE
+        SYNTAX        AtmAddr
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "If the value of qbAtmInBandMgtConnKind is spvcInitiator(4) this object 
+            represetns the Target NSAP Address of the connection. In all other cases, 
+            the value of this object is non-applicable."
+        ::= { qbAtmInBandMgtEntry 11 }                                        
+
+     qbAtmInBandMgtRowStatus OBJECT-TYPE
+        SYNTAX        RowStatus
+        MAX-ACCESS    read-create
+        STATUS        current
+        DESCRIPTION
+            "To create, or delete an Entry in this table.
+				Setting this object to createAndGo(4) causes 
+				the corresponding row to be created.
+
+				Setting this object to destroy(6) causes the corresponding
+				row to be deleted.
+						
+				Note that -- currently-- only a single instance of a row 
+				can be created in this table."
+        ::= { qbAtmInBandMgtEntry 12 }
+
+
+-- ****************************************************************
+-- Conformance Information
+-- ****************************************************************
+
+   qbAtmCompliances OBJECT IDENTIFIER ::= { qbAtmConformance 1 }
+   qbAtmGroups      OBJECT IDENTIFIER ::= { qbAtmConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+--
+-- All Object Groups
+--
+ qbAtmCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for all agents that support this
+        MIB. A compliant agent implements all objects defined in this
+        MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS {
+    	qbAtmInterfaceConfGroupInfo, 
+    	qbAtmTrafficDescrParamGroupInfo,
+    	qbAtmVclGroupInfo,   
+    	qbAtmVplGroupInfo,
+    	qbAtmVcCrossConnectGroupInfo,
+	qbAtmVpCrossConnectGroupInfo,
+	qbAtmPnniNodeGroupInfo,
+	qbAtmPnniIfGroupInfo,
+	qbAtmPnniRouteAddrGroupInfo,
+	qbAtmInterfaceConfSigGroupInfo,
+	qbAtmHiddenVclGroupInfo ,
+	qbAtmPnniNbrPeerGroupInfo,
+	qbAtmInBandMgtGroupInfo
+    }
+    ::= { qbAtmCompliances 1 }
+
+  qbAtmInterfaceConfGroupInfo OBJECT-GROUP
+    OBJECTS {
+        qbAtmInterfaceConfPolicingStatus,
+        qbAtmInterfaceConfMaxPvcVci,
+        qbAtmInterfaceConfMinPvcVci,
+        qbAtmInterfaceConfMaxPvcVpi,
+        qbAtmInterfaceConfMinPvcVci,
+        qbAtmInterfaceConfMaxPvpVpi,  
+        qbAtmInterfaceConfMinPvpVpi
+	}        
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the Interface group of this MIB."
+    ::= { qbAtmGroups 1 }   
+   
+  qbAtmTrafficDescrParamGroupInfo OBJECT-GROUP
+    OBJECTS {
+        qbAtmTrafficDescrParamName,
+        qbAtmTrafficDescrParamDefault
+	}        
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the Traffic group of this MIB."
+    ::= { qbAtmGroups 2 }   
+   
+ qbAtmVclGroupInfo OBJECT-GROUP
+    OBJECTS {
+        qbAtmVclLoopback,
+	qbAtmVclLoopback,
+	qbAtmVclF4F5LoopbackInsert,
+	qbAtmVclF4F5LoopbackStatus,
+	qbAtmVclF4F5LoopbackTimestamp,
+	qbAtmVclMgmtIpAddr,
+	qbAtmVclMgmtIpMask,
+	qbAtmVclMgmtNeighborIP,
+	qbAtmVclConnKind
+	}        
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the VCL group of this MIB."
+    ::= { qbAtmGroups 3 }   
+
+ qbAtmVplGroupInfo OBJECT-GROUP
+    OBJECTS {
+        qbAtmVplLoopback,
+	qbAtmVplF4F5LoopbackInsert,
+	qbAtmVplF4F5LoopbackStatus,
+	qbAtmVplF4F5LoopbackTimestamp
+        }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the VPL group of this MIB."
+    ::= { qbAtmGroups 4 }   
+
+  qbAtmVcCrossConnectGroupInfo OBJECT-GROUP
+    OBJECTS {
+	qbAtmVcCrossConnectName,
+	qbAtmVcCrossConnectRxTrafficDescrIndex,
+	qbAtmVcCrossConnectTxTrafficDescrIndex
+        }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the VPL group of this MIB."
+    ::= { qbAtmGroups 5 }
+
+ qbAtmVpCrossConnectGroupInfo OBJECT-GROUP
+    OBJECTS {
+	qbAtmVpCrossConnectName,
+	qbAtmVpCrossConnectRxTrafficDescrIndex,
+	qbAtmVpCrossConnectTxTrafficDescrIndex
+        }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the VPL group of this MIB."
+    ::= { qbAtmGroups 6 }      
+
+
+ qbAtmPnniNodeGroupInfo OBJECT-GROUP
+    OBJECTS {
+	qbAtmPnniNodeNetAddrPrefix,
+	qbAtmPnniNodeEndSysId,
+        qbAtmPnniNodeLevel,
+	qbAtmPnniNodeRowStatus,
+	qbAtmPnniNodeOperStatus,
+	qbAtmPnniNodeAtmAddress,
+	qbAtmPnniNodePeerGroupId
+        }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the VPL group of this MIB."
+    ::= { qbAtmGroups 7 }      
+
+  qbAtmPnniIfGroupInfo OBJECT-GROUP
+    OBJECTS {
+       qbAtmPnniRouteAddrPrefixLength,
+       qbAtmPnniRouteAddrRowStatus,
+       qbAtmPnniRouteAddrProto
+        }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the PNNI interface group of this MIB."
+    ::= { qbAtmGroups 8 }      
+
+  qbAtmPnniRouteAddrGroupInfo OBJECT-GROUP
+    OBJECTS {
+       qbAtmPnniIfAdmWeightCbr,
+       qbAtmPnniIfAdmWeightRtVbr,
+       qbAtmPnniIfAdmWeightNrtVbr,
+       qbAtmPnniIfAdmWeightAbr,
+       qbAtmPnniIfAdmWeightUbr,
+       qbAtmPnniIfRccServiceCategory,
+       qbAtmPnniIfRccTrafficDescrIndex
+        }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the Route group of this MIB."
+    ::= { qbAtmGroups 9 }      
+
+   qbAtmInterfaceConfSigGroupInfo	OBJECT-GROUP
+    OBJECTS {
+	qbAtmInterfaceConfSigMode,
+	qbAtmInterfaceConfSigSide,
+	qbAtmInterfaceConfSigParseMode,
+	qbAtmInterfaceConfSigAdminStatus,
+	qbAtmInterfaceConfSigSvcMinVci,
+	qbAtmInterfaceConfSigSvcMaxVci,
+	qbAtmInterfaceConfSigSvcMinVpi,
+	qbAtmInterfaceConfSigSvcMaxVpi,
+	qbAtmInterfaceConfSigSvpMinVpi,
+	qbAtmInterfaceConfSigSvpMaxVpi,
+	qbAtmInterfaceConfSigLastChange
+        }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the Route group of this MIB."
+    ::= { qbAtmGroups 10 }     
+   
+  qbAtmPnniNbrPeerGroupInfo OBJECT-GROUP
+    OBJECTS {    
+  	qbAtmPnniPeerState,
+    qbAtmPnniPeerSvccRccIndex,
+    qbAtmPnniPeerPortCount,
+    qbAtmPnniPeerRcvDbSums,
+    qbAtmPnniPeerXmtDbSums,
+    qbAtmPnniPeerRcvPtsps,
+    qbAtmPnniPeerXmtPtsps,
+    qbAtmPnniPeerRcvPtseReqs,
+    qbAtmPnniPeerXmtPtseReqs,
+    qbAtmPnniPeerRcvPtseAcks,
+    qbAtmPnniPeerXmtPtseAcks
+    }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the PNNI Peer Nbr group of this MIB."
+    ::= { qbAtmGroups 11 }  
+    
+  qbAtmPnniPglGroupInfo OBJECT-GROUP
+    OBJECTS {        
+    qbAtmPnniNodePglLeadershipPriority,
+    qbAtmPnniNodeCfgParentNodeIndex,
+    qbAtmPnniNodePglInitTime,
+    qbAtmPnniNodePglOverrideDelay,
+    qbAtmPnniNodePglReelectTime,
+    qbAtmPnniNodePglState,
+    qbAtmPnniNodePreferredPgl,
+    qbAtmPnniNodePeerGroupLeader,
+    qbAtmPnniNodePglTimeStamp,
+    qbAtmPnniNodeActiveParentNodeId 
+    }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the PGL group of this MIB."
+    ::= { qbAtmGroups 12 }         
+                
+   
+   qbAtmPnniTimerGroupInfo OBJECT-GROUP
+   	OBJECTS {             
+	 qbAtmPnniNodePtseHolddown,
+	 qbAtmPnniNodeHelloHolddown,
+	 qbAtmPnniNodeHelloInterval,
+	 qbAtmPnniNodeHelloInactivityFactor,
+	 qbAtmPnniNodeHlinkInact,
+	 qbAtmPnniNodePtseRefreshInterval,
+	 qbAtmPnniNodePtseLifetimeFactor,
+	 qbAtmPnniNodeRxmtInterval,
+	 qbAtmPnniNodePeerDelayedAckInterval,
+	 qbAtmPnniNodeAvcrPm,
+	 qbAtmPnniNodeAvcrMt,
+	 qbAtmPnniNodeCdvPm,
+	 qbAtmPnniNodeCtdPm  
+	 }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the PNNI Timer group of this MIB."
+    ::= { qbAtmGroups 13 } 	     
+                                   
+   qbAtmPnniLinkGroupInfo OBJECT-GROUP
+   	OBJECTS {                    
+	 qbAtmPnniLinkType,
+	 qbAtmPnniLinkHelloState
+	 }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the PNNI Link group of this MIB."
+    ::= { qbAtmGroups 14 } 
+
+   
+  qbAtmInBandMgtGroupInfo OBJECT-GROUP
+    OBJECTS {                       
+	qbAtmInBandMgtIpMask,  
+	qbAtmInBandMgtIpIfIndex,
+	qbAtmInBandMgtNeighborIp,
+	qbAtmInBandMgtIfIndex,
+	qbAtmInBandMgtVpi,
+	qbAtmInBandMgtVci,
+	qbAtmInBandMgtConnKind,
+	qbAtmInBandMgtTxTd,
+	qbAtmInBandMgtRxTd,    			
+	qbAtmInBandMgtTargetNsapAddr,
+	qbAtmInBandMgtRowStatus
+    }
+	STATUS	current
+        DESCRIPTION
+        "The set of all accessible objects in the in-band management group of this MIB."
+    ::= { qbAtmGroups 15 }  
+    
+            
+  
+END
+
+

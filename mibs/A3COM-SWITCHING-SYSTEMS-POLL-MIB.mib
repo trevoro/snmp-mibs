@@ -1,0 +1,586 @@
+-- ====================================================================== 
+-- 
+--  3Com Switching Systems Remote Polling Management Information Base 
+--  Version 1.0.0 
+--  January 8, 1998 
+ 
+--  3Com Corporation 
+--  80 Central Street 
+--  Boxborough, MA 01719 
+--  (978) 264-1400 
+--   
+--  Change History: 
+--  Aug 14, 1998 - tmeiczin Fixed syntax to compile with SMICng 
+--  Jun  8, 1998 - gute     edits from third review. 
+--  May 15, 1998 - gute     edits from second review. 
+--  Jan  8, 1998 - gute     edits from first review.  
+-- 
+--   Revision 1.0.0 Initially created by Flavio Fernandes 
+--                  Original structure inherited from blend of 3com0019.mib, 
+--                  WFMIB.asn (Well Fleet) and lbhub-boom.mib 
+-- 
+-- ====================================================================== 
+-- 
+--    Interpretation of the Interface Table for Remote Polling 
+--  
+--  OBJECT                      VALUE/USE 
+-- 
+--  a3ComPollIndex               A unique value, greater than zero for each  
+--                               remote polling interface. 
+--  a3ComPollAddress             Network address/hostname of the device to  
+--                               monitor. 
+--  a3ComPollAddressType         Method used to interpret device to 
+--                               monitor's address, which implies on the  
+--                               protocol to be used. (1)unknown, (2)ip,  
+--                               (3)ipdotted, (4)ipname, (5)ipx,  
+--                               (6)appletalk. 
+--  a3ComPollCount               Number of ping packets to be sent  
+--                               (0)continuous (1)default (2..9999)other  
+--                               valid values. 
+--  a3ComPollAttempts            Number of successful or unsuccessful  
+--                               packets in sequence to trigger trap (0)trap  
+--                               disabled/default (1..255) other valid  
+--                               values. 
+--  a3ComPollRate                Number of seconds between sending each ping  
+--                               packet. (0)burst mode (3)default  
+--                               (1,2,4..5400)other valid values. 
+--  a3ComPollResponseTimeOut     Max wait time, in m-seconds, for a given  
+--                               response packet (0)before sending/default  
+--                               (1..65534)other valid values (65535)longest  
+--                               timeout. 
+--  a3ComPollPacketSize          Size, in bytes, of ping packet to be sent 
+--                               out (0)use default packet size/default. 
+--  a3ComPollSourceAddress       Local interface's address to receive ping  
+--                               packets. 
+--  a3ComPollMinRoundTripTime    Min round trip time value, in ms, of poll  
+--                               cycle (0)unknown. 
+--  a3ComPollAvgRoundTripTime    Avg round trip time value, in ms, of poll  
+--                               cycle (0)unknown. 
+--  a3ComPollMaxRoundTripTime    Max round trip time value, in ms, of poll  
+--                               cycle (0)unknown. 
+--  a3ComPollFramesSent          Number of packets sent. 
+--  a3ComPollFramesReceived      Number of packets received. 
+--  a3ComPollInformation         Object that contains any extra information,  
+--                               interpreted depending on the protocol used.  
+--  a3ComPollOwner               string with owner information. 
+--  a3ComPollReport              (1)idle, (2)busy, (3)badArgument,  
+--                               (4)noResource, (5)nameLookupFailed,  
+--                               (6)hostAlive, (7)hostUnreachable,  
+--                               (8)hostNotResponding. 
+--  a3ComPollAction              (1)noop, (2)activate, (3)deactivate,  
+--                               (4)reset stats and set default values and  
+--                               (5)destroy. 
+-- 
+--  a3ComPollNextFreeIndex       Value of next available poll index. 
+--  a3ComPollTableInformation    Object with summary information regarding 
+--                               entire poll table. 
+--  a3ComPollTableActionAll      (1)noop, (2)activate, (3)deactivate,  
+--                               (4)reset stats and set default values and  
+--                               (5)destroy. 
+-- 
+--  a3ComPollResponseReceived    TRAP triggered when disabled device begins  
+--                               responding. 
+--  a3ComPollResponseNotReceived TRAP triggered when enabled device stops 
+--                               responding. 
+-- ====================================================================== 
+ 
+   A3COM-SWITCHING-SYSTEMS-POLL-MIB DEFINITIONS ::= BEGIN 
+ 
+   IMPORTS 
+      DisplayString FROM RFC1213-MIB 
+      OBJECT-TYPE FROM RFC-1212 
+      TRAP-TYPE FROM RFC-1215 
+      enterprises FROM RFC1155-SMI 
+      ; 
+ 
+a3Com                               OBJECT IDENTIFIER ::= { enterprises 43 } 
+switchingSystemsMibs                OBJECT IDENTIFIER ::= { a3Com 29 }
+a3ComSwitchingSystemsMib            OBJECT IDENTIFIER ::= { switchingSystemsMibs 4 }
+ 
+   -- Structure of MIB 
+   -- 
+   -- The objects are arranged into the following groups: 
+   -- 
+   -- 3Com switchingSystemsMibs a3ComSwitchingSystemsMib a3ComPoll
+ 
+a3ComPoll                           OBJECT IDENTIFIER ::= { a3ComSwitchingSystemsMib 22 } 
+ 
+   -- The 3COM Switching Remote Polling Interface Table 
+   -- 
+   -- This table is implemented by the 3Com network devices that support  
+   -- remote polling. 
+ 
+a3ComPollTable  OBJECT-TYPE 
+    SYNTAX  SEQUENCE OF A3ComPollEntry 
+    ACCESS  not-accessible 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This table is used to provide remote device monitoring facilities. 
+ 
+            The implementation allows a list of network devices to be set up 
+            and polled regularly (or only once) by a variety of protocols. 
+            The table can be configured to inform the management station(s) 
+            of devices that are not responding to polls or that have started 
+            to respond after a period of silence. 
+ 
+            The minimum effort required to do a single poll is 
+            1. In one packet, write the address and set a3ComPollAction to  
+            activate(2). 
+            2. In the next packet, read the a3ComPollReport. 
+ 
+            The minimum effort required to monitor a device is 
+            1. In one packet, write the address, set a3ComPollAttempts to 1,  
+            set a3ComPollCount to 0 and set a3ComPollAction to activate(2). 
+            2. Wait for traps to come in. 
+ 
+            A row in this table is created by setting any read-write member,  
+            indexed by the next available index (a3ComPollNextFreeIndex). This 
+            method of creation makes the table very user friendly, although 
+            a bit harder to detect racing conditions. The suggested method for 
+            racing condition detection is by checking the a3ComPollAddress and 
+            a3ComPollOwner objects while the a3ComPollReport object is set to 
+            active. An example of the indexing of this table is a3ComPollRate.2" 
+::= { a3ComPoll 1 } 
+ 
+a3ComPollEntry  OBJECT-TYPE 
+    SYNTAX  A3ComPollEntry 
+    ACCESS  not-accessible 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "A table used to define device monitoring. A row in this table is 
+            created by setting any read-write member, indexed by the next  
+            available index (a3ComPollNextFreeIndex). An entry in this table is 
+            deleted by setting a3ComPollAction to destroy(5). An example of the 
+            indexing of this table is a3ComPollRate.2  This method of creation  
+            makes the table very user friendly, although a bit harder to detect 
+            racing conditions. The suggested method for racing condition  
+            detection is by checking the a3ComPollAddress and a3ComPollOwner 
+            objects while the a3ComPollReport object is set to active." 
+    INDEX  { a3ComPollIndex } 
+::= { a3ComPollTable 1 } 
+ 
+A3ComPollEntry ::=  
+    SEQUENCE { 
+        a3ComPollIndex             INTEGER, 
+        a3ComPollAddress           DisplayString, 
+        a3ComPollAddressType       INTEGER, 
+        a3ComPollCount             INTEGER, 
+        a3ComPollAttempts          INTEGER, 
+        a3ComPollRate              INTEGER, 
+        a3ComPollResponseTimeOut   INTEGER, 
+        a3ComPollPacketSize        INTEGER, 
+        a3ComPollSourceAddress     DisplayString, 
+        a3ComPollMinRoundTripTime  INTEGER, 
+        a3ComPollAvgRoundTripTime  INTEGER, 
+        a3ComPollMaxRoundTripTime  INTEGER, 
+        a3ComPollFramesSent        INTEGER, 
+        a3ComPollFramesReceived    INTEGER, 
+        a3ComPollInformation       DisplayString, 
+        a3ComPollOwner             DisplayString, 
+        a3ComPollReport            INTEGER, 
+        a3ComPollAction            INTEGER 
+    } 
+ 
+a3ComPollIndex  OBJECT-TYPE 
+    SYNTAX  INTEGER (1..255) 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "Unique identifier of a row in the Poll Table. The actual number 
+            of rows that can be created on any particular device depends on 
+            the memory and processing resources available at the time." 
+::= { a3ComPollEntry 1 } 
+ 
+a3ComPollAddress  OBJECT-TYPE 
+    SYNTAX  DisplayString (SIZE(0..50)) 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This DisplayString is the network address of the device to 
+            monitor. Typically this is an IP, dotted IP format, IP's  
+            hostname, IPX or AppleTalk. The following formats can be used: 
+            IP        cccc                  - ipAddress MIB 
+            IP        nnn.nnn.nnn.nnn       - dotted format 
+            IP        hostname 
+            IPX       AABBCCDD:AABBCCDDEEFF - network : node 
+            AppleTalk n[...].n[...]         - dotted notation 
+             
+            The object a3ComPollAddressType is used to indicate how this 
+            object will be interpreted. 
+ 
+            This object may not be modified if the associated a3ComPollReport 
+            is equal to busy(2). When this object is successfully set,  
+            a3ComPollReport will be set to idle(1)." 
+::= { a3ComPollEntry 2 } 
+ 
+a3ComPollAddressType  OBJECT-TYPE 
+    SYNTAX  INTEGER    { 
+              unknown(1), 
+              ip(2), 
+              ipdotted(3), 
+              ipname(4), 
+              ipx(5), 
+              appletalk(6) 
+            } 
+ 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This defines the method used to interpret the a3ComPollAddress,  
+            which implies on the protocol to be used. 
+ 
+            Writing an address to the a3ComPollAddress object causes a default 
+            a3ComPollAddressType value to be setup. The default value is 
+            derived from the format of the address - four octets means ip(2),  
+            four sets of numeric values separated by dot means ipdotted(3), eight 
+            and twelve octets separated by colon means ipx(5), and two sets of 
+            numeric values separated by a dot means appletalk(6). If the address 
+            type cannot be figured out, and this object is not currently set to  
+            ipname(4), it will then be set to unknown(1). In other words, this 
+            object will remain unchanged if its current value is ipname(4) and 
+            a more specific type cannot be given to it. Thus, for the mot part, 
+            when setting this object manually, that needs to be done after 
+            setting a3ComPollAddress. 
+ 
+            For ip hostname(4), this field must be set manually. Furthermore, 
+            DNS client must be locally enabled to allow for conversion from name 
+            to ip address.  
+ 
+            If the requested protocol is not supported or is not compatible 
+            with the a3ComPollAddress, an error is returned when an attempt is  
+            made to set a3ComPollAction to activate(2), and a3ComPollReport will 
+            be set to noResource(4). 
+ 
+            This object may not be modified if the associated a3ComPollReport 
+            is equal to busy(2). When this object is successfully set,  
+            a3ComPollReport will be set to idle(1)." 
+    DEFVAL  { unknown } 
+::= { a3ComPollEntry 3 } 
+ 
+a3ComPollCount  OBJECT-TYPE 
+    SYNTAX  INTEGER (0..9999) 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This integer is the number of ping packets to be sent out until 
+            completion of a polling command. If count is set to continuous(0), 
+            the remote device will be kept monitored and the a3ComPollReport 
+            will be normally set to busy(2) upon poll activation. 
+ 
+            This object may not be modified if the associated a3ComPollReport 
+            is equal to busy(2). When this object is successfully set,  
+            a3ComPollReport will be set to idle(1)." 
+    DEFVAL  { 1 } 
+::= { a3ComPollEntry 4 } 
+ 
+a3ComPollAttempts  OBJECT-TYPE 
+    SYNTAX  INTEGER (0..255) 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "The number of unsuccessful or successful requests necessary before 
+            deciding that the device is definitely not responding or responding. 
+            In order to use traps, a value greater than one must be used.  
+            Conversely, a value of zero, which is the default, would imply that 
+            traps are disabled. 
+             
+            This object may not be modified if the associated a3ComPollReport 
+            object is equal to busy(2). When this object is successfully set,  
+            a3ComPollReport will be set to idle(1)." 
+    DEFVAL  { 0 } 
+::= { a3ComPollEntry 5 } 
+ 
+a3ComPollRate  OBJECT-TYPE 
+    SYNTAX  INTEGER    (0..5400) 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This defines how often, in seconds, a poll packet is sent to 
+            the device being polled. 
+ 
+            If burst mode(0) is chosen, then number of packets selected will 
+            be sent out as fast as possible when the a3ComPollAction is set to 
+            activate(2). 
+ 
+            Common values the a3ComPollRate can be set to: 
+            every  3 seconds (3) default       every minute     (60) 
+            every  5 minutes (300)             every 15 minutes (900) 
+            every 30 minutes (1800)            every hour       (3600) 
+ 
+            This object may not be modified if the associated a3ComPollReport 
+            is equal to busy(2). When this object is successfully set,  
+            a3ComPollReport will be set to idle(1)." 
+    DEFVAL  { 3 } 
+::= { a3ComPollEntry 6 } 
+ 
+a3ComPollResponseTimeOut  OBJECT-TYPE 
+    SYNTAX  INTEGER (0..65535) 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "Maximum wait time, in msecs, for a response packet before deciding 
+            that no response arrived. This object differs from a3ComPollRate 
+            as the device have the sending and receiving queues independent, 
+            making it possible to send ping requests at rates faster than  
+            receiving. 
+ 
+            The value of 0 (default) will be interpreted as a request for 
+            time-out by the time a new packet is sent, and 65535 as a request for 
+            maximum wait. Assuming that burst is used and this object is set to 
+            one, most likely all packets sent will be interpreted as timed out. 
+ 
+            This object may not be modified if the associated a3ComPollReport 
+            is equal to busy(2). When this object is successfully set,  
+            a3ComPollReport will be set to idle(1)." 
+    DEFVAL  { 0 } 
+::= { a3ComPollEntry 7 } 
+ 
+a3ComPollPacketSize  OBJECT-TYPE 
+    SYNTAX  INTEGER (0..8191) 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "Size, in bytes, of ping packet to be sent out. If set to 0, the  
+            default size for ping packet under the protocol chosen will be used. 
+            If value given is to too large or too small, the biggest or smallest 
+            possible packets will be used, respectively, and no errors will be  
+            issued. 
+ 
+            This object may not be modified if the associated a3ComPollReport 
+            is equal to busy(2). When this object is successfully set,  
+            a3ComPollReport will be set to idle(1)." 
+    DEFVAL  { 0 } 
+::= { a3ComPollEntry 8 } 
+     
+a3ComPollSourceAddress  OBJECT-TYPE 
+    SYNTAX  DisplayString (SIZE(0..50)) 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This DisplayString is the network address of the local interface 
+            to receive ping query. Typically this is an IP, IPX or AppleTalk. 
+            The following formats can be used. 
+            IP        cccc                  - ipAddress MIB 
+            IP        nnn.nnn.nnn.nnn       - dotted format 
+            IPX       AABBCCDD:AABBCCDDEEFF - network : node 
+            AppleTalk n[...].n[...]         - dotted notation 
+             
+            If a3ComPollSourceAddress is set to empty, which is the default  
+            value, the sending device will pick the best interface to receive 
+            the response for its queries. 
+ 
+            The object a3ComPollAddressType is used to indicate how this 
+            object will be interpreted, as well as a3ComPollAddress. An 
+            exception exists when a3ComPollAddressType is set to ipname(4): 
+            this object will be parsed as if a3ComPollAddressType was set to 
+            ip(2) or as ipdotted(3), depending on the length of the object 
+            value. Therefore, ip name is not supported for a3ComPollSourceAddress. 
+ 
+            This object may not be modified if the associated a3ComPollReport 
+            is equal to busy(2). When this object is successfully set,  
+            a3ComPollReport will be set to idle(1)." 
+::= { a3ComPollEntry 9 } 
+ 
+a3ComPollMinRoundTripTime  OBJECT-TYPE 
+    SYNTAX  INTEGER 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "The minimum amount of time taken, in msecs, for the round trip of a 
+            ping packet." 
+::= { a3ComPollEntry 10 } 
+     
+a3ComPollAvgRoundTripTime  OBJECT-TYPE 
+    SYNTAX  INTEGER 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "The average amount of time taken, in msecs, for the round trip of a 
+            ping packet." 
+::= { a3ComPollEntry 11 } 
+     
+a3ComPollMaxRoundTripTime  OBJECT-TYPE 
+    SYNTAX  INTEGER 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "The maximum amount of time taken, in msecs, for the round trip of a 
+            ping packet." 
+::= { a3ComPollEntry 12 } 
+     
+a3ComPollFramesSent  OBJECT-TYPE 
+    SYNTAX  INTEGER 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "The number of ping packets sent to remote device so far." 
+::= { a3ComPollEntry 13 } 
+ 
+a3ComPollFramesReceived  OBJECT-TYPE 
+    SYNTAX  INTEGER 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "The number of ping packets responded by remote device so far. 
+            If a3ComPollResponseTimeOut is a non-zero value, and the poll 
+            response arrives after the specified timeout, this object will 
+            not increment." 
+::= { a3ComPollEntry 14 } 
+ 
+a3ComPollInformation  OBJECT-TYPE 
+    SYNTAX  DisplayString(SIZE(0..255)) 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "Depending on the protocol being used, this object contains extra 
+            information obtained through the device poll. For IP, the value is 
+            the number of packets that arrived out of sequence. If Apple Talk is 
+            used, this value represents the number of hops. An empty string,  
+            which is the default, stands for no extra information available. 
+ 
+            This object will reset every time a change is observed on  
+            a3ComPollAddressType." 
+::= { a3ComPollEntry 15 } 
+ 
+a3ComPollOwner  OBJECT-TYPE 
+    SYNTAX  DisplayString 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "The RMON OwnerString conventions are used here to 
+            help control the multi-manager situations." 
+::= { a3ComPollEntry 16 } 
+ 
+a3ComPollReport  OBJECT-TYPE 
+    SYNTAX  INTEGER    { 
+              idle(1), 
+              busy(2), 
+              badArgument(3), 
+              noResource(4),    
+              nameLookupFailed(5), 
+              hostAlive(6), 
+              hostUnreachable(7), 
+              hostNotResponding(8) 
+            } 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This integer contains the current status of the poll entry. When 
+            the state changes from busy to any other, the entry is no longer 
+            active. In situations where the a3ComPollCount field is set to  
+            continuous(0), this object will normally be set to busy(2) upon 
+            successful activation." 
+::= { a3ComPollEntry 17 } 
+ 
+a3ComPollAction  OBJECT-TYPE 
+    SYNTAX  INTEGER    { 
+              noop(1), 
+              activate(2), 
+              deactivate(3), 
+              reset(4), 
+              destroy(5) 
+            } 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This object is the trigger for initiating, stopping, resetting and 
+            destroying a poll entry. In order to read the current status of an 
+            entry, a3ComPollReport is the object to be queried. If reset(4) 
+            action is requested, the poll entry will unconditionally be moved 
+            to the idle(1) state and all objects, except for the pollAddress  
+            and pollAddressType will be set to initial values. Another object 
+            that is not affected by reset(4) is the owner object. Activating  
+            an entry that is in the busy(2) state has no effect." 
+    DEFVAL  { noop } 
+::= { a3ComPollEntry 18 } 
+ 
+a3ComPollNextFreeIndex  OBJECT-TYPE 
+    SYNTAX  INTEGER 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "The index for the next available remote polling entry in the table." 
+::= { a3ComPoll 2 } 
+ 
+a3ComPollTableInformation  OBJECT-TYPE 
+    SYNTAX  DisplayString(SIZE(0..255)) 
+    ACCESS  read-only 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This object provides a summary on the entire poll table. Internal 
+            thresholds, such as the maximum number of entries, as well the  
+            number of entries that can be active simultaneously are commonly  
+            provided here. Another information that can be given is the list of 
+            protocols the agent can handle. 
+ 
+            An empty string for a3ComPollTableInformation stands for no table 
+            information available." 
+::= { a3ComPoll 3 } 
+ 
+a3ComPollTableActionAll  OBJECT-TYPE 
+    SYNTAX  INTEGER    { 
+              noop(1), 
+              activate(2), 
+              deactivate(3), 
+              reset(4), 
+              destroy(5) 
+            } 
+    ACCESS  read-write 
+    STATUS  mandatory 
+    DESCRIPTION   
+            "This object works exactly as a3ComPollAction, except that it 
+            affects every entry in the table, in one snmp transaction. 
+            If a3ComPollTableActionAll is called with destroy(5), the table 
+            is purged." 
+    DEFVAL  { noop } 
+::= { a3ComPoll 4 } 
+ 
+a3ComPollResponseReceived       TRAP-TYPE 
+    ENTERPRISE  a3ComSwitchingSystemsMib 
+    VARIABLES   { a3ComPollAddress, a3ComPollAddressType,  
+                  a3ComPollAttempts, a3ComPollRate, 
+                  a3ComPollFramesSent, a3ComPollFramesReceived } 
+    DESCRIPTION   
+            "This trap is generated when the PollTable in the managed agent  
+            receives replies to a poll after a sequence of unsuccessful polls.  
+            The number of packets in such sequence is determined from the  
+            a3ComPollAttempts object. The variables are: 
+ 
+            a3ComPollAddress - the address of the device polled. 
+            a3ComPollAddressType - the type of the address above. 
+            a3ComPollAttempts - number of replies received in sequence before 
+            this trap was triggered. 
+            a3ComPollRate - rate at which device is being polled. 0 = burst. 
+            a3ComPollFramesSent - total number of frames sent. 
+            a3ComPollFramesReceived - total number of frames received. 
+ 
+            This event is generated at most once per monitored device per 
+            operation of a sequence of ping response when the event is first  
+            observed." 
+            ::= 61 
+ 
+a3ComPollResponseNotReceived    TRAP-TYPE 
+    ENTERPRISE  a3ComSwitchingSystemsMib 
+    VARIABLES   { a3ComPollAddress, a3ComPollAddressType,  
+                  a3ComPollAttempts, a3ComPollRate, 
+                  a3ComPollFramesSent, a3ComPollFramesReceived } 
+    DESCRIPTION   
+            "This trap is generated when the PollTable in the managed agent  
+            receives no replies to a poll after a sequence of successful polls.  
+            The number of packets in such sequence is determined from the  
+            a3ComPollAttempts object. The variables are: 
+ 
+            a3ComPollAddress - the address of the device polled. 
+            a3ComPollAddressType - the type of the address above. 
+            a3ComPollAttempts - number of replies missed in sequence before 
+            this trap was triggered. 
+            a3ComPollRate - rate at which device is being polled. 0 = burst. 
+            a3ComPollFramesSent - total number of frames sent. 
+            a3ComPollFramesReceived - total number of frames received. 
+ 
+            This event is generated at most once per monitored device per 
+            operation of a sequence of ping fails when the event is first  
+            observed." 
+            ::= 62 
+ 
+END 

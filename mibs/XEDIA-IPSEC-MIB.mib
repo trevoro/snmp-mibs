@@ -1,0 +1,1412 @@
+XEDIA-IPSEC-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS 
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, IpAddress, Gauge32,
+    Counter32, TimeTicks --, Unsigned32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION,  DisplayString, RowStatus, TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    xediaMibs
+        FROM XEDIA-REG
+    ifIndex
+        FROM IF-MIB
+    ;
+
+xediaIpsecMIB MODULE-IDENTITY
+    LAST-UPDATED "9803182155Z" -- March 18, 1998
+    ORGANIZATION "Xedia Corp."
+    CONTACT-INFO
+        "support@xedia.com"
+    DESCRIPTION
+        "This module defines objects for management of Xedia's IP
+        security (IPsec) Virtual Private Network (VPN) component."
+    ::= { xediaMibs 14 }
+
+
+-- ****************************************************************
+-- Top-level organization of the MIB
+-- ****************************************************************
+
+ipsecObjects          OBJECT IDENTIFIER ::= { xediaIpsecMIB 1 }
+ipsecConformance      OBJECT IDENTIFIER ::= { xediaIpsecMIB 2 }
+
+
+-- ****************************************************************
+-- Textual Conventions (datatypes)
+-- ****************************************************************
+
+-- Hack for pre-1902 compiler:
+Unsigned32 ::= Gauge32
+
+IpsecSecurityProfileName ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "A name for a security profile."
+    SYNTAX      DisplayString (SIZE (1..32))
+
+IpsecKeyValue ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "Cryptographic variable length keys."
+    SYNTAX      OCTET STRING (SIZE (16 | 24))
+    
+IpsecTunnelName ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "An administrative name for a tunnel."
+    SYNTAX      DisplayString (SIZE (1..32))
+
+IkeAuthentMethod ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "ISAKMP Authentication Method."
+    SYNTAX      INTEGER {
+                    none(0),    -- not applicable
+                    presharedKey(1),
+                    dsaSig(2),
+                    rsaSig(3),
+                    rsaEncrypt(4)
+                    -- revisedRsaEncrypt(5) not yet supported
+                }
+    
+-- ****************************************************************
+-- Object Definitions
+-- ****************************************************************
+
+-- The following tables are used to manage IPsec site-to-site and
+-- dial-in VPNs.  
+
+
+-- ================================================================
+-- IPSec Subsystem Group
+-- ================================================================
+
+ipsecSubsystemGroup OBJECT IDENTIFIER ::= { ipsecObjects 1 }
+
+ipsecTransformLayerType OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The type of IPSec Transform Layer currently active
+	(i.e., software only, hardware assisted)."
+    ::= { ipsecSubsystemGroup 1 }
+
+ipsecAlgorithms OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The IPSec algorithms currently available."
+    ::= { ipsecSubsystemGroup 2 }
+
+
+-- ================================================================
+-- The Security Profile Table
+-- ================================================================
+
+ipsecSecurityProfileTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF IpsecSecurityProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table defines a set of security attributes that will be
+        used to describe a security association (SA). There may be
+        many SAs that use the same security profile."
+    ::= { ipsecObjects 2 }
+    
+ipsecSecurityProfileEntry OBJECT-TYPE
+    SYNTAX      IpsecSecurityProfileEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The attributes that make up a single security profile. New
+        entries are created using the ipsecSecurityProfileRowStatus
+        object."
+    INDEX       { ipsecSecurityProfileName }
+    ::= { ipsecSecurityProfileTable 1 }
+
+IpsecSecurityProfileEntry ::= SEQUENCE {
+    ipsecSecurityProfileName                IpsecSecurityProfileName,
+    ipsecSecurityProfileProtocol            BIT STRING,
+    ipsecSecurityProfileEncryption          INTEGER,
+    ipsecSecurityProfileAuthentication      INTEGER,
+    ipsecSecurityProfileCompression         INTEGER,
+    ipsecSecurityProfileExpirationTimer     Unsigned32,
+    ipsecSecurityProfileExpirationVolume    Unsigned32,
+    ipsecSecurityProfileInactivityTimer     Unsigned32,
+    ipsecSecurityProfileEnablePfs           TruthValue,
+    ipsecSecurityProfileOakleyGroup         INTEGER,
+    ipsecSecurityProfileAssignmentStatus    INTEGER,
+    ipsecSecurityProfileRowStatus           RowStatus
+}
+
+ipsecSecurityProfileName OBJECT-TYPE
+    SYNTAX      IpsecSecurityProfileName
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the security profile. For example
+        'Medium-Security' or 'Maximum-Security'."
+    ::= { ipsecSecurityProfileEntry 1 }
+
+ipsecSecurityProfileProtocol OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    esp(0),
+                    ah(1),
+                    ipcomp(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION        
+        "The IPsec security protocol(s). When the combination of 
+        'ah(1)' and 'esp(0)' is used, the authentication protocol 
+        specified in ipsecSecurityProfileAuthentication is used for 
+        AH only and no authentication is performed for ESP."
+--  DEFVAL      { esp }
+    ::= { ipsecSecurityProfileEntry 2 }
+
+ipsecSecurityProfileEncryption OBJECT-TYPE
+    SYNTAX      INTEGER {
+-- For the first release, supported encryption types are limited
+--                    desIv64(1),
+                    des(2),
+                    des3(3),
+--                    rc5(4),
+--                    idea(5),
+--                    cast(6),
+--                    blowfish(7),
+--                    idea3(8),
+--                    desIv32(9),
+--                    rc4(10),
+                    null(11)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION        
+        "The encryption protocol. In the first release we support
+        'des(3)', 'des3(4)', and null(12)'  only."
+    DEFVAL      { des }
+    ::= { ipsecSecurityProfileEntry 3 }
+
+-- NOTE: the coding used here matches that of the "authentication
+-- algorithm" codes for ESP based authentication, which are NOT
+-- the same as the AH transform identifiers!
+ipsecSecurityProfileAuthentication OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    md5(1),
+                    sha1(2),
+-- For the first release, supported authentication protocols are
+-- limited
+--                    des(3),
+--                    kpdk(4)
+                    null(99)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION        
+        "The authentication protocol. Used for ESP or AH only.  Note
+        that when ipsecSecurityProfileAuthentication is not 'null(1)',
+        anti-replay services are also implemented."
+    DEFVAL      { md5 }
+    ::= { ipsecSecurityProfileEntry 4 }
+
+ipsecSecurityProfileCompression OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    oui(1),		-- proprietary compression codepoint
+                    deflate(2),
+                    lzs(3),
+                    v42bis(4),
+                    null(99)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION  
+        "The compression method.  This is used when
+        ipsecSecurityProfileProtocol is set to 'ipcomp(2)' or both
+        'esp(0)' and 'ipcomp(2)'. The default is 'lzs(3)'."
+    DEFVAL      { lzs }
+    ::= { ipsecSecurityProfileEntry 5 }
+
+ipsecSecurityProfileExpirationTimer OBJECT-TYPE
+    SYNTAX      Unsigned32 (0 | 300..86400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION       
+        "The number of seconds before the SA expires. When 0, the SA
+        expiration timer is disabled. The default is 24*3600 = 86400
+        seconds (i.e., 24 hours).  The minimum allowed expiration
+        timer value is 5*60 = 300 seconds (i.e., 5 minutes). The
+        maximum value is 86400 seconds (i.e., 24 hours).
+	Rekeying begins 1 minute prior to SA expiration."
+    DEFVAL      { 86400 }
+    ::= { ipsecSecurityProfileEntry 6 }
+
+ipsecSecurityProfileExpirationVolume OBJECT-TYPE
+    SYNTAX      Unsigned32 (0 | 100..1000000)
+    UNITS       "KBytes"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION        
+        "The number of KBytes before re-keying. When 0, SA expiration
+        volume is disabled. The default is 0. The minimum allowed
+        expiration volume value is 100 KBytes. The maximum is
+        1000000KBytes (i.e., 10GBytes).
+	Rekeying begins when 95% of the volume limit has been used up."
+    DEFVAL      { 0 }
+    ::= { ipsecSecurityProfileEntry 7 }
+
+ipsecSecurityProfileInactivityTimer OBJECT-TYPE
+    SYNTAX      Unsigned32 (0 | 600..86400)
+    UNITS       "seconds"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION        
+        "The number of seconds of inactivity before the SA is
+        removed. When 0, SA inactivity timer is disabled. The minimum 
+        allowed expiration timer value is 10*60 = 600 seconds (i.e., 
+        10 minutes). The maximum value is 86400 seconds (i.e., 24 hours).
+	Note that the inactivity timer, if enabled, must be less than
+	the expiration timer minus one minute, to ensure it will expire
+	for an idle SA prior to the start of rekeying."
+    DEFVAL      { 0 }
+    ::= { ipsecSecurityProfileEntry 8 }
+
+ipsecSecurityProfileEnablePfs OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION        
+        "When enabled PFS is enforced. This requires generation on new
+        key material for each protocol SA (i.e., non ISAKMP SA). The
+        default is 'false(2)'."
+    DEFVAL      { false }
+    ::= { ipsecSecurityProfileEntry 9 }
+
+ipsecSecurityProfileOakleyGroup OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    first(1),
+                    second(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION        
+        "Defines 1st or 2nd Oakley group used by ISAKMP. The default
+        is 'first(1)'."
+    DEFVAL      { first }
+    ::= { ipsecSecurityProfileEntry 10 }
+
+ipsecSecurityProfileAssignmentStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    assigned(1),
+                    unassigned(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION   
+        "When status is 'assigned(1)', the security profile is
+        referenced by one or more SAs. Modifications and deletions are
+        allowed for unassigned security profiles only."
+    ::= { ipsecSecurityProfileEntry 11 }
+
+ipsecSecurityProfileRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows entries to be created and deleted in this
+        table. Note that entries with ipsecSecurityProfileAssignmentStatus 
+        of 'assigned(1)' cannot be deleted."
+    REFERENCE 
+        "RFC1904, Textual Conventions for Version 2 of the Simple
+        Network Management Protocol (SNMPv2)"
+    ::= { ipsecSecurityProfileEntry 12 }
+
+
+-- ================================================================
+-- The IPSec Interface Table
+-- ================================================================
+
+ipsecIfTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF IpsecIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information associated with an IPSec Interface."
+    ::= { ipsecObjects 3 }
+
+ipsecIfEntry OBJECT-TYPE
+    SYNTAX      IpsecIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a single IPSec Interface."
+    INDEX       { ifIndex }
+    ::= { ipsecIfTable 1 }
+
+IpsecIfEntry ::= SEQUENCE {
+    ipsecIfType                 INTEGER,
+    ipsecIfRemoteGateway        IpAddress,
+    ipsecIfPresharedKey         DisplayString,
+    ipsecIfCurTunnels           Gauge32,
+    ipsecIfTotTunnels           Counter32,
+    ipsecIfUpTunnels            Gauge32,
+    ipsecIfLastTunnelChange     TimeTicks,
+    ipsecIfCurSAs               Gauge32,
+    ipsecIfTotSAs               Counter32,
+    ipsecIfInErrsInvalidSpi     Counter32,
+    ipsecIfOutDiscardsNoTunnel  Counter32,
+    ipsecIfInCompressedPkts     Counter32,
+    ipsecIfInCompressedOctets   Counter32,
+    ipsecIfOutCompressedPkts    Counter32,
+    ipsecIfOutCompressedOctets  Counter32,
+    ipsecIfIkeAuthentMethod     IkeAuthentMethod,
+    ipsecIfIkeInitiate          INTEGER,
+    ipsecIfIkeKeepaliveUpdate   Unsigned32,
+    ipsecIfIkeKeepaliveExpire   Unsigned32,
+    ipsecIfIkeKeepaliveCancel   Unsigned32,
+    ipsecIfIkeKeepaliveState    INTEGER,
+    ipsecIfPacketsQueued        Counter32
+}
+
+ipsecIfType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    dialin(1),
+                    siteToSite(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The type of IPSec interface."
+    ::= { ipsecIfEntry 1 }
+
+ipsecIfRemoteGateway OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the remote security gateway."
+    ::= { ipsecIfEntry 2 }
+
+ipsecIfPresharedKey OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..32))
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies pre-shared key to be used by ISAKMP for
+        authentication."
+    ::= { ipsecIfEntry 3 }
+
+ipsecIfCurTunnels OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of tunnels currently configured on the interface."
+    ::= { ipsecIfEntry 4 }
+
+ipsecIfTotTunnels OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of tunnels created on the interface
+        since the interface was created."
+    ::= { ipsecIfEntry 5 }
+
+ipsecIfUpTunnels OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of tunnels in the 'Up' state on the interface."
+    ::= { ipsecIfEntry 6 }
+
+ipsecIfLastTunnelChange OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of sysUpTime the last time a tunnel on the
+        interface changed status (ipsecTunnelOperStatus). This 
+        object indicates to the manager when it needs to repoll 
+        for new tunnel configuration and status."
+    ::= { ipsecIfEntry 7 }
+
+ipsecIfCurSAs OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of security associations (SAs) for all 
+        the tunnels on this interface. Typically there will be 2 SAs 
+        (1 inbound and 1 outbound) for each tunnel in the 'up' state. 
+        During dynamic tunnel rekeying there may be 0 to 4 SAs on a 
+        tunnel since IKE removes the current SAs and adds new SAs."
+    ::= { ipsecIfEntry 8 }
+
+ipsecIfTotSAs OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of security associations (SAs) for all 
+        tunnels created on the interface since the interface was 
+        configured. For interfaces with dynamic tunnels, this object 
+        gives an indication of how many IKE rekeying events have 
+        occured. Every time a dynamic tunnel successfully rekeys, new 
+        inbound and outbound SAs are created and this object is 
+        incremented by 2."
+    ::= { ipsecIfEntry 9 }
+
+ipsecIfInErrsInvalidSpi OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of IPSec packets received which contained 
+        an invalid SPI (Security Parameter Index) and therefore could
+        not be associated with a tunnel nor a specific interface."
+    ::= { ipsecIfEntry 10 }
+
+ipsecIfOutDiscardsNoTunnel OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of packets that could not be send out a
+        tunnel because the tunnel lookup failed."
+    ::= { ipsecIfEntry 11 }
+
+ipsecIfInCompressedPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of compressed packets received."
+    ::= { ipsecIfEntry 12 }
+
+ipsecIfInCompressedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of bytes after decompression in
+        compressed packets received."
+    ::= { ipsecIfEntry 13 }
+
+ipsecIfOutCompressedPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of compressed packets transmitted."
+    ::= { ipsecIfEntry 14 }
+
+ipsecIfOutCompressedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of bytes prior to compression in
+        compressed packets transmitted."
+    ::= { ipsecIfEntry 15 }
+
+ipsecIfIkeAuthentMethod OBJECT-TYPE
+    SYNTAX      IkeAuthentMethod
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies the authentication method which will be used 
+        by this gateway to establish dynamic IKE tunnel 
+        connections. 
+
+        Note that the ipsecTunnelAuthentMethod represents the
+        authentication method used to bring up the current tunnel
+        connection."
+    DEFVAL      { presharedKey }
+    ::= { ipsecIfEntry 16 }
+
+ipsecIfIkeInitiate OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disabled(0),
+                    automatic(1),
+                    outboundTraffic(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "Specifies when IKE will initiate dynamic, site to site
+        tunnel establishment with the remote gateway. If 
+        'automatic(1)', the gateway attempts to negotiate tunnels 
+        as soon as they are configured and enabled. If 
+        'outboundTraffic(2)', the gateway attempts to negotiate 
+        tunnels only when traffic is routed out the tunnel. If 
+        'disabled(3)', the gateway never initiates tunnel 
+        establishment. 
+
+        In all cases, the gateway will participate in tunnel 
+        negotiation when initiated by the remote gateway.
+
+        Note that this object is 'disabled(3)' for dialin group
+        and client tunnels since clients always initiate."
+    DEFVAL      { automatic }
+    ::= { ipsecIfEntry 17 }
+
+ipsecIfIkeKeepaliveUpdate OBJECT-TYPE
+    SYNTAX      Unsigned32 (0 | 10..3600)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+	"IKE keepalive protocol update timeout value. When set to 0, 
+	the IKE keepalive protocol is disabled. Default is set to 
+	disabled. Minimum value is 10 sec, maximum value is 3600 sec.
+	This value specifies frequency in seconds of IKE keepalive update 
+	messages to be generated."
+    DEFVAL      { 0 }
+    ::= { ipsecIfEntry 18 }
+
+ipsecIfIkeKeepaliveExpire OBJECT-TYPE
+    SYNTAX      Unsigned32 (2..10)
+    UNITS       "retries"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+	"IKE keepalive protocol expire retry counter value. 
+	Default is set to 4. Minimum value is 2, maximum value is 10.
+	This value specifies a number of IKE keepalive update
+	messages missed before the remote gateway/end system is 
+	declared to be down."
+    DEFVAL      { 4 }
+    ::= { ipsecIfEntry 19 }
+
+ipsecIfIkeKeepaliveCancel OBJECT-TYPE
+    SYNTAX      Unsigned32 (2..10)
+    UNITS       "retries"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+	"IKE keepalive protocol cancel retry counter value. 
+	Default is set to 6. Minimum value is 2, maximum value is 10.
+	This value specifies a number of IKE keepalive update
+	messages missed immediately after IKE keepalive protocol starts
+	running for the protocol to be disabled (likely	reason: remote 
+	gateway does not support/disabled IKE keepalive	protocol."
+    DEFVAL      { 6 }
+    ::= { ipsecIfEntry 20 }
+
+ipsecIfIkeKeepaliveState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                        inactive(1),
+                        running(2),
+                        failed(3)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+	"IKE keepalive state."
+    ::= { ipsecIfEntry 21 }
+
+ipsecIfPacketsQueued OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets that are currently queued for
+        all dynamic site-to-site tunnels created on the interface.  
+        These packets will remained queued for a particular tunnel 
+        until that tunnel state transitions to DOWN or UP."
+    ::= { ipsecIfEntry 22 }
+
+-- ================================================================
+-- The Tunnel Table
+-- ================================================================
+
+ipsecTunnelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF IpsecTunnelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION 
+        "The tunnel table is used to configure and monitor VPN
+        tunnels. There two cases here: site-to-site and remote
+        dial-in. For site-to-site VPN the entry in the tunnel table
+        must be configured. There are two types of tunnels: static
+        tunnels and dynamic tunnels. When dynamic tunnels are
+        configured and become operational, the ISAKMP protocol 
+        creates an SA pair, one inbound and one outbound.
+
+        When static tunnels are configured, inbound and outbound
+        SAa need to be created through network management. In this 
+        case key and peer SPI (security profile index) must be set. 
+        Static SAs are like ATM PVCs. Dynamic SAs are like ATM SVCs.
+        
+        All dial-in clients are organized into user groups. One or
+        more users (dial-in clients) may be in the group. All dial-in
+        users that are members of the same group get the same security
+        attributes. Actual users may be either configured internally
+        (in the ipsecRemoteClient table) or in the external database
+        such as X.500 directory or Radius, etc. The administrator has
+        an option of defining a Default group. Users that do not have
+        any User group membership are assigned into a Default group.
+        
+        For remote dial-in VPNs, the tunnel entries are first
+        statically configured for every defined user group, for
+        example XediaEngineering, etc. Tunnels for individual users in
+        the group are created automatically when user of the group
+        initiates a connection. These automatically created remote
+        client tunnels are 'children' of a statically configured
+        'parent' user group tunnel. The name of automatically created
+        dial-in tunnel (which must be unique) is constructed as
+        follows: tunnelName.userName, for example
+        XediaEngineering.schwartz.
+        
+        For site-to-site and dial-in-group tunnel VPNs the objects'
+        access is as specified. For dial-in 'children' tunnel VPNs which
+        are automatically created by the system, all objects are
+        read-only except for ipsecTunnelAdminStatus. This object has
+        write access and when set to down, it would result in tearing
+        down user dial-in session, i.e. all security associations for
+        this dial-in client will be deleted."
+    ::= { ipsecObjects 4 }
+
+ipsecTunnelEntry OBJECT-TYPE
+    SYNTAX      IpsecTunnelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION 
+        "Information about a tunnel. Tunnels are manually created
+        using the ipsecTunnelRowStatus object."
+    INDEX       { ifIndex,
+                  ipsecTunnelName }
+    ::= { ipsecTunnelTable 1 }
+
+IpsecTunnelEntry ::= SEQUENCE {
+    ipsecTunnelName                  IpsecTunnelName,
+    ipsecTunnelType                  INTEGER,
+    ipsecTunnelAdminStatus           INTEGER,
+    ipsecTunnelOperStatus            INTEGER,
+    ipsecTunnelLastChange            TimeTicks,
+    ipsecTunnelLocalAddress          IpAddress,    
+    ipsecTunnelLocalAddressMask      IpAddress,
+    ipsecTunnelRemoteAddress         IpAddress,
+    ipsecTunnelRemoteAddressMask     IpAddress,
+    ipsecTunnelRemoteGateway         IpAddress,
+    ipsecTunnelSecurityProfile       IpsecSecurityProfileName,
+    ipsecTunnelIkeAuthentMethod      IkeAuthentMethod,
+    ipsecTunnelClientAddressAssign   INTEGER,
+    ipsecTunnelCurSAs                Gauge32,
+    ipsecTunnelTotSAs                Counter32,
+    ipsecTunnelInPkts                Counter32,
+    ipsecTunnelInOctets              Counter32,
+    ipsecTunnelInDiscardsQueFull     Counter32,
+    ipsecTunnelInErrsInvalidMac      Counter32,
+    ipsecTunnelInErrsInvalidSeq      Counter32,
+    ipsecTunnelInErrsInvalidFormat   Counter32,        
+    ipsecTunnelOutPkts               Counter32,
+    ipsecTunnelOutOctets             Counter32,
+    ipsecTunnelOutDiscardsStateNotUp Counter32,
+    ipsecTunnelOutDiscardsNoSA       Counter32,
+    ipsecTunnelOutDiscardsQueFull    Counter32,        
+    ipsecTunnelRowStatus             RowStatus,
+    ipsecTunnelInCompressedPkts      Counter32,
+    ipsecTunnelInCompressedOctets    Counter32,
+    ipsecTunnelOutCompressedPkts     Counter32,
+    ipsecTunnelOutCompressedOctets   Counter32
+}
+
+ipsecTunnelName OBJECT-TYPE
+    SYNTAX      IpsecTunnelName
+    MAX-ACCESS  not-accessible 
+    STATUS      current
+    DESCRIPTION
+        "Name of the tunnel. For example, Boston-to-LA (site-to-site),
+        XediaEnginnering (remote client dial-in group), etc.  The name
+        must be unique in the system and it is used as tunnel entry
+        index. When new tunneling tables are defined (i.e. L2TP, etc.)
+        the tunnel name still has to be unique in the system."
+    ::= { ipsecTunnelEntry 1 }
+
+ipsecTunnelType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    dialinGroup(1),
+                    dialinClient(2),
+                    siteToSiteStatic(3),
+                    siteToSiteDynamic(4)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The tunnel type. When 'dialinGroup(1)', 'dialinClient(2)' or
+        'siteToSiteDynamic(4)' is specified, ISAKMP is responsible for
+        SA creation.  Otherwise, when 'siteToSiteStatic(2)' is
+        specified, SAs must be configured manually. This definition
+        implies that all dial-in tunnels (and SAs created for them)
+        are always dynamic.
+
+        Tunnels of type 'dialinGroup(1)' are created by the
+        administrator and are read-write. They have a range of remote
+        client addresses. When a dial-in client connects within the
+        remote client range of a parent tunnel, a read-only
+        'dialinClient(2)' tunnel is dynamically created."
+    DEFVAL      { siteToSiteDynamic }
+    ::= { ipsecTunnelEntry 2 }
+
+ipsecTunnelAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is the desired state of the tunnel and is
+        similar to interface administrative state. The default is
+        'up(1)'. When the ipsecTunnelAdminStatus is set to 'up(1)' for
+        a dialin parent tunnel, it enables remote clients in this
+        group to connect to the VPN gateway. When the
+        ipsecTunnelAdminStatus is set to 'down(2)' for a dialin parent
+        tunnel, it disables remote clients in this group from
+        connecting to the VPN gateway.  When tunnelAdminStatus is set
+        to up for siteToSiteStatic, it enables use of statically
+        configured SAs. Setting it to down, effectively disables use
+        of statically configured SAs.  When tunnelAdminStatus is set
+        to up for siteToSiteDynamic, it enables the VPN gateway to
+        start establishments of SAs via ISAKMP. If the ISAKMP failed
+        to setup SA (for example when the peer is not ready) it will
+        periodically retry SA establishment indefinetly until it
+        succeeds.  Setting it to down, disables initiation of SAs and
+        it also disables responding to remote ISAKMP initiation
+        requests."
+    DEFVAL      { up }
+    ::= { ipsecTunnelEntry 3 }
+
+ipsecTunnelOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    up(1),
+                    down(2),
+                    initializing(3)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This is the operational state (the actual state of the
+        tunnel. This object is similar to interface operational
+        state."
+    ::= { ipsecTunnelEntry 4 }
+
+ipsecTunnelLastChange OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of sysUpTime the last time the
+        ipsecTunnelOperStatus changed. On re-initialization of the
+        system, this object contains a zero value. When a new tunnel
+        is created, this will be initialized to the value of sysUpTime
+        when the entry was created."
+    ::= { ipsecTunnelEntry 5 }
+
+ipsecTunnelLocalAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The local address and mask define the local trusted subnet
+        (or single host if mask is all 1's) for the tunnel. The 
+        local trusted subnet or host identifies 'source' addresses 
+        for the tunnel. The local trusted address(es) together with 
+        the remote trusted address(es) identify the traffic flow
+        into the tunnel. This attribute and the mask default to
+        0 which specifies any source address for the tunnel."
+    DEFVAL      { 0 }
+    ::= { ipsecTunnelEntry 6 }
+
+ipsecTunnelLocalAddressMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The local trusted address mask of the tunnel. Refer to
+        ipsecTunnelLocalAddress."
+    DEFVAL      { 0 }
+    ::= { ipsecTunnelEntry 7 }
+
+ipsecTunnelRemoteAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The remote address and mask define the remote trusted subnet
+        (or single host if mask is all 1's) for the tunnel. The 
+        remote trusted subnet or host identifies 'destination' addresses 
+        for the tunnel. The remote trusted address(es) together with 
+        the local trusted address(es) identify the traffic flow
+        into the tunnel. This attribute and the mask default to
+        0 which specifies any destination address for the tunnel.
+
+        For 'dialinGroup' tunnels with ipsecTunnelClientAddressAssign
+        set to 'internalPool', the remote subnet is used as a pool
+        of addresses which the gateway allocates to dialin clients.
+        In this case, the remote subnet must be specified.
+
+        For 'dialinClient(2)' tunnels this object gives the 
+        enterprise address of the client aka the 'inner' client
+        address within the tunnel as opposed to the 'outer' Internet
+        address which is given by ipsecTunnelRemoteGateway."
+    DEFVAL      { 0 }
+    ::= { ipsecTunnelEntry 8 }
+
+ipsecTunnelRemoteAddressMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The remote trusted address mask of the tunnel. Refer to
+        ipsecTunnelRemoteAddress. For dialin client tunnels, the 
+        ipsecTunnelRemoteAddress and ipsecTunnelRemoteMask provides
+        represents the client's assigned subnet mask."
+    DEFVAL      { 0 }
+    ::= { ipsecTunnelEntry 9 }
+
+ipsecTunnelRemoteGateway OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the remote security gateway.
+
+        For 'siteToSite' tunnels, this object is a copy of
+        the associated ipsecIfRemoteGateway.
+
+        For 'dialinClient' tunnels, this is the 'outer' Internet
+        address of the client as opposed to the 'inner' enterprise
+        address which is given by ipsecTunnelRemoteAddress."
+    ::= { ipsecTunnelEntry 10 }
+
+ipsecTunnelSecurityProfile OBJECT-TYPE
+    SYNTAX      IpsecSecurityProfileName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Defines which Security Profile to use for this tunnel. This
+        is a name of Security Profile entry in the Security Profile
+        table."
+    ::= { ipsecTunnelEntry 11 }
+
+ipsecTunnelIkeAuthentMethod OBJECT-TYPE
+    SYNTAX      IkeAuthentMethod
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Defines authentication method which was used to establish
+        the current IKE tunnel connection. Not applicable for static 
+        tunnels. 
+        
+        Note that ipsecIfIkeAuthentMethod specifies the method with which 
+        the local system will attempt to initiate a connection."
+    ::= { ipsecTunnelEntry 12 }
+
+ipsecTunnelClientAddressAssign OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    disabled(1),
+                    --static(2),           obsolete
+                    internalPool(3),    -- assigned by gateway
+                    radius(4)           -- assigned by radius server
+                    --dhcp(5)              not supported yet
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Address assignment method is configured for dialin
+        group tunnels and determines how clients within the
+        group will be assigned an enterprise IP address and 
+        subnet. The enterprise address is the 'inner' tunneled 
+        address as opposed to the 'outer' Internet address
+        which is typically assigned by the client's local ISP.
+
+        If 'disabled(0)', clients are preconfigured with an address 
+        and subnet, so no assignment occurs. If 'internalPool(1)',
+        clients are assigned an address and subnet from the 
+        dialin group's remote address/mask. If 'radius(2)', 
+        clients' address and subnet are given by the RADIUS 
+        server as part of the user's information.
+
+        This object is read-only for clients and simply reflects
+        the address assignment value of the dialin group. This
+        object is not applicable for site to site tunnels and
+        will always read 'disabled(0)'." 
+    DEFVAL      { disabled }
+    ::= { ipsecTunnelEntry 13 }
+
+ipsecTunnelCurSAs OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of security associations (SAs) for 
+        this tunnel. Typically there will be 2 SAs (1 inbound and 
+        1 outbound) for a tunnel in the 'up' state. During dynamic 
+        tunnel rekeying there may be 0 to 4 SAs on the tunnel since 
+        IKE removes the current SAs and adds new SAs."
+    ::= { ipsecTunnelEntry 14 }
+
+ipsecTunnelTotSAs OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of security associations (SAs) created 
+        for this tunnel since the tunnel was configured. For dynamic
+        tunnels, this object gives an indication of how many IKE 
+        rekeying events have occured. Every time a dynamic tunnel 
+        successfully rekeys, new inbound and outbound SAs are created
+        and this object is incremented by 2."
+    ::= { ipsecTunnelEntry 15 }
+
+ipsecTunnelInPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets received on the tunnel since it 
+        was created."
+    ::= { ipsecTunnelEntry 16 }
+
+ipsecTunnelInOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of bytes received on the tunnel since it
+        was created."
+    ::= { ipsecTunnelEntry 17 }
+
+ipsecTunnelInDiscardsQueFull OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets received on the tunnel which 
+        had to be dropped because of a full queue."
+    ::= { ipsecTunnelEntry 18 }
+
+ipsecTunnelInErrsInvalidMac OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets received on the tunnel with
+        invalid authentication data."
+    ::= { ipsecTunnelEntry 19 }
+
+ipsecTunnelInErrsInvalidSeq OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets received on the tunnel with
+        an invalid sequence number."
+    ::= { ipsecTunnelEntry 20 }
+
+ipsecTunnelInErrsInvalidFormat OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets received on the tunnel with
+        a valid sequence number and authentication data (if 
+        applicable), but an invalid packet format. For instance 
+        if the packet has an invalid length or next header."
+    ::= { ipsecTunnelEntry 21 }
+
+ipsecTunnelOutPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets transmitted out the tunnel 
+        since it was created."
+    ::= { ipsecTunnelEntry 22 }
+
+ipsecTunnelOutOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of bytes transmitted out the tunnel 
+        since it was created."
+    ::= { ipsecTunnelEntry 23 }
+
+ipsecTunnelOutDiscardsStateNotUp OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets that could not be sent out
+        the tunnel because the tunnel state was not up."
+    ::= { ipsecTunnelEntry 24 }
+
+ipsecTunnelOutDiscardsNoSA OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets that could not be sent out
+        the tunnel because there was no security association (SA)."
+    ::= { ipsecTunnelEntry 25 }
+
+ipsecTunnelOutDiscardsQueFull OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of packets that could not be sent out
+        the tunnel because the transform engine's queue was full."
+    ::= { ipsecTunnelEntry 26 }
+
+ipsecTunnelRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows entries to be created and deleted in this
+        table."
+    REFERENCE 
+        "RFC1904, Textual Conventions for Version 2 of the Simple
+        Network Management Protocol (SNMPv2)"
+    ::= { ipsecTunnelEntry 27 }
+    
+ipsecTunnelInCompressedPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of compressed packets received on the tunnel 
+        since it was created."
+    ::= { ipsecTunnelEntry 28 }
+
+ipsecTunnelInCompressedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of bytes after decompression in
+        compressed packets received on the tunnel 
+        since it was created."
+    ::= { ipsecTunnelEntry 29 }
+
+ipsecTunnelOutCompressedPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of compressed packets transmitted out the tunnel 
+        since it was created."
+    ::= { ipsecTunnelEntry 30 }
+
+ipsecTunnelOutCompressedOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total number of bytes prior to compression in
+        compressed packets transmitted out the tunnel 
+        since it was created."
+    ::= { ipsecTunnelEntry 31 }
+
+
+-- ================================================================
+-- The Security Association Table
+-- ================================================================
+
+ipsecSaTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF IpsecSaEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Security Association (SA) table. Each entry in the table is a
+        Security Association.  SA's are associated with a single IPSec 
+        tunnel or transport and indexed accordingly. SA's associated
+        with a tunnel will have the same ifIndex and name as the tunnel.
+        SA's associated with a transport have a zero ifIndex and the
+        same name as the transport. 
+
+        Dynamic site-to-site and dialin-client tunnels have dynamic 
+        SA's created dynamically by ISAKMP. Dialin-group tunnels
+        do not have associated SA's since these represent a group of
+        dialin-client tunnels which individually have SA's. Static
+        tunnels have static SA's created manually."
+    ::= { ipsecObjects 5 }
+
+ipsecSaEntry OBJECT-TYPE
+    SYNTAX      IpsecSaEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a specific Security Association."
+    INDEX       { ifIndex,
+                  ipsecSaName,
+                  ipsecSaIndex }
+    ::= { ipsecSaTable 1 }
+
+IpsecSaEntry ::= SEQUENCE {
+    ipsecSaName                 DisplayString,
+    ipsecSaIndex                Unsigned32,
+    ipsecSaSpi                  Unsigned32,
+    ipsecSaCreation             INTEGER,
+    ipsecSaDirection            INTEGER,
+    ipsecSaProtocol             INTEGER,
+    ipsecSaEncryptionKey        IpsecKeyValue,
+    ipsecSaAuthenticationKey    IpsecKeyValue,
+    ipsecSaInOutPkts            Counter32,
+    ipsecSaInOutOctets          Counter32,
+    ipsecSaRowStatus            RowStatus
+}
+
+ipsecSaName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..32))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the tunnel or transport that this Security
+        Association is associated with."
+    ::= { ipsecSaEntry 1 }
+
+ipsecSaIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A numeric index to allow multiple Security Associations per
+        tunnel or transport."
+    ::= { ipsecSaEntry 2 }
+
+ipsecSaSpi OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Security profile index. For static or dynamic inbound SAs,
+        SPI is selected by us. For dynamic outbound SAs, SPI is
+        selected by peer. For static outbound SAs, SPI is manually
+        configured."
+    ::= { ipsecSaEntry 3 }
+
+ipsecSaCreation OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    static(1),
+                    dynamic(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Specifies how SA was created. Manually configured SAs will
+         have the value static(1). Dynamical SAs such as those created by
+         key management protocols such as ISA-KMP will have the value
+         dynamic(2)."
+    ::= { ipsecSaEntry 4 }
+
+ipsecSaDirection OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    ipSecInbound(1),
+                    ipSecOutbound(2)
+                  --bidirectional(3)  only applies to ike SAs which are not managed
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "SA direction. Traffic SAs are unidirectional whereas
+        key management protocol SAs such as ISA-KMP are bidirectional."
+    ::= { ipsecSaEntry 5 }
+
+ipsecSaProtocol OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    isakmp(1),
+                    ah(2),
+                    esp(3),
+                    ipcomp(4)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies the SA protocol type."
+    ::= { ipsecSaEntry 6 }
+
+ipsecSaEncryptionKey OBJECT-TYPE
+    SYNTAX      IpsecKeyValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The SAs encryption key. For a dynamic SA, the encryption 
+        key is negotiated by the key management protocol such as
+        ISAKMP and is not writeable.  For static SAs, the keys are 
+        manually configured."
+    ::= { ipsecSaEntry 7 }
+
+ipsecSaAuthenticationKey OBJECT-TYPE
+    SYNTAX      IpsecKeyValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "For dynamic SAs, the authentication keys have been negotiated
+        by ISAKMP.  For static SA, the keys have been configured. For
+        static SA this is read-create object. For dynamic SA the
+        object is not accessible."
+    ::= { ipsecSaEntry 8 }
+
+ipsecSaInOutPkts OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "It counts a total number of frames since the SA was
+        created. For inbound SA it represents received frames. For
+        outbound SA it represent transmitted frames. For isakmp SA it
+        represents both received and transmitted frames."
+    ::= { ipsecSaEntry 9 }
+
+ipsecSaInOutOctets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "It counts a total number of bytes since the SA was
+        created. For inbound SA it represents received bytes. For
+        outbound SA it represent transmitted bytes. For isakmp SA it
+        represents both received and transmitted bytes."
+    ::= { ipsecSaEntry 10 }
+
+ipsecSaRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object allows entries to be created and deleted in this
+        table. The only supported values supported are active(1),
+        createAndGo(4), and destroy(4)."
+    REFERENCE 
+        "RFC1904, Textual Conventions for Version 2 of the Simple
+        Network Management Protocol (SNMPv2)"
+    ::= { ipsecSaEntry 11 }
+
+
+-- ****************************************************************
+-- Conformance Statements
+-- ****************************************************************
+
+ipsecCompliances OBJECT IDENTIFIER ::= { ipsecConformance 1 }
+ipsecGroups      OBJECT IDENTIFIER ::= { ipsecConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+ipsecCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for all agents that support this
+        MIB. A compliant agent implements all objects defined in this
+        MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS {
+        ipsecAllGroup
+    }
+    ::= { ipsecCompliances 1 }
+
+--
+-- Object Groups
+--
+
+ipsecAllGroup OBJECT-GROUP
+    OBJECTS {
+        ipsecTransformLayerType,
+        ipsecAlgorithms,
+        ipsecSecurityProfileProtocol,
+        ipsecSecurityProfileEncryption,
+        ipsecSecurityProfileAuthentication,
+        ipsecSecurityProfileCompression,
+        ipsecSecurityProfileExpirationTimer,
+        ipsecSecurityProfileExpirationVolume,
+        ipsecSecurityProfileInactivityTimer,
+        ipsecSecurityProfileEnablePfs,
+        ipsecSecurityProfileOakleyGroup,
+        ipsecSecurityProfileAssignmentStatus,
+        ipsecSecurityProfileRowStatus,
+        ipsecIfType,
+        ipsecIfRemoteGateway,
+        ipsecIfPresharedKey,
+        ipsecIfCurTunnels,
+        ipsecIfTotTunnels,
+        ipsecIfUpTunnels,
+        ipsecIfLastTunnelChange,
+        ipsecIfCurSAs,
+        ipsecIfTotSAs,
+        ipsecIfInErrsInvalidSpi,
+        ipsecIfOutDiscardsNoTunnel,
+        ipsecIfInCompressedPkts,
+        ipsecIfInCompressedOctets,
+        ipsecIfOutCompressedPkts,
+        ipsecIfOutCompressedOctets,
+        ipsecIfIkeAuthentMethod,
+        ipsecIfIkeInitiate,
+	ipsecIfIkeKeepaliveUpdate,
+	ipsecIfIkeKeepaliveExpire,
+	ipsecIfIkeKeepaliveCancel,
+	ipsecIfIkeKeepaliveState,
+        ipsecTunnelType,
+        ipsecTunnelAdminStatus,
+        ipsecTunnelOperStatus,
+        ipsecTunnelLastChange,
+        ipsecTunnelLocalAddress,
+        ipsecTunnelLocalAddressMask,
+        ipsecTunnelRemoteAddress,
+        ipsecTunnelRemoteAddressMask,
+        ipsecTunnelRemoteGateway,
+        ipsecTunnelSecurityProfile,
+        ipsecTunnelIkeAuthentMethod,
+        ipsecTunnelClientAddressAssign,
+        ipsecTunnelCurSAs,
+        ipsecTunnelTotSAs,
+        ipsecTunnelInPkts,
+        ipsecTunnelInOctets,
+        ipsecTunnelInDiscardsQueFull,
+        ipsecTunnelInErrsInvalidMac,
+        ipsecTunnelInErrsInvalidSeq,
+        ipsecTunnelInErrsInvalidFormat,
+        ipsecTunnelOutPkts,
+        ipsecTunnelOutOctets,
+        ipsecTunnelOutDiscardsStateNotUp,
+        ipsecTunnelOutDiscardsNoSA,
+        ipsecTunnelOutDiscardsQueFull,          
+        ipsecTunnelRowStatus,
+        ipsecTunnelInCompressedPkts,
+        ipsecTunnelInCompressedOctets,
+        ipsecTunnelOutCompressedPkts,
+        ipsecTunnelOutCompressedOctets,
+        ipsecSaSpi,
+        ipsecSaCreation,
+        ipsecSaDirection,
+        ipsecSaProtocol,
+        ipsecSaEncryptionKey,
+        ipsecSaAuthenticationKey,
+        ipsecSaInOutPkts,
+        ipsecSaInOutOctets,
+        ipsecSaRowStatus
+    }
+    STATUS      current
+    DESCRIPTION
+        "The set of all accessible objects in this MIB."
+    ::= { ipsecGroups 1 }
+
+END
+
+
+
+
+
+
+

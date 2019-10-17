@@ -1,0 +1,2799 @@
+
+	TIGER DEFINITIONS ::= BEGIN
+
+	IMPORTS
+		OBJECT-TYPE											FROM RFC-1212
+		Counter, TimeTicks, IpAddress, enterprises			FROM RFC1155-SMI
+		DisplayString										FROM RFC1213-MIB
+		RowStatus											FROM SNMPv2-TC
+		TRAP-TYPE											FROM RFC-1215
+		Gauge32 FROM SNMPv2-SMI;
+
+--	generalTiger MODULE-IDENTITY
+--			LAST-UPDATED	"99081900000Z"
+--			ORGANIZATION	"Northrop Grumman-Canada, Ltd."
+--			CONTACT-INFO
+--				"		Fulko K. Hew
+--
+--				Postal:	Northrop Grumman-Canada, Ltd.
+--						777 Walkers Line
+--						Burlington, Ontario
+--						Canada
+--						L7N 2G1
+--
+--				Tel:	+1 905 333 6000
+--				Fax:	+1 905 333 6050
+--
+--				E-mail:	fulko@ngcan.com"
+--
+--		DESCRIPTION
+--			"The MIB module to describe the objects used in Tiger.
+--			This MIB contains those items that can't be logically placed anywhere else."
+
+	ngcan			OBJECT IDENTIFIER ::= { enterprises 1978 }	-- Northrop Grumman-Canada, Ltd.
+	tiger			OBJECT IDENTIFIER ::= { ngcan 2 }			-- Tiger (Network Access Device)
+
+	generalTiger	OBJECT IDENTIFIER ::= { tiger 1 }
+
+	ifTStack		OBJECT IDENTIFIER ::= { generalTiger 1 }	-- Tiger's view of its Interfaces Stack
+	tsystem			OBJECT IDENTIFIER ::= { generalTiger 2 }	-- Tiger's System Group
+	buffers			OBJECT IDENTIFIER ::= { generalTiger 3 }	-- Tiger's Buffer pool configuration
+	generalTraps	OBJECT IDENTIFIER ::= { generalTiger 4 }
+	autif			OBJECT IDENTIFIER ::= { generalTiger 5 }	-- Type "A" to TCP/UDP interface
+	apath			OBJECT IDENTIFIER ::= { generalTiger 6 }	-- Type "A" path module
+	svcmsg			OBJECT IDENTIFIER ::= { generalTiger 7 }	-- Service messages
+	bootp			OBJECT IDENTIFIER ::= { generalTiger 8 }	-- BOOTP/FTP transactions
+	mount			OBJECT IDENTIFIER ::= { generalTiger 9 }	-- File System mount table (NFS)
+	dnsRes			OBJECT IDENTIFIER ::= { generalTiger 10 }	-- Domain Name Server (DNS) Resolver
+	vt				OBJECT IDENTIFIER ::= { generalTiger 11 }	-- OFEP LNIATA Table
+
+	--
+	-- !! NOTE !!
+	--
+	--  When trying to compile this MIB under HP Openview or a derivative,
+	--  you may find that it complains about the following line.
+	--  You may safely comment these out by placing a two dashes in front of it.
+	--
+
+	-- Gauge32				::= INTEGER (0..2147483647)
+
+	NonNegativeInteger	::= INTEGER (0..2147483647)
+	InterfaceIndex ::= INTEGER
+
+	-- InterfaceIndex contains the semantics of ifIndex and
+	-- should be used for any objects defined on other mib
+	-- modules that need these semantics.
+
+	TigerDateAndTime	::= DisplayString (SIZE (15 | 20))
+
+	-- A date-time specification for the local time of day.
+	-- This data type is intended to provide a consistent
+	-- method of reporting date information.
+	--
+	--	field octets	contents					range
+	--	===== ======	========					=====
+	--		1	1-4		year						"1995-9999"
+	--					(in network byte order)
+	--		2	5-6		month						"01".."12"
+	--		3	7-8		day							"01".."31"
+	--		4	9-10	hour						"00".."23"
+	--		5	11-12	minutes						"00".."59"
+	--		6	13-14	seconds						"00".."60"
+	--					(use 60 for leap-second)
+	--		7	15		deci-seconds				"0".."9"
+	--		8	16		direction from UTC			"+" / "-"
+	--					(in ascii notation)
+	--		9	17-18	hours from UTC				"00".."11"
+	--		10	19-20	minutes from UTC			"00".."59"
+	--
+	-- Note that if only local time is known, then
+	-- timezone information (fields 8-10) is not present.
+
+	--
+	--
+	--		The Interface Stack Group
+	--
+	--
+
+	ifTStackTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF IfTStackEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"The table containing information on the relationships
+			between the multiple sub-layers of network interfaces.
+			In particular, it contains information on which sub-
+			layers run 'on top of' which other sub-layers.	Each
+			sub-layer corresponds to a conceptual row in the
+			ifTable."
+		::= { ifTStack 1 }
+
+	ifTStackEntry OBJECT-TYPE
+		SYNTAX		IfTStackEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"Information on a particular relationship between two
+			sub-layers, specifying that one sub-layer runs on
+			'top' of the other sub-layer.	Each sub-layer
+			corresponds to a conceptual row in the ifTable."
+		INDEX		{ ifTStackIndex }
+		::= { ifTStackTable 1 }
+
+	IfTStackEntry ::=
+		SEQUENCE {
+			ifTStackIndex		INTEGER,
+			ifTStackHigherLayer	INTEGER,
+			ifTStackLowerLayer	INTEGER,
+			ifTStackStatus		RowStatus
+			}
+
+	ifTStackIndex OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"A unique value for each interface.	Its value
+			ranges between 1 and the value of ifNumber.	The
+			value for each interface must remain constant at
+			least from one re-initialization of the entity's
+			network management system to the next re-
+			initialization."
+		::= { ifTStackEntry 1 }
+
+	ifTStackHigherLayer OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The value of ifIndex corresponding to the higher
+			sub-layer of the relationship, i.e., the sub-layer
+			which runs on 'top' of the sub-layer identified by the
+			corresponding instance of ifTStackLowerLayer.	If there
+			is no higher sub-layer (below the internetwork layer),
+			then this object has the value 0."
+		::= { ifTStackEntry 2 }
+
+	ifTStackLowerLayer OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The value of ifIndex corresponding to the lower sub-
+			layer of the relationship, i.e., the sub-layer which
+			runs 'below' the sub-layer identified by the
+			corresponding instance of ifTStackHigherLayer.	If
+			there is no lower sub-layer, then this object has the
+			value 0."
+		::= { ifTStackEntry 3 }
+
+	ifTStackStatus OBJECT-TYPE
+		SYNTAX		RowStatus
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The status of the relationship between two sub-layers.
+
+			Changing the value of this object from 'active' to
+			'notInService' or 'destroy' will likely have
+			consequences up and down the interface stack.	Thus,
+			write access to this object is likely to be
+			inappropriate for some types of interfaces, and many
+			implementations will choose not to support write-
+			access for any type of interface."
+		::= { ifTStackEntry 4 }
+
+	--
+	-- The tsystem Group
+	--
+
+	tigSystemDate OBJECT-TYPE
+		SYNTAX		TigerDateAndTime
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The host's notion of the local date and time of day."
+		::= { tsystem 1 }
+
+	tigSystemExceptionEcho OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"When enabled it allows the system to send copies of any
+			exceptions to the console port.	When disabled, exceptions are
+			not sent to the console port."
+		::= { tsystem 2 }
+
+	tigSystemExceptionLogging OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"When enabled, the system will copy exceptions into its log
+			file on the ram file system (/ramdisk/system.log).	When disabled, exceptions are
+			not logged into the file."
+		::= { tsystem 3 }
+
+	tigSystemExceptionSaveLog OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"When enabled, any FATAL exception will cause the file
+			'/ramdisk/system.log' to be save onto the flash file system
+			as '/flash/error.log'.
+
+			When disabled, all logging information saved in
+			'/ramdisk/system.log' is lost."
+		::= { tsystem 4 }
+
+	tigPCMCIATable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF TigPCMCIAEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry shall be placed in the table for each PCMCIA slot that is in use."
+		::= { tsystem 5 }
+
+	tigPCMCIAEntry OBJECT-TYPE
+		SYNTAX		TigPCMCIAEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A (conceptual) entry for one logical token ring port on the host."
+		INDEX		{ tigPCMCIASlot }
+		::= { tigPCMCIATable 1 }
+
+	TigPCMCIAEntry ::= SEQUENCE {
+		tigPCMCIASlot				INTEGER,
+		tigPCMCIAIf					InterfaceIndex,
+		tigTokenRingSpeed			INTEGER,
+		tigPCMCIAType				INTEGER
+		}
+
+	tigPCMCIASlot OBJECT-TYPE
+		SYNTAX		INTEGER (0..1)
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The PCMCIA slot identified by this table entry."
+	::= { tigPCMCIAEntry 1 }
+
+	tigPCMCIAIf OBJECT-TYPE
+		SYNTAX		InterfaceIndex
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The Interface index that is bound to this PCMCIA slot.
+			In the current Tiger environment, slot 0 uses ifIndex 7 and
+			slot 1 uses ifIndex 8."
+	::= { tigPCMCIAEntry 2 }
+
+	tigTokenRingSpeed OBJECT-TYPE
+		SYNTAX		INTEGER {
+			four	(1),
+			sixteen	(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Defines the Token Ring speed used on this interface (in Mbit/sec)."
+		::= { tigPCMCIAEntry 3 }
+
+	tigPCMCIAType OBJECT-TYPE
+		SYNTAX		INTEGER {
+			token-ring			(1),
+			modem				(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Specifies the type of cards that is configured in the slot:
+
+			token-ring			- a Madge Token Ring card
+			modem				- a modem card"
+		::= { tigPCMCIAEntry 4 }
+
+	tigConfigFile OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..128))
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"This field contains the file specification for the configuration
+			file used at boot time."
+		::= { tsystem 6 }
+
+	tigRestartReason OBJECT-TYPE
+		SYNTAX		INTEGER {
+			power				(1),
+			reset-button		(2),
+			watchdog			(3),
+			config-fail			(4),
+			other				(5),
+			double-bus-fault	(6),
+			fatal-exception		(7),
+			reboot-command		(8)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Informs the NMS why the Tiger most recently restarted:
+
+			power				- due to a power failure
+			reset-button		- someone pushed the reset button
+			watchdog			- the internal watchdog timer forced a reset
+			config-fail			- there was a catastrophic failure in the configuration file causing a system reset.
+								  ('tigConfigFile' informs you which config file is currently being used)
+			other				- someother unknown reason. (these should never occur)
+			double-bus-fault	- a invalid address was being reference while the exception handler for a bus-fault
+								  exception (an invalid address was referenced) was being executed.
+			fatal-exception		- a fatal software exception occured inside Tiger
+			reboot-command		- a user issued a 'reboot' command on a console"
+		::= { tsystem 7 }
+
+	tigClearStats OBJECT-TYPE
+		SYNTAX		INTEGER {
+			clear				(1),
+			cleared				(2),
+			cleared-confirmed	(3)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"When set to 'clear' all of TIGERs statistics are cleared to zero.
+			It will affect each of the ports statistics herarcially, and also
+			AUTIF statistics.
+
+			When read, this object should always return 'cleared' indicating that
+			the clear operation took place.  Should the operation be defered, the
+			value will remain as 'clear' until such time as:
+
+				1/ all of the statistics have actually been zeroed, and
+				2/ tigClearStatsTime has been updated with the correct time.
+
+			Should an NMS read the object and receive a 'cleared' indication, the SNMP agent
+			will set this object to 'cleared-confirmed'.  This aids the NMS in determining
+			whether or not the agent successfully received subsequent clear request.
+
+			Normal operation would be:
+
+			NMS								Agent
+
+			set 'clear'			-->			set to 'clear,' perform clearing
+													.
+			read				-->					.
+			'clear'				<--					.
+											clearing complete, set to 'cleared'
+													.
+			read				-->					.
+			'cleared'			<--			set to 'cleared-confirmed'
+													.
+			read				-->					.
+			'cleared-confirmed'	<--					.
+
+
+			Rules:
+				1/ NMS must read 'cleared-confirmed' BEFORE attempting
+				   to set 'clear'.
+				2/ After setting 'clear' the NMS must read 'cleared'.
+				   then the NMS must read 'cleared-confirmed'.
+			In this manner, if a 'clear' command was missed by the agent,
+			the variable will still be set to either 'cleared' or 'cleared-confirmed'."
+		DEFVAL	{ cleared }
+		::= { tsystem 8 }
+
+	tigClearStatsTime OBJECT-TYPE
+		SYNTAX		TimeTicks
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of ticks when the Tiger last received a tigClearStats command."
+		::= { tsystem 9 }
+
+	tigCpuTrapControl OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This option allows a tigCpu trap to be sent when:
+			a) the idle CPU time falls below 5%
+			b) when the idle CPU times exceeds 60% only after having fallen below 5%."
+		::= { tsystem 10 }
+
+	tigCpuIdleState OBJECT-TYPE
+		SYNTAX		INTEGER {
+			idle	(1),
+			alarm	(2)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"This tell us if the TIGER is in its CPU idle alarm state.
+			idle (1) - means that the CPU idle time is above 60&
+			alarm (2) - means that the CPU idle time is below 5%."
+		::= { tsystem 11 }
+
+	tigSystemSerialNum OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This is used to determine the TIGERs hardware serial number.
+			Although it is defined as a writable variable, TIGER may silently
+			discard that information.  If the serial number given does not match
+			the actual number, an error message may be shown."
+		::= { tsystem 12 }
+
+	tigDomainName OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..128))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The domain name that this TIGER belongs to.
+			This value must contain a leading and trailing dot.
+			(You do not need to enter these when using the Tiger
+			Configuration Tool.  It will automatically add them.)
+			To create the FQDN, concatenate sysName with this value."
+		::= { tsystem 13 }
+
+	--
+	-- The Buffer Pool Group
+	--
+
+	tigPoolNumEntries OBJECT-TYPE
+		SYNTAX		INTEGER (1..10)
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of:
+				WRITE:	buffer pools I want to create,
+				READ:	buffers that can be created."
+		::= { buffers 1 }
+
+	tigPoolTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF TigPoolEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry shall be placed in the storage table for
+			each buffer pool.
+
+			This table is intended to be a useful diagnostic
+			and performance monitoring tool for `out of memory'
+			and `out of buffers' types of failures and tracking."
+		::= { buffers 2 }
+
+	tigPoolEntry OBJECT-TYPE
+		SYNTAX		TigPoolEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A (conceptual) entry for one logical storage area on the host."
+		INDEX		{ tigPoolIndex }
+		::= { tigPoolTable 1 }
+
+	TigPoolEntry ::= SEQUENCE {
+		tigPoolIndex				INTEGER,
+		tigPoolSize					INTEGER,
+		tigPoolBufSize				INTEGER,
+		tigPoolLowThreshold			INTEGER,
+		tigPoolHighThreshold		INTEGER,
+		tigPoolFree					INTEGER,
+		tigPoolCommandStatus		INTEGER,
+		tigPoolAllocationFailures	Counter,
+		tigPoolTrapControl			INTEGER,
+		tigPoolTrapStatus			INTEGER
+		}
+
+	tigPoolIndex OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"A unique value for each buffer pool contained by the host.
+			It is the MQX pool number."
+		::= { tigPoolEntry 1 }
+
+	tigPoolSize OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of buffers in this pool."
+		::= { tigPoolEntry 2 }
+
+	tigPoolBufSize OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The size of each buffer in bytes."
+		::= { tigPoolEntry 3 }
+
+	tigPoolLowThreshold OBJECT-TYPE
+		SYNTAX		INTEGER (0..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"If the number of free buffers remaining in the pool
+			drops below the low water mark (threshold) as a percentage,
+			a trap may be generated if enabled.
+			default: 20%
+			UNITS: percent"
+		DEFVAL		{ 20 }
+		::= { tigPoolEntry 4 }
+
+	tigPoolHighThreshold OBJECT-TYPE
+		SYNTAX		INTEGER (0..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"If the Low threshold has been reached, this defines
+			the number of buffers that must be free in the pool
+			in order to turn off the alarm.
+			A trap may be generated if enabled.
+			default: 50%
+			UNITS: percent"
+		DEFVAL		{ 50 }
+		::= { tigPoolEntry 5 }
+
+	tigPoolFree OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of free buffers in this pool."
+		::= { tigPoolEntry 6 }
+
+	tigPoolCommandStatus OBJECT-TYPE
+		SYNTAX		INTEGER {
+			notInUse	(1),
+			create		(2),
+			created		(3),
+			failed		(4)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"When written with a 'create' it causes the pool
+			as defined by the other parameters to be created.
+
+			As a result, of pool creation, this variable, when
+			read will inform the management system whether the
+			poll was successfuly 'created' or if the create 'failed'."
+		::= { tigPoolEntry 7 }
+
+	tigPoolAllocationFailures OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of requests for buffers from this pool that could
+			not be honored due to insufficient buffers.	It should be noted
+			that as this object has a SYNTAX of Counter, that it does not
+			have a defined initial value.	However, it is recommended that
+			this object be initialized to zero."
+	::= { tigPoolEntry 8 }
+
+	tigPoolTrapControl OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This option allows a tigPool trap to be sent when:
+			a)	the number of buffers remaining in the pool falls
+				below the low water mark.
+
+			b)	when the number of buffers remaining in the pool exceeds
+				the high water mark (only after having fallen below the
+				low water mark)."
+		::= { tigPoolEntry 9 }
+
+	tigPoolTrapStatus OBJECT-TYPE
+		SYNTAX		INTEGER {
+			alarm		(1),
+			recovery	(2)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Informs the NMS of the reason for the tigPool trap that was received.
+			When read asynchronously, it also indicates the last known state of this pool entry."
+		::= { tigPoolEntry 10 }
+
+--
+-- Traps
+--
+-- This section defines the well-known notifications sent by the Tiger
+-- These are sent when the corresponding threshold is exceeded
+--
+
+	tigPool TRAP-TYPE
+		ENTERPRISE		generalTraps
+		VARIABLES		{ tigPoolIndex, tigPoolTrapStatus, tigPoolFree }
+		DESCRIPTION
+			"An tigPool trap signifies that the number of buffers
+			remaining in a pool has crossed either the high or low threshold
+			as defined by: tigPoolLowThreshold and tigPoolHighThreshold.
+
+			The trap returns:
+				1/ Index of the pool that changed state,
+				2/ That pools current status: alarm or recovery,
+				3/ That pools current number of buffers
+
+			The 'number of buffers' parameter is really only marginally
+			useful during the 'alarm' state."
+		::= 1
+
+	tigRestart TRAP-TYPE
+		ENTERPRISE		generalTraps
+		VARIABLES		{ tigRestartReason , tigSystemDate }
+		DESCRIPTION
+			"An tigRestartTrap signifies that the Tiger has recently
+			restarted for the reason given by 'tigRestartReason' at the
+			(local) time 'tigSystemDate'."
+		::= 2
+
+	tigIdle TRAP-TYPE
+		ENTERPRISE		generalTraps
+		VARIABLES		{ tigCpuIdleState }
+		DESCRIPTION
+			"An tigIdle trap signifies that the Tiger has recently
+			changed idle state to/from idling, alarm with the current
+			state given by 'tigCpuIdleState'.
+
+			It can only be generated if 'tigCpuTrapControl' is enabled."
+		::= 3
+
+	--
+	-- The Type "A" Traffic to TCP/UDP Sockets/Streams Interface
+	--
+
+	autifNumEntries OBJECT-TYPE
+		SYNTAX		INTEGER (1..10)
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of entries in the table."
+		::= { autif 1 }
+
+	autifTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF AutifEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry is be placed in the table for each address mapping."
+		::= { autif 2 }
+
+	autifEntry OBJECT-TYPE
+		SYNTAX		AutifEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A (conceptual) entry for each address pairing between
+			a Tiger user stream and a TCP or UDP socket/address pair.
+			An autifEntry may support a client, a listener or both
+			depending on the service configured."
+		INDEX		{ autifIndex }
+		::= { autifTable 1 }
+
+	AutifEntry ::= SEQUENCE {
+		autifIndex				INTEGER,
+		autifService			INTEGER,
+		autifRemAddress			IpAddress,
+		autifLocalPort			INTEGER,
+		autifRemotePort			INTEGER,
+		autifRxBufSize			INTEGER,
+		autifTxBufSize			INTEGER,
+		autifSockQueueSize		INTEGER,
+		autifTypeAQueueSize		INTEGER,
+		autifTypeAMaxMsgSize	INTEGER,
+
+	--
+	--	Statistics
+	--
+
+		autifInOctets			Counter,
+		autifInUcastPkts		Counter,
+		autifInNUcastPkts		Counter,
+		autifInDiscards			Counter,
+		autifInErrors			Counter,
+		autifInUnknownProtos	Counter,
+		autifOutOctets			Counter,
+		autifOutUcastPkts		Counter,
+		autifOutNUcastPkts		Counter,
+		autifOutDiscards		Counter,
+		autifOutErrors			Counter,
+
+		autifIA					OCTET STRING,
+		autifAliasAddress		IpAddress,
+		autifSockPrecedence		INTEGER,
+		autifDestAddrType		INTEGER,
+		autifSockOptions		INTEGER,
+		autifLNIA				OCTET STRING,
+	--
+	--	OFEP Specific Configuration
+	--
+		autifLBName						OCTET STRING,
+		autifOFEPKeepAliveTimeout		INTEGER,
+		autifUserIdleTimeout			INTEGER,
+		autifXlatToSocket             	INTEGER,
+		autifXlatFromSocket           	INTEGER,
+
+	--
+	--	OFEP Statistics
+	--
+		autifRealToVTRoutingErrors		Counter,
+		autifVTToRealRoutingErrors		Counter,
+		autifRealToVTHashDepth			Counter
+		}
+
+	autifIndex OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"A unique value for each address entry."
+		::= { autifEntry 1 }
+
+	autifService OBJECT-TYPE
+		SYNTAX		INTEGER {
+			udp					(1),
+			tcp					(2),
+			system-1			(3),
+			continental			(4),
+			dlsw				(5),
+			listener			(6),
+			matip				(7),
+			ofep-sabre			(8),
+			ofep-sabre-listener	(9)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Specifies the type of connection required for this address set.
+			'udp' implies:
+				- UDP client
+				- Northrop Grumman's proprietary data encapsulation format
+				  for message delimiting, using a SYN octet (16h) followed
+				  by 2 octets of user data length (big endian), followed by user data:
+						SYN(1) len(2) user data(n)
+			'tcp' implies:
+				- TCP client
+				- Northrop Grumman's proprietary data encapsulation format
+				  for message delimiting, using a SYN octet (16h) followed
+				  by 2 octets of user data length (big endian), followed by user data:
+						SYN(1) len(2) user data(n)
+			'system-1' implies:
+				- UDP
+				- each autif socket is mapped to a (specified) IA
+				- each IA/socket carries an alias source IP address
+				- port numbering:
+					- host destination port = base = remote port
+					- source port = base + TA (converted TA)
+				- encapsulation format:
+					ip header (dstip = autifRemAddress, srcip = autifAliasAddress)
+					udp header (dstport = autifRemotePort, srcport = autifRemotePort + ta)
+					alc data (no header, ends with EOMx)
+			'continental' implies:
+				- UDP client
+				- each autif socket is mapped to a (specified) IA
+				- each IA/socket carries an alias source IP address
+				- port numbering:
+					- host destination port = base = remote port
+					- source port = base + ta (converted TA)
+				- encapsulation format:
+					ip header (dstip = autifRemAddress, srcip = autifAliasAddress)
+					udp header (dstport = autifRemotePort, srcport = autifRemotePort + ta)
+					header (autifLNIA(2) ta)
+					alc data (ends with EOMx)
+			'dlsw' implies:
+				- TCP dlsw client(2065) + TCP dlsw listener(2065)
+				- 1 or 2 TCP sockets supporting the flow of DLSw traffic with the defined
+				  peer (autifRemAddress).
+				- autifAliasAddress defines this DLSw peer source ip address.
+				- Uses RFC1795 defined message encapsulation format.
+				- TIGER always initiates the connection
+			'listener' implies:
+				- TCP listener
+				- creates a socket with autifLocalPort defining the 'well known port'
+				  for the listener.
+				- A conditional accept is done on all incoming connect requests
+				  to verify the remote address.  If autifRemAddress is defined as:
+				  		0.0.0.0		- a call from any source address is accepted,
+						'non-zero'	- only a call from the specified address is accepted.
+				- Northrop Grumman's proprietary data encapsulation format
+				  for message delimiting, using a SYN octet (16h) followed
+				  by 2 octets of user data length (big endian), followed by user data:
+					SYN(1) len(2) user data(n).
+			'matip' implies:
+				- TCP Client/Server depending upon the Mode of the MATIP module
+				- MATIP header contains 4 bytes. The first is version field and is used as
+				  as MATIP sync. The 2nd is ignored by AUTIF. The 3rd and 4th is the length
+				  of this TCP message.
+			'ofep-sabre' implies:
+				- TCP Client process for SABRE OFEP Encapsulation/Protocol.
+				- the Load Balancer header is 3 long (a version field and a 2 byte length)
+				- the OFEP header is 4 bytes long (a version field, 2 byte length and a
+				  control field.
+			'ofep-sabre-listener' implies:
+				- TCP Listener process for SABRE OFEP Encapsulation/Protocol
+				- used ONLY for testing purposes.
+				- the Load Balancer header is 3 long (a version field and a 2 byte length)
+				- the OFEP header is 4 bytes long (a version field, 2 byte length and a
+				  control field."
+		::= { autifEntry 2 }
+
+	autifRemAddress OBJECT-TYPE
+		SYNTAX		IpAddress
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The IP address signifying the destination device used for this entry.
+			client operation - it defines the destination host.
+			listener operation -
+				0.0.0.0		- a call from any source address is accepted,
+				'non-zero'	- only a call from the specified address is accepted."
+		::= { autifEntry 3 }
+
+	autifLocalPort OBJECT-TYPE
+		SYNTAX		INTEGER (0..65535)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The local port number for this connection.  This field has no meaning
+			for a TCP client since the source port is dynamically assigned.  For a
+			TCP listener it specifies the 'well-known port' for the particular
+			application/streams that is attached."
+		::= { autifEntry 4 }
+
+	autifRemotePort OBJECT-TYPE
+		SYNTAX		INTEGER (0..65535)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The remote port number for this connection.
+			client - this is the 'well-known port' of the application.
+			When used with an OFEP mode, this is the port of the load balancer.
+			TCP listener - no meaning."
+		::= { autifEntry 5 }
+
+	autifRxBufSize OBJECT-TYPE
+		SYNTAX		INTEGER (1..4096)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The size of the socket receive buffer represented by
+			this entry in bytes.  For UDP sockets it must be as large as
+			the largest message to be received, because UDP delivers in
+			a single recv() operation.  For TCP sockets it may be configured
+			to be less than the maximum message size, and the autif recieve
+			application will reassemble in Tiger buffers.
+				For TCP = autifTypeAMaxMsgSize / 2
+				For UDP = autifTypeAMaxMsgSize
+			UNITS: bytes"
+		DEFVAL		{ 4096 }
+		::= { autifEntry 6 }
+
+	autifTxBufSize OBJECT-TYPE
+		SYNTAX		INTEGER (1..4096)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The size of the transmit buffer represented by this entry in bytes.
+			For UDP sockets it must be as large as the largest message to be
+			transmitted, because UDP expects to deliver in a single send()
+			operation.  For TCP sockets it may be configured to be less than the
+			maximum message size, and the autif transmit application will
+			coordinate multiple send() operations from the Tiger buffers.
+				For TCP = autifTypeAMaxMsgSize / 2
+				For UDP = autifTypeAMaxMsgSize
+			UNITS: bytes"
+		DEFVAL		{ 4096 }
+		::= { autifEntry 7 }
+
+	autifSockQueueSize OBJECT-TYPE
+		SYNTAX		INTEGER (1..10)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The size of the socket receive queue represented by this entry
+			in buffers.  For TCP this reflects flow control responsiveness in
+			outbound traffic (streams to socket to Host).
+			UNITS: buffers"
+		DEFVAL			{ 2 }
+		::= { autifEntry 8 }
+
+	autifTypeAQueueSize OBJECT-TYPE
+		SYNTAX		INTEGER (1..10)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The size of the Type A message user stream queue size represented
+			by this entry in buffers.  For TCP, this reflects flow control
+			responsiveness for inbound traffic (Host to socket to streams).
+			UNITS: buffers"
+		DEFVAL		{ 2 }
+		::= { autifEntry 9 }
+
+	autifTypeAMaxMsgSize OBJECT-TYPE
+		SYNTAX		INTEGER (1..4096)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The maximum size of the message expected to flow between the
+			sockets and streams interfaces.
+			UNITS: bytes"
+		DEFVAL		{ 4096 }
+		::= { autifEntry 10 }
+
+	autifInOctets OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The total number of octets received from the streams interface,
+			destined to the socket/Host, including header characters."
+		::= { autifEntry 11 }
+
+	autifInUcastPkts OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of subnetwork-unicast packets received from the streams
+			interface, destined to the socket/Host TCP/UDP higher-layer protocol."
+		::= { autifEntry 12 }
+
+	autifInNUcastPkts OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of non-unicast (i.e., subnetwork- broadcast or
+			subnetwork-multicast) packets received from the streams interface,
+			destined to the socket/Host higher-layer protocol."
+		::= { autifEntry 13 }
+
+	autifInDiscards OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of packets received from the streams interface,
+			destined to the socket/Host which were flused from queues and
+			discarded because the socket went down, and the traffic was not
+			deliverable."
+		::= { autifEntry 14 }
+
+	autifInErrors OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of inbound packets received from the streams interface,
+			destined to the socket/Host that could not be sent due to errors
+			in socket transmision, or instance routing faults."
+		::= { autifEntry 15 }
+
+	autifInUnknownProtos OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of packets received via the interface which were
+			discarded because of an unknown or unsupported protocol. Currently
+			not supported in Tiger."
+		::= { autifEntry 16 }
+
+	autifOutOctets OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The total number of octets from the Host/sockets interface,
+			destined to the concerned user stream, including header characters."
+		::= { autifEntry 17 }
+
+	autifOutUcastPkts OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The total number of packets from the Host/sockets interface,
+			destined to the concerned user stream."
+		::= { autifEntry 18 }
+
+	autifOutNUcastPkts OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The total number of packets from the Host/sockets
+			interface, destined to the concerned user stream.
+			(i.e., a subnetwork-broadcast or subnetwork-multicast) address."
+		::= { autifEntry 19 }
+
+	autifOutDiscards OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of outbound packets from the Host/sockets interface,
+			destined to the concerned user stream which could not be delivered
+			for various error reasons, such as insufficient buffers, queuing
+			errors, etc. "
+		::= { autifEntry 20 }
+
+	autifOutErrors OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of outbound packets from the Host/sockets interface,
+			destined to the concerned user stream that could not be transmitted
+			because of errors."
+		::= { autifEntry 21 }
+
+	autifIA OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (1))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This is the IA value associated with this connection.  Note that the Configurator
+			will automatically establish this value when an ALC user stream is linked to
+			the autif instance.  (The Configurator displays this value in the more human form
+			of hex whereas it is provided here to the Tiger as correspondance code).  In system-1 mode,
+			Tiger will strip it from the data message on transmit, and add it (in correpsondance code)
+			on reception prior to passing into the stream."
+		::= { autifEntry 22 }
+
+	autifAliasAddress OBJECT-TYPE
+		SYNTAX		IpAddress
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This is another IP address to which the Tiger will respond and associate with
+			this autif entry (on this socket).  When the socket is in use with the DLSw
+			service this IP address should be the IP address of the network peer that
+			supports this service.
+			Used when autifService = tcp, udp, system-1, continental, dlsw."
+		::= { autifEntry 23 }
+
+	autifSockPrecedence OBJECT-TYPE
+		SYNTAX		INTEGER {
+			routine					(1),
+			priority				(2),
+			immediate				(3),
+			flash					(4),
+			flash-override			(5),
+			critical				(6),
+			internetwork-control	(7),
+			network-control			(8)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Specifies the precedence that IP traffic on this socket will
+			be transmitted with.  These values define the upper 3 bits of
+			the Type Of Service byte in the IP header."
+		::= { autifEntry 24 }
+
+	autifDestAddrType OBJECT-TYPE
+		SYNTAX		INTEGER {
+			none	(1),
+			ip		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This object controls whether or not the destination address
+			is present in the outgoing data stream from a Type A user to
+			the IP interface logic.  It is only applicable for UDP type
+			services (see autifService).
+
+			To handle alternate access operation, the Destination address
+			can be inserted by the alternate access module (see altaHostSupplementalAddr).
+
+			'none' - no additional address information is present, and the message
+					 is sent to the sockets default destination IP address.
+
+			'ip' -	this indicates that the first 4 bytes of the data stream holds the
+					IP address of the destination host.  For a UDP style socket this
+					address is used in the applications sendto() call.
+					If the address is all zeros, then the message will be sent to the
+					sockets default destination IP address defined in autifRemAddress.
+					On messages sourced from the IP layer, the source IP address is
+					pre-pended to the data stream before it is forwarded to the
+					alternate access module and multiplexor."
+		DEFVAL		{ none }
+		::= { autifEntry 25 }
+
+	autifSockOptions OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Controls which socket options are enabled.  This integer is actually
+			a bit field.  With all bits off, no options are enabled.
+
+			Bit 0		- TCP Keep Alive
+			Bits 1-n	- not currently defined, must be zero."
+		::= { autifEntry 26 }
+
+	autifLNIA OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (2))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This parameter represents the line and IA characters for the ALC user
+			that may be connected to this AUTIF instance.  Although the LNIA is an
+			arbitrary 16 bit hexadecimal quantity, it has various meanings:
+
+			Continental Mode:
+
+			  - the parameter contains the LNIA characters that are substitute internal
+			  values of Line and IA for all socket transmissions to the host.  On socket
+			  reception the fields are stripped, and internal values of 'line' and 'IA'
+			  are applied.
+
+			OFEP Modes:
+
+			  - the parameter contains the actual line and IA values for the user
+			  connected to this AUTIF instance.
+
+			This parameter is only used when autifService is continental or one of the OFEP modes."
+		::= { autifEntry 27 }
+
+	--
+	--	OFEP Variables
+	--
+
+	autifLBName OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (256))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The DNS Name of the Load Balancer.
+
+			This variable is only written to if the item 'autifService' is set to either
+			'ofep-sabre' or 'ofep-sabre-listener'."
+		::= { autifEntry 28 }
+
+	autifOFEPKeepAliveTimeout OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"OFEP Keepalive period (in SECONDS). OFEP Keepalive messages are generated
+			by the OFEP processor ONLY. The Tiger will monitor the time intervals between
+			OFEP Keepalive messages - this counter is the timeout period that will lead to
+			recovery action by the Tiger (i.e. the reset of the TCP socket). If the timer
+			is set to zero (0), then KeepAlive monitoring is disabled.
+
+			The KeepAlive monitor is active for all terminal devices associated with this
+			IA.
+
+			This variable is only written to if the item 'autifService' is set to either
+			'ofep-sabre' or 'ofep-sabre-listener'."
+		DEFVAL		{ 150 }
+		::= { autifEntry 29 }
+
+	autifUserIdleTimeout OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This is the OFEP inactivity timer (in SECONDS). If set, the Tiger will reset
+			the socket after 'autifUserIdleTimeout' many seconds. A value of zero (0) means
+			that the socket is never timed out.
+
+			This variable is only written to if the item 'autifService' is set to either
+			'ofep-sabre' or 'ofep-sabre-listener'."
+		DEFVAL		{ 0 }
+		::= { autifEntry 30 }
+
+	autifXlatToSocket OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This is an index into the capXlatTable that is used for translating data
+			received from the stream and being sent to the socket.
+
+			Currently only used in OFEP mode."
+	::= { autifEntry 31 }
+
+	autifXlatFromSocket OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This is an index into the capXlatTable that is used for translating data
+			received from the socket and being sent to the stream.
+
+			Currently only used in OFEP mode."
+	::= { autifEntry 32 }
+
+	--
+	--	OFEP Statistics (per AUTIF/IA)
+	--
+
+	autifRealToVTRoutingErrors OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Count of the times we were unable to route from Real to Virtual TA"
+		::= { autifEntry 33 }
+
+	autifVTToRealRoutingErrors OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Count of the times we were unable to route from Virtual TA to Real."
+		::= { autifEntry 34 }
+
+	autifRealToVTHashDepth OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Count of the times we encountered maximum hash depth encountered in
+			this direction."
+		::= { autifEntry 35 }
+
+--
+-- APATH Configuration Parameters
+--
+
+	apathNumEntries OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of type A paths in the table."
+		::= { apath 1 }
+
+	apathTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF ApathEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of Apath table entries.	The number of entries
+			is given by the value of apathNumEntries."
+		::= { apath 2 }
+
+	apathEntry OBJECT-TYPE
+		SYNTAX		ApathEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a
+			particular type A path."
+		INDEX		{ apathIndex }
+		::= { apathTable 1 }
+
+	ApathEntry ::= SEQUENCE {
+		apathIndex					INTEGER,
+		apathType					INTEGER,
+		apathIdleTimerMax			INTEGER,
+		apathResponseTimerMax 		INTEGER,
+		apathRetryCounterMax		INTEGER,
+		apathEndUserStatusEnable	INTEGER,
+		apathTrafficIdleTimer		INTEGER,
+		apathConnectTimerMax		INTEGER,
+		apathPathUpMsg				OCTET STRING
+		}
+
+	apathIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"A unique value for each Apath entry."
+		::= { apathEntry 1 }
+
+	apathType OBJECT-TYPE
+		SYNTAX		INTEGER {
+			primary				(1),
+			secondary			(2),
+			primary-mute		(3),
+			primary-mute-xlat	(4)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Defines the mode of operation for this Apath:
+			Primary:			We send enquiry messages.
+			Secondary:			We respond to enquiry messages.
+			Primary-Mute:		We won't send enquiry messages.
+								The path is up on on the basis of the connected stream.
+			Primary-Mute-Xlat:	Same as Primary-Mute except it enables SABRE/PIA
+								character set translation."
+		DEFVAL		{ primary }
+		::= { apathEntry 2 }
+
+	apathIdleTimerMax OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(1..1000 seconds)	default=30 (Primary)
+			Timeout to send an enquiry message when no data received.
+				default=39 (Secondary)
+			Timeout to declare the Apath down when nothing received.
+			UNITS=seconds"
+		DEFVAL		{ 30 }
+		::= { apathEntry 3 }
+
+	apathResponseTimerMax OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(1..100 seconds)	default=3 (Primary only)
+			Timeout to wait for a positive end user response to an enquiry message.
+			A negative end user response will allow the timeout to occur.
+			UNITS=seconds"
+		DEFVAL		{ 3 }
+		::= { apathEntry 4 }
+
+	apathRetryCounterMax OBJECT-TYPE
+		SYNTAX		INTEGER (1..10)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			" default=3 (Primary only)
+			Number of consecutive Response Timeouts to declare the Apath down."
+		DEFVAL		{ 3 }
+		::= { apathEntry 5 }
+
+	apathEndUserStatusEnable OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			" default = enabled
+			Defines whether or not the end user status will be included in the path state.
+			A user down status will declare Apath down."
+		DEFVAL		{ enabled }
+		::= { apathEntry 6 }
+
+	apathTrafficIdleTimer OBJECT-TYPE
+		SYNTAX		INTEGER (0..100000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			" default=15
+			A non-zero value indicates amount of time that has to pass with no user traffic
+			being sent before this path is declared idle.	The path will only be re-connected
+			on user traffic.	If the value is zero, then no timming will occur and the path
+			will never be automatically disconnected.
+
+			This is useful for dial-up connections for 'type A' connections, but is useless
+			for X2X traffic which won't initiate traffic unless the path is already up.
+			UNITS: seconds"
+		DEFVAL		{ 15 }
+		::= { apathEntry 7 }
+
+	apathConnectTimerMax OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"(1..1000 seconds)	default=30
+			This amount of time is allowed for the underlying connection to take
+			place, before Apath will begin polling the other end for a path connection.
+			i.e.
+
+			TimeTillDeclaredDead = apathConnectTimerMax + (apathResponseTimerMax * apathRetryCounterMax)
+
+			UNITS=seconds"
+		DEFVAL		{ 30 }
+		::= { apathEntry 8 }
+
+	apathPathUpMsg OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This message is sent on this stream to the host when the host path status changes to UP.
+			This option only applies when apathType is set to any of the primary options.
+			This text is transmitted as entered without any manipulations, translations, headers or trailers."
+		::= { apathEntry 9 }
+
+	--
+	--	APATH User
+	--
+
+	apathUserNumEntries OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of type A path users in the table."
+		::= { apath 3 }
+
+	apathUserTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF ApathUserEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of User table entries.	The number of entries
+			is given by the value of apathNumUserConfiged."
+		::= { apath 4 }
+
+	apathUserEntry OBJECT-TYPE
+		SYNTAX		ApathUserEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a particular APATH line."
+		INDEX		{ apathUserIndex }
+		::= { apathUserTable 1 }
+
+	ApathUserEntry ::= SEQUENCE {
+		apathUserIndex				INTEGER,
+		apathUserApathOperation		INTEGER,
+		apathUserMainApathIndex		INTEGER,
+		apathUserAlt1ApathIndex		INTEGER,
+		apathUserAlt2ApathIndex		INTEGER,
+		apathUserAlt3ApathIndex		INTEGER,
+		apathUserType				INTEGER,
+		apathUserDevStatusEnable	INTEGER,
+		apathUserAuxilliaryInfo 	OCTET STRING
+		}
+
+	apathUserIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..100)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The line interface identifier that can be used to locate this user."
+		::= { apathUserEntry 1 }
+
+	apathUserApathOperation OBJECT-TYPE
+	SYNTAX		INTEGER {
+		mainPrefered		(1),
+		switchToBestPath	(2),
+		avoidSwitching		(3)
+		}
+	ACCESS		read-write
+	STATUS		mandatory
+	DESCRIPTION
+		" default = mainPrefered
+		This defines the switching characteristics of main and alternate paths.
+		MAIN PREFERED
+			Re-connect to the main path only.
+				- continuous retry of main path.
+				- disconnect the alternate path in use and switch to the main path
+				when it is known to be UP.
+				- When the main path fails, then attempt to re-establish the path on
+				one of the alternate paths in the order Alternate 1, then Alternate
+				2, then Alternate 3.
+
+		SWITCH TO BEST PATH
+			Connect to the best path.
+				- continuous retry of the main path and any path that is higher
+				than the path currently in use.
+				- disconnect the path ans select the highest priority path that is
+				known to be UP.
+				- when a the current path fails, then attempt to re-establish the
+				path based on the priority order of: main, alternate 1, 2, 3.
+		AVOID SWITCHING
+			No automatic switching occurs.
+				- remain connected with the current path as long as it remains UP.
+				- when it fails, or is commanded to disconnect, then re-establish
+				path based on the priority order of: main, alternate 1, 2, 3."
+		DEFVAL		{ mainPrefered }
+		::= { apathUserEntry 2 }
+
+	apathUserMainApathIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The index into the apath table that specifies the primary trunk path connection."
+		::= { apathUserEntry 3 }
+
+	apathUserAlt1ApathIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The index into the apath table that specifies the first alternate trunk path
+			connection to use if the main path is down."
+		::= { apathUserEntry 4 }
+
+	apathUserAlt2ApathIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The index into the apath table that specifies the second alternate trunk
+			to use if the both the main and alternate 1 path connection is down."
+		::= { apathUserEntry 5 }
+
+	apathUserAlt3ApathIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The index into the apath table that specifies the third alternate trunk
+			to use if the main, alternate 1 AND alternate 2 path connections are down."
+		::= { apathUserEntry 6 }
+
+	apathUserType OBJECT-TYPE
+		SYNTAX		INTEGER {
+			alc		(1),
+			u100	(2),
+			x2x		(3)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Defines the type of user traffic that is flowing across this Apath connection.
+			This information is really only used when the Tiger is configured ('apathType')
+			for an Apath primary or primary-mute mode of operation.
+
+			When it is configured for secondary mode.  This field must match the type of
+			user traffic that will be send to it from the remote Tiger."
+		::= { apathUserEntry 7 }
+
+	apathUserDevStatusEnable OBJECT-TYPE
+		SYNTAX		INTEGER {
+			disabled	(1),
+			enabled		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			" default = 1 (Primary only)
+			Include the device status in the Apath enquiry message if enabled."
+		DEFVAL		{ disabled }
+		::= { apathUserEntry 10 }
+
+	apathUserAuxilliaryInfo OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (20))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This octet string contains any additional clarification information for this APATH User
+			stream.
+
+			For the IA Diversion function, the first octet contains the Tiger Port number (values
+			can be 0x01 - 0x04). The second contains the IA (valid numbers are 0x01 - 0x3F). If the IA
+			Diversion function is not selected, then these values are both zero (i.e. 0x00 0x00);
+			the remainding octets of the string are available for other functions."
+		::= { apathUserEntry 11 }
+
+--
+-- Service messages
+--
+-- NOTE: If an entry contains the null string, then the service message should not be sent.
+--
+
+	svcmsgNumEntries OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of service message profiles in the table."
+		::= { svcmsg 1 }
+
+	svcmsgTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF SvcmsgEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of service message table entries.
+			The number of entries is given by the value of svcmsgNumEntries."
+		::= { svcmsg 2 }
+
+	svcmsgEntry OBJECT-TYPE
+		SYNTAX		SvcmsgEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a
+			particular service message profile."
+		INDEX		{ svcmsgIndex }
+		::= { svcmsgTable 1 }
+
+	SvcmsgEntry ::= SEQUENCE {
+		svcmsgIndex					INTEGER,
+		svcmsgDescription			OCTET STRING,
+		svcmsgNetDown				OCTET STRING,
+		svcmsgNetUp					OCTET STRING,
+		svcmsgConnecting			OCTET STRING,
+		svcmsgConnected				OCTET STRING,
+		svcmsgIdle					OCTET STRING,
+		svcmsgDisconnecting			OCTET STRING,
+		svcmsgDisconnected			OCTET STRING,
+		svcmsgDiscRestart			OCTET STRING,
+		svcmsgDiscUser				OCTET STRING,
+		svcmsgDiscMgmt				OCTET STRING,
+		svcmsgDiscBusy				OCTET STRING,
+		svcmsgDiscRPErr				OCTET STRING,
+		svcmsgDiscLPErr				OCTET STRING,
+		svcmsgDiscCongest			OCTET STRING,
+		svcmsgDiscNotOb				OCTET STRING,
+		svcmsgDiscOutOrder			OCTET STRING,
+		svcmsgDiscInvFac			OCTET STRING,
+		svcmsgDiscAcsBar			OCTET STRING,
+		svcmsgDiscRvsCharge			OCTET STRING,
+		svcmsgDiscIncDest			OCTET STRING,
+		svcmsgDiscNoTraf			OCTET STRING,
+		svcmsgUpAgain				OCTET STRING,
+		svcmsgNoRoute				OCTET STRING,
+		svcmsgOverLength			OCTET STRING,
+		svcmsgCongestion			OCTET STRING,
+		svcmsgHostUnreach			OCTET STRING,
+		svcmsgZeroLength			OCTET STRING
+		}
+
+	svcmsgIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"A unique value for each service message profile entry."
+		::= { svcmsgEntry 1 }
+
+	svcmsgDescription OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This is the description field for this table entry."
+		::= { svcmsgEntry 2 }
+
+	svcmsgNetDown OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			All links to the network are down, or the network is not responding,
+			Or when an ICMP message 'net unreachable' is received."
+		DEFVAL		{ "Network Down" }
+		::= { svcmsgEntry 3 }
+
+	svcmsgNetUp OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The network is available."
+		DEFVAL		{ "Network Up" }
+		::= { svcmsgEntry 4 }
+
+	svcmsgConnecting OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			Trying to make a connection with the remote end user."
+		DEFVAL		{ "Connecting" }
+		::= { svcmsgEntry 5 }
+
+	svcmsgConnected OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			Connection with the remote end user has been established."
+		DEFVAL		{ "Connected" }
+		::= { svcmsgEntry 6 }
+
+	svcmsgIdle OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The network is available, but the local end user has not yet initiated a connection."
+		DEFVAL		{ "Idle" }
+		::= { svcmsgEntry 7 }
+
+	svcmsgDisconnecting OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection is currently in the process of being cleared."
+		DEFVAL		{ "Disconnecting" }
+		::= { svcmsgEntry 8 }
+
+	svcmsgDisconnected OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has broken.  No reason is associated with the outage."
+		DEFVAL		{ "Disconnected" }
+		::= { svcmsgEntry 9 }
+
+	svcmsgDiscRestart OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has broken due to a restart condition being received."
+		DEFVAL		{ "Disconnected/Restart" }
+		::= { svcmsgEntry 10 }
+
+	svcmsgDiscUser OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared by local intervention, i.e. console command."
+		DEFVAL		{ "Disconnected/User" }
+		::= { svcmsgEntry 11 }
+
+	svcmsgDiscMgmt OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared by local network management."
+		DEFVAL		{ "Disconnected/Mgmt" }
+		::= { svcmsgEntry 12 }
+
+	svcmsgDiscBusy OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared by the remote end because it already has
+			a connection established with another user."
+		DEFVAL		{ "Disconnected/Busy" }
+		::= { svcmsgEntry 13 }
+
+	svcmsgDiscRPErr OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because a protocol error associated with the
+			remote end has been detected."
+		DEFVAL		{ "Disconnected/Remote Procedure Error" }
+		::= { svcmsgEntry 14 }
+
+	svcmsgDiscLPErr OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because a protocol error associated with the
+			local end has been detected."
+		DEFVAL		{ "Disconnected/Local Procedure Error" }
+		::= { svcmsgEntry 15 }
+
+	svcmsgDiscCongest OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because of network congestion."
+		DEFVAL		{ "Disconnected/Congestion" }
+		::= { svcmsgEntry 16 }
+
+	svcmsgDiscNotOb OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because the address used for the remote
+			end user is unknown."
+		DEFVAL		{ "Disconnected/Not Obtainable" }
+		::= { svcmsgEntry 17 }
+
+	svcmsgDiscOutOrder OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because:
+				a) the connection cannot be completed,
+				b) has been cleared,
+				c) the remote end user is, or becomes unavailable."
+		DEFVAL		{ "Disconnected/Out of Order" }
+		::= { svcmsgEntry 18 }
+
+	svcmsgDiscInvFac OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because a facility that was
+			requested was invalid."
+		DEFVAL		{ "Disconnected/Invalid Facility" }
+		::= { svcmsgEntry 19 }
+
+	svcmsgDiscAcsBar OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because a the local end user does
+			not have permission to access the remote end."
+		DEFVAL		{ "Disconnected/Access Barred" }
+		::= { svcmsgEntry 20 }
+
+	svcmsgDiscRvsCharge OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because the remote end user cannot
+			accept the reverse charge requested by the local end."
+		DEFVAL		{ "Disconnected/Reverse Charge not accepted" }
+		::= { svcmsgEntry 21 }
+
+	svcmsgDiscIncDest OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because the remote end user application
+			is incompatible with the local end."
+		DEFVAL		{ "Disconnected/Invalid Destination" }
+		::= { svcmsgEntry 22 }
+
+	svcmsgDiscNoTraf OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The connection has been cleared because no traffic has been detected over
+			a specified period of time."
+		DEFVAL		{ "Disconnected/No Traffic" }
+		::= { svcmsgEntry 23 }
+
+	svcmsgUpAgain OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			A device is detected as having become operable."
+		DEFVAL		{ "Up Again" }
+		::= { svcmsgEntry 24 }
+
+	svcmsgNoRoute OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			1/ No route to the host is configured.
+			2/ There is no alternate host access selected."
+		DEFVAL		{ "No Route To Host" }
+		::= { svcmsgEntry 25 }
+
+	svcmsgOverLength OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			A message was received by a protocol whose length was greater than
+			the configured maximum allowable message length."
+		DEFVAL		{ "" }
+		::= { svcmsgEntry 26 }
+
+	svcmsgCongestion OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			There is congestion preventing traffic from reaching the destination.
+			Typically due to receiving an ICMP 'source quench'."
+		DEFVAL		{ "Congestion" }
+		::= { svcmsgEntry 27 }
+
+	svcmsgHostUnreach OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			The host, or host application is unreachable.
+			Typically when an ICMP message is received that indicates 'host unreachable'
+			or 'port unreachable'."
+		DEFVAL		{ "Host Unreachable" }
+		::= { svcmsgEntry 28 }
+
+	svcmsgZeroLength OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Message sent when:
+			There was no data in a message that was received by a protocol."
+		DEFVAL		{ "" }
+		::= { svcmsgEntry 29 }
+
+--
+-- BOOTP control table
+--
+
+	bootpNumEntries OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of bootp command entries in the table."
+		::= { bootp 1 }
+
+	bootpTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF BootpEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of bootp command entries.
+			The number of entries is given by the value of bootpNumEntries."
+		::= { bootp 2 }
+
+	bootpEntry OBJECT-TYPE
+		SYNTAX		BootpEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a particular bootp action."
+		INDEX		{ bootpIndex }
+		::= { bootpTable 1 }
+
+	BootpEntry ::= SEQUENCE {
+		bootpIndex			INTEGER,
+		bootpServerName		OCTET STRING,
+		bootpUserName		OCTET STRING,
+		bootpPassword		OCTET STRING,
+		bootpRemoteFile		OCTET STRING,
+		bootpLocalFile		OCTET STRING
+		}
+
+	bootpIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"A unique value for each bootp command entry."
+		::= { bootpEntry 1 }
+
+	bootpServerName OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"An optional string signifying the name of the server that should respond to the
+			BOOTP request.  If bcastServerName contains a string, only the server that matches
+			that name/address will answer the request.  If bcastServerName is an empty string,
+			then any BOOTP server that received the request may answer.
+
+			This entry is only required for the first entry of the bootp table since subsequent
+			bootp table entries are only used to perform FTP operations.  Any subsequent FTP
+			transactions will be performed to the 'server IP' address that was found in the
+			bootp response."
+		DEFVAL		{ "" }
+		::= { bootpEntry 2 }
+
+	bootpUserName OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"bootpUserName defines the user name used for performing an FTP file transfer."
+		DEFVAL		{ "anonymous" }
+		::= { bootpEntry 3 }
+
+	bootpPassword OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"bootpPassword defines the password used for performing an FTP file transfer."
+		DEFVAL		{ "guest" }
+		::= { bootpEntry 4 }
+
+	bootpRemoteFile OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..128))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"If bootpRemoteFile is an empty string, the responding server will use its database
+			entry to inform TIGER of the servers filename to use for this transaction.
+
+			If bootpRemoteFile contains a value,  the BOOTP server will use that string
+			to access its configuration database to determine the corresponding file that
+			will be filled in the BOOTP response to inform TIGER of the servers filename
+			to use for this transaction.
+
+			Normally, the bootp database will contain a entry that defines this name as the
+			name of the configuration file that should be downloaded first (see bootpLocalFile)."
+		DEFVAL		{ "" }
+		::= { bootpEntry 5 }
+
+	bootpLocalFile OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..128))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"When Tiger's bootp application is performing an FTP transaction, the bootpLocalFile
+			object contains the destination path and filename for the incoming file.
+
+			If this field is empty, the downloaded file will be placed into a filename
+			created by concatenating '/flash' with the filename (only) from the bootp response.
+			That response will either contain a value specified in the BOOTP server database
+			or if none there, then the value of bootpRemoteFile will be used.
+
+			When bootpLocalFile is specified it must always contain one of the valid TIGER
+			filesystems of: '/flash' or '/ramdisk'.
+
+			It is assumed that this variable will always be written last when defining a bootpEntry.
+			When this variable is written, the Bootp (or FTP) transaction will begin."
+		DEFVAL		{ "" }
+		::= { bootpEntry 6 }
+
+--
+-- File System Mount table (NFS)
+--
+
+	mountNumEntries OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of filesystem entries in the table."
+		::= { mount 1 }
+
+	mountTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF MountEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of filesystem entries.
+			The number of entries is given by the value of mountNumEntries."
+		::= { mount 2 }
+
+	mountEntry OBJECT-TYPE
+		SYNTAX		MountEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a particular mount point."
+		INDEX		{ mountIndex }
+		::= { mountTable 1 }
+
+	MountEntry ::= SEQUENCE {
+		mountIndex			INTEGER,
+		mountRemotePath		OCTET STRING,
+		mountLocalPath		OCTET STRING,
+		mountMode			INTEGER,
+		mountRemoteInfo		INTEGER
+		}
+
+	mountIndex OBJECT-TYPE
+		SYNTAX		INTEGER (1..1000)
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"mountIndex is a unique value for each mount table entry."
+		::= { mountEntry 1 }
+
+	mountRemotePath OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..256))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The mountRemotePath variable is a string defines the filesystem
+			mount point on the remote machine.  It will typically be of the form:
+
+				//fulko/u/here/there"
+		DEFVAL		{ "" }
+		::= { mountEntry 2 }
+
+	mountLocalPath OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The mountLocalPath variable is a string defines the filesystem
+			mount point on the local machine.  It will typically be of the form:
+
+				/mnt/thisdir"
+		DEFVAL		{ "" }
+		::= { mountEntry 3 }
+
+	mountMode OBJECT-TYPE
+		SYNTAX		INTEGER {
+			read-only	(1),
+			read-write	(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"mountMode defines how the remote file system has been mounted on the local machine.
+			A remote file system can either be mounted as read-only or as read-write.
+			This overides any permission that may be granted by the remote machine."
+		DEFVAL		{ read-write }
+		::= { mountEntry 4 }
+
+	mountRemoteInfo OBJECT-TYPE
+		SYNTAX		INTEGER {
+			notConnected-NoAccess	(1),
+			notConnected-ReadOnly	(2),
+			notConnected-WriteOnly	(3),
+			notConnected-ReadWrite	(4),
+			connected-NoAccess		(5),
+			connected-ReadOnly		(6),
+			connected-WriteOnly		(7),
+			connected-ReadWrite		(8)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"mountRemoteInfo returns both the connection status of this entry with respect to
+			the remote machine, as well as the access rights that the remote file system
+			allows.  This value is actually a bit field, where:
+				the first two bits represent the read and write permissions respectively,
+				the next bit represents the connection status: 0 = not connected, 1 = connected."
+		DEFVAL		{ notConnected-NoAccess }
+		::= { mountEntry 5 }
+
+--
+-- Domain Name Server (DNS) Resolver
+--
+
+	dnsResLocalResolves OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The count of the number of times that a cached entry resolved the request."
+		::= { dnsRes 1 }
+
+	dnsResCacheFull OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of occurences when DNS responses were not cached because the cache was full."
+		::= { dnsRes 2 }
+
+	dnsResQueueFull OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of occurences when DNS responses were not cached because the cache
+			queue was full."
+		::= { dnsRes 3 }
+
+	dnsResClearCache OBJECT-TYPE
+		SYNTAX		INTEGER {
+			other		(1),
+			reset		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"When set to reset(2), any persistant resolver state (such as a process)
+			is reinitialized as if the resolver had just been started, and the cache is
+			initialized. When read this variable will always return other(1)."
+		::= { dnsRes 4 }
+
+	dnsResConfigMaxCnames OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Limit on how many CNAMEs the resolver should allow
+			before deciding that there's a CNAME loop.  Zero means
+			that resolver has no explicit CNAME limit."
+		REFERENCE
+			"RFC-1035 section 7.1."
+		DEFVAL	{ 16 }
+		::= { dnsRes 5 }
+
+	dnsResNumHosts OBJECT-TYPE
+		SYNTAX		NonNegativeInteger
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of DNS host entries."
+		::= { dnsRes 6 }
+
+	dnsResTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF DnsResEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of DNS host entries.
+			The number of entries is given by the value of dnsResNumEntries."
+		::= { dnsRes 7 }
+
+	dnsResEntry OBJECT-TYPE
+		SYNTAX		DnsResEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a particular dns point."
+		INDEX		{ dnsResServerIP }
+		::= { dnsResTable 1 }
+
+	DnsResEntry ::= SEQUENCE {
+		dnsResServerIP		IpAddress,
+		dnsResServerName 	OCTET STRING,
+		dnsResQueriesSent	Counter,
+		dnsResSendErrors	Counter,
+		dnsResGoodResponses	Counter,
+		dnsResTimeouts		Counter,
+		dnsResBadResponses	Counter,
+		dnsResCmd			INTEGER
+		}
+
+	dnsResServerIP OBJECT-TYPE
+		SYNTAX		IpAddress
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The IP address associated with this DNS host."
+		::= { dnsResEntry 1 }
+
+	dnsResServerName  OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The fully qualified domain name of this DNS host."
+		DEFVAL		{ "" }
+		::= { dnsResEntry 2 }
+
+	dnsResQueriesSent OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The total count of DNS requests made by this Tiger of this DNS host."
+		::= { dnsResEntry 3 }
+
+	dnsResSendErrors OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			""
+		::= { dnsResEntry 4 }
+
+	dnsResGoodResponses OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of valid responses received from the requested DNS."
+		::= { dnsResEntry 5 }
+
+	dnsResTimeouts OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of occurences when this DNS host did not respond."
+		::= { dnsResEntry 6 }
+
+	dnsResBadResponses OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of occurences when this DNS host responded incorrectly."
+		::= { dnsResEntry 7 }
+
+	dnsResCmd OBJECT-TYPE
+		SYNTAX		INTEGER {
+			noop		(1),
+			delete		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The dnsResCmd can be set to delete to remove this row from the table.
+			If you need to change the IP address of a host in the DNS table, you
+			must create a new entry corresponding to the new host, and then use
+			this field on the old host entry that should be removed."
+		DEFVAL		{ noop }
+		::= { dnsResEntry 8 }
+
+
+	--
+	--	DNS Cache Table. The Cache table is 16 entries deep and can be used to
+	--	scrutinize the current state of the cache.
+	--
+
+	dnsResCacheNumEntries OBJECT-TYPE
+		SYNTAX		INTEGER (1 .. 16)
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Number of entries in the Tiger's DNS Cache.
+			This is currently not a dynamically sized table, but has a finite
+			length of 16 entries."
+		::= { dnsRes 8 }
+
+	dnsResCacheTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF DnsResCacheEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"A list of DNS Cache entries.
+			The number of entries is given by the value of dnsResNumEntries."
+		::= { dnsRes 9 }
+
+	dnsResCacheEntry OBJECT-TYPE
+		SYNTAX		DnsResCacheEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"An entry containing information applicable to a particular dns point."
+		INDEX		{ dnsResCacheIpAddress }
+		::= { dnsResCacheTable 1 }
+
+	DnsResCacheEntry ::= SEQUENCE {
+		dnsResCacheHostName		OCTET STRING,
+		dnsResCacheIpAddress	IpAddress,
+		dnsResCacheRRTTL		Gauge32,
+		dnsResCacheRRElapsedTTL	Gauge32,
+		dnsResCacheRRSource		IpAddress
+	}
+
+
+	dnsResCacheHostName OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..64))
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The fully quailfied domain name (FQDN) of the host contained in this entry."
+		DEFVAL		{ "" }
+		::= { dnsResCacheEntry 1 }
+
+	dnsResCacheIpAddress OBJECT-TYPE
+		SYNTAX		IpAddress
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The IP address associated with the host contained in this entry."
+		::= { dnsResCacheEntry 2 }
+
+	dnsResCacheRRTTL OBJECT-TYPE
+		SYNTAX		Gauge32
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Time-To-Live of RR in this cache entry.  This is the initial
+			TTL value which was received with the RR when it was
+			originally received."
+		::= { dnsResCacheEntry 3 }
+
+	dnsResCacheRRElapsedTTL OBJECT-TYPE
+		SYNTAX		Gauge32
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Elapsed seconds since RR was received."
+		::= { dnsResCacheEntry 4 }
+
+	dnsResCacheRRSource OBJECT-TYPE
+		SYNTAX		IpAddress
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Host from which RR was received, 0.0.0.0 if unknown."
+		::= { dnsResCacheEntry 5 }
+
+	--
+	--	OFEP LNIATA Table Definition
+	--
+
+	vtTable OBJECT-TYPE
+		SYNTAX		SEQUENCE OF VtEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"This is table associated with each Terminal Device configured on the Tiger
+			 to be used in the SABRE OFEP network."
+		::= { vt 1 }
+
+	vtEntry OBJECT-TYPE
+		SYNTAX		VtEntry
+		ACCESS		not-accessible
+		STATUS		mandatory
+		DESCRIPTION
+			"Each row represents the configuration characteristics, status and statistics
+			 of each defined terminal/printer.
+			 "
+		INDEX		{ vtAutifIndex, vtRealLnIaTa }
+		::= { vtTable 1 }
+
+	VtEntry ::= SEQUENCE {
+
+	--
+	--	Configuration Items
+	--
+		vtAutifIndex				INTEGER,
+		vtRealLnIaTa				OCTET STRING,
+		vtLnIaTa					OCTET STRING,
+		vtOptionsDOD				INTEGER,
+		vtOptionsPrinter			INTEGER,
+		vtOptionsClass				INTEGER,
+		vtCommand					INTEGER,
+		vtClassName					OCTET STRING,
+	--
+	--	Status Variables (per LNIATA)
+	--
+		vtState						INTEGER,
+		vtFailReason				INTEGER,
+		vtFailString				OCTET STRING,
+		vtLBToken					OCTET STRING,
+		vtCommandStatus				INTEGER,
+	--
+	--	Statistics variables
+	--
+		vtLBRequests				Counter,
+		vtLBErrorResponses			Counter,
+		vtLBTimeouts				Counter,
+		vtOFEPRequests				Counter,
+		vtOFEPErrorResponses		Counter,
+		vtOFEPTimeouts				Counter,
+		vtOFEPKeepAliveTimeouts		Counter,
+		vtOFEPReassemblyFailures	Counter,
+		vtOFEPUserEnquiries			Counter,
+		vtOFEPUserResponses			Counter,
+		vtOFEPUserInDiscards		Counter,
+		vtOFEPUserOutDiscards		Counter,
+		vtOFEPKeepAlives			Counter
+		}
+
+	--
+	--	Configuration Data
+	--
+
+	vtAutifIndex OBJECT-TYPE
+		SYNTAX		INTEGER
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"A copy of the AUTIF table index."
+		::= { vtEntry 1 }
+
+	vtRealLnIaTa OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (3))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The actual LNIATA associated with this ALC device.
+			When an AUTIF needs to reference this information, it will
+			use only the first two bytes of this value for matching."
+		::= { vtEntry 2 }
+
+	vtLnIaTa OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (3))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The LNIATA associated with this ALC Device."
+		::= { vtEntry 3 }
+
+	vtOptionsDOD OBJECT-TYPE
+		SYNTAX		INTEGER {
+			connect-always		(1),
+			connect-on-data 	(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Selection for Dial On Demand (DOD). If 'connect-always' is selected, then
+			the session starts immediately. If 'connect-on-data' is selected, then
+			the session is started only when data is received from the ALC device."
+		DEFVAL		{ connect-on-data }
+		::= { vtEntry 4 }
+
+	vtOptionsPrinter OBJECT-TYPE
+		SYNTAX		INTEGER {
+			terminal	(1),
+			printer		(2),
+			free		(3)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"Selection of the ALC Device type. If the device is a printer, then OFEP and
+			Load Balancer Service Messages will not be forwarded to it. 'Free' indicates
+			that the entry is part of a pool of addresses that can be dynamically allocated."
+		DEFVAL		{ terminal }
+		::= { vtEntry 5 }
+
+	vtOptionsClass OBJECT-TYPE
+		SYNTAX		INTEGER {
+			by-lniata		(1),
+			by-class		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"This variable determines whether we request service from the OFEP Load Balancer
+			by LNIATA or Class.
+
+			When handled by LNIATA, the 3 byte LNIATA value is known at configuration.
+
+			When handled by Class, the 3 byte LNIATA is provided to the Tiger by the
+			Load Balancer as part of a Pooling mechanism."
+		DEFVAL		{ by-lniata }
+		::= { vtEntry 6 }
+
+	vtCommand	OBJECT-TYPE
+		SYNTAX		INTEGER {
+			activate		(1),
+			deactivate		(2)
+			}
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"SNMP command trigger to activate or deactivate this LNIATA."
+		::= { vtEntry 7 }
+
+	vtClassName OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..16))
+		ACCESS		read-write
+		STATUS		mandatory
+		DESCRIPTION
+			"The name of the class or host service that this virtual
+			terminal will request."
+		DEFVAL		{ "" }
+		::= { vtEntry 8 }
+
+	--
+	--	Status Variables
+	--
+
+	vtState	OBJECT-TYPE
+		SYNTAX		INTEGER {
+			vts-init			(1),
+			vts-dod-wait		(2),
+			vts-con-lb			(3),
+			vts-lb-dialog		(4),
+			vts-lb-config 		(5),
+			vts-gen-fail 		(6),
+			vts-con-ofep		(7),
+			vts-ofep-dialog		(8),
+			vts-ofep-config		(9),
+			vts-ofep-up			(10),
+			vts-ofep-shutdown	(11)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"This variable represents the State of this ALC device. The variable is defined
+			as follows:
+
+			vts-init			: init vt instance
+			vts-dod-wait		: dial on demand - wait for user enq
+			vts-con-lb			: connect to Load Balancer
+			vts-lb-dialog		: negotiate with LB
+			vts-lb-config 		: analyze config, and establish
+			vts-gen-fail 		: general failure - send svc msg, close, clean up
+			vts-con-ofep		: connect to OFEP
+			vts-ofep-dialog		: negotiate with OFEP
+			vts-ofep-config		: accept OFEP config and establish
+			vts-ofep-up			: OFEP data transfer state
+			vts-ofep-shutdown	: OFEP shutdown procedure"
+		::= { vtEntry 9 }
+
+	vtFailReason	OBJECT-TYPE
+		SYNTAX		INTEGER {
+			vte-err-gen				(1),
+			vte-err-sock-down		(2),
+			vte-err-timeout			(3),
+			vte-err-ka-timeout		(4),
+			vte-err-lb				(5),
+			vte-err-ofep			(6),
+			vte-err-idle-timeout	(7),
+			vte-deactivate			(8),
+			vte-cap-off				(9)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"This variable represents the last known failure reason code. The
+			variable is defined as follows:
+
+			vte-err-gen				: general failure - no resources, etc
+			vte-err-sock-down		: socket connection failure
+			vte-err-timeout			: timeout expired
+			vte-err-ka-timeout		: keep alive timer expired
+			vte-err-lb				: trouble with load balancer
+			vte-err-ofep			: trouble with OFEP
+			vte-err-idle-timeout	: user idle timeout
+			vte-deactivate			: deactivate command disabled this entry
+			vte-cap-off				: IA stream CAP state change - path switch"
+		::= { vtEntry 10 }
+
+	vtFailString OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (0..256))
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The last received failure message from either
+			the Load Balancer or the OFEP."
+		DEFVAL		{ "" }
+		::= { vtEntry 11 }
+
+	vtLBToken OBJECT-TYPE
+		SYNTAX		OCTET STRING (SIZE (4))
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The received token for this OFEP session.
+			This is provided by the Load Balancer"
+		::= { vtEntry 12 }
+
+	vtCommandStatus	OBJECT-TYPE
+		SYNTAX		INTEGER {
+			ready		(1),
+			busy		(2)
+			}
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"Result of the SNMP 'vtCommand'."
+		::= { vtEntry 13 }
+
+	vtLBRequests OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of request service packets sent to Load Balancer."
+		::= { vtEntry 14 }
+
+	vtLBErrorResponses OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of bad responses from Load Balancer."
+		::= { vtEntry 15 }
+
+	vtLBTimeouts OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of timeout errors with Load Balancer."
+		::= { vtEntry 16 }
+
+	vtOFEPRequests OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of config/startup packets sent to OFEP."
+		::= { vtEntry 17 }
+
+	vtOFEPErrorResponses OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of error responses from OFEP."
+		::= { vtEntry 18 }
+
+	vtOFEPTimeouts OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of timeout errors with OFEP."
+		::= { vtEntry 19 }
+
+	vtOFEPKeepAliveTimeouts OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of keep alive timeout errors with OFEP."
+		::= { vtEntry 20 }
+
+	vtOFEPReassemblyFailures OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of bad or incomplete message reassemblies."
+		::= { vtEntry 21 }
+
+	vtOFEPUserEnquiries OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of number of user enquiries sent to OFEP."
+		::= { vtEntry 22 }
+
+	vtOFEPUserResponses OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of number of user responses received from OFEP."
+		::= { vtEntry 23 }
+
+	vtOFEPUserInDiscards OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of number of user enquiries discarded."
+		::= { vtEntry 24 }
+
+	vtOFEPUserOutDiscards OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of number of user responses discarded."
+		::= { vtEntry 25 }
+
+	vtOFEPKeepAlives OBJECT-TYPE
+		SYNTAX		Counter
+		ACCESS		read-only
+		STATUS		mandatory
+		DESCRIPTION
+			"The number of user OFEP KeepAlive messages received."
+		::= { vtEntry 26 }
+
+	END
+

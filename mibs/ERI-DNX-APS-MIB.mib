@@ -1,0 +1,591 @@
+ERI-DNX-APS-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	MODULE-IDENTITY, OBJECT-IDENTITY, OBJECT-TYPE, 
+	Integer32, NOTIFICATION-TYPE
+		FROM SNMPv2-SMI
+    DisplayString, TEXTUAL-CONVENTION
+        FROM SNMPv2-TC
+    eriMibs
+        FROM ERI-ROOT-SMI
+    dnxTrapEnterprise, utilities, DataSwitch, OneByteField, 
+    FunctionSwitch, NestSlotAddress, trapSequence 
+        FROM ERI-DNX-SMC-MIB;
+
+
+eriDNXApsMIB MODULE-IDENTITY 
+      LAST-UPDATED    "200205140000Z"
+      ORGANIZATION    "Eastern Research, Inc."
+      CONTACT-INFO
+                      "Customer Service
+                Postal: Eastern Research, Inc.
+                        225 Executive Drive
+                        Moorestown, NJ 08057
+                Phone:  +1-800-337-4374
+                Email:  support@erinc.com"
+      DESCRIPTION
+              "The ERI Enterprise MIB Module for the Automatic Protection Switching."
+
+      REVISION        "200205140000Z"
+      DESCRIPTION
+              "Nevio Poljak - eri_DnxNest MIB Rev 01.0a
+               Added new enumeration err-invalid-aps-command (408) to apsSwitchCmdStatus
+               field. Fixes Bug #3617."
+
+      REVISION        "200204290000Z"
+      DESCRIPTION
+              "Nevio Poljak - Release 14.2
+               Converted to SMIv2 format."
+
+      REVISION        "200204120000Z"
+      DESCRIPTION
+              "Nevio Poljak for Release 14.1
+               Initial Release of this MIB."
+  	::= { eriMibs 13 }
+
+-- *************************************************************************
+-- The enterprise OID will be { iso(1) org(3) dod(6) internet(1) private(4)
+--                              enterprises(1) virent(644) eri(2) dnx (4) 
+--                              sysMgr(1) utilities(12) aps(2)  }
+-- *************************************************************************
+
+dnxAPS           OBJECT IDENTIFIER 	::= { utilities 2 }
+
+-- *************************************************************************
+-- The following textual conventions are used in this MIB
+-- *************************************************************************
+
+ApsSwitchRequestCode  ::= TEXTUAL-CONVENTION
+		STATUS  current
+        DESCRIPTION
+           "The APS switch Request codes are used to perform protection
+            switch actions.            
+           "
+        SYNTAX INTEGER {
+                noRequest (0),
+                doNotRevert(1),
+                reverseRequest(2),
+                manualSwitch (8),
+                signalDegradeLow(10),
+                signalDegradeHigh(11),
+                signalFailureLow(12),
+                signalFailureHigh(13),
+                forceSwitch (14),
+                lockout(15),
+                clearRequest (31)
+                }
+
+-- *************************************************************************
+-- This table is the Automatic Protection Switching configuration table
+-- *************************************************************************
+
+apsConfigTable OBJECT-TYPE
+        SYNTAX SEQUENCE OF ApsConfigEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "This is the APS Configuration table which consists
+            of an entry for each STM1/STM1X or OC3/OC3X card in the system.
+            The total number of entries depends on the number of STM1/OC3 
+            cards in the Node. Changes to the APS Configuration must be made
+            on a record or row by row basis.  This means that any use of the 
+            Set command on writable fields must include the apsCfgCmdStatus
+            field with a value of 'update' as the last variable in the SET PDU."
+        ::= { dnxAPS 1 }
+
+apsConfigEntry OBJECT-TYPE
+        SYNTAX ApsConfigEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "The conceptual row of the APS Configuration table. 
+            A row in this table cannot be added or deleted, only modified
+            using the apsCfgCmdStatus field with a value of 'update' as 
+            the last variable in the SET PDU. The apsCfgCmdStatus field must
+            be included as the last variable in a SET PDU for the action to 
+            take effect. If the apsCfgCmdStatus is missing from the SET PDU, 
+            the GET RESPONSE will contain the SNMP error status of 'genErr' for 
+            and an error index equal to the last variable."
+        INDEX { apsCfgAddr }
+        ::= { apsConfigTable 1 }
+
+ApsConfigEntry ::=
+        SEQUENCE {
+                apsCfgAddr           NestSlotAddress,   -- RO
+                apsCfgResource       Integer32,         -- RO
+                apsCfgCardType       INTEGER,           -- RO
+                apsCfgSfThreshold    Integer32,
+                apsCfgSdThreshold    Integer32,
+                apsCfgRdiSfCriteria  FunctionSwitch,
+                apsCfgCmdStatus      INTEGER
+                }
+
+apsCfgAddr OBJECT-TYPE
+        SYNTAX NestSlotAddress
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+           "This number uniquely identifies Nest/Slot configured 
+           location of the APS Device card. 
+           
+           The format is represented using an IP address 
+           syntax (4 byte string). Note that the maximum valid slot 
+           number will vary depending on the specified Nest type: DNX11 or 
+           DNX4.            
+               The 1st byte represents the Nest Number (0-7)  
+               The 2nd byte represents the Slot Number (1-11)            
+               The 3rd byte is reserved for future use           
+               The 4th byte is reserved for future use           
+           "
+        ::= { apsConfigEntry 1 }
+
+apsCfgResource OBJECT-TYPE
+        SYNTAX Integer32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+           "Uniquely identifies an APS Device in the system.
+            This number is provided as key to allow the manager to 
+            map this entry to a corresponding Resource Table entry."
+        ::= { apsConfigEntry 2 }
+
+apsCfgCardType OBJECT-TYPE
+        SYNTAX INTEGER {
+                stm1(0),
+                oc3(1),
+                stm1X(2),
+                oc3X(3)
+                }
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the APS Device as an STM1, OC3, STM1X, or OC3X module."
+        ::= { apsConfigEntry 3 }
+
+
+apsCfgSfThreshold OBJECT-TYPE
+        SYNTAX Integer32 (3..5)
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "The configured Signal Failure Threshold.
+
+            The negated value of this number is used as the exponent of 10 for 
+            computing the threshold value for the Bit Error Rate(BER). 
+            For example, a value of 5 indicates a BER threshold of 10^-5."
+       ::= { apsConfigEntry 4 }
+
+apsCfgSdThreshold OBJECT-TYPE
+        SYNTAX Integer32 (5..9)
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "The configured Signal Degrade Threshold.
+
+            The negated value of this number is used as the exponent of 10 for 
+            computing the threshold value for the Bit Error Rate(BER). 
+            For example, a value of 5 indicates a BER threshold of 10^-5."
+       ::= { apsConfigEntry 5 }
+
+apsCfgRdiSfCriteria OBJECT-TYPE
+        SYNTAX FunctionSwitch
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "Enables or Disables switchover on Remote Defect Indication."
+        ::= { apsConfigEntry 6 }
+
+apsCfgCmdStatus OBJECT-TYPE
+        SYNTAX INTEGER {
+    -- Initial default status for a row
+            ready-for-command (0),
+    -- APS Cfg Commands used in SET Command (1..199)
+            update-config (1),
+                		
+    -- APS Cfg Response States used in GET RESPONSE Command (100..199)
+            update-successful (101),
+                		
+    -- APS Config Error Codes used in GET RESPONSE Command (400..799)
+            err-general-aps-config-error (400),
+            err-invalid-asp-threshold (401),
+            err-invalid-rdi-criteria (402),
+            err-invalid-aps-dev-command (403),
+            err-aps-not-applicable (404),
+            err-data-locked-by-another-user (450),
+            err-snmp-parse-failed (500),
+            err-invalid-snmp-type (501),
+            err-invalid-snmp-var-size (502)
+        	}
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+           "The command status for this link configuration row/record.
+           The value used in a SET will be replaced by a response
+           value in the GET RESPONSE indicating success or failure.
+           		
+            Default Response State used in GET RESPONSE Command
+                ready-for-command (0)
+                    initial default status for a row           
+                    
+            APS Cfg Commands used in SET Command (1..199)
+                update-config(1),
+                    Change existing APS Configuration
+               		
+            APS Cfg Response States used in GET RESPONSE Command (100..199)
+                update-successful (201)
+                    Device data has been successfully changed
+                                		
+            APS Config Error Codes used in GET RESPONSE Command (400..799)
+                err-general-aps-config-error (400)
+                    Unknown APS configuration error occurred                
+                err-invalid-asp-threshold (401)
+                    Unrecognized APS SD or SF threshold number
+                err-invalid-rdi-criteria (402)
+                    Unrecognized APS RDI setting
+                err-invalid-aps-dev-command (403)
+                    Unrecognized APS device command-action                   
+                err-aps-not-applicable (404)
+                    APS cannot be configured for this device
+                err-data-locked-by-another-user (450)
+                    Another administrative user is making changes to this
+                    part of the system via a terminal session. Check Event
+                    Log for user name.
+                err-snmp-parse-failed (500)
+                    Agent could not parse variable
+                err-invalid-snmp-type (501)
+                    Variable ASN type does not match Agent defined type 
+                err-invalid-snmp-var-size (502)
+                    Variable size is too big"                 		
+         ::= { apsConfigEntry 7 }
+
+
+-- *************************************************************************
+-- This table is the Automatic Protection Switching Status table
+-- *************************************************************************
+
+apsStatusTable OBJECT-TYPE
+        SYNTAX SEQUENCE OF ApsStatusEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "This is the APS Status table which consists
+            of an entry for each STM1/STM1X or OC3/OC3X card in the system.
+            The total number of entries depends on the number of STM1/OC3 
+            cards in the Node. Changes to the APS Configuration must be made
+            on a record or row by row basis.  This means that any use of the 
+            Set command on writable fields must include the apsCfgCmdStatus
+            field with a value of 'update' as the last variable in the SET PDU."
+        ::= { dnxAPS 2 }
+
+apsStatusEntry OBJECT-TYPE
+        SYNTAX ApsStatusEntry
+        MAX-ACCESS not-accessible
+        STATUS current
+        DESCRIPTION
+            "The conceptual row of the APS Status table. 
+            A row in this table cannot be added or deleted, only modified
+            using the apsCfgCmdStatus field with a value of 'update' as 
+            the last variable in the SET PDU. The apsCfgCmdStatus field must
+            be included as the last variable in a SET PDU for the action to 
+            take effect. If the apsCfgCmdStatus is missing from the SET PDU, 
+            the GET RESPONSE will contain the SNMP error status of 'genErr' for 
+            and an error index equal to the last variable."
+        INDEX { apsStatusAddr }
+        ::= { apsStatusTable 1 }
+
+ApsStatusEntry ::=
+        SEQUENCE {
+                apsStatusAddr        NestSlotAddress,   
+                apsStatusResource    Integer32,           
+                apsStatusCardType    INTEGER,           
+                apsStatusCardState   INTEGER,           
+                apsRedundancyState   INTEGER,
+                apsSignalFailure     DataSwitch,
+                apsSignalDegrade     DataSwitch,
+                apsLineRxK1Byte      OneByteField,
+                apsLineRxK2Byte      OneByteField,
+                apsSysRxReqCode      ApsSwitchRequestCode,
+                apsSysTxReqCode      ApsSwitchRequestCode,
+                apsUserPendingReq    ApsSwitchRequestCode,
+                apsSwitchCmdStatus   INTEGER            -- RW
+                }
+
+apsStatusAddr OBJECT-TYPE
+        SYNTAX NestSlotAddress
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+           "This number uniquely identifies Nest/Slot configured 
+           location of the APS Device card. 
+           
+           The format is represented using an IP address 
+           syntax (4 byte string). Note that the maximum valid slot 
+           number will vary depending on the specified Nest type: DNX11 or 
+           DNX4.            
+               The 1st byte represents the Nest Number (0-7)  
+               The 2nd byte represents the Slot Number (1-11)            
+               The 3rd byte is reserved for future use           
+               The 4th byte is reserved for future use           
+           "
+        ::= { apsStatusEntry 1 }
+
+apsStatusResource OBJECT-TYPE
+        SYNTAX Integer32
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+           "Uniquely identifies an APS Device in the system.
+            This number is provided as key to allow the manager to 
+            map this entry to a corresponding Resource Table entry."
+        ::= { apsStatusEntry 2 }
+
+apsStatusCardType OBJECT-TYPE
+        SYNTAX INTEGER {
+                stm1Working(1),
+                stm1Protection(2),
+                oc3Working(3),
+                oc3Protection(4),
+                stm1XWorking(5),
+                stm1XProtection(6),
+                oc3XWorking(7),
+                oc3XProtection(8)
+                }
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the Type of APS Device module."
+        ::= { apsStatusEntry 3 }
+
+
+apsStatusCardState OBJECT-TYPE
+        SYNTAX INTEGER {
+                standby(1),
+                online(2),
+                offline(3),
+                defective(4),
+                busError(5)
+                }
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the current APS Device Card State."
+        ::= { apsStatusEntry 4 }
+
+apsRedundancyState OBJECT-TYPE
+        SYNTAX INTEGER {
+                detected(0),
+                notDetected(1),
+                failed(2)
+                }
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the current APS Device Redundancy State."
+        ::= { apsStatusEntry 5 }
+
+apsSignalFailure OBJECT-TYPE
+        SYNTAX DataSwitch
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the current APS SF State."
+        ::= { apsStatusEntry 6 }
+
+apsSignalDegrade OBJECT-TYPE
+        SYNTAX DataSwitch
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the current APS SD State."
+        ::= { apsStatusEntry 7 }
+
+apsLineRxK1Byte OBJECT-TYPE
+        SYNTAX OneByteField
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+           "Displays the SONET K1 byte APS protocol field.
+            Bits are numbered from left to right.
+
+             Bits 1-4 of the K1 byte indicate a request.
+
+                1111  Lockout of Protection
+                1110  Forced Switch
+                1101  SF - High Priority
+                1100  SF - Low Priority
+                1011  SD - High Priority
+                1010  SD - Low Priority
+                1001  not used
+                1000  Manual Switch
+                0111  not used
+                0110  Wait-to-Restore
+                0101  not used
+                0100  Exercise
+                0011  not used
+                0010  Reverse Request
+                0001  Do Not Revert
+                0000  No Request
+
+             Bits 5-8 of the K1 byte indicate the channel associated 
+             with the request defined in bits 1-4.
+
+                0000 is the Null channel.
+                1-14 are working channels.
+                15   is the extra traffic channel                 
+           "
+        ::= { apsStatusEntry 8 }
+
+apsLineRxK2Byte OBJECT-TYPE
+        SYNTAX OneByteField
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+           "Displays the SONET K2 byte APS protocol field.
+            Bits are numbered from left to right.
+
+             Bits 1-4 of the K2 byte indicate a channel. The channel is
+             defined with the same syntax as K1 Bits 5-8.
+
+                0000 is the Null channel.
+                1-14 are working channels.
+                15   is the extra traffic channel
+
+             Bit 5 of the K2 byte indicates the architecture.
+
+                0 if the architecture is 1+1
+                1 if the architecture is 1:n
+
+             Bits 6-8 of the K2 byte indicates the mode.
+
+                000 - 011 are reserved for future use
+                100  indicates the mode is unidirectional
+                101  indicates the mode is bidirectional
+                110  RDI-L
+                111  AIS-L
+           "                 
+        ::= { apsStatusEntry 9 }
+
+apsSysRxReqCode OBJECT-TYPE
+        SYNTAX ApsSwitchRequestCode
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the last APS Protocol Request received 
+                by this APS Device."
+        ::= { apsStatusEntry 10 }
+
+apsSysTxReqCode OBJECT-TYPE
+        SYNTAX ApsSwitchRequestCode
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the last User APS Protocol Pending Request transmitted 
+                by this APS Device."
+        ::= { apsStatusEntry 11 }
+
+apsUserPendingReq OBJECT-TYPE
+        SYNTAX ApsSwitchRequestCode
+        MAX-ACCESS read-only
+        STATUS current
+        DESCRIPTION
+                "Identifies the current User APS Protocol Pending Request."
+        ::= { apsStatusEntry 12 }
+
+apsSwitchCmdStatus OBJECT-TYPE
+        SYNTAX INTEGER {
+    -- Initial default status for a row
+            readyForRequest (0),
+
+    -- APS Requests used in SET Command (1..99)
+            manualSwitchReq (8),
+            forceSwitchReq (14),
+            clearRequest (31),
+                                
+    -- Response States used in GET RESPONSE Command (100..199)
+            manual-successful (108),
+            force-successful (114),
+            clear-successful (131),
+                                
+    -- APS Request Error Codes used in GET RESPONSE Command (400..799)
+            err-gen-aps-req-error (400),
+            err-invalid-aps-card-type (402),
+            err-field-cannot-be-set (406),
+            err-invalid-aps-command (408),
+            err-snmp-parse-failed(500),
+            err-invalid-snmp-type(501),
+            err-invalid-snmp-var-size(502) 
+            }
+        MAX-ACCESS read-write
+        STATUS current
+        DESCRIPTION
+            "This is the command/status value for the APS Status Row.
+           The value used in a SET will be replaced by a response
+           value in the GET RESPONSE indicating success or failure.
+           These commands can only be SET in the Working APS Device.
+
+            Default Response State used in GET RESPONSE Command
+                readyForRequest (0)
+                    initial default status for a row           
+                    
+            APS Requests used in SET Command (1..99)            
+                manualSwitchReq (8)
+                    Manually Switches the specified working device 
+                    to the protection device.
+                forceSwitchReq (14)
+                    Switches the specified working device to the 
+                    protection device.
+                clearRequest (31)
+                    Clears all of the switch commands for the 
+                    specified APS device.
+                                
+            Response States used in GET RESPONSE Command (100..199)
+                manual-successful (108)
+                    Manual Switch command has been successfully 
+                    processed
+                force-successful (114)
+                    Forced Switch command has been successfully 
+                    processed
+                clear-successful (131)
+                    Switch commands been successfully cleared
+                                
+            Error Codes used in GET RESPONSE Command (400..799)
+                err-gen-aps-req-error (400)
+                    Unknown APS request error occurred
+                err-invalid-aps-card-type (402)
+                    Requests cannot be processed by the protection card
+                err-field-cannot-be-set (406)
+                    Read-only field was included in SET request
+                err-invalid-aps-command (408)
+                    Invalid APS request
+                err-snmp-parse-failed (500)
+                    Agent could not parse variable
+                err-invalid-snmp-type (501)
+                    Variable ASN type does not match Agent defined type 
+                err-invalid-snmp-var-size (502)
+                    Variable size is too big" 
+        ::= { apsStatusEntry 13 }
+
+-- *************************************************************************
+--   This is the Trap Definitions section for the APS MIB. 
+-- *************************************************************************
+                
+--dnxTrapEnterprise OBJECT-IDENTITY
+--      STATUS current
+--      DESCRIPTION "ERI DNX Trap Enterprise for Events"
+--    ::= { dnx 0 }
+
+apsConfigTrap NOTIFICATION-TYPE
+        OBJECTS {
+            trapSequence,
+            apsCfgAddr,
+            apsCfgCmdStatus
+            }
+        STATUS current
+        DESCRIPTION
+           "This trap is used to notify a NMS that a user has updated 
+           	the configuration for a given APS Device entry."
+        ::= { dnxTrapEnterprise 11 }
+
+END
+
+

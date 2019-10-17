@@ -1,0 +1,1933 @@
+-- extracted from draft-anderson-gsmp-swpart-mib-00.txt
+-- at Tue Feb 27 06:04:19 2001
+
+Partition-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+
+     MODULE-IDENTITY, OBJECT-TYPE, enterprises, Integer32,
+     Counter32, Gauge32, TimeTicks, IpAddress
+          FROM SNMPv2-SMI
+
+     RowStatus, TruthValue, TEXTUAL-CONVENTION, PhysAddress
+          FROM SNMPv2-TC
+
+     InetAddress
+          FROM INET-ADDRESS-MIB;
+
+partition MODULE-IDENTITY
+    LAST-UPDATED "2302010000Z"
+    ORGANIZATION "Multiservice Switching Forum"
+    CONTACT-INFO "
+     Todd A. Anderson
+     Intel
+     2111 NE 25th Avenue
+     Hillsboro, OR 97124 USA
+     Phone: +1 503 712 1760
+     Email: todd.a.anderson@intel.com
+
+     Avri Doria
+     Nortel Networks
+     600 Technology Park Drive
+     Billerica  MA 01821
+     Phone: +1 401 663 5024
+     Email: avri@nortelnetworks.com
+
+     Jiang Yong
+     Telia Research AB
+     123 86 Farsta
+     Sweden
+     Phone: +46 (0) 8 713 81 25
+     Email: yong.b.jiang@telia.se
+
+     Jerry Sydir
+     CPlane Inc.
+     5150 El Camino Real Suite B-31
+     Los Altos, CA 94022
+     Phone: +1 650 938 8066 x102
+     Email: sydir@cplane.com
+
+     Balaji Srinivasan
+     CPlane Inc.
+     5150 El Camino Real Suite B-31
+     Los Altos, CA 94022
+     phone: +1 650 938 8066 x103
+     Email: balaji@cplane.com
+    "
+    DESCRIPTION
+        "The network element partitioning MIB."
+    ::= { enterprises 2000 }
+
+msf             OBJECT IDENTIFIER ::= { enterprises 2000 }
+switchConfig    OBJECT IDENTIFIER ::= {  msf 1 }
+vSwitchConfig   OBJECT IDENTIFIER ::= {  msf 2 }
+
+PortDirection ::= TEXTUAL-CONVENTION
+    STATUS        current
+    DESCRIPTION
+      "The following type is used to specify the direction of the
+      label ranges and the bandwidth in the physical port of the switch
+      as well as  the virtual port of the virtual switch."
+    SYNTAX  INTEGER {
+                 incoming(1),
+                 outgoing(2)
+            }
+
+OwnerString ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "255a"
+    STATUS       current
+    DESCRIPTION
+            "This data type is used to model an administratively
+            assigned name of the owner of a resource.  It is
+            suggested that this name contain one or more of
+            the following: manager station's transport address,
+            management station name (e.g., domain name), network
+            management personnel's name, location, or phone number.
+            In some cases the agent itself will be the owner of an
+            entry.  In these cases, this string shall be set to a
+            string starting with 'agent'.
+
+            To facilitate internationalization, this information
+            is represented using the ISO/IEC IS 10646-1 character
+            set, encoded as an octet string using the UTF-8
+            transformation format described in [RFC2279].
+
+            Since additional code points are added by amendments
+            to the 10646 standard from time to time, implementations
+            must be prepared to encounter any code point from
+            0x00000000 to 0x7fffffff.  Byte sequences that do not
+            correspond to the valid UTF-8 encoding of a code point
+            or are outside this range are prohibited.  The use of
+            control codes should be avoided.  When it is necessary
+            to represent a newline, the control code sequence CR LF
+            should be used.  For code points not directly supported
+            by user interface hardware or software, an alternative
+            means of entry and display, such as hexadecimal, may be
+            provided.  For information encoded in 7-bit US-ASCII,
+            the UTF-8 encoding is identical to the US-ASCII encoding.
+            UTF-8 may require multiple bytes to represent a single
+            character / code point; thus the length of this object
+            in octets may be different from the number of characters
+            encoded.  Similarly, size constraints refer to the number
+            of encoded octets, not the number of characters represented
+            by an encoding.  When this TC is used for an object that
+            is used or envisioned to be used as an index, then a SIZE
+            restriction MUST be specified so that the number of
+            sub-identifiers for any object instance does not exceed
+            the limit of 128, as defined by [RFC1905]."
+    SYNTAX       OCTET STRING (SIZE(0..255))
+
+RatioString ::= TEXTUAL-CONVENTION
+   STATUS       current
+   DESCRIPTION
+            "This data type is used to model a floating number,
+             specifically here the cell loss ratio and a probability
+             number. It is required to be of the form m:n, where m and
+             n are both integers and represent a floating number m
+             divided by n."
+   SYNTAX       OCTET STRING (SIZE(3))
+
+
+VectorString ::= TEXTUAL-CONVENTION
+   STATUS       current
+   DESCRIPTION
+            "This data type is used to model a 2-dimentional number
+            (x,y). Here it is used to specify the vpi/vci range for an
+            ATM interface. 2 vectors, (minVpi, minVci) and (maxVpi,
+            maxVci), make up a label range. It is required to have the
+            format x:y"
+   SYNTAX       OCTET STRING (SIZE(3..8))
+
+-- ===============================================
+-- Switch Resource configuration at startup time
+-- The resource values when the system started
+-- ===============================================
+
+numRoutingEntries OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION " The number of routing table entries of this switch.
+                 This value is ignored if the switch has only per port
+                 routing tables (i.e., no switch-wide routing table)"
+   ::= { switchConfig 1 }
+
+switchPortConfigNumPorts OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Number of ports in this switch"
+   ::= { switchConfig 2 }
+
+switchPortConfigTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF SwitchPortConfigEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Resource configuration for each port on the switch"
+   ::= { switchConfig 3 }
+
+switchPortConfigEntry OBJECT-TYPE
+   SYNTAX SwitchPortConfigEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the resources configured for the
+                various ports at the switch level"
+   INDEX { switchPortConfigPortID }
+   ::= { switchPortConfigTable 1 }
+
+SwitchPortConfigEntry ::= SEQUENCE {
+   switchPortConfigPortID                Integer32,
+   switchPortConfigPortLabelType         INTEGER,
+   switchPortConfigNumBWs                INTEGER,
+   switchPortConfigNumLabelRanges        INTEGER,
+   switchNumRoutingEntries               INTEGER,
+   switchPortAllowsSci                   TruthValue
+   }
+
+switchPortConfigPortID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "This is the physical port id"
+   ::= { switchPortConfigEntry 1 }
+
+switchPortConfigPortLabelType OBJECT-TYPE
+   SYNTAX  INTEGER {
+     atm(1),
+     frame-relay(2),
+     vlan(3),
+     mpls(4),
+     ip(5)
+   }
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates the type of protocol for labels at this
+                port."
+   ::={ switchPortConfigEntry 2 }
+
+switchPortConfigNumBWs OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Number of equivalent bandwidths for this port in the
+                incoming and outgoing directions."
+   ::= { switchPortConfigEntry 3 }
+
+switchPortConfigNumLabelRanges OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Number of label ranges for this port."
+   ::= { switchPortConfigEntry 4 }
+
+switchNumRoutingEntries  OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Number of routing entries for this port."
+   ::= { switchPortConfigEntry 5 }
+
+switchPortAllowsSci OBJECT-TYPE
+   SYNTAX TruthValue
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates whether this port can be used to connect to
+                the SCI."
+   ::= { switchPortConfigEntry 6 }
+
+--==============================
+-- END OF switchPortConfigTable
+--==============================
+
+--===============================================================
+-- This table performanceParamTable is used to represent the
+-- performance targets associated with the equivalent bandwidths for
+-- each port. As referenced from MSF 99.208, this table allows the
+-- bandwidth, buffer space, and queue schedulers assigned to a VS to be
+-- simply abstracted using a single parameter: the Equivalent bandwidth
+-- per port assigned to the VS. Each entry in the interface bandwidth
+-- table (either for a VS or for the physical switch) uses its
+-- ServiceParamIndex to point to a row in this table.  Then the
+-- equivalent bandwidth points to a performance target set by the
+-- service descriptor parameters. The performance target is most common
+-- in the form of a loss target but also a delay target can be used.
+--===============================================================
+
+
+performanceParamTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF PerformanceParamEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured performance targets for
+                this switch"
+   ::={ switchConfig 4 }
+
+performanceParamEntry OBJECT-TYPE
+   SYNTAX PerformanceParamEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table entry gives each performance target
+                parameters"
+   INDEX { performanceParamIndex }
+   ::= { performanceParamTable 1 }
+
+PerformanceParamEntry ::=
+   SEQUENCE {
+      performanceParamIndex       Integer32,
+      performancePLR              RatioString,
+      performanceMaxDelay         INTEGER,
+      performanceDelayOverProb    RatioString
+
+   }
+
+performanceParamIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies each performance target"
+   ::= { performanceParamEntry 1 }
+
+performancePLR OBJECT-TYPE
+   SYNTAX RatioString
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "This indicates the packet loss ratio "
+   ::= { performanceParamEntry 2 }
+
+performanceMaxDelay OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION " This indicates the maximum packet delay "
+   ::= { performanceParamEntry 3 }
+
+performanceDelayOverProb OBJECT-TYPE
+   SYNTAX RatioString
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION " This indicates the possibility that the packet delay
+                 is bigger than the maximum delay allowed "
+   ::= { performanceParamEntry 4 }
+
+--===================================
+--End of performanceParamTable
+--===================================
+
+--===============================================================
+-- The table switchPortConfigBWTable is used to give the equivalent
+-- bandwidths associated with different performance targets at the
+-- switch level. The object, performanceParamIndex, will point to an
+-- entry in the table performanceParamTable.  This gives the
+-- performance target for the equivalent bandwidth of this interface.
+-- This table is indexed by the port number, and the bandwidth ID.
+--===============================================================
+
+switchPortConfigBWTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF SwitchPortConfigBWEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured equivalent bandwidths
+                for the various switch ports"
+   ::= { switchConfig 5 }
+
+switchPortConfigBWEntry OBJECT-TYPE
+   SYNTAX SwitchPortConfigBWEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port equivalent bandwidths"
+   INDEX { switchPortConfigBWPortID,
+           switchPortConfigBWID }
+   ::= { switchPortConfigBWTable 1 }
+
+SwitchPortConfigBWEntry ::=
+   SEQUENCE {
+      switchPortConfigBWPortID           Integer32,
+      switchPortConfigBWID               Integer32,
+      switchPortConfigEqiBW              INTEGER,
+      switchPortPerformanceIndex         INTEGER,
+      switchPortConfigBWPortDirection    PortDirection
+   }
+
+switchPortConfigBWPortID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the switch port number"
+   ::= { switchPortConfigBWEntry 1 }
+
+switchPortConfigBWID OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the equivalent bandwidth ID in the switch"
+   ::= { switchPortConfigBWEntry 2 }
+
+switchPortConfigEqiBW OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the equivalent bandwidth for this port."
+   ::= { switchPortConfigBWEntry 3 }
+
+switchPortPerformanceIndex OBJECT-TYPE
+   SYNTAX OBJECT IDENTIFIER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates an entry in the performanceParamTable which
+                represents the performance target associated with this
+                equivalent bandwidth"
+   ::= { switchPortConfigBWEntry 4 }
+
+switchPortConfigBWPortDirection OBJECT-TYPE
+   SYNTAX PortDirection
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates the direction for which this equivalent
+                bandwidth is valid"
+   ::= { switchPortConfigBWEntry 5 }
+
+--===================================
+--End of switchPortConfigBWTable
+--===================================
+
+
+--===============================================================
+-- The table switchPortConfigLabelRangeTable is used to give the label
+-- ranges at the switch level. As different interfaces may have
+-- different service types, what kind of label identity is used will
+-- depend on the interface service type. An ATM interface should have
+-- VPI/VCI ranges. A Frame Relay interface should have DLCI ranges. A
+-- MPLS interface should have MPLS label ID ranges. An VLAN-aware
+-- Ethernet switch should have VLAN ID ranges. An IP router should have
+-- IP address ranges. The table index is the port number and the label
+-- range ID.
+--===============================================================
+
+switchPortConfigLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF SwitchPortConfigLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured label range information
+                for the various switch ports"
+   ::= { switchConfig 6 }
+
+switchPortConfigLabelRangeEntry OBJECT-TYPE
+   SYNTAX SwitchPortConfigLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port label ranges"
+   INDEX { switchPortConfigLabelRangePortID,
+           switchPortConfigLabelRangeID }
+   ::= { switchPortConfigLabelRangeTable 1 }
+
+SwitchPortConfigLabelRangeEntry ::=
+   SEQUENCE {
+      switchPortConfigLabelRangePortID              Integer32,
+      switchPortConfigLabelRangeID                  Integer32,
+      switchPortConfigLabelRangePortDirection       PortDirection,
+      switchPortConfigLabelRangeIndex               INTEGER
+}
+
+switchPortConfigLabelRangePortID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the port to which this range belongs"
+   ::= { switchPortConfigLabelRangeEntry 1 }
+
+switchPortConfigLabelRangeID OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies a certain label range for the port.  For any
+                port, its label ranges are sequentially numbered from 1
+                to switchPortConfigNumLabelRanges defined in
+                switchPortConfigEntry"
+   ::= { switchPortConfigLabelRangeEntry 2 }
+
+switchPortConfigLabelRangePortDirection OBJECT-TYPE
+   SYNTAX PortDirection
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates the direction for which this range is valid"
+   ::= { switchPortConfigLabelRangeEntry 3 }
+
+switchPortConfigLabelRangeIndex OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The index into the protocol-dependent label range
+                table."
+   ::= { switchPortConfigLabelRangeEntry 4 }
+
+--====================================
+-- END OF switchPortConfigLabelRangeTable
+--====================================
+
+--===============================================================
+-- The table atmLabelRangeTable is used to give the VPI/VCI label ranges
+-- at the ATM switch level.
+--===============================================================
+
+atmLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF AtmLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured ATM label range
+                information for the various switch ports"
+   ::= { switchConfig 7 }
+
+atmLabelRangeEntry OBJECT-TYPE
+   SYNTAX AtmLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port ATM label ranges and
+                capabilities."
+   INDEX { atmLabelRangeIndex }
+   ::= { atmLabelRangeTable 1 }
+
+AtmLabelRangeEntry ::=
+   SEQUENCE {
+      atmLabelRangeIndex                    Integer32,
+      atmLabelRangeMinVpiVci                VectorString,
+      atmLabelRangeMaxVpiVci                VectorString,
+      atmLabelRangeAllowsVP                 TruthValue,
+      atmLabelRangeAllowsP2MP               TruthValue,
+      atmLabelRangeAllowsMP2P               TruthValue,
+      atmLabelRangeMaxMulticast             INTEGER
+}
+
+atmLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { atmLabelRangeEntry 1 }
+
+atmLabelRangeMinVpiVci OBJECT-TYPE
+   SYNTAX VectorString
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Lower bound of the vpi and vci range."
+   ::= { atmLabelRangeEntry 2 }
+
+atmLabelRangeMaxVpiVci OBJECT-TYPE
+   SYNTAX VectorString
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Upper bound of the vpi and vci range."
+   ::= { atmLabelRangeEntry 3 }
+
+atmLabelRangeAllowsVP OBJECT-TYPE
+   SYNTAX TruthValue
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates whether this label range can be used for VP
+                connections."
+   ::= { atmLabelRangeEntry 4 }
+
+atmLabelRangeAllowsP2MP OBJECT-TYPE
+   SYNTAX TruthValue
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates whether this label range can be used to
+                create point-to-multipoint connections."
+   ::= { atmLabelRangeEntry 5 }
+
+atmLabelRangeAllowsMP2P OBJECT-TYPE
+   SYNTAX TruthValue
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates whether this label range can be used to
+                create multipoint-to-point connections."
+   ::= { atmLabelRangeEntry 6 }
+
+atmLabelRangeMaxMulticast OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates the maximum number of multicast connections
+                that can be created within this range."
+   ::= { atmLabelRangeEntry 7 }
+
+--====================================
+-- END OF atmLabelRangeTable
+--====================================
+
+--===============================================================
+-- The table frLabelRangeTable is used to give the DLCI label ranges
+-- on a Frame Relay interface.
+--===============================================================
+
+frLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF FrLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured label range information
+                for the various frame relay ports."
+   ::= { switchConfig 8 }
+
+frLabelRangeEntry OBJECT-TYPE
+   SYNTAX FrLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port label ranges"
+   INDEX { frLabelRangeIndex }
+   ::= { frLabelRangeTable 1 }
+
+FrLabelRangeEntry ::=
+   SEQUENCE {
+      frLabelRangeIndex              Integer32,
+      frLabelRangeMinDLCI            INTEGER,
+      frLabelRangeMaxDLCI            INTEGER
+}
+
+frLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { frLabelRangeEntry 1 }
+
+
+frLabelRangeMinDLCI OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Lower bound of the DLCI range for this Frame Relay
+                interface."
+   ::= { frLabelRangeEntry 2 }
+
+frLabelRangeMaxDLCI OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Upper bound of the DLCI range for this Frame Relay
+                interface."
+   ::= { frLabelRangeEntry 3 }
+
+--====================================
+-- END OF frLabelRangeTable
+--====================================
+
+--===============================================================
+-- The table vlanLabelRangeTable is used to give the VLAN ID label ranges
+-- on a VLAN-aware Ethernet interface.
+--===============================================================
+
+vlanLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VlanLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured label range information
+                for the VLAN-aware Ethernet ports."
+   ::= { switchConfig 9 }
+
+vlanLabelRangeEntry OBJECT-TYPE
+   SYNTAX VlanLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port VLAN ID ranges"
+   INDEX { vlanLabelRangeIndex }
+   ::= { vlanLabelRangeTable 1 }
+
+VlanLabelRangeEntry ::=
+   SEQUENCE {
+      vlanLabelRangeIndex        Integer32,
+      vlanLabelRangeMinID        INTEGER,
+      vlanLabelRangeMaxID        INTEGER
+}
+
+vlanLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { vlanLabelRangeEntry 1 }
+
+vlanLabelRangeMinID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Lower bound of the VLAN ID range on this VLAN-aware
+                Ethernet switch interface."
+   ::= { vlanLabelRangeEntry 2 }
+
+vlanLabelRangeMaxID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Upper bound of the VLAN ID range on this VLAN-aware
+                Ethernet switch interface."
+   ::= { vlanLabelRangeEntry 3 }
+
+--====================================
+-- END OF vlanLabelRangeTable
+--====================================
+
+--===============================================================
+-- The table mplsLabelRangeTable is used to give the label ranges
+-- on a MPLS interface.
+--===============================================================
+
+mplsLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF MplsLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured label range information
+                for MPLS ports."
+   ::= { switchConfig 10 }
+
+mplsLabelRangeEntry OBJECT-TYPE
+   SYNTAX MplsLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port MPLS ranges."
+   INDEX { mplsLabelRangeIndex }
+   ::= { mplsLabelRangeTable 1 }
+
+MplsLabelRangeEntry ::=
+   SEQUENCE {
+      mplsLabelRangeIndex         Integer32,
+      mplsLabelRangeMinID         INTEGER,
+      mplsLabelRangeMaxID         INTEGER
+}
+
+mplsLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { mplsLabelRangeEntry 1 }
+
+mplsLabelRangeMinID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Lower bound of the MPLS label range."
+   ::= { mplsLabelRangeEntry 2 }
+
+mplsLabelRangeMaxID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Upper bound of the MPLS label range."
+   ::= { mplsLabelRangeEntry 3 }
+
+--====================================
+-- END OF mplsLabelRangeTable
+--====================================
+
+
+--===============================================================
+-- The table ipLabelRangeTable is used to give the IP ranges on an IP
+-- interface.
+--===============================================================
+
+ipLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF IpLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured IP ranges for IP ports."
+   ::= { switchConfig 11 }
+
+ipLabelRangeEntry OBJECT-TYPE
+   SYNTAX IpLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port IP ranges."
+   INDEX { ipLabelRangeIndex }
+   ::= { ipLabelRangeTable 1 }
+
+IpLabelRangeEntry ::=
+   SEQUENCE {
+      ipLabelRangeIndex            Integer32,
+      ipLabelRangeIP               IpAddress,
+      ipLabelRangeIPMask           IpAddress
+}
+
+ipLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { ipLabelRangeEntry 1 }
+
+ipLabelRangeIP OBJECT-TYPE
+   SYNTAX IpAddress
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates the IP address for a particular network."
+   ::= { ipLabelRangeEntry 2 }
+
+ipLabelRangeIPMask OBJECT-TYPE
+   SYNTAX IpAddress
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Indicates the subnet's mask address."
+   ::= { ipLabelRangeEntry 3 }
+
+--====================================
+-- END OF ipLabelRangeTable
+--====================================
+
+numberOfVirtualSwitches OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The number of virtual switches that have been currently
+                configured on this switch"
+   ::= { vSwitchConfig 1 }
+
+
+vSwitchConfigTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VSwitchConfigEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Each row in this table describes a virtual switch that
+                has been created on this switch"
+   ::= { vSwitchConfig 2 }
+
+vSwitchConfigEntry OBJECT-TYPE
+   SYNTAX VSwitchConfigEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION " "
+   INDEX { vSwitchConfigVsID }
+   ::= { vSwitchConfigTable 1 }
+
+VSwitchConfigEntry ::= SEQUENCE {
+      vSwitchConfigVsID              Integer32,
+      vSwitchAdminStatus             INTEGER,
+      vSwitchOperStatus              INTEGER,
+      vSwitchNumCtrls                INTEGER,
+      vSwitchNumPorts                INTEGER,
+      vSwitchNumSynPorts             INTEGER,
+      vSwitchPortNumRoutingEntries   INTEGER,
+      vSwitchTableOwner              OwnerString,
+      vSwitchTableRowStatus          RowStatus
+
+   }
+
+vSwitchConfigVsID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch within this switch"
+   ::= { vSwitchConfigEntry 1 }
+
+vSwitchAdminStatus OBJECT-TYPE
+   SYNTAX INTEGER {
+             up(1),
+             down(2),
+             testing(3)
+          }
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The administrative state of the virtual switch.  A
+                virtual switch's administrative status can not be up
+                until all the necessary parameters for this virtual
+                switch have been specified"
+   ::={ vSwitchConfigEntry 2 }
+
+vSwitchOperStatus OBJECT-TYPE
+   SYNTAX INTEGER {
+             up(1),
+             down(2)
+          }
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The current operational state of the virtual switch"
+   ::={ vSwitchConfigEntry 3 }
+
+vSwitchNumCtrls   OBJECT-TYPE
+  SYNTAX INTEGER
+  MAX-ACCESS  read-only
+  STATUS  current
+  DESCRIPTION "The number of controllers for this virtual switch"
+  ::= {vSwitchConfigEntry 4}
+
+vSwitchNumPorts OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The number of virtual ports in this virtual switch"
+   ::= {vSwitchConfigEntry 5 }
+
+vSwitchNumSynPorts OBJECT-TYPE
+   SYNTAX    INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The number of synthetic ports in this virtual switch"
+   ::= {vSwitchConfigEntry 6 }
+
+vSwitchPortNumRoutingEntries OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The number of routing table entries allocated to this
+                virtual port from the physical port.  This value is
+                used only if the switch has per port routing tables"
+   ::= { vSwitchConfigEntry 7 }
+
+vSwitchTableOwner OBJECT-TYPE
+   SYNTAX OwnerString
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Standard owner string (rowstatus convention)"
+   ::= { vSwitchConfigEntry 8 }
+
+vSwitchTableRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used in creating/deleting the row"
+   ::= { vSwitchConfigEntry 9 }
+
+--===============================
+-- END OF vSwitchConfigTable
+--===============================
+
+vSwitchCtrlConfigTable OBJECT-TYPE
+  SYNTAX SEQUENCE OF VSwitchCtrlConfigEntry
+  MAX-ACCESS not-accessible
+  STATUS current
+  DESCRIPTION "This table gives the controllers configured for the VS"
+  ::= {vSwitchConfig 3}
+
+vSwitchCtrlConfigEntry OBJECT-TYPE
+  SYNTAX VSwitchCtrlConfigEntry
+  MAX-ACCESS not-accessible
+  STATUS current
+  DESCRIPTION "Configuration for a controller for the VS"
+  INDEX { vSwitchCtrlVsID }
+  ::= {vSwitchCtrlConfigTable 1}
+
+VSwitchCtrlConfigEntry ::=
+  SEQUENCE {
+      vSwitchCtrlVsID                      Integer32,
+      vSwitchCtrlID                        INTEGER,
+      vSwitchSciType                       INTEGER,
+      vSwitchNumCurrentControllers         INTEGER,
+      vSwitchCtrlConfigTableRowStatus      RowStatus
+}
+
+vSwitchCtrlVsID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch within this switch"
+   ::= { vSwitchCtrlConfigEntry 1 }
+
+vSwitchCtrlID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch controller across the
+                SCI"
+   ::= { vSwitchCtrlConfigEntry 2 }
+
+--=======================================
+-- megaco and cops-pr could be added here
+--=======================================
+vSwitchSciType OBJECT-TYPE
+   SYNTAX INTEGER {
+            gsmp(1)
+          }
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The switch control protocol used to control this
+                virtual switch"
+   ::= { vSwitchCtrlConfigEntry 3 }
+
+vSwitchNumCurrentControllers OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The number of controllers currently connected
+                to this VS"
+   ::= { vSwitchCtrlConfigEntry 4 }
+
+vSwitchCtrlConfigTableRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used in creating/deleting the row"
+   ::= { vSwitchCtrlConfigEntry 5 }
+
+--===============================
+--END OF vSwitchCtrlConfigTable
+--===============================
+
+
+--===============================================================
+-- The table vSwitchCurCtrlsTable gives the Internet
+-- addresses by which each of the current controllers for each
+-- VS can be contacted.
+--===============================================================
+vSwitchCurCtrlsTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VSwitchCurCtrlEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the addresses of controllers
+                currently connected to a virtual switch."
+   ::= { vSwitchConfig 7 }
+
+vSwitchCurCtrlEntry OBJECT-TYPE
+   SYNTAX VSwitchCurCtrlEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "The virtual switch and the address of one
+                of the currently connected controllers."
+   INDEX { vSwitchCurCtrlVS }
+   ::= { vSwitchCurCtrlsTable 1 }
+
+VSwitchCurCtrlEntry ::=
+   SEQUENCE {
+      vSwitchCurCtrlVS                 Integer32,
+      vSwitchCurCtrlAddr               InetAddress,
+      vSwitchCurCtrlType               INTEGER
+}
+
+vSwitchCurCtrlVS OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch within this switch"
+   ::= { vSwitchCurCtrlEntry 1 }
+
+vSwitchCurCtrlAddr OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The Internet address by which this controller can
+                be contacted"
+   ::= { vSwitchCurCtrlEntry 2 }
+
+vSwitchCurCtrlType OBJECT-TYPE
+   SYNTAX INTEGER {
+            gsmp(1)
+          }
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "The type of connected controller"
+   ::= { vSwitchCurCtrlEntry 3 }
+
+--===============================
+--END OF vSwitchCurCtrlsTable
+--===============================
+--===============================================================
+-- The table vSwitchEthernetCtrlTable gives the source MAC
+-- address of the controller used to control a virtual switch.
+--===============================================================
+
+vSwitchEthernetCtrlTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VSwitchEthernetCtrlEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the source MAC of the controller for this
+                virtual switch."
+   ::= { vSwitchConfig 4 }
+
+vSwitchEthernetCtrlEntry OBJECT-TYPE
+   SYNTAX VSwitchEthernetCtrlEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the source MAC of the controller for this
+                virtual switch."
+   INDEX { vSwitchEthernetConfigVsID,
+           vSwitchEthernetCtrlID }
+   ::= { vSwitchEthernetCtrlTable 1 }
+
+VSwitchEthernetCtrlEntry ::=
+   SEQUENCE {
+      vSwitchEthernetConfigVsID         Integer32,
+      vSwitchEthernetCtrlID             Integer32,
+      vSwitchEthernetCtrlSourceMAC      PhysAddress
+   }
+
+vSwitchEthernetConfigVsID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch within this switch"
+   ::= { vSwitchEthernetCtrlEntry 1 }
+
+vSwitchEthernetCtrlID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch controller across the
+                SCI"
+   ::= { vSwitchEthernetCtrlEntry 2 }
+
+vSwitchEthernetCtrlSourceMAC OBJECT-TYPE
+   SYNTAX PhysAddress
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The source MAC to be used for the controller of this
+                virtual switch."
+   ::= { vSwitchEthernetCtrlEntry 3 }
+
+--===============================
+--END OF vSwitchEthernetCtrlTable
+--===============================
+
+
+--===============================================================
+-- The table vSwitchAtmCtrlTable gives the VPI/VCI labels used by
+-- a control protocol to access the virtual switch.
+--===============================================================
+
+vSwitchAtmCtrlTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VSwitchAtmCtrlEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the VPI/VCI used by a protocol to control
+                a virtual switch."
+   ::= { vSwitchConfig 5 }
+
+vSwitchAtmCtrlEntry OBJECT-TYPE
+   SYNTAX VSwitchAtmCtrlEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the VPI/VCI used by a protocol to control
+                a virtual switch."
+   INDEX { vSwitchAtmCtrlLabelIndex }
+   ::= { vSwitchAtmCtrlTable 1 }
+
+VSwitchAtmCtrlEntry ::=
+   SEQUENCE {
+      vSwitchAtmCtrlLabelIndex         Integer32,
+      vSwitchAtmCtrlID                 INTEGER,
+      vSwitchAtmCtrlLabelVpi           INTEGER,
+      vSwitchAtmCtrlLabelVci           INTEGER
+}
+
+vSwitchAtmCtrlLabelIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch within this switch"
+   ::= { vSwitchAtmCtrlEntry 1 }
+
+vSwitchAtmCtrlID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch controller across the
+                SCI"
+   ::= { vSwitchAtmCtrlEntry 2 }
+
+vSwitchAtmCtrlLabelVpi OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The VPI on which the control messages are exchanged."
+   ::= { vSwitchAtmCtrlEntry 3 }
+
+vSwitchAtmCtrlLabelVci OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The VCI on which the control messages are exchanged."
+   ::= { vSwitchAtmCtrlEntry 4 }
+
+--===============================
+--END OF vSwitchAtmCtrlTable
+--===============================
+
+
+--===============================================================
+-- The table vSwitchTcpCtrlTable gives the TCP port number used by
+-- a control protocol to access the virtual switch.
+--===============================================================
+
+vSwitchTcpCtrlTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VSwitchTcpCtrlEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the TCP port number used by a protocol to
+                control a virtual switch."
+   ::= { vSwitchConfig 6 }
+
+vSwitchTcpCtrlEntry OBJECT-TYPE
+   SYNTAX VSwitchTcpCtrlEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the TCP port number used by a protocol to
+                control a virtual switch."
+   INDEX { vSwitchTcpCtrlPortIndex }
+   ::= { vSwitchTcpCtrlTable 1 }
+
+VSwitchTcpCtrlEntry ::=
+   SEQUENCE {
+      vSwitchTcpCtrlPortIndex        Integer32,
+      vSwitchTcpCtrlID               INTEGER,
+      vSwitchTcpCtrlPortNumber       INTEGER,
+      vSwitchTcpCtrlSourceIP         IpAddress,
+      vSwitchTcpCtrlSourceNetmask    IpAddress
+}
+
+vSwitchTcpCtrlPortIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch within this switch"
+   ::= { vSwitchTcpCtrlEntry 1 }
+
+vSwitchTcpCtrlID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the virtual switch controller across the
+                SCI"
+   ::= { vSwitchTcpCtrlEntry 2 }
+
+vSwitchTcpCtrlPortNumber OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The local port number used to control the virtual
+                switch."
+   ::= { vSwitchTcpCtrlEntry 3 }
+
+vSwitchTcpCtrlSourceIP OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The source subnet or specific IP address from which the
+                controller of the virtual switch must originate."
+   ::= { vSwitchTcpCtrlEntry 3 }
+
+vSwitchTcpCtrlSourceNetmask OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The source subnet mask (255.255.255.255 to specify a
+                specific IP address) from which the controller of the
+                virtual switch must originate."
+   ::= { vSwitchTcpCtrlEntry 4 }
+
+--===============================
+--END OF vSwitchTcpCtrlTable
+--===============================
+
+--===============================
+--vSwitchPortConfigTable. These are
+--only for non-synthetic virtual ports
+--===============================
+
+vSwitchPortConfigTable OBJECT-TYPE
+   SYNTAX    SEQUENCE OF VSwitchPortConfigEntry
+   MAX-ACCESS    not-accessible
+   STATUS    current
+   DESCRIPTION "Resource configuration for the virtual ports"
+   ::= { vSwitchConfig 8 }
+
+vSwitchPortConfigEntry OBJECT-TYPE
+   SYNTAX VSwitchPortConfigEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port resource configured for
+                the virtual switch.  The vSwitchPortConfigVSID and
+                vSwitchVirtualPortID combination must be unique between
+                this table and vSwitchCrossVSTable."
+   INDEX { vSwitchPortConfigVSID, vSwitchVirtualPortID }
+   ::= { vSwitchPortConfigTable 1 }
+
+VSwitchPortConfigEntry ::=
+   SEQUENCE {
+      vSwitchPortConfigVSID               Integer32,
+      vSwitchVirtualPortID                Integer32,
+      vSwitchPhysicalPortNumber           INTEGER,
+      vSwitchPortConfigPortNumBWs         INTEGER,
+      vSwitchPortConfigNumLabelRanges     INTEGER,
+      vSwitchPortConfigRowStatus          RowStatus
+   }
+
+vSwitchPortConfigVSID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual switch ID of the virtual switch"
+   ::= { vSwitchPortConfigEntry 1 }
+
+vSwitchVirtualPortID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual port id in that virtual switch"
+   ::= { vSwitchPortConfigEntry 2 }
+
+vSwitchPhysicalPortNumber OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The physical port number that is mapped to virtual
+                port"
+   ::= { vSwitchPortConfigEntry 3 }
+
+vSwitchPortConfigPortNumBWs OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Number of equivalent bandwidth pointing to different
+               performance targets (packet loss ratio and delay)in both
+               incoming and outgoing directions for this port."
+   ::= { vSwitchPortConfigEntry 4 }
+
+vSwitchPortConfigNumLabelRanges OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-only
+   STATUS current
+   DESCRIPTION "Number of label ranges for this port. The label can be
+               of different types depending on the interface service
+               type."
+   ::= { vSwitchPortConfigEntry 5 }
+
+vSwitchPortConfigRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used in creating/deleting the row"
+   ::= { vSwitchPortConfigEntry 5 }
+
+--================================
+-- END OF vSwitchPortConfigTable
+--================================
+
+--===============================================================
+-- The table vSwitchConfigBWTable gives the equivalent bandwidth
+-- pointing to different service category for input and output at the
+-- virtual ports.   The table has 3 indices; virtual switch ID, port ID
+-- and Bandwidth ID.
+--===============================================================
+
+vSwitchPortConfigBWTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VSwitchPortConfigBWEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured bandwidth information
+                for the various virtual ports"
+   ::= { vSwitchConfig 9 }
+
+vSwitchPortConfigBWEntry OBJECT-TYPE
+   SYNTAX VSwitchPortConfigBWEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the configured bandwidth information
+                for the various virtual ports"
+   INDEX { vSwitchBWConfigVSID,
+           vSwitchBWVirtualPortID,
+           vSwitchPortConfigBWID }
+   ::= { vSwitchPortConfigBWTable 1 }
+
+VSwitchPortConfigBWEntry ::=
+   SEQUENCE {
+      vSwitchBWConfigVSID                  Integer32,
+      vSwitchBWVirtualPortID               Integer32,
+      vSwitchPortConfigBWID                Integer32,
+      vSwitchPortConfigEqiBW               INTEGER,
+      vSwitchBWPerformanceIndex            INTEGER,
+      vSwitchPortConfigBWPortDirection     PortDirection,
+      vSwitchPortConfigBWRowStatus         RowStatus
+   }
+
+vSwitchBWConfigVSID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual switch ID of the virtual switch"
+   ::= { vSwitchPortConfigBWEntry 1 }
+
+vSwitchBWVirtualPortID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual port id in the current virtual
+                switch"
+   ::= { vSwitchPortConfigBWEntry 2 }
+
+vSwitchPortConfigBWID OBJECT-TYPE
+   SYNTAX Integer32 (1..2147483647)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the equivalent bandwidth ID in the current
+                virtual switch"
+   ::= { vSwitchPortConfigBWEntry 3 }
+
+vSwitchPortConfigEqiBW OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the equivalent bandwidth assigned
+                to this VS "
+   ::= { vSwitchPortConfigBWEntry 4 }
+
+vSwitchBWPerformanceIndex OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates an entry in the performanceParamTable which
+                represents the performance target associated to by this
+                equivalent bandwidth "
+   ::= { vSwitchPortConfigBWEntry 5 }
+
+vSwitchPortConfigBWPortDirection OBJECT-TYPE
+   SYNTAX PortDirection
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the direction for which this equivalent
+                bandwidth is valid"
+   ::= { vSwitchPortConfigBWEntry 6 }
+
+vSwitchPortConfigBWRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used in creation/deletion of the row"
+   ::= { vSwitchPortConfigBWEntry 7 }
+
+--==================================
+-- END OF vSwitchPortConfigBWTable
+--==================================
+
+
+--===============================================================
+-- The vSwitchLabelRangeConfigTable gives the label ranges for input and output
+-- at the virtual ports.
+-- The tables have 3 indices; virtual switch ID, port ID and Range ID
+--===============================================================
+
+vSwitchPortConfigLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VSwitchPortConfigLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured label range information
+                for the various virtual ports"
+   ::= { vSwitchConfig 10 }
+
+vSwitchPortConfigLabelRangeEntry OBJECT-TYPE
+   SYNTAX VSwitchPortConfigLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port label ranges configured
+                for the virtual switch."
+   INDEX { vSwitchLRTConfigVSID,
+           vSwitchLRTVirtualPortID,
+           vSwitchPortConfigLabelRangeID }
+   ::= { vSwitchPortConfigLabelRangeTable 1 }
+
+VSwitchPortConfigLabelRangeEntry ::=
+   SEQUENCE {
+      vSwitchLRTConfigVSID                   Integer32,
+      vSwitchLRTVirtualPortID                Integer32,
+      vSwitchPortConfigLabelRangeID          Integer32,
+      vSwitchPortConfigPortDirection         PortDirection,
+      vSwitchPortConfigLabelRangeType        INTEGER,
+      vSwitchPortConfigLabelRangeIndex       INTEGER,
+      vSwitchPortConfigLabelRowStatus        RowStatus
+   }
+
+vSwitchLRTConfigVSID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual switch ID of the virtual switch"
+   ::= { vSwitchPortConfigLabelRangeEntry 1 }
+
+vSwitchLRTVirtualPortID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual port id in the current virtual
+switch"
+   ::= { vSwitchPortConfigLabelRangeEntry 2 }
+
+vSwitchPortConfigLabelRangeID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies the label range"
+   ::= { vSwitchPortConfigLabelRangeEntry 3 }
+
+vSwitchPortConfigPortDirection OBJECT-TYPE
+   SYNTAX PortDirection
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the direction for which this range is valid"
+   ::= { vSwitchPortConfigLabelRangeEntry 4 }
+
+vSwitchPortConfigLabelRangeType OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the type of protocol for this label range."
+   ::= { vSwitchPortConfigLabelRangeEntry 5 }
+
+vSwitchPortConfigLabelRangeIndex OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "The index into the protocol-dependent label
+                range table for this virtual switch."
+   ::= { vSwitchPortConfigLabelRangeEntry 6 }
+
+vSwitchPortConfigLabelRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used in creation/deletion of row."
+   ::= { vSwitchPortConfigLabelRangeEntry 7 }
+
+--====================================
+-- END OF vSwitchPortConfigLabelRangeTable
+--====================================
+
+--===============================================================
+-- The table vsAtmLabelRangeTable is used to give the VPI/VCI label ranges
+-- at the ATM virtual switch level.
+--===============================================================
+
+vsAtmLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VsAtmLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured ATM label range information
+                for the various switch ports on this virtual switch."
+   ::= { vSwitchConfig 11 }
+
+vsAtmLabelRangeEntry OBJECT-TYPE
+   SYNTAX VsAtmLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port ATM label ranges and
+                capabilities."
+   INDEX { vsAtmLabelRangeIndex }
+   ::= { vsAtmLabelRangeTable 1 }
+
+VsAtmLabelRangeEntry ::=
+   SEQUENCE {
+      vsAtmLabelRangeIndex                  Integer32,
+      vsAtmLabelRangeMinVpiVci              VectorString,
+      vsAtmLabelRangeMaxVpiVci              VectorString,
+      vsAtmLabelRangeAllowsVP               TruthValue,
+      vsAtmLabelRangeAllowsP2MP             TruthValue,
+      vsAtmLabelRangeAllowsMP2P             TruthValue,
+      vsAtmLabelRangeMaxMulticast           INTEGER,
+      vsAtmLabelRangeRowStatus              RowStatus
+}
+
+vsAtmLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { vsAtmLabelRangeEntry 1 }
+
+vsAtmLabelRangeMinVpiVci OBJECT-TYPE
+   SYNTAX VectorString
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Lower bound of the vpi and vci range."
+   ::= { vsAtmLabelRangeEntry 2 }
+
+vsAtmLabelRangeMaxVpiVci OBJECT-TYPE
+   SYNTAX VectorString
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Upper bound of the vpi and vci range."
+   ::= { vsAtmLabelRangeEntry 3 }
+
+vsAtmLabelRangeAllowsVP OBJECT-TYPE
+   SYNTAX TruthValue
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates whether this label range can be used for VP
+                connections."
+   ::= { vsAtmLabelRangeEntry 4 }
+
+vsAtmLabelRangeAllowsP2MP OBJECT-TYPE
+   SYNTAX TruthValue
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates whether this label range can be used to
+                create point-to-multipoint connections."
+   ::= { vsAtmLabelRangeEntry 5 }
+
+vsAtmLabelRangeAllowsMP2P OBJECT-TYPE
+   SYNTAX TruthValue
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates whether this label range can be used to
+                create multipoint-to-point connections."
+   ::= { vsAtmLabelRangeEntry 6 }
+
+vsAtmLabelRangeMaxMulticast OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the maximum number of multicast connections
+                that can be created within this range."
+   ::= { vsAtmLabelRangeEntry 7 }
+
+vsAtmLabelRangeRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the maximum number of multicast connections
+                that can be created within this range."
+   ::= { vsAtmLabelRangeEntry 8 }
+
+--====================================
+-- END OF vsAtmLabelRangeTable
+--====================================
+
+
+--===============================================================
+-- The table vsFrLabelRangeTable is used to give the DLCI label ranges
+-- on a Frame Relay interface for a virtual switch.
+--===============================================================
+
+vsFrLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VsFrLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured label range information
+                for the various frame relay ports."
+   ::= { vSwitchConfig 12 }
+
+vsFrLabelRangeEntry OBJECT-TYPE
+   SYNTAX VsFrLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port label ranges"
+   INDEX { vsFrLabelRangeIndex }
+   ::= { vsFrLabelRangeTable 1 }
+
+VsFrLabelRangeEntry ::=
+   SEQUENCE {
+      vsFrLabelRangeIndex               Integer32,
+      vsFrLabelRangeMinDLCI             INTEGER,
+      vsFrLabelRangeMaxDLCI             INTEGER,
+      vsFrLabelRangeRowStatus           RowStatus
+}
+
+vsFrLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { vsFrLabelRangeEntry 1 }
+
+vsFrLabelRangeMinDLCI OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Lower bound of the DLCI range for this Frame Relay
+                interface."
+   ::= { vsFrLabelRangeEntry 2 }
+
+vsFrLabelRangeMaxDLCI OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Upper bound of the DLCI range for this Frame Relay
+                interface."
+   ::= { vsFrLabelRangeEntry 3 }
+
+vsFrLabelRangeRowStatus OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used to create and delete this row."
+   ::= { vsFrLabelRangeEntry 4 }
+
+--====================================
+-- END OF vsFrLabelRangeTable
+--====================================
+
+--===============================================================
+-- The table vsVlanLabelRangeTable is used to give the VLAN ID label ranges
+-- on a VLAN-aware Ethernet interface for a virtual switch.
+--===============================================================
+
+vsVlanLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VsVlanLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured label range information
+                for the VLAN-aware Ethernet ports."
+   ::= { switchConfig 13 }
+
+vsVlanLabelRangeEntry OBJECT-TYPE
+   SYNTAX VsVlanLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port VLAN ID ranges"
+   INDEX { vsVlanLabelRangeIndex }
+   ::= { vsVlanLabelRangeTable 1 }
+
+VsVlanLabelRangeEntry ::=
+   SEQUENCE {
+      vsVlanLabelRangeIndex               Integer32,
+      vsVlanLabelRangeMinID               INTEGER,
+      vsVlanLabelRangeMaxID               INTEGER,
+      vsVlanLabelRangeRowStatus           RowStatus
+}
+
+vsVlanLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { vsVlanLabelRangeEntry 1 }
+
+vsVlanLabelRangeMinID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Lower bound of the VLAN ID range on this VLAN-aware
+                Ethernet switch interface."
+   ::= { vsVlanLabelRangeEntry 2 }
+
+vsVlanLabelRangeMaxID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Upper bound of the VLAN ID range on this VLAN-aware
+                Ethernet switch interface."
+   ::= { vsVlanLabelRangeEntry 3 }
+
+vsVlanLabelRangeRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used to create and delete this row."
+   ::= { vsVlanLabelRangeEntry 4 }
+
+--====================================
+-- END OF vsVlanLabelRangeTable
+--====================================
+
+
+--===============================================================
+-- The table mplsLabelRangeTable is used to give the label ranges
+-- on a MPLS interface.
+--===============================================================
+
+vsMplsLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VsMplsLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured label range information
+                for MPLS ports."
+   ::= { vSwitchConfig 14 }
+
+vsMplsLabelRangeEntry OBJECT-TYPE
+   SYNTAX VsMplsLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port MPLS ranges."
+   INDEX { vsMplsLabelRangeIndex }
+   ::= { vsMplsLabelRangeTable 1 }
+
+VsMplsLabelRangeEntry ::=
+   SEQUENCE {
+      vsMplsLabelRangeIndex               Integer32,
+      vsMplsLabelRangeMinID               INTEGER,
+      vsMplsLabelRangeMaxID               INTEGER,
+      vsMplsLabelRangeRowStatus           RowStatus
+}
+
+vsMplsLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { vsMplsLabelRangeEntry 1 }
+
+vsMplsLabelRangeMinID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Lower bound of the MPLS label range."
+   ::= { vsMplsLabelRangeEntry 2 }
+
+vsMplsLabelRangeMaxID OBJECT-TYPE
+   SYNTAX INTEGER
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Upper bound of the MPLS label range."
+   ::= { vsMplsLabelRangeEntry 3 }
+
+vsMplsLabelRangeRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used to create or delete this row."
+   ::= { vsMplsLabelRangeEntry 4 }
+
+--====================================
+-- END OF vsMplsLabelRangeTable
+--====================================
+
+
+--===============================================================
+-- The table vsIpLabelRangeTable is used to give the IP ranges on an IP
+-- interface for a virtual switch.
+--===============================================================
+
+vsIpLabelRangeTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VsIpLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Table giving the configured IP ranges for IP ports."
+   ::= { vSwitchConfig 15 }
+
+vsIpLabelRangeEntry OBJECT-TYPE
+   SYNTAX VsIpLabelRangeEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table gives the per port IP ranges."
+   INDEX { vsIpLabelRangeIndex }
+   ::= { vsIpLabelRangeTable 1 }
+
+VsIpLabelRangeEntry ::=
+   SEQUENCE {
+      vsIpLabelRangeIndex           Integer32,
+      vsIpLabelRangeIP              IpAddress,
+      vsIpLabelRangeIPMask          IpAddress,
+      vsIpLabelRangeRowStatus       RowStatus
+}
+
+vsIpLabelRangeIndex OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Index into this table."
+   ::= { vsIpLabelRangeEntry 1 }
+
+vsIpLabelRangeIP OBJECT-TYPE
+   SYNTAX IpAddress
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the IP address for a particular network."
+   ::= { vsIpLabelRangeEntry 2 }
+
+vsIpLabelRangeIPMask OBJECT-TYPE
+   SYNTAX IpAddress
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Indicates the subnet's mask address."
+   ::= { vsIpLabelRangeEntry 3 }
+
+vsIpLabelRangeRowStatus OBJECT-TYPE
+   SYNTAX RowStatus
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Used for creating and deleting this row."
+   ::= { vsIpLabelRangeEntry 4 }
+
+--====================================
+-- END OF vsIpLabelRangeTable
+--====================================
+
+--==========================================================
+-- The vSwitchCrossVSTable contains rows that describe a
+-- synthetic connection between two virtual switches.  To each of
+-- these switches, a synthetic port is added.  This synthetic port
+-- will appear as a real virtual port to the protocol managing the
+-- virtual switch.  As such, characteristics of the connection
+-- have to be specified, e.g., link type (ATM, ethernet).
+--
+-- Some normal characteristics of a link do not need to be
+-- specified because they can be computed dynamically by the switch.
+-- For example, the bandwidth of the port can be computed as the
+-- sum of the bandwidths of the other ports of the VS.  This
+-- bandwidth is necessary and sufficient to guarantee that the
+-- synthetic port does not become an artificial bottleneck.
+--==========================================================
+vSwitchCrossVSTable OBJECT-TYPE
+   SYNTAX SEQUENCE OF VSwitchCrossVSEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "This table manages the virtual connection configured
+                between two VSs"
+   ::= { vSwitchConfig 17 }
+
+vSwitchCrossVSEntry OBJECT-TYPE
+   SYNTAX VSwitchCrossVSEntry
+   MAX-ACCESS not-accessible
+   STATUS current
+   DESCRIPTION "Configuration for each virtual connection in the
+                switch"
+   INDEX { vSwitchVConnectID }
+   ::= { vSwitchCrossVSTable 1}
+
+VSwitchCrossVSEntry ::=
+   SEQUENCE {
+      vSwitchVConnectID                Integer32,
+      vSwitchVConnect1VSID             Integer32,
+      vSwitchVConnect1PortID           Integer32,
+      vSwitchVConnect2VSID             Integer32,
+      vSwitchVConnect2PortID           Integer32,
+      vSwitchVLinkType                 INTEGER
+}
+
+vSwitchVConnectID OBJECT-TYPE
+   SYNTAX INTEGER (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Identifies this virtual connection"
+   ::= { vSwitchCrossVSEntry 1 }
+
+vSwitchVConnect1VSID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual switch ID of the first virtual
+                switch attached to this synthetic connection."
+   ::= { vSwitchCrossVSEntry 2 }
+
+vSwitchVConnect1PortID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual port id associated with this
+                synthetic connection in virtual switch
+                vSwitchVConnect1VSID."
+   ::= { vSwitchCrossVSEntry 3 }
+
+vSwitchVConnect2VSID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual switch ID of the second virtual
+                switch attached to this synthetic connection."
+   ::= { vSwitchCrossVSEntry 4 }
+
+vSwitchVConnect2PortID OBJECT-TYPE
+   SYNTAX Integer32 (1..65536)
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "This is the virtual port id associated with this
+                synthetic connection in virtual switch
+                vSwitchVConnect2VSID."
+   ::= { vSwitchCrossVSEntry 5 }
+
+vSwitchVLinkType OBJECT-TYPE
+   SYNTAX INTEGER {
+        ethernet(1),
+        atm(2),
+        frame-relay(3)
+   }
+   MAX-ACCESS read-write
+   STATUS current
+   DESCRIPTION "Specifies the layer-2 link type that the virtual ports
+                associated with this synthetic connection will appear
+                to be."
+   ::= { vSwitchCrossVSEntry 6 }
+
+END

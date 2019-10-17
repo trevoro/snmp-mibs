@@ -1,0 +1,952 @@
+
+-- This MIB contains definitions for transport channel variables and traps.
+
+          CIRCUIT-MIB 	
+			 
+          DEFINITIONS ::= BEGIN	
+				  
+          IMPORTS	
+		    MODULE-IDENTITY, OBJECT-TYPE, Unsigned32, Counter64
+			   FROM SNMPv2-SMI
+		    circuit, coriolisMibs
+			   FROM CORIOLIS-MIB  
+		    IpAddress 
+            FROM RFC1155-SMI
+		    TruthValue, DisplayString
+		      FROM SNMPv2-TC
+		    TRAP-TYPE
+		      FROM RFC-1215;
+
+          circuitMIB MODULE-IDENTITY
+          LAST-UPDATED "0010300000Z"
+          ORGANIZATION "Coriolis Networks"
+          CONTACT-INFO
+          " Srivathsan Srinivasagopalan
+
+          Postal: 330 Codman Hill Road,
+          Boxboro MA, 01719.
+
+          Tel: +1 978 264 1904
+          Fax: +1 978 264 1929
+
+          E-mail: sri@coriolisnet.com"
+          DESCRIPTION
+          " The MIB module for transport channels "
+          ::= { circuit 1 }
+        
+
+		-- The global circuit tuning parameters
+	
+		-- After a circuit is established and active, new rings may become available 
+      -- leading to an unbalanced network in terms of the distribution of circuits 
+      -- onto rings.  A newly available ring may provide a better path in terms of 
+      -- the path selection criteria or may simply have more available bandwidth than 
+      -- an existing ring.  Load Balancing is simply a gradual migration of circuits 
+      -- onto ring paths that are considered to be better paths.  If a new path is 
+      -- discovered with the same metrics as the existing path with only a slight 
+      -- improvement in bandwidth, the circuit will remain on the existing path.  
+      -- If all metrics are the same, the new path must have a bandwidth improvement 
+      -- of at least 200 Mbps as well as 20% of the current rings available bandwidth.  
+      -- The 200 Mbps establishes a minimal amount of additional bandwidth required on 
+      -- the new ring.  The requirement of the new ring to have more available bandwidth 
+      -- than the old ring by at least 20% of the old ring available bandwidth prevents 
+      -- a circuit from load balancing from one ring to another when both rings have very 
+      -- large capacities available.  As circuits are added to a stable network circuits 
+      -- are not expected to migrate to other rings because circuits always choose the 
+      -- best path at the time.  Load balancing is only expected after a network event 
+      -- causes an unbalanced distribution such as the addition of a new ring or a ring 
+      -- failure followed by its restoration.  
+
+	      circuitLoadBalanceInterval	OBJECT-TYPE	
+				 SYNTAX	               INTEGER(0..65535)
+				 MAX-ACCESS	            read-write
+				 STATUS	               current
+				 DESCRIPTION	   
+					  "The default load balancing schedule is to examine 1 circuit every 3 
+             minutes at the GNE.  Regardless of whether the circuit is moved to a better 
+             ring path or not, the next circuit is not examined until another 3 minutes
+             (default) had expired.  The duration of the load balance timer will be 
+             configurable from a range of 0 to 65535 seconds.  Using a value of 0 will 
+             turn off load balancing."
+
+				 ::={ circuit 2 }	
+	  
+	      circuitLoadBalanceNumPerInterval   OBJECT-TYPE	
+				 SYNTAX	                       INTEGER(1..10)  	
+				 MAX-ACCESS	                    read-write	
+				 STATUS	                       current
+				 DESCRIPTION	
+					  "Indicates the number of circuits being loadbalanced in a fixed interval.
+             The maximum value is 10 circuits per second."	
+				 ::={ circuit 3 }	
+	  
+	      circuitOldIpAddrToSwap	OBJECT-TYPE	
+				 SYNTAX	            IpAddress 	
+				 MAX-ACCESS	         read-write	
+				 STATUS	            current	
+				 DESCRIPTION		
+					  "When a chassis running several circuits has to be moved to a new
+                  location with a new different IpAddress, then all the associated circuits
+                  has to be properly modified with the new IpAddress. This object will
+                  specify the old-IpAddress. This process is almost transparent to the user, 
+                  but, he will notice traffic loss due to the circuits being brought down 
+                  and up."	
+				 ::={ circuit 4 }	
+	  
+	      circuitNewIpAddrToSwap OBJECT-TYPE
+				 SYNTAX	           IpAddress
+				 MAX-ACCESS	        read-write
+				 STATUS	           current
+				 DESCRIPTION
+					  "When a chassis running several circuits has to be moved to a new
+                  location with a new different IpAddress, then all the associated circuits
+                  has to be properly modified with the new IpAddress. This object will
+                  specify the old-IpAddress. This process is almost transparent to the user, 
+                  but, he will notice traffic loss due to the circuits being brought down 
+                  and up."
+				 ::= { circuit 5 }
+
+	      circuitEventInterval OBJECT-TYPE
+				 SYNTAX	         Unsigned32
+				 MAX-ACCESS	      read-write
+				 STATUS	         current
+				 DESCRIPTION	
+					  "For any circuit related events, events are generated at a specific
+                  time interval.	circuitEventInterval specifies that. The default value
+                  is 1 second."
+				 ::= { circuit 6 }		
+	  
+	      circuitEventNumPerInterval OBJECT-TYPE		
+				 SYNTAX	               INTEGER(0..10)		
+				 MAX-ACCESS	            read-write		
+				 STATUS	               current		
+				 DESCRIPTION	
+					  "This object specifies the number of events generated per interval.
+                  The default is 10 per second."
+				 ::= { circuit 7 }		
+	  
+			-- The transport channel table				
+	  
+          circuitTable OBJECT-TYPE		
+				  SYNTAX 	    SEQUENCE OF CircuitEntry	
+				  MAX-ACCESS    not-accessible					
+				  STATUS	       current
+				  DESCRIPTION
+						"A table containing information about the transport channels in the system"
+				  ::= { circuit 8 }
+
+			 -- Index {Ipaddress, interface #, connectionID}
+			 -- A port could be identified by Interface # which will be unique to a node. 
+          -- This port will effectively identify the physical channel.
+			 -- a port can support many circuits. To identify the apropriate ckt, 
+          -- a unique identifier - connection ID could be used.
+
+
+	      circuitEntry OBJECT-TYPE
+				 SYNTAX	    CircuitEntry
+				 MAX-ACCESS  not-accessible
+				 STATUS	    current
+				 DESCRIPTION
+					  "Entry in the table for a single transport channel"
+				 INDEX	{ circuitSrcIpAddr, circuitSrcInterfaceNum, circuitSrcConnectionID }
+				 ::= {circuitTable 1 }
+
+	      CircuitEntry ::= SEQUENCE {
+			 circuitSrcIpAddr        		IpAddress,
+		    circuitSrcInterfaceNum  		Unsigned32,
+		    circuitSrcConnectionID  		Unsigned32,
+          circuitSrcDescString         OCTET STRING,	
+		    circuitDestIpAddr	    		IpAddress,
+		    circuitDestInterfaceNum 		Unsigned32,
+		    circuitDestConnectionID 		Unsigned32,
+          circuitDestDescString        OCTET STRING,
+		    circuitName               	OCTET STRING,
+	       circuitID                   	Unsigned32,
+		    circuitRowStatus            	INTEGER,
+		    circuitReasonText           	DisplayString,
+		    circuitFailLocIpAddr    		IpAddress,
+		    circuitFailLocSlot1      		INTEGER,
+		    circuitFailLocPort1      		INTEGER,
+		    circuitFailLocInterfaceNum1  Unsigned32,
+          circuitFailLocConnectionID1  Unsigned32,
+		    circuitFailLocSlot2      		INTEGER,
+		    circuitFailLocPort2      		INTEGER,
+		    circuitFailLocInterfaceNum2  Unsigned32,
+          circuitFailLocConnectionID2  Unsigned32,
+          circuitEndPoint1Protocol  	INTEGER,
+		    circuitFwdTDType        		INTEGER,
+		    circuitFwdTDParam1      		Unsigned32,
+		    circuitFwdTDParam2      		Unsigned32,
+		    circuitFwdTDParam3      		Unsigned32,
+		    circuitFwdTDParam4      		Unsigned32,
+          circuitEndPoint2Protocol  	INTEGER,
+		    circuitBwdTDType        		INTEGER,
+		    circuitBwdTDParam1      		Unsigned32,
+		    circuitBwdTDParam2      		Unsigned32,
+		    circuitBwdTDParam3      		Unsigned32,
+		    circuitBwdTDParam4      		Unsigned32,
+		    circuitClassOfService   		INTEGER,
+		    circuitAdminState       		INTEGER,
+		    circuitOperState        		INTEGER,
+		    circuitTimeSinceStatusChange Unsigned32,
+		    circuitIsRedundancyReqd 		TruthValue,
+          circuitSetupPriority         Unsigned32,
+          circuitHoldPriority          Unsigned32,
+		    circuitPreferredEP1OptSlot 	INTEGER,
+		    circuitPreferredEP1OptPort 	INTEGER,
+		    circuitPreferredEP1OptVport 	INTEGER,
+		    circuitPreferredEP2OptSlot  	INTEGER,
+		    circuitPreferredEP2OptPort  	INTEGER,
+		    circuitPreferredEP2OptVport 	INTEGER,
+		    circuitUseAlternateRing   	INTEGER,
+		    circuitInFrames	        		Counter64,
+          circuitInDEFrames            Counter64,
+		    circuitInOctets					Counter64,
+          circuitInDEOctets            Counter64,
+		    circuitInCLP0Cells       		Counter64,
+		    circuitInCLP1Cells       		Counter64,
+		    circuitInFramesDiscard			Counter64,
+		    circuitInDEFramesDiscard		Counter64,
+		    circuitInOctetsDiscard			Counter64,
+		    circuitInDEOctetsDiscard		Counter64,
+          circuitInCLP0CellsDiscard    Counter64,
+          circuitInCLP1CellsDiscard    Counter64,
+		    circuitInFramesTagged			Counter64,
+		    circuitInOctetsTagged			Counter64,
+          circuitInCLP0CellsTagged     Counter64,
+		    circuitOutFrames					Counter64,
+		    circuitOutDEFrames				Counter64,
+		    circuitOutOctets					Counter64,
+		    circuitOutDEOctets				Counter64,
+		    circuitOutCLP0Cells         	Counter64,
+          circuitOutCLP1Cells          Counter64
+			 }
+
+		  circuitSrcIpAddr	OBJECT-TYPE
+				SYNTAX	      IpAddress
+				MAX-ACCESS	   read-write
+				STATUS	      current
+				DESCRIPTION
+					 "IP address of the source circuit endpoint."
+				::= { circuitEntry 1 }
+
+		  circuitSrcInterfaceNum OBJECT-TYPE
+				SYNTAX             Unsigned32
+				MAX-ACCESS         read-write 
+				STATUS             current
+	         DESCRIPTION	
+		      "The interface number of the source circuit endpoint."
+		      ::= { circuitEntry 2 }
+
+	     circuitSrcConnectionID	OBJECT-TYPE
+				SYNTAX	            Unsigned32
+				MAX-ACCESS	         read-write
+				STATUS	            current
+				DESCRIPTION	
+					 "Connection Identifier of the source circuit endpoint.
+					 Based on the protocol type, further information may 
+					 be required to completely specify a circuit on a channel.
+					 For example, Ethernet VLAN requires a VLAN Id, Frame Relay 
+					 requires a DLCI and ATM requires VPI and VCI.  For ATM, this
+					 field is encoded as 12 bits of VPI and 16 bits of VCI."
+				::= { circuitEntry 3 }
+
+	     circuitSrcDescString	OBJECT-TYPE
+				SYNTAX	         OCTET STRING
+				MAX-ACCESS	      read-only  
+				STATUS	         current  
+				DESCRIPTION
+					 "Textual description of the source side of the circuit endpoint."
+		  ::= { circuitEntry 4 }
+		  
+	     circuitDestIpAddr	OBJECT-TYPE
+				SYNTAX	      IpAddress
+				MAX-ACCESS	   read-write
+				STATUS	      current
+				DESCRIPTION
+					 "IP address of the destination circuit endpoint."
+		  ::= { circuitEntry 5 }
+
+	     circuitDestInterfaceNum OBJECT-TYPE
+				SYNTAX              Unsigned32
+				MAX-ACCESS          read-write
+				STATUS              current
+				DESCRIPTION
+					 "The interface number of the destination circuit endpoint."
+		  ::= { circuitEntry 6 }
+
+	     circuitDestConnectionID	OBJECT-TYPE
+				SYNTAX	            Unsigned32
+				MAX-ACCESS	         read-write
+				STATUS	            current
+				DESCRIPTION	
+					 "Connection Identifier of the destination circuit endpoint.
+					 Based on the protocol type, further information may 
+					 be required to completely specify a circuit on a channel.
+					 For example, Ethernet VLAN requires a VLAN Id, Frame Relay 
+					 requires a DLCI and ATM requires VPI and VCI.  For ATM, this
+					 field is encoded as 12 bits of VPI and 16 bits of VCI."
+		  ::= { circuitEntry 7 }
+
+	     circuitDestDescString	OBJECT-TYPE
+				SYNTAX	         OCTET STRING
+				MAX-ACCESS	      read-only  
+				STATUS	         current  
+				DESCRIPTION
+					 "Textual description of the destination side of the circuit endpoint."
+		  ::= { circuitEntry 8 }
+
+	     circuitName		OBJECT-TYPE
+				SYNTAX		OCTET STRING(SIZE(0..32))
+				MAX-ACCESS	read-write
+				STATUS		current
+				DESCRIPTION	
+					 "CircuitName is a unique name given to a circuit."
+		  ::={ circuitEntry 9 }
+
+	     circuitID			OBJECT-TYPE
+				SYNTAX		Unsigned32
+				MAX-ACCESS	read-only
+				STATUS		current
+				DESCRIPTION	
+					 "CircuitID is a unique ID given to a circuit. It is
+		      equal to the TC-ID in the PM."
+		  ::={ circuitEntry 10 }
+
+	     circuitRowStatus	OBJECT-TYPE
+				SYNTAX			INTEGER {
+				active(1),
+				notInService(2),
+				notReady(3),
+				createAndGo(4),
+				createAndWait(5),
+				destroy(6)
+				}	
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION	
+					 "Indicates if a row has been created or deleted.
+                 See SNMPv2-TC for complete description."
+		  ::={ circuitEntry 11 }
+
+	     circuitReasonText 	OBJECT-TYPE
+				SYNTAX			DisplayString
+				MAX-ACCESS		read-only
+				STATUS			current
+				DESCRIPTION
+					 "Provides the reason for the error indicated."
+		  ::= { circuitEntry 12 }
+
+	     circuitFailLocIpAddr 	OBJECT-TYPE
+				SYNTAX				IpAddress
+				MAX-ACCESS			read-only
+				STATUS				current
+				DESCRIPTION
+					 "IP address of location where circuit failure code is 
+					 encountered."
+		  ::= { circuitEntry 13 }
+
+	     circuitFailLocSlot1 	OBJECT-TYPE
+				SYNTAX				INTEGER(1..26)
+				MAX-ACCESS			read-only
+				STATUS				current
+				DESCRIPTION
+					 "Slot number where circuit failure code is 
+					 encountered."
+				::= { circuitEntry 14 }
+
+	     circuitFailLocPort1 	OBJECT-TYPE
+				SYNTAX				INTEGER(1..16)
+				MAX-ACCESS			read-only
+				STATUS				current
+				DESCRIPTION
+					 "Port number where circuit failure code is 
+					 encountered."
+				::= { circuitEntry 15 }
+
+		  circuitFailLocInterfaceNum1 OBJECT-TYPE
+				SYNTAX		  				Unsigned32
+				MAX-ACCESS					read-only
+				STATUS						current
+				DESCRIPTION
+					 "Interface number where circuit failure code is 
+					 encountered."
+				::= { circuitEntry 16 }
+
+	     circuitFailLocConnectionID1	OBJECT-TYPE
+				SYNTAX	               Unsigned32
+				MAX-ACCESS	            read-only
+				STATUS	               current
+				DESCRIPTION	
+					 "Connection Identifier of the failed circuit endpoint."
+				::= { circuitEntry 17 }
+
+		  circuitFailLocSlot2 	OBJECT-TYPE
+				SYNTAX				INTEGER(1..26)
+				MAX-ACCESS			read-only
+				STATUS				current
+				DESCRIPTION
+					 "Slot number where circuit failure code is 
+					 encountered."
+		  ::= { circuitEntry 18 }
+
+	     circuitFailLocPort2 	OBJECT-TYPE
+				SYNTAX				INTEGER(1..16)
+				MAX-ACCESS			read-only
+				STATUS				current
+				DESCRIPTION
+					 "Port number where circuit failure code is 
+					 encountered."
+				::= { circuitEntry 19 }
+
+		  circuitFailLocInterfaceNum2  	OBJECT-TYPE
+				SYNTAX							Unsigned32
+				MAX-ACCESS						read-only
+				STATUS							current
+				DESCRIPTION
+					 "Interface number where circuit failure code is 
+					 encountered."
+				::= { circuitEntry 20 }
+
+	     circuitFailLocConnectionID2	OBJECT-TYPE
+				SYNTAX	               Unsigned32
+				MAX-ACCESS	            read-only
+				STATUS	               current
+				DESCRIPTION	
+					 "Connection Identifier of the failed circuit endpoint."
+				::= { circuitEntry 21 }
+
+		  circuitEndPoint1Protocol  	OBJECT-TYPE
+				SYNTAX						INTEGER {
+				ethernet   (1),
+				frameRelay (2),
+				atm        (3),
+				vt         (4),
+				axData     (5),
+				axTdm      (6),
+				isl        (7)
+				}
+				MAX-ACCESS	     			read-write
+				STATUS	               current
+				DESCRIPTION
+					 "Protocol determines the connectionID."
+				::= { circuitEntry 22 }
+
+		  circuitFwdTDType	OBJECT-TYPE
+				SYNTAX			INTEGER {
+				ethernet    (1),
+				frameRelay  (2),
+				tdm         (3),
+				atm-cbr     (4),
+				atm-vbr-rt  (5),
+				atm-vbr-nrt (6),
+				atm-vbr-ubr (7)
+				}
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Specifies the traffic descriptor type associated with
+					 the forward traffic descriptor parameters.  The forward
+					 direction is 'into the network' from the circuit endpoint.
+					 TDType is independent of the end-point protocol."
+				::= { circuitEntry 23 }
+
+		  circuitFwdTDParam1 OBJECT-TYPE
+				SYNTAX			Unsigned32
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Parameter 1 of the forward traffic descriptor of
+					 type circuitFwdTdType.
+					 For type Ethernet, this value corresponds to CIR.
+					 For type Frame Relay, this value corresponds to CIR.
+					 For type ATM-CBR, this value corresponds to PCR(0+1)."
+				::= { circuitEntry 24 }
+
+		  circuitFwdTDParam2 OBJECT-TYPE
+				SYNTAX			Unsigned32
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Parameter 2 of the forward traffic descriptor of
+					 type circuitFwdTdType.
+					 For type Ethernet, this value corresponds to Bc.
+					 For type Frame Relay, this value corresponds to Bc."
+				::= { circuitEntry 25 }
+
+		  circuitFwdTDParam3 OBJECT-TYPE
+				SYNTAX			Unsigned32
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Parameter 3 of the forward traffic descriptor of
+					 type circuitFwdTdType.
+					 For type Ethernet, this value corresponds to Be.
+					 For type Frame Relay, this value corresponds to Be."
+				::= { circuitEntry 26 }
+
+		  circuitFwdTDParam4 OBJECT-TYPE
+				SYNTAX			Unsigned32
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Parameter 4 of the forward traffic descriptor of
+					 type circuitFwdTdType."
+				::= { circuitEntry 27 }
+
+		  circuitEndPoint2Protocol OBJECT-TYPE
+				SYNTAX	         	INTEGER {
+				ethernet    (1),
+				frameRelay  (2),
+				atm         (3),
+				vt          (4),
+				axData      (5),
+				axTdm       (6),
+				isl         (7)
+				}
+				MAX-ACCESS				read-write
+				STATUS					current
+				DESCRIPTION
+					 "Protocol determines the connectionID."
+				::= { circuitEntry 28 }
+
+		  circuitBwdTDType	OBJECT-TYPE
+				SYNTAX			INTEGER {
+				ethernet    (1),
+				frameRelay  (2),
+				tdm         (3),
+				atm-cbr     (4),
+				atm-vbr-rt  (5),
+				atm-vbr-nrt (6),
+				atm-vbr-ubr (7)
+				}
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Specifies the traffic descriptor type associated with
+					 the backward traffic descriptor parameters.  The backward
+					 direction is 'out of the network' from the circuit endpoint.
+					 TDType is independent to of the end-point protocol."
+				::= { circuitEntry 29 }
+
+		  circuitBwdTDParam1 OBJECT-TYPE
+				SYNTAX			Unsigned32
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Parameter 1 of the backward traffic descriptor of
+					 type circuitBwdTdType.
+					 For type Ethernet, this value corresponds to CIR.
+					 For type Frame Relay, this value corresponds to CIR.
+					 For type ATM-CBR, this value corresponds to PCR(0+1)."
+				::= { circuitEntry 30 }
+
+		  circuitBwdTDParam2 OBJECT-TYPE
+				SYNTAX			Unsigned32
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Parameter 2 of the backward traffic descriptor of
+					 type circuitBwdTdType.
+					 For type Ethernet, this value corresponds to Bc.
+					 For type Frame Relay, this value corresponds to Bc."
+				::= { circuitEntry 31 }
+
+		  circuitBwdTDParam3 OBJECT-TYPE
+				SYNTAX			Unsigned32
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Parameter 3 of the backward traffic descriptor of
+					 type circuitBwdTdType.
+					 For type Ethernet, this value corresponds to Be.
+					 For type Frame Relay, this value corresponds to Be."
+				::= { circuitEntry 32 }
+
+		  circuitBwdTDParam4 OBJECT-TYPE
+				SYNTAX			Unsigned32
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Parameter 4 of the backward traffic descriptor of
+					 type circuitBwdTdType."
+				::= { circuitEntry 33 }
+
+		  circuitClassOfService OBJECT-TYPE
+				SYNTAX				INTEGER(0..7)
+				MAX-ACCESS			read-write
+				STATUS				current
+				DESCRIPTION
+					 "Specifies the class of service for Data or non-TDM 
+					 circuits.  This value is in the range of 0-7 where 1 
+					 has the highest priority and 7 has the lowest."
+				::= { circuitEntry 34 }
+
+		  circuitAdminState	OBJECT-TYPE
+				SYNTAX			INTEGER {
+				enabled  (1),
+				disabled (2),
+				enabledButNotUsed     (3)
+				}
+				MAX-ACCESS		read-write
+				STATUS			current
+				DESCRIPTION
+					 "Administrative state of the circuit.  Circuits in the
+					 disabled state do not consume network resources such as 
+					 bandwidth.  The network continuously attempts to establish
+					 circuits until successful while in the enabled state. The
+                'enabledButNotUsed' state tells that the transport segment 
+                is established and network resources are assigned to it,
+                but, traffic is not allowed to pass though it."
+				::= { circuitEntry 35 }
+
+		  circuitOperState	OBJECT-TYPE
+				SYNTAX			INTEGER {
+				up   (1),
+				down (2),
+				test (3)
+				}
+				MAX-ACCESS		read-only
+				STATUS			current
+				DESCRIPTION
+					 "Aperational state of the circuit.  Circuits in the
+					 disabled state do not consume network resources such as 
+					 bandwidth.  The network continuously attempts to establish
+					 circuits until successful while in the enabled state."
+				::= { circuitEntry 36 }
+
+		  circuitTimeSinceStatusChange	OBJECT-TYPE
+				SYNTAX							Unsigned32
+				MAX-ACCESS						read-only
+				STATUS							current
+				DESCRIPTION
+					 "Gives the time (in seconds) since the most recent status change."
+				::= { circuitEntry 37 }
+
+		  circuitSetupPriority 	OBJECT-TYPE
+				SYNTAX			   Unsigned32
+				MAX-ACCESS			read-only
+				STATUS				current
+				DESCRIPTION
+					 "If there are insufficient network resources for establishing 
+            all transport channels, this field specifies the priority of the 
+            transport channel."
+				::= { circuitEntry 38 }
+
+		  circuitHoldPriority	OBJECT-TYPE
+				SYNTAX		      Unsigned32
+				MAX-ACCESS			read-only
+				STATUS				current
+				DESCRIPTION
+					 "If a number of transport channels of a low Setup Priority need 
+            to be cleared in order to release resources allowing for a higher priority 
+            (Setup) transport channel to be established, this field specifies the 
+            Hold priority where low Hold priority transport channels 
+            are cleared before higher Hold priority transport channels."
+				::= { circuitEntry 39 }
+
+
+		  circuitIsRedundancyReqd	OBJECT-TYPE
+				SYNTAX					TruthValue
+				MAX-ACCESS				read-write
+				STATUS					current
+				DESCRIPTION
+					 "Specifies if the circuit is to be established over rings 
+					 that are logically configured as 'protected'.  A protected 
+					 ring could physically be in a fault state where one fiber
+					 has failed.  A circuit that requires redundancy will be 
+					 established over rings logically configured as 'protected'
+					 even though the current physical state of a protected ring
+					 may be in a fault state."
+				::= { circuitEntry 40 }
+
+		  circuitPreferredEP1OptSlot  OBJECT-TYPE
+				SYNTAX						INTEGER(1..26)
+				MAX-ACCESS					read-write
+				STATUS						current
+				DESCRIPTION
+					 "If the circuit spans one or two rings, this is the slot number
+					 of the first preferred ring.  Preferred rings allow a manual overide 
+					 of the routed circuit path."
+				::= { circuitEntry 41 }
+
+		  circuitPreferredEP1OptPort  OBJECT-TYPE
+				SYNTAX						INTEGER(1..16)
+				MAX-ACCESS					read-write
+				STATUS						current
+				DESCRIPTION
+					 "If the circuit spans one or two rings, this is the port number
+					 of the first preferred ring." 
+				::= { circuitEntry 42 }
+
+		  circuitPreferredEP1OptVport OBJECT-TYPE
+				SYNTAX						INTEGER
+				MAX-ACCESS					read-write
+				STATUS						current
+				DESCRIPTION
+					 "If the circuit spans one or two rings, this is the lambda number
+					 of the first preferred ring." 
+				::= { circuitEntry 43 }
+
+		  circuitPreferredEP2OptSlot  OBJECT-TYPE
+				SYNTAX						INTEGER(1..26)
+				MAX-ACCESS					read-write
+				STATUS						current
+				DESCRIPTION
+					 "If the circuit spans two rings, this is the slot number
+					 of the second preferred ring.  Preferred rings allow a manual overide 
+					 of the routed circuit path."
+				::= { circuitEntry 44 }
+
+		  circuitPreferredEP2OptPort  OBJECT-TYPE
+				SYNTAX						INTEGER(1..16)
+				MAX-ACCESS					read-write
+				STATUS						current
+				DESCRIPTION
+					 "If the circuit spans two rings, this is the port number
+					 of the second preferred ring." 
+				::= { circuitEntry 45 }
+
+		  circuitPreferredEP2OptVport OBJECT-TYPE
+				SYNTAX	        			INTEGER
+				MAX-ACCESS					read-write
+				STATUS						current
+				DESCRIPTION
+					 "If the circuit spans two rings, this is the lambda number
+					 of the second preferred ring." 
+				::= { circuitEntry 46 }
+
+		  circuitUseAlternateRing	OBJECT-TYPE
+				SYNTAX					INTEGER {
+				yes (1),
+				no  (2)
+				}
+				MAX-ACCESS				read-write
+				STATUS					current
+				DESCRIPTION
+					 "Allows operator to specify whether an alternate ring can 
+					 be used if the preferred ring(s) fail.  This requires the 
+					 ability to load-balance back onto the preferred ring once 
+					 it becomes available.  The format for this field is Boolean."
+				::= { circuitEntry 47 }
+	      
+		  circuitInFrames	OBJECT-TYPE
+				SYNTAX  		Counter64
+				MAX-ACCESS	read-only
+				STATUS	 	current
+				DESCRIPTION
+					 "Number of frames received at the ingress point and passed
+					 on to the circuit." 
+				::= { circuitEntry 48 }
+
+		  circuitInDEFrames	OBJECT-TYPE
+				SYNTAX  		   Counter64
+				MAX-ACCESS	   read-only   
+				STATUS	 	   current
+				DESCRIPTION
+					 "Number of frames received at the ingress point and passed
+					 on to the circuit." 
+				::= { circuitEntry 49 }
+
+		  circuitInOctets	 OBJECT-TYPE
+				SYNTAX       Counter64
+				MAX-ACCESS	 read-only
+				STATUS	 	 current
+				DESCRIPTION
+					 "Number of octets received at the ingress point and passed
+					 on to the circuit." 
+				::= { circuitEntry 50 }
+
+		  circuitInDEOctets	   OBJECT-TYPE
+				SYNTAX            Counter64
+				MAX-ACCESS	      read-only
+				STATUS	 	      current
+				DESCRIPTION
+					 "Number of octets received at the ingress point and passed
+					 on to the circuit." 
+				::= { circuitEntry 51 }
+
+		  circuitInCLP0Cells	   OBJECT-TYPE
+				SYNTAX            Counter64
+				MAX-ACCESS	      read-only
+				STATUS	         current
+				DESCRIPTION
+					 "Number of cells received at the ingress point and passed
+					 on to the circuit." 
+				::= { circuitEntry 52 }
+
+		  circuitInCLP1Cells	   OBJECT-TYPE
+				SYNTAX            Counter64
+				MAX-ACCESS	      read-only
+				STATUS	         current
+				DESCRIPTION
+					 "Number of cells received at the ingress point and passed
+					 on to the circuit." 
+				::= { circuitEntry 53 }
+
+		  circuitInFramesDiscard	OBJECT-TYPE
+				SYNTAX         		Counter64
+				MAX-ACCESS	 			read-only
+				STATUS	 				current
+				DESCRIPTION
+					 "Number of frames received at the ingress point but are 
+					 discarded due to the non-conformance of the contract, i.e.,
+					 it exceeds the traffic contract (BE)." 
+				::= { circuitEntry 54 }
+
+		  circuitInDEFramesDiscard	OBJECT-TYPE
+				SYNTAX         		Counter64
+				MAX-ACCESS	 			read-only
+				STATUS	 				current
+				DESCRIPTION
+					 "Number of frames received at the ingress point but are 
+					 discarded due to the non-conformance of the contract, i.e.,
+					 it exceeds the traffic contract (BE)." 
+				::= { circuitEntry 55 }
+
+		  circuitInOctetsDiscard	OBJECT-TYPE
+				SYNTAX         		Counter64
+				MAX-ACCESS	 			read-only
+				STATUS	 				current
+				DESCRIPTION
+					 "Number of octets received at the ingress point but are 
+					 discarded due to the non-conformance of the contract, i.e.,
+					 it exceeds the traffic contract (BE)."
+				::= { circuitEntry 56 }
+
+		  circuitInDEOctetsDiscard	OBJECT-TYPE
+				SYNTAX         		Counter64
+				MAX-ACCESS	 			read-only
+				STATUS	 				current
+				DESCRIPTION
+					 "Number of octets received at the ingress point but are 
+					 discarded due to the non-conformance of the contract, i.e.,
+					 it exceeds the traffic contract (BE)."
+				::= { circuitEntry 57 }
+
+		  circuitInCLP0CellsDiscard	OBJECT-TYPE
+				SYNTAX         		Counter64
+				MAX-ACCESS	 			read-only
+				STATUS	 				current
+				DESCRIPTION
+					 "Number of octets received at the ingress point but are 
+					 discarded due to the non-conformance of the contract, i.e.,
+					 it exceeds the traffic contract (BE)."
+				::= { circuitEntry 58 }
+
+		  circuitInCLP1CellsDiscard	OBJECT-TYPE
+				SYNTAX         		Counter64
+				MAX-ACCESS	 			read-only
+				STATUS	 				current
+				DESCRIPTION
+					 "Number of octets received at the ingress point but are 
+					 discarded due to the non-conformance of the contract, i.e.,
+					 it exceeds the traffic contract (BE)."
+				::= { circuitEntry 59 }
+
+		  circuitInFramesTagged	OBJECT-TYPE
+				SYNTAX         	Counter64
+				MAX-ACCESS	 		read-only
+				STATUS	 			current
+				DESCRIPTION
+					 "Number of tagged frames received. A tagged frame 
+					 represents non-conforming frames to the contract
+					 (when CIR < frame contract < BE). In these frames,
+					 the DE (Discard Enable) is set. "
+				::= { circuitEntry 60 }
+
+		  circuitInOctetsTagged	OBJECT-TYPE
+				SYNTAX         	Counter64
+				MAX-ACCESS	 		read-only
+				STATUS	 			current
+				DESCRIPTION
+					 "Number of tagged octets received. A tagged octet 
+					 represents non-conforming octet to the contract 
+					 (when CIR < octet contract < BE).In these octets,
+					 the DE (Discard Enable) is set." 
+				::= { circuitEntry 61 }
+
+		  circuitInCLP0CellsTagged	OBJECT-TYPE
+				SYNTAX         	Counter64
+				MAX-ACCESS	 		read-only
+				STATUS	 			current
+				DESCRIPTION
+					 "Number of tagged octets received. A tagged octet 
+					 represents non-conforming octet to the contract 
+					 (when CIR < octet contract < BE).In these octets,
+					 the DE (Discard Enable) is set." 
+				::= { circuitEntry 62 }
+
+		  circuitOutFrames	OBJECT-TYPE
+				SYNTAX         Counter64
+				MAX-ACCESS	 	read-only
+				STATUS	 		current
+				DESCRIPTION
+					 "Number of frames sent out through the circuit." 
+				::= { circuitEntry 63 }
+
+		  circuitOutDEFrames	OBJECT-TYPE
+				SYNTAX         Counter64
+				MAX-ACCESS	 	read-only
+				STATUS	 		current
+				DESCRIPTION
+					 "Number of frames sent out through the circuit." 
+				::= { circuitEntry 64 }
+
+		  circuitOutOctets	OBJECT-TYPE
+				SYNTAX         Counter64
+				MAX-ACCESS	 	read-only
+				STATUS	 		current
+				DESCRIPTION
+					 "Number of octets sent out through the circuit." 
+				::= { circuitEntry 65 }
+
+		  circuitOutDEOctets	OBJECT-TYPE
+				SYNTAX         Counter64
+				MAX-ACCESS	 	read-only
+				STATUS	 		current
+				DESCRIPTION
+					 "Number of octets sent out through the circuit." 
+				::= { circuitEntry 66 }
+
+		  circuitOutCLP0Cells	OBJECT-TYPE
+				SYNTAX      Counter64
+				MAX-ACCESS	read-only
+				STATUS	 	current
+				DESCRIPTION
+					 "Number of cells sent out through the circuit." 
+				::= { circuitEntry 67 }
+
+		  circuitOutCLP1Cells	OBJECT-TYPE
+				SYNTAX      Counter64
+				MAX-ACCESS	read-only
+				STATUS	 	current
+				DESCRIPTION
+					 "Number of cells sent out through the circuit." 
+				::= { circuitEntry 68 }
+
+		  -- DEFINITIONS OF THE CIRCUIT TRAPS
+
+		  circuitInactive TRAP-TYPE
+				ENTERPRISE 	coriolisMibs
+				VARIABLES 	{circuitReasonText}
+				DESCRIPTION
+					 "Indicates that the circuit became inactive and specifies 
+					 the reason for it becoming inactive"
+				::= 24
+
+		  circuitActive 	TRAP-TYPE
+				ENTERPRISE 	coriolisMibs
+				VARIABLES 	{circuitReasonText}
+				DESCRIPTION
+					 "Indicates that the circuit became active"
+				::= 25
+
+		  circuitLoadBalancing 	TRAP-TYPE
+				ENTERPRISE 			coriolisMibs
+				VARIABLES 			{circuitReasonText}
+				DESCRIPTION
+					 "Indicates that the circuit underwent load balancing"
+				::= 26
+
+				END

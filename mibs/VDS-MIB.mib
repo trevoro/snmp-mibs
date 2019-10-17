@@ -1,0 +1,1924 @@
+-- extracted from draft-bierman-rmonmib-vds-mib-01.txt
+-- at Tue Dec  5 10:05:24 2000
+
+VDS-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, experimental
+        FROM SNMPv2-SMI
+    TruthValue, DisplayString, RowStatus, StorageType
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    OwnerString
+        FROM RMON-MIB
+    SmonDataSource
+        FROM SMON-MIB
+    InterfaceIndexOrZero
+        FROM IF-MIB;
+
+vdsMIB MODULE-IDENTITY
+    LAST-UPDATED "200011250000Z"
+    ORGANIZATION "Cisco Systems, Inc."
+    CONTACT-INFO
+            "        Andy Bierman
+                     Cisco Systems Inc.
+                     170 West Tasman Drive
+                     San Jose, CA 95134
+                     +1 408-527-3711
+                     abierman@cisco.com"
+
+    DESCRIPTION
+            "The MIB module for representing Virtual Data Source
+             Extensions to the Remote Monitoring MIB."
+    REVISION        "200011250000Z"
+    DESCRIPTION
+            "Initial Version of the Virtual Data Source MIB."
+    ::= { experimental 1 }  -- no number assigned
+
+
+vdsMIBObjects OBJECT IDENTIFIER ::= { vdsMIB 1 }
+
+vdsControl  OBJECT IDENTIFIER ::= { vdsMIBObjects 1 }
+vdsSelect   OBJECT IDENTIFIER ::= { vdsMIBObjects 2 }
+
+--
+-- scalar identifying packet selection capabilities
+--
+
+vdsSelectCaps  OBJECT-TYPE
+    SYNTAX      BITS {
+                  vlanSelect(0),
+                  vlanMulti(1),
+                  addrSelect(2),
+                  addrMulti(3),
+                  qosSelect(4),
+                  qosMulti(5),
+                  protoSelect(6),
+                  protoMulti(7),
+                  chanSelect(8),
+                  chanMulti(9),
+                  urlSelect(10),
+                  urlMulti(11),
+                  comboSelect(12)
+    }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "An indication of the virtual data source packet selection
+            capabilities of this agent. This object should be set during
+            system initialization, and should remain stable until the
+            next re-initialization of the agent.
+
+            If this agent supports virtual LAN based packet selection,
+            and therefore allows entries to be created in the
+            vdsVlanSelTable, then the 'vlanSelect' BIT will be set.  If
+            this agent allows multiple vdsVlanSelEntries to be
+            configured for a single virtual data source, then the
+            'vlanMulti' BIT will be set.
+
+            If this agent supports network address based packet
+            selection, and therefore allows entries to be created in the
+            vdsAddrSelTable, then the 'addrSelect' BIT will be set.  If
+            this agent allows multiple vdsAddrSelEntries to be
+            configured for a single virtual data source, then the
+            'addrMulti' BIT will be set.
+
+            If this agent supports protocol based packet selection, and
+            therefore allows entries to be created in the
+            vdsProtoSelTable, then the 'protoSelect' BIT will be set.
+            If this agent allows multiple vdsProtoSelEntries to be
+            configured for a single virtual data source, then the
+            'protoMulti' BIT will be set.
+
+            If this agent supports QoS based packet selection, and
+            therefore allows entries to be created in the
+            vdsQosSelTable, then the 'qosSelect' BIT will be set.  If
+            this agent allows multiple vdsQosSelEntries to be configured
+            for a single virtual data source, then the 'qosMulti' BIT
+            will be set.
+
+            If this agent supports channelTable based packet selection,
+            and therefore allows entries to be created in the
+            vdsChanSelTable, then the 'chanSelect' BIT will be set.  If
+            this agent allows multiple vdsChanSelEntries to be
+            configured for a single virtual data source, then the
+            'chanMulti' BIT will be set.
+
+            If this agent supports URL based HTTP packet selection, and
+            therefore allows entries to be created in the
+            vdsUrlSelTable, then the 'urlSelect' BIT will be set.  If
+            this agent allows multiple vdsUrlSelEntries to be configured
+            for a single virtual data source, then the 'urlMulti' BIT
+            will be set.
+
+            If this agent supports combinations of packet selection
+            mechanisms to be used within the same virtual data source,
+            and therefore allows entries to be created in at least two
+            of the vds*SelTables, then the 'comboSelect' BIT will be
+            set."
+    ::= { vdsControl 1 }
+
+--
+-- Virtual Data Source Control Table
+--
+
+vdsControlTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF VdsControlEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "This table contains one row per virtual data source, as
+            configured by NMS application(s). It is used to control the
+            overall configuration of each virtual data source.
+
+            The agent will maintain a proprietary virtual interface, on
+            behalf of each active vdsControlEntry.  All packets which
+            are monitored on the 'parent' interface (identified by the
+            vdsControlParent object) will be classified and processed
+            according to the configuration for each relevant
+            vdsControlEntry and associated vds*SelEntries.
+
+            Each of the selection algorithms produces a boolean result
+            (i.e., 'selected' or 'not selected'), and these results are
+            combined (i.e., logical AND/OR expression) to produce a
+            single boolean result for the packet.
+
+            If a packet is selected, then it will be somehow presented
+            for monitoring on the associated virtual interface
+            maintained by the agent.  Since a virtual interface only
+            exists in the RMON agent, it is expected that the same agent
+            will be supporting an implementation of one or more RMON
+            MIBs, which will allow RMON control table dataSource objects
+            to reference the ifEntry created on behalf of a
+            vdsControlEntry. The implementation details of this
+            'linkage', or any use of this ifEntry other than remote
+            monitoring, is outside the scope of this document.
+
+            Additional entries in the vdsVlanSelTable, vdsAddrSelTable,
+            vdsProtoSelTable, vdsQosSelTable, vdsChanSelTable, and/or
+            vdsUrlSelTable will be required, depending on the
+            configuration of this entry.
+
+            At least one selection mechanism must be configured per
+            vdsControlEntry. The initial state of all packet selection
+            algorithms is 'not selected', therefore a virtual data
+            source will have no effect unless a vds*SelEntry is properly
+            configured (in addition to this entry).
+
+            NMS applications must configure the appropriate
+            vds*SelEntries before activated this control entry, and
+            those vds*SelEntries may not be modified while this entry is
+            active.
+
+            It is an implementation-specific manner as to the complexity
+            and capacity of the entries allowed in this table.  Actual
+            configurations will be constrained by agent functionality
+            and platform resources."
+    ::= { vdsControl 2 }
+
+vdsControlEntry OBJECT-TYPE
+    SYNTAX      VdsControlEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Information about a particular virtual data source."
+    INDEX   { vdsControlIndex }
+    ::= { vdsControlTable 1 }
+
+VdsControlEntry ::= SEQUENCE {
+      vdsControlIndex          Integer32,
+      vdsControlParent         SmonDataSource,
+      vdsControlIfDescr        DisplayString,
+      vdsControlIfName         DisplayString,
+      vdsControlIfAlias        DisplayString,
+      vdsControlVlanSelIndex   Integer32,
+      vdsControlVlanSelNegate  TruthValue,
+      vdsControlAddrSelIndex   Integer32,
+      vdsControlAddrSelNegate  TruthValue,
+      vdsControlProtoSelIndex  Integer32,
+      vdsControlProtoSelNegate TruthValue,
+      vdsControlQosSelIndex    Integer32,
+      vdsControlQosSelNegate   TruthValue,
+      vdsControlChanSelIndex   Integer32,
+      vdsControlUrlSelIndex    Integer32,
+      vdsControlUrlSelNegate   TruthValue,
+      vdsControlExprType       INTEGER,
+      vdsControlIfIndex        InterfaceIndexOrZero,
+      vdsControlOwner          OwnerString,
+      vdsControlStorageType    StorageType,
+      vdsControlStatus         RowStatus
+}
+vdsControlIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique index for this vdsControlEntry."
+    ::= { vdsControlEntry 1 }
+
+vdsControlParent   OBJECT-TYPE
+    SYNTAX      SmonDataSource
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the actual data source to be used as
+            the source of all packets for this virtual data source. A
+            valid dataSourceCapsEntry must be maintained by the agent on
+            behalf of this 'parent' interface.
+
+            If the ifOperStatus for the parent's ifEntry is not equal to
+            'up', then no packets will be available to this virtual data
+            source.
+
+            This object must identify a valid SmonDataSource.  Virtual
+            data sources cannot be represented in the SMON
+            dataSourceCapsTable.  However, the dataSourceRmonCaps object
+            in the dataSourceCapsEntry for this entry can be used to
+            identify most of the attributes that a virtual data source
+            inherits from its parent.  The 'countErrFrames',
+            'countAllGoodFrames', and 'babyGiantsCountAsGood' BITs are
+            all inherited from the parent data source.  The
+            'countAnyRmonTables' BIT is not inherited, as it is assumed
+            to be set for virtual data sources.  An agent is required to
+            support at least one RMON collection type for each virtual
+            data source.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    REFERENCE
+            "Remote Network Monitoring MIB Extensions for Switched
+            Networks, RFC 2613, section 2.3.1, and section 5."
+    ::= { vdsControlEntry 2 }
+
+vdsControlIfDescr  OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..255))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "A textual string describing this virtual data source.  This
+            configured value is used for the value of the ifDescr
+            instance created on behalf of this control entry."
+    ::= { vdsControlEntry 3 }
+
+vdsControlIfName  OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "A textual string naming this virtual data source.  This
+            configured value is used for the value of the ifName
+            instance created on behalf of this control entry."
+    ::= { vdsControlEntry 4 }
+
+vdsControlIfAlias  OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..64))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "A textual string specifying an alias name for this virtual
+            data source.  This configured value is used for the value of
+            the ifAlias instance created on behalf of this control
+            entry."
+    ::= { vdsControlEntry 5 }
+
+vdsControlVlanSelIndex  OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls whether any Virtual LAN traffic
+            selection is performed on behalf of this vdsControlEntry,
+            and is used in conjunction with the vdsControlVlanSelNegate
+            object.
+
+            If this object contains the value zero, then no Virtual LAN
+            based traffic selection is performed on behalf of this
+            vdsControlEntry.  Otherwise, this object identifies one or
+            more rows in the vdsVlanSelTable, (i.e., with the same
+            vdsVlanSelIndex value as identified by this object) which
+            specify the Virtual LANs to select for monitoring, from the
+            parent data source.
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    ::= { vdsControlEntry 6 }
+
+vdsControlVlanSelNegate OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls the boolean sense of the result of the
+            Virtual LAN based packet selection algorithm, and has no
+            effect if the associated vdsControlVlanSelIndex object is
+            equal to zero.
+
+            If a packet that is 'tested' against the selection list
+            (specified by the vdsControlVlanSelIndex) would be selected,
+            and this object equals 'true', then the packet is not
+            selected.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    DEFVAL { false }
+    ::= { vdsControlEntry 7 }
+
+vdsControlAddrSelIndex  OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls whether any network address based
+            traffic selection is performed on behalf of this
+            vdsControlEntry, and is used in conjunction with the
+            vdsControlAddrSelNegate object.
+
+            If this object contains the value zero, then no network
+            address based traffic selection is performed on behalf of
+            this vdsControlEntry.  Otherwise, this object identifies one
+            or more rows in the vdsAddrSelTable, (i.e., with the same
+            vdsAddrSelIndex value as identified by this object) which
+            specify the hosts and/or host-pairs to select for
+            monitoring, from the parent data source.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    ::= { vdsControlEntry 8 }
+
+vdsControlAddrSelNegate OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls the boolean sense of the result of the
+            network address based packet selection algorithm, and has no
+            effect if the associated vdsControlAddrSelIndex object is
+            equal to zero.
+
+            If a packet that is 'tested' against the selection list
+            (specified by the vdsControlAddrSelIndex) would be selected,
+            and this object equals 'true', then the packet is not
+            selected.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    DEFVAL { false }
+    ::= { vdsControlEntry 9 }
+
+vdsControlProtoSelIndex  OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls whether any protocol based traffic
+            selection is performed on behalf of this vdsControlEntry,
+            and is used in conjunction with the vdsControlProtoSelNegate
+            object.
+
+            If this object contains the value zero, then no protocol
+            based traffic selection is performed on behalf of this
+            vdsControlEntry.  Otherwise, this object identifies one or
+            more rows in the vdsProtoSelTable, (i.e., with the same
+            vdsProtoSelIndex value as identified by this object) which
+            specify the protocol encapsulations to select for
+            monitoring, from the parent data source.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    ::= { vdsControlEntry 10 }
+
+vdsControlProtoSelNegate OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls the boolean sense of the result of the
+            protocol based packet selection algorithm, and has no effect
+            if the associated vdsControlProtoSelIndex object is equal to
+            zero.
+
+            If a packet that is 'tested' against the selection list
+            (specified by the vdsControlProtoSelIndex) would be
+            selected, and this object equals 'true', then the packet is
+            not selected.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    DEFVAL { false }
+    ::= { vdsControlEntry 11 }
+
+vdsControlQosSelIndex  OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls whether any quality of service based
+            traffic selection is performed on behalf of this
+            vdsControlEntry, and is used in conjunction with the
+            vdsControlQosSelNegate object.
+
+            If this object contains the value zero, then no quality of
+            service based traffic selection is performed on behalf of
+            this vdsControlEntry.  Otherwise, this object identifies one
+            or more rows in the vdsQosSelTable, (i.e., with the same
+            vdsQosSelIndex value as identified by this object) which
+            specify the QoS classifications to select for monitoring,
+            from the parent data source.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    ::= { vdsControlEntry 12 }
+
+vdsControlQosSelNegate OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls the boolean sense of the result of the
+            quality of service based packet selection algorithm, and has
+            no effect if the associated vdsControlQosSelIndex object is
+            equal to zero.
+
+            If a packet that is 'tested' against the selection list
+            (specified by the vdsControlQosSelIndex) would be selected,
+            and this object equals 'true', then the packet is not
+            selected.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    DEFVAL { false }
+    ::= { vdsControlEntry 13 }
+
+vdsControlChanSelIndex  OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls whether any content (channelTable)
+            based traffic selection is performed on behalf of this
+            vdsControlEntry.
+
+            If this object contains the value zero, then no content
+            based traffic selection is performed on behalf of this
+            vdsControlEntry.  Otherwise, this object identifies one or
+            more rows in the vdsChanSelTable, (i.e., with the same
+            vdsChanSelIndex value as identified by this object) which
+            specify the RMON channels to select for monitoring, from the
+            parent data source.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    ::= { vdsControlEntry 14 }
+
+vdsControlUrlSelIndex  OBJECT-TYPE
+    SYNTAX      Integer32 (0..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls whether any URL based traffic
+            selection is performed on behalf of this vdsControlEntry,
+            and is used in conjunction with the vdsControlUrlSelNegate
+            object.
+            If this object contains the value zero, then no URL based
+            traffic selection is performed on behalf of this
+            vdsControlEntry.  Otherwise, this object identifies one or
+            more rows in the vdsUrlSelTable, (i.e., with the same
+            vdsUrlSelIndex value as identified by this object) which
+            specify the URL classifications to select for monitoring,
+            from the parent data source.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    ::= { vdsControlEntry 15 }
+
+vdsControlUrlSelNegate OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls the boolean sense of the result of the
+            URL based packet selection algorithm, and has no effect if
+            the associated vdsControlUrlSelIndex object is equal to
+            zero.
+
+            If a packet that is 'tested' against the selection list
+            (specified by the vdsControlUrlSelIndex) would be selected,
+            and this object equals 'true', then the packet is not
+            selected.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    DEFVAL { false }
+    ::= { vdsControlEntry 16 }
+
+vdsControlExprType  OBJECT-TYPE
+    SYNTAX      INTEGER   {
+                  union(1),
+                  intersect(2)
+    }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls how the various packet selection
+            mechanisms are combined, on behalf of this vdsControlEntry.
+
+            Each vds*SelTable group configured on behalf of this entry
+            will be evaluated according to the rules specified in each
+            table.
+
+            If combinations of packet selection sources are supported,
+            then this object can be used to control how the boolean
+            results from each selection process are combined.
+
+            If this object contains the value 'union(1)', then the
+            packets contained in this virtual data source are selected
+            by the union of all packet selection mechanisms specified in
+            this entry. I.e., any configured selection mechanism that
+            produces a 'selected' result will cause a packet to be
+            selected for the virtual data source.
+
+            If this object contains the value 'intersect(1)', then the
+            packets contained in this virtual data source are selected
+            by the intersection of all packet selection mechanisms
+            specified in this entry. I.e., all configured selection
+            mechanisms must produce a 'selected' result, for a packet to
+            be selected for the virtual data source.
+
+            This object may not be modified if the associated
+            vdsControlStatus object is equal to active(1)."
+    ::= { vdsControlEntry 17 }
+
+vdsControlIfIndex  OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the virtual interface that has been
+            created on behalf of this vdsControlEntry.
+
+            Unless this entry is activated, this object will contain the
+            value zero.
+
+            Upon row activation, the agent will set this object to the
+            ifIndex value assigned on behalf of this vdsControlEntry.
+            The associated ifEntry (with an ifType of 'propVirtual')
+            will exist in the ifTable as long as this entry is active."
+    ::= { vdsControlEntry 18 }
+
+vdsControlOwner  OBJECT-TYPE
+    SYNTAX      OwnerString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The entity that configured this entry and is therefore
+            using the resources assigned to it."
+    ::= { vdsControlEntry 19 }
+
+vdsControlStorageType  OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The non-volatile storage behavior for this entry."
+    ::= { vdsControlEntry 20 }
+
+vdsControlStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this virtual data source entry.
+
+            An entry may not exist in the active state unless all
+            objects in the entry have an appropriate value.
+
+            If this object is not equal to active(1), any RMON
+            collection data in progress, for which the dataSource object
+            references the ifEntry associated with this virtual data
+            source, and the ifEntry itself, shall be deleted."
+    ::= { vdsControlEntry 21 }
+
+
+--
+-- Virtual LAN Select Table
+--
+
+vdsVlanSelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF VdsVlanSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "This table controls how Virtual LAN based packet selection
+            is performed on behalf of particular vdsControlEntries
+            configured on this agent.
+
+            For each vdsControlEntry that references this table, the
+            vdsControlParent object must specify a data source in the
+            form 'ifIndex.<I>', where 'I' represents an ifIndex value of
+            an interface which supports IEEE 802.1Q VLAN encapsulation.
+
+            VLAN data sources are identified by the IEEE VLAN ID field
+            [DOT1Q].  All packets which belong to the VLAN identified by
+            the vdsVlanSelVID object shall be selected.
+
+            All entries with the same vdsControlVlanSelIndex are
+            evaluated as a group, and an individual packet is selected
+            if the evaluation of any row within the group produces a
+            'selected' result.  There is no evaluation ordering defined
+            for each row within a group, and an agent may choose to stop
+            evaluation after the first 'selected' result.
+
+            It is an implementation-specific manner as to the complexity
+            and capacity of the entries allowed in this table.  Actual
+            configurations will be constrained by agent functionality
+            and platform resources."
+    REFERENCE
+            "Draft Standard for Virtual Bridged Local Area Networks,
+            P802.1Q/D10, chapter 3.13"
+    ::= { vdsSelect 1 }
+
+vdsVlanSelEntry OBJECT-TYPE
+    SYNTAX      VdsVlanSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Information about a particular Virtual LAN based packet
+            selection control entry."
+    INDEX   { vdsVlanSelIndex, vdsVlanSelSubIndex }
+    ::= { vdsVlanSelTable 1 }
+
+VdsVlanSelEntry ::= SEQUENCE {
+      vdsVlanSelIndex         Integer32,
+      vdsVlanSelSubIndex      Integer32,
+      vdsVlanSelVID           Integer32,
+      vdsVlanSelStorageType   StorageType,
+      vdsVlanSelStatus        RowStatus
+}
+
+vdsVlanSelIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique group index for this
+            vdsVlanSelEntry. All entries in this table, for which this
+            object contains the same value, will be evaluated together
+            as a group, on behalf of particular vdsControlEntries."
+    ::= { vdsVlanSelEntry 1 }
+
+vdsVlanSelSubIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique index for this vdsVlanSelEntry.
+            Note that no packet selection algorithm evaluation order is
+            implied by the value of this object."
+    ::= { vdsVlanSelEntry 2 }
+
+vdsVlanSelVID OBJECT-TYPE
+    SYNTAX      Integer32 (1..4094)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The VLAN ID value to be used for packet selection.  Packets
+            determined to belong to the VLAN identified by this object
+            will be included for selection.
+
+            The packets selected are based on the IEEE 802.1Q VLAN-ID
+            (VID), for each good frame attributed to the data source for
+            the collection.
+
+            Tagged packets match the VID for the range between 1 and
+            4094.  An external RMON probe MAY detect VID=0 on an Inter
+            Switch Link, in which case the packet belongs to a VLAN
+            determined by the PVID of the ingress port.
+
+            This object may not be modified if the associated
+            vdsVlanSelStatus object is equal to active(1)."
+    ::= { vdsVlanSelEntry 3 }
+
+vdsVlanSelStorageType  OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The non-volatile storage behavior for this entry."
+    ::= { vdsVlanSelEntry 4 }
+
+vdsVlanSelStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this Virtual LAN selection entry.
+
+            An entry may not exist in the active state unless all
+            objects in the entry have an appropriate value.
+
+            This object may not be modified while any vdsControlEntry
+            that references this entry is active."
+    ::= { vdsVlanSelEntry 5 }
+
+
+--
+-- Network Address Select Table
+--
+
+vdsAddrSelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF VdsAddrSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "This table controls how network address based packet
+            selection is performed on behalf of particular
+            vdsControlEntries configured on this agent.
+
+            Packet selection can be based on a single host address, or a
+            host-address pair, and is determined only by the Source and
+            Destination addresses found in each packet, not by the
+            'packet direction' on the network.  One address or address-
+            pair is specified in each vdsAddrSelEntry.
+
+            All entries with the same vdsControlAddrSelIndex are
+            evaluated as a group, and an individual packet is selected
+            if the evaluation of any row within the group produces a
+            'selected' result.  There is no evaluation ordering defined
+            for each row within a group, and an agent may choose to stop
+            evaluation after the first 'selected' result.
+
+            It is an implementation-specific manner as to the complexity
+            and capacity of the entries allowed in this table.  Actual
+            configurations will be constrained by agent functionality
+            and platform resources."
+    ::= { vdsSelect 2 }
+
+vdsAddrSelEntry OBJECT-TYPE
+    SYNTAX      VdsAddrSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Information about a particular address based packet
+            selection control entry."
+    INDEX   { vdsAddrSelIndex, vdsAddrSelSubIndex }
+    ::= { vdsAddrSelTable 1 }
+
+VdsAddrSelEntry ::= SEQUENCE {
+      vdsAddrSelIndex         Integer32,
+      vdsAddrSelSubIndex      Integer32,
+      vdsAddrSelType          INTEGER,
+      vdsAddrSelNetProtoID    OCTET STRING,
+      vdsAddrSelNetProtoParms OCTET STRING,
+      vdsAddrSelHost1Addr     OCTET STRING,
+      vdsAddrSelHost1Mask     OCTET STRING,
+      vdsAddrSelHost2Addr     OCTET STRING,
+      vdsAddrSelHost2Mask     OCTET STRING,
+      vdsAddrSelStorageType   StorageType,
+      vdsAddrSelStatus        RowStatus
+}
+
+vdsAddrSelIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique group index for this
+            vdsAddrSelEntry. All entries in this table, for which this
+            object contains the same value, will be evaluated together
+            as a group, on behalf of particular vdsControlEntries."
+    ::= { vdsAddrSelEntry 1 }
+
+vdsAddrSelSubIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique index for this vdsAddrSelEntry.
+            Note that no packet selection algorithm evaluation order is
+            implied by the value of this object."
+    ::= { vdsAddrSelEntry 2 }
+
+vdsAddrSelType OBJECT-TYPE
+    SYNTAX      INTEGER   {
+                     host(1),
+                     conversation(2)
+    }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls the way vdsAddrSelEntries are
+            evaluated, for packet selection purposes.
+
+            If this object has a value of 'host(1)', then this entry
+            selects all packets addressed to or from 'host1', and only
+            the vdsAddrSelHost1 and vdsAddrSelHost1Mask objects are used
+            in this packet selection process. Refer to the description
+            clauses for these objects for details on the packet
+            selection algorithm.
+
+            If this object has a value of 'conversation(2)', then this
+            entry selects all packets addressed from 'host1' to 'host2',
+            and all packets addressed from 'host2' to 'host1'.  The
+            vdsAddrSelHost1, vdsAddrSelHost1Mask, vdsAddrSelHost2 and
+            vdsAddrSelHost2Mask objects are used in the packet selection
+            process.  Refer to the description clauses for these objects
+            for details on the packet selection algorithm.
+
+            This object may not be modified if the associated
+            vdsAddrSelStatus object is equal to active(1)."
+    ::= { vdsAddrSelEntry 3 }
+
+vdsAddrSelNetProtoID OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object is used in conjunction with the
+            vdsAddrSelNetProtoParms object to specify the
+            protocolDirEntry which identifies the network layer protocol
+            used in this entry.  Only packets which contain a network
+            layer protocol which matches the protocol identified by this
+            entry will be considered in the address based packet
+            selection algorithms defined in this table.
+
+            If an 'exact' encapsulation of a network protocol is
+            specified, (e.g., a specific base layer encapsulation is
+            present instead of a 'wild-card' base layer, or a tunneled
+            network encapsulation is present) then only packets which
+            match the same encapsulation (i.e., same protocols up to and
+            including the last protocol layer specified in this entry)
+            will be considered in the address based packet selection
+            algorithms defined in this table.
+
+            The associated vdsAddrSelHost1, vdsAddrSelHostMask,
+            vdsAddrSelHost2, and vdsAddrSelHost2Mask objects will be
+            interpreted according to the value of this object and the
+            associated vdsAddrSelNetProtoParms object.
+
+            This object may not be modified if the associated
+            vdsAddrSelStatus object is equal to active(1)."
+    ::= { vdsAddrSelEntry 4 }
+
+vdsAddrSelNetProtoParms OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object is used in conjunction with the
+            vdsAddrSelNetProtoID object to specify the protocolDirEntry
+            which identifies the network layer protocol used in this
+            entry.
+
+            The associated vdsAddrSelHost1, vdsAddrSelHostMask,
+            vdsAddrSelHost2, and vdsAddrSelHost2Mask objects will be
+            interpreted according to the value of this object and the
+            associated vdsAddrSelNetProtoID object.
+
+            Refer to the vdsAddrSelNetProtoID description clause for
+            more details pertaining to this object.
+
+            This object may not be modified if the associated
+            vdsAddrSelStatus object is equal to active(1)."
+    ::= { vdsAddrSelEntry 5 }
+
+vdsAddrSelHost1Addr OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies a network address to be used as a
+            parameter in the address based packet selection process. It
+            must be a well-formed address according to the encoding
+            rules defined for the network protocol for this entry
+            (identified by the vdsAddrSelNetProtoID and
+            vdsAddrSelNetProtoParms objects).
+
+            For each examined packet which matches the network type
+            (according to the algorithm defined in the
+            vdsAddrSelNetProtoID object):
+
+               1) 'Bitwise AND' each octet of this object with
+                  each octet of the associated vdsAddrSelHost1Mask
+                  value. Note that the result of this step is
+                  a constant value, and may be used for all relevant
+                  packets, rather than re-computing this value each
+                  time a packet is processed.
+               2) 'Bitwise AND' each octet of the network source
+                  address in the packet with each octet of the
+                  associated vdsAddrSelHost1Mask value
+               3) Compare the results of step (1) and step (2);
+                  if equal, the packet is selected;
+                  otherwise continue to step (4)
+               4) 'Bitwise AND' each octet of the network
+                  destination address in the packet with each
+                  octet of the associated vdsAddrSelHost1Mask value
+               5) Compare the results of step (1) and step (4);
+                  if equal, the packet is selected, otherwise it is
+                  not selected.
+
+            This object may not be modified if the associated
+            vdsAddrSelStatus object is equal to active(1)."
+    ::= { vdsAddrSelEntry 7 }
+
+vdsAddrSelHost1Mask OBJECT-TYPE
+    SYNTAX     OCTET STRING
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+            "This object identifies a mask that may be applied during
+            network address packet selection. It is used differently,
+            depending on the value of the associated vdsAddrSelType
+            object.
+            It must be a well-formed address mask, according to the
+            encoding rules defined for the network protocol for this
+            entry (identified by the vdsAddrSelNetProtoID and
+            vdsAddrSelNetProtoParms objects).
+
+            If this object is smaller in length than the
+            vdsAddrSelHost1Addr object, then this object shall be
+            conceptually extended with 'one' bits.  If this object is
+            larger in length than the vdsAddrSelHost1Addr object, then
+            the extra bits in this object shall be ignored during packet
+            processing on behalf of this entry.
+
+            Refer to the vdsAddrSelHost1Addr description clause for more
+            details pertaining to this object.
+
+            This object may not be modified if the associated
+            vdsAddrSelStatus object is equal to active(1)."
+    ::= { vdsAddrSelEntry 8 }
+
+vdsAddrSelHost2Addr OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies a network address to be used as a
+            parameter in the address based packet selection process.
+
+            If the associated vdsAddrSelType object is equal to
+            'host(1)', then this object is ignored by the agent.
+
+            Otherwise, this object must identify a well-formed address
+            according to the encoding rules defined for the network
+            protocol for this entry (identified by the
+            vdsAddrSelNetProtoID and vdsAddrSelNetProtoParms objects),
+            and the following algorithm is used to select packets on
+            behalf of this entry:
+
+            For each examined packet which matches the network type
+            (according to the algorithm defined in the
+            vdsAddrSelNetProtoID object):
+
+               1) 'Bitwise AND' each octet of the vdsAddrSelHost1Addr
+                  object with each octet of the associated
+                  vdsAddrSelHost1Mask value. Note that the result of
+                  this step is a constant value, and may be used for
+                  all relevant packets, rather than re-computing this
+                  value each time a packet is processed.
+               2) 'Bitwise AND' this each octet of object object with
+                  each octet of the associated vdsAddrSelHost2Mask
+                  value.  Note that the result of this step is a
+                  constant value, and may be used for all relevant
+                  packets, rather than re-computing this value each
+                  time a packet is processed.
+               3) 'Bitwise AND' each octet of the network source
+                  address in the packet with each octet of the
+                  associated vdsAddrSelHost1Mask value
+               4) 'Bitwise AND' the each octet of the network
+                  destination address in the packet with each octet
+                  of the associated vdsAddrSelHost2Mask value
+               5) (Check if host1 is sending to host2)
+                  Compare the results of step (1) and step (3);
+                  Compare the results of step (2) and step (4);
+                  If the results of step (1) equals the results of
+                  step (3), and the results of step (2) equals the
+                  results of step (4), then the packet is selected;
+                  Otherwise continue to step (6)
+               6) (Check if host2 is sending to host1)
+                  Compare the results of step (1) and step (4);
+                  Compare the results of step (2) and step (3);
+                  If the results of step (1) equals the results of
+                  step (4), and the results of step (2) equals the
+                  results of step (3), then the packet is selected;
+                  Otherwise the packet is not selected.
+
+            This object may not be modified if the associated
+            vdsAddrSelStatus object is equal to active(1)."
+
+    ::= { vdsAddrSelEntry 9 }
+
+vdsAddrSelHost2Mask OBJECT-TYPE
+    SYNTAX     OCTET STRING
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+            "This object identifies a mask that may be applied during
+            network address packet selection.
+
+            If the associated vdsAddrSelType object is equal to
+            'host(1)', then this object is ignored by the agent.
+            Otherwise, this object must identify a well-formed address
+            mask, according to the encoding rules defined for the
+            network protocol for this entry (identified by the
+            vdsAddrSelNetProtoID and vdsAddrSelNetProtoParms objects),
+            and the algorithm defined in the vdsAddrSelHost2Addr object
+            is used to select packets on behalf of this entry.
+
+            If this object is smaller in length than the
+            vdsAddrSelHost2Addr object, then this object shall be
+            conceptually extended with 'one' bits.  If this object is
+            larger in length than the vdsAddrSelHost2Addr object, then
+            the extra bits in this object shall be ignored during packet
+            processing on behalf of this entry.
+
+            Refer to the vdsAddrSelHost2Addr description clause for more
+            details pertaining to this object.
+
+            This object may not be modified if the associated
+            vdsAddrSelStatus object is equal to active(1)."
+    ::= { vdsAddrSelEntry 10 }
+
+vdsAddrSelStorageType  OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The non-volatile storage behavior for this entry."
+    ::= { vdsAddrSelEntry 11 }
+
+vdsAddrSelStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this address based packet selection entry.
+
+            An entry may not exist in the active state unless all
+            objects in the entry have an appropriate value.
+
+            This object may not be modified while any vdsControlEntry
+            that references this entry is active."
+    ::= { vdsAddrSelEntry 12 }
+
+
+--
+-- Protocol Select Table
+--
+
+vdsProtoSelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF VdsProtoSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "This table controls how protocol based packet selection is
+            performed on behalf of particular vdsControlEntries
+            configured on this agent.
+
+            A packet is selected if its protocol encapsulations match
+            all of those specified by the vdsProtoSelID and
+            vdsProtoSelParms objects in this entry.  Note that the
+            specified encapsulation may identify an internal protocol or
+            a leaf (application) protocol, and the base layer may
+            contain wild-card or exact encapsulations.
+
+            All entries with the same vdsControlProtoSelIndex are
+            evaluated as a group, and an individual packet is selected
+            if the evaluation of any row within the group produces a
+            'selected' result.  There is no evaluation ordering defined
+            for each row within a group, and an agent may choose to stop
+            evaluation after the first 'selected' result.
+
+            It is an implementation-specific manner as to the complexity
+            and capacity of the entries allowed in this table.  Actual
+            configurations will be constrained by agent functionality
+            and platform resources."
+    REFERENCE
+            "Remote Network Monitoring Management Information Base
+            Version 2 using SMIv2, RFC 2021, section 6."
+    ::= { vdsSelect 3 }
+
+vdsProtoSelEntry OBJECT-TYPE
+    SYNTAX      VdsProtoSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Information about a particular protocol based packet
+            selection control entry."
+    INDEX   { vdsProtoSelIndex, vdsProtoSelSubIndex }
+    ::= { vdsProtoSelTable 1 }
+
+VdsProtoSelEntry ::= SEQUENCE {
+      vdsProtoSelIndex         Integer32,
+      vdsProtoSelSubIndex      Integer32,
+      vdsProtoSelID            OCTET STRING,
+      vdsProtoSelParms         OCTET STRING,
+      vdsProtoSelStorageType   StorageType,
+      vdsProtoSelStatus        RowStatus
+}
+
+vdsProtoSelIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique group index for this
+            vdsProtoSelEntry. All entries in this table, for which this
+            object contains the same value, will be evaluated together
+            as a group, on behalf of particular vdsControlEntries."
+    ::= { vdsProtoSelEntry 1 }
+
+vdsProtoSelSubIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique index for this vdsProtoSelEntry.
+            Note that no packet selection algorithm evaluation order is
+            implied by the value of this object."
+    ::= { vdsProtoSelEntry 2 }
+
+vdsProtoSelID OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the protocolDirID portion of the
+            index value which identifies the protocol encapsulation used
+            in this entry.  It is used in conjunction with the
+            vdsProtoSelParms object to specify the protocolDirEntry
+            associated with this entry.
+
+            Packets which match all the protocol encapsulations
+            identified by this entry are selected for processing, on
+            behalf of a particular vdsControlEntry.
+            Only the protocol layers identified by this entry are
+            compared, even if additional protocol layers are present in
+            the packet.
+
+            This object may not be modified if the associated
+            vdsProtoSelStatus object is equal to active(1)."
+    ::= { vdsProtoSelEntry 3 }
+
+vdsProtoSelParms OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the protocolDirParameters portion of
+            the index value which identifies the protocol encapsulation
+            used in this entry.  It is used in conjunction with the
+            vdsProtoSelID object to specify the protocolDirEntry
+            associated with this entry.
+
+            Refer to the vdsProtoSelID description clause for more
+            details pertaining to this object.
+
+            This object may not be modified if the associated
+            vdsProtoSelStatus object is equal to active(1)."
+    ::= { vdsProtoSelEntry 4 }
+
+vdsProtoSelStorageType  OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The non-volatile storage behavior for this entry."
+    ::= { vdsProtoSelEntry 5 }
+
+vdsProtoSelStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this protocol based packet selection entry.
+
+            An entry may not exist in the active state unless all
+            objects in the entry have an appropriate value.
+
+            This object may not be modified while any vdsControlEntry
+            that references this entry is active."
+    ::= { vdsProtoSelEntry 6 }
+
+--
+-- Quality of Service Packet Select Table
+--
+
+vdsQosSelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF VdsQosSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "This table controls how Quality of Service based packet
+            selection is performed on behalf of particular
+            vdsControlEntries configured on this agent.
+
+            QoS data sources are identified by the type of QoS
+            classification mechanism, and particular QoS classification
+            values.  All packets which match the configured QoS
+            classifications are selected.
+
+            Packet selection can be based on the following types of QoS:
+
+              - DIFFSERV CodePoint (DSCP)
+              - IEEE 802.1p user_priority field
+
+            All entries with the same vdsControlQosSelIndex are
+            evaluated as a group, and an individual packet is selected
+            if the evaluation of any row within the group produces a
+            'selected' result.  There is no evaluation ordering defined
+            for each row within a group, and an agent may choose to stop
+            evaluation after the first 'selected' result.
+
+            It is an implementation-specific manner as to the complexity
+            and capacity of the entries allowed in this table.  Actual
+            configurations will be constrained by agent functionality
+            and platform resources."
+    ::= { vdsSelect 4 }
+
+vdsQosSelEntry OBJECT-TYPE
+    SYNTAX      VdsQosSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Information about a particular QoS based packet selection
+            control entry."
+    INDEX   { vdsQosSelIndex, vdsQosSelSubIndex }
+    ::= { vdsQosSelTable 1 }
+
+VdsQosSelEntry ::= SEQUENCE {
+      vdsQosSelIndex         Integer32,
+      vdsQosSelSubIndex      Integer32,
+      vdsQosSelType          INTEGER,
+      vdsQosSelValue         Integer32,
+      vdsQosSelStorageType   StorageType,
+      vdsQosSelStatus        RowStatus
+}
+
+vdsQosSelIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique group index for this
+            vdsQosSelEntry. All entries in this table, for which this
+            object contains the same value, will be evaluated together
+            as a group, on behalf of particular vdsControlEntries."
+    ::= { vdsQosSelEntry 1 }
+
+vdsQosSelSubIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique index for this vdsQosSelEntry.
+            Note that no packet selection algorithm evaluation order is
+            implied by the value of this object."
+    ::= { vdsQosSelEntry 2 }
+
+vdsQosSelType OBJECT-TYPE
+    SYNTAX      INTEGER   {
+                     ipPrecedence(1),
+                     dscp(2),
+                     dot1qPrio(3)
+    }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object controls the way vdsQosSelEntries are
+            evaluated, for packet selection purposes.
+            If this object has a value of 'ipPrecedence(1)', then this
+            entry selects all packets with the same IP header Precedence
+            field value.
+
+            If this object has a value of 'dscp(2)', then this entry
+            selects all IPv4 and IPv6 packets with the same DIFFSERV
+            CodePoint value as that specified in the associated
+            vdsQosSelValue object.
+
+            If this object has a value of 'dot1qPrio(3)', then this
+            entry selects all IEEE 802.1Q VLAN based packets with the
+            same 'user_priority' value as that specified in the
+            associated vdsQosSelValue object.
+
+            This object may not be modified if the associated
+            vdsQosSelStatus object is equal to active(1)."
+    ::= { vdsQosSelEntry 3 }
+
+vdsQosSelValue OBJECT-TYPE
+    SYNTAX      Integer32 (0..63)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object contains the numeric comparison value to be
+            used in the QoS based packet selection algorithm on behalf
+            of this entry.
+
+            If the associated vdsQosSelType object has a value of
+            'ipPrecedence(1)', then this object must contain a value in
+            the range of '0' to '7'.
+
+            If the associated vdsQosSelType object has a value of
+            'dscp(2)', then this object must contain a value in the
+            range of '0' to '63'.
+
+            If the associated vdsQosSelType object has a value of
+            'dot1qPrio(3)', then this object must contain a value in the
+            range of '0' to '7'.
+
+            All packets which match the QoS classification type
+            identified in the associated vdsQoSSelType object, and the
+            QoS classification value identified by this object are
+            selected.
+
+            This object may not be modified if the associated
+            vdsQosSelStatus object is equal to active(1)."
+    ::= { vdsQosSelEntry 4 }
+
+vdsQosSelStorageType OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The non-volatile storage behavior for this entry."
+    ::= { vdsQosSelEntry 5 }
+
+vdsQosSelStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this QoS based packet selection entry.
+
+            An entry may not exist in the active state unless all
+            objects in the entry have an appropriate value.
+
+            This object may not be modified while any vdsControlEntry
+            that references this entry is active."
+    ::= { vdsQosSelEntry 6 }
+
+--
+-- ChannelTable Based Packet Select Table
+--
+
+vdsChanSelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF VdsChanSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "This table controls how channelTable based packet selection
+            is performed on behalf of particular vdsControlEntries
+            configured on this agent.
+
+            All packets which would be accepted by an RMON channel and
+            (potentially) processed by one or more bufferEntries, (i.e.,
+            the output of the channel function, after the
+            channelAcceptType is applied) are selected for processing.
+            Note that the channelIfIndex object in the specified
+            channelEntry must identify the same interface as indicated
+            by the vdsControlParent object in vdsControlEntries which
+            reference this table.  An agent will ignore entries in this
+            table during the selection process, unless this condition is
+            true.
+
+            All entries with the same vdsControlChanSelIndex are
+            evaluated as a group, and an individual packet is selected
+            if the evaluation of any row within the group produces a
+            'selected' result.  There is no evaluation ordering defined
+            for each row within a group, and an agent may choose to stop
+            evaluation after the first 'selected' result.
+
+            It is an implementation-specific manner as to the complexity
+            and capacity of the entries allowed in this table.  Actual
+            configurations will be constrained by agent functionality
+            and platform resources."
+    REFERENCE
+            "Remote Network Monitoring Management Information Base, STD
+            59, RFC 2819, section 5."
+    ::= { vdsSelect 5 }
+
+vdsChanSelEntry OBJECT-TYPE
+    SYNTAX      VdsChanSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Information about a particular channelTable based packet
+            selection control entry."
+    INDEX   { vdsChanSelIndex, vdsChanSelSubIndex }
+    ::= { vdsChanSelTable 1 }
+
+VdsChanSelEntry ::= SEQUENCE {
+      vdsChanSelIndex        Integer32,
+      vdsChanSelSubIndex     Integer32,
+      vdsChanSelChanIdx      Integer32,
+      vdsChanSelStorageType  StorageType,
+      vdsChanSelStatus       RowStatus
+}
+
+vdsChanSelIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique group index for this
+            vdsChanSelEntry. All entries in this table, for which this
+            object contains the same value, will be evaluated together
+            as a group, on behalf of particular vdsControlEntries."
+    ::= { vdsChanSelEntry 1 }
+
+vdsChanSelSubIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique index for this vdsChanSelEntry.
+            Note that no packet selection algorithm evaluation order is
+            implied by the value of this object."
+    ::= { vdsChanSelEntry 2 }
+
+vdsChanSelChanIdx OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the channelIndex value associated
+            with the channelEntry to use on behalf of this entry.
+
+            If this object does not reference a valid and active
+            channelEntry, then this entry is ignored in the packet
+            selection algorithm.  Otherwise, the packets selected by the
+            identified channelEntry are selected by this entry.
+
+            This object may not be modified if the associated
+            vdsChanSelStatus object is equal to active(1)."
+    ::= { vdsChanSelEntry 3 }
+
+vdsChanSelStorageType  OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The non-volatile storage behavior for this entry."
+    ::= { vdsChanSelEntry 4 }
+
+
+vdsChanSelStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this channelTable based packet selection
+            entry.
+
+            An entry may not exist in the active state unless all
+            objects in the entry have an appropriate value.
+
+            This object may not be modified while any vdsControlEntry
+            that references this entry is active."
+    ::= { vdsChanSelEntry 5 }
+
+
+--
+-- URL Based Packet Select Table
+--
+
+vdsUrlSelTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF VdsUrlSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "This table controls how URL based packet selection is
+            performed on behalf of particular vdsControlEntries
+            configured on this agent.
+
+            All packets which match some encapsulation of HTTP are
+            considered for selection. The agent must be capable of
+            associating the URL that identifies some amount of HTTP
+            based content, to individual packets on a network.  If a
+            packet is part of the content associated with a URL that
+            matches any of the 'URL strings' within a group (defined
+            below), then it is selected.
+
+            All entries with the same vdsControlUrlSelIndex are
+            evaluated as a group, and an individual packet is selected
+            if the evaluation of any row within the group produces a
+            'selected' result.  There is no evaluation ordering defined
+            for each row within a group, and an agent may choose to stop
+            evaluation after the first 'selected' result.
+
+            It is an implementation-specific manner as to the complexity
+            and capacity of the entries allowed in this table.  Actual
+            configurations will be constrained by agent functionality
+            and platform resources."
+    ::= { vdsSelect 6 }
+
+vdsUrlSelEntry OBJECT-TYPE
+    SYNTAX      VdsUrlSelEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "Information about a particular URL based packet selection
+            control entry."
+    INDEX   { vdsUrlSelIndex, vdsUrlSelSubIndex }
+    ::= { vdsUrlSelTable 1 }
+
+VdsUrlSelEntry ::= SEQUENCE {
+      vdsUrlSelIndex         Integer32,
+      vdsUrlSelSubIndex      Integer32,
+      vdsUrlSelString        OCTET STRING,
+      vdsUrlSelMatchFields   BITS,
+      vdsUrlSelPathMatchType INTEGER,
+      vdsUrlSelStorageType   StorageType,
+      vdsUrlSelStatus        RowStatus
+}
+
+vdsUrlSelIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique group index for this
+            vdsUrlSelEntry. All entries in this table, for which this
+            object contains the same value, will be evaluated together
+            as a group, on behalf of particular vdsControlEntries."
+    ::= { vdsUrlSelEntry 1 }
+
+vdsUrlSelSubIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An arbitrary and unique index for this vdsUrlSelEntry.
+            Note that no packet selection algorithm evaluation order is
+            implied by the value of this object."
+    ::= { vdsUrlSelEntry 2 }
+
+vdsUrlSelString OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE (1..2048))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the URL to match against HTTP
+            packets, to use on behalf of this entry.
+
+            A packet is selected if the URL string value associated with
+            the packet matches this entry.  The match algorithm is
+            specified by and the associated vdsUrlSelMatchFields and
+            vdsUrlSelPathMatchType objects.
+
+            This object may not be modified if the associated
+            vdsUrlSelStatus object is equal to active(1)."
+    ::= { vdsUrlSelEntry 3 }
+
+vdsUrlSelMatchFields OBJECT-TYPE
+    SYNTAX      BITS {
+                  urlScheme(0),
+                  urlUser(1),
+                  urlPasswd(2),
+                  urlHost(3),
+                  urlPort(4),
+                  urlPath(5),
+                  urlQueryString(6)
+
+    }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "This object identifies the individual URL fields which
+            should be considered in the pattern match algorithm executed
+            on behalf of this entry.  It is used with the associated
+            vdsUrlSelString and vdsUrlSelPathMatchType objects to select
+            particular HTTP packets for processing on behalf of each
+            relevant virtual data source.
+
+            If the URL 'scheme' field (e.g., http, https, ftp) should be
+            considered in the URL match algorithm for this entry, then
+            the 'urlScheme' bit should be set in this mask.  This bit
+            has no affect if the URL scheme field is not present in the
+            associated vdsUrlSelString.
+
+            If the URL 'user' field (e.g., joe) should be considered in
+            the URL match algorithm for this entry, then the 'urlUser'
+            bit should be set in this mask.  This bit has no affect if
+            the URL user field is not present in the associated
+            vdsUrlSelString.
+            If the URL 'password' field (e.g., bonelesschickenranch)
+            should be considered in the URL match algorithm for this
+            entry, then the 'urlPasswd' bit should be set in this mask.
+            This bit has no affect if the URL password field is not
+            present in the associated vdsUrlSelString.
+
+            If the URL 'host' field (e.g., acme.com) should be
+            considered in the URL match algorithm for this entry, then
+            the 'urlHost' bit should be set in this mask.  This bit has
+            no affect if the URL host field is not present in the
+            associated vdsUrlSelString.
+
+            If the URL 'port' field (e.g., :443 or :8080) should be
+            considered in the URL match algorithm for this entry, then
+            the 'urlPort' bit should be set in this mask.  This bit has
+            no affect if the URL port field is not present in the
+            associated vdsUrlSelString.
+
+            If the URL 'path' field (e.g., /, /sales/reports/, or
+            /sales/reports/jun2000/index.html) should be considered in
+            the URL match algorithm for this entry, then the 'urlPath'
+            bit should be set in this mask.  This bit has no affect if
+            the URL path field is not present in the associated
+            vdsUrlSelString.
+
+            If the URL 'query-string' field, which is considered to be
+            all characters after the question mark ('?')  character to
+            indicate the start of the optional query string field (e.g.
+            'partno=104' or 'fname=john&lname=doe') should be considered
+            in the URL match algorithm for this entry, then the
+            'urlQueryString' bit should be set in this mask.  This bit
+            has no affect if the URL query string field is not present
+            in the associated vdsUrlSelString.
+
+            This object may not be modified if the associated
+            vdsUrlSelStatus object is equal to active(1)."
+    REFERENCE
+            "Uniform Resource Identifiers, RFC 1738, section 3."
+    ::= { vdsUrlSelEntry 4 }
+
+vdsUrlSelPathMatchType  OBJECT-TYPE
+    SYNTAX      INTEGER  {
+                   urlPrefixMatch(1),
+                   urlExactMatch(2)
+                }
+
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The type of URL path field string match algorithm that
+            should be performed on behalf of this entry. This object has
+            no affect if the 'urlPath(5)' bit is not set in the
+            associated vdsUrlSelMatchFields object.
+
+            If this object is equal to 'urlPrefixMatch(1)', then the
+            associated vdsUrlString object may contain a partial URL
+            path field.  The first 'N' characters of the URL path field
+            associated with each packet must exactly match all
+            characters of the URL path field in the associated
+            vdsUrlSelString object (i.e., 'N' equals the length of the
+            URL path field in the vdsUrlSelString object).
+
+            If this object is equal to 'urlExactMatch(2)', then the
+            associated vdsUrlString object must contain a complete URL
+            path field.  All of the characters of the URL path field
+            associated with each packet must exactly match the all
+            characters of the URL path field in the associated
+            vdsUrlSelString object.
+
+            This object may not be modified if the associated
+            vdsUrlSelStatus object is equal to active(1)."
+    ::= { vdsUrlSelEntry 5 }
+
+vdsUrlSelStorageType  OBJECT-TYPE
+    SYNTAX      StorageType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The non-volatile storage behavior for this entry."
+    ::= { vdsUrlSelEntry 6 }
+
+vdsUrlSelStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The status of this URL based packet selection entry.
+
+            An entry may not exist in the active state unless all
+            objects in the entry have an appropriate value.
+            This object may not be modified while any vdsControlEntry
+            that references this entry is active."
+    ::= { vdsUrlSelEntry 7 }
+
+
+-- placeholder
+vdsNotifications OBJECT IDENTIFIER ::= { vdsMIB 2 }
+
+-- conformance information
+vdsConformance OBJECT IDENTIFIER ::= { vdsMIB 3 }
+
+vdsCompliances OBJECT IDENTIFIER ::= { vdsConformance 1 }
+vdsGroups      OBJECT IDENTIFIER ::= { vdsConformance 2 }
+
+
+-- compliance statements
+vdsCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+            "The compliance statement for SNMP entities which implement
+            version 1 of the Virtual Data Source MIB."
+    MODULE  -- this module
+        MANDATORY-GROUPS {
+            vdsControlGroup
+        }
+        GROUP vdsVlanSelectGroup
+        DESCRIPTION
+            "This group is mandatory for agents which support Virtual
+            LAN based packet selection."
+        GROUP vdsAddrSelectGroup
+        DESCRIPTION
+            "This group is mandatory for agents which support network
+            address based packet selection."
+        GROUP vdsProtoSelectGroup
+        DESCRIPTION
+            "This group is mandatory for agents which support protocol
+            based packet selection."
+        GROUP vdsQosSelectGroup
+        DESCRIPTION
+            "This group is mandatory for agents which support quality of
+            service based packet selection."
+        GROUP vdsChanSelectGroup
+        DESCRIPTION
+            "This group is mandatory for agents which implement content
+            (channelTable) based packet selection."
+
+        GROUP vdsUrlSelectGroup
+        DESCRIPTION
+            "This group is mandatory for agents which implement URL
+            based (HTTP) packet selection."
+        OBJECT vdsControlVlanSelIndex
+        MIN-ACCESS read-only
+        DESCRIPTION
+            "Write access is required if Virtual LAN based packet
+            selection is supported."
+        OBJECT vdsControlAddrSelIndex
+        MIN-ACCESS read-only
+        DESCRIPTION
+            "Write access is required if network address based packet
+            selection is supported."
+        OBJECT vdsControlProtoSelIndex
+        MIN-ACCESS read-only
+        DESCRIPTION
+            "Write access is required if protocol based packet selection
+            is supported."
+        OBJECT vdsControlQosSelIndex
+        MIN-ACCESS read-only
+        DESCRIPTION
+            "Write access is required if quality of service based packet
+            selection is supported."
+        OBJECT vdsControlChanSelIndex
+        MIN-ACCESS read-only
+        DESCRIPTION
+            "Write access is required if content (channelTable) based
+            packet selection is supported."
+        OBJECT vdsControlUrlSelIndex
+        MIN-ACCESS read-only
+        DESCRIPTION
+            "Write access is required if URL based HTTP packet selection
+            is supported."
+    ::= { vdsCompliances 1 }
+
+
+-- MIB groupings
+vdsControlGroup    OBJECT-GROUP
+    OBJECTS {
+              vdsSelectCaps,
+              vdsControlParent,
+              vdsControlIfDescr,
+              vdsControlIfName,
+              vdsControlIfAlias,
+              vdsControlVlanSelIndex,
+              vdsControlVlanSelNegate,
+              vdsControlAddrSelIndex,
+              vdsControlAddrSelNegate,
+              vdsControlProtoSelIndex,
+              vdsControlProtoSelNegate,
+              vdsControlQosSelIndex,
+              vdsControlQosSelNegate,
+              vdsControlChanSelIndex,
+              vdsControlUrlSelIndex,
+              vdsControlUrlSelNegate,
+              vdsControlExprType,
+              vdsControlIfIndex,
+              vdsControlOwner,
+              vdsControlStorageType,
+              vdsControlStatus
+            }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent
+            Virtual Data Source common configuration support, for which
+            a single agent provides management information."
+    ::= { vdsGroups 1 }
+
+vdsVlanSelectGroup    OBJECT-GROUP
+    OBJECTS {
+              vdsVlanSelVID,
+              vdsVlanSelStatus
+            }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent
+            Virtual LAN based packet selection support, for which a
+            single agent provides management information."
+    ::= { vdsGroups 2 }
+
+vdsAddrSelectGroup    OBJECT-GROUP
+    OBJECTS {
+              vdsAddrSelType,
+              vdsAddrSelNetProtoID,
+              vdsAddrSelNetProtoParms,
+              vdsAddrSelHost1Addr,
+              vdsAddrSelHost1Mask,
+              vdsAddrSelHost2Addr,
+              vdsAddrSelHost2Mask,
+              vdsAddrSelStorageType,
+              vdsAddrSelStatus
+            }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent
+            Address based packet selection support, for which a single
+            agent provides management information."
+    ::= { vdsGroups 3 }
+
+vdsProtoSelectGroup    OBJECT-GROUP
+    OBJECTS {
+             vdsProtoSelID,
+             vdsProtoSelParms,
+             vdsProtoSelStorageType,
+             vdsProtoSelStatus
+            }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent
+            protocol based packet selection support, for which a single
+            agent provides management information."
+    ::= { vdsGroups 4 }
+
+vdsQosSelectGroup    OBJECT-GROUP
+    OBJECTS {
+              vdsQosSelType,
+              vdsQosSelValue,
+              vdsQosSelStorageType,
+              vdsQosSelStatus
+            }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent
+            quality of service based packet selection support, for which
+            a single agent provides management information."
+    ::= { vdsGroups 5 }
+
+vdsChanSelectGroup    OBJECT-GROUP
+    OBJECTS {
+              vdsChanSelChanIdx,
+              vdsChanSelStorageType,
+              vdsChanSelStatus
+            }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent
+            channelTable based packet selection support, for which a
+            single agent provides management information."
+    ::= { vdsGroups 6 }
+
+vdsUrlSelectGroup    OBJECT-GROUP
+    OBJECTS {
+              vdsUrlSelString,
+              vdsUrlSelMatchFields,
+              vdsUrlSelPathMatchType,
+              vdsUrlSelStorageType,
+              vdsUrlSelStatus
+            }
+    STATUS  current
+    DESCRIPTION
+            "The collection of objects which are used to represent URL
+            based packet selection support, for which a single agent
+            provides management information."
+    ::= { vdsGroups 7 }
+
+END
+
+-- 
+-- Copyright (C) The Internet Society (2000).  All Rights Reserved.
+-- 
+-- This document and translations of it may be copied and furnished to
+-- others, and derivative works that comment on or otherwise explain it or
+-- assist in its implementation may be prepared, copied, published and
+-- distributed, in whole or in part, without restriction of any kind,
+-- provided that the above copyright notice and this paragraph are included
+-- on all such copies and derivative works.  However, this document itself
+-- may not be modified in any way, such as by removing the copyright notice
+-- or references to the Internet Society or other Internet organizations,
+-- except as needed for the purpose of developing Internet standards in
+-- which case the procedures for copyrights defined in the Internet
+-- Standards process must be followed, or as required to translate it into
+-- languages other than English.
+-- 
+-- The limited permissions granted above are perpetual and will not be
+-- revoked by the Internet Society or its successors or assigns.
+-- 
+-- This document and the information contained herein is provided on an "AS
+-- IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING TASK
+-- FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+-- LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION HEREIN WILL NOT
+-- INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF MERCHANTABILITY OR
+-- FITNESS FOR A PARTICULAR PURPOSE.
+

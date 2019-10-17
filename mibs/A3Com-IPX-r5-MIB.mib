@@ -1,0 +1,1486 @@
+
+-- Copyright 1995 by 3Com Corporation.  All rights reserved.
+-- MIB file name:  a3Com-ipx
+-- available in these 3Com devices:  NETBuilder bridge/routers
+-- For support or more info, check 3Com's web page at http://www.3com.com
+
+--
+--
+-- This MIB is for 3Com intermediate systems that support IPX
+--
+-- The 3Com Enterprise Products Proprietary MIB Extensions
+--
+-- Copyright 3Com Corporation, 1993. All rights reserved.
+--
+-- changes FOR software release 7.0 (r2 of MIB):
+-- 20-oct-93: kxy added support for IPX WAN (incremental update) feature  
+-- 13-dec-93: kxy deprecated a3ipxRipControlMapOpt
+-- 20-dec-93: ehk returned a3ipxRipControlMapOpt
+--
+-- changes for software release 7.1 (r3 of MIB):
+-- 01-apr-94: kxy added a3ipxPreferredSvrTable
+--
+--
+--
+-- changes for software release 8.0 (r4 of MIB):
+-- 20-may-94: kxy changed a3ipxSmdsGaAddress such that
+--            all zeros is returned if no SMDS address has
+--            been assigned.
+-- 22-may-94: kxy updated mib to conform to ipx_changes.
+--            Specifically:  o ipx*Control objects were made port specific
+--                           o ipxRipControl was split into talk ctl and 
+--                             listen ctl
+--                           o control over Sap talk and listen was added
+--                           o control over x25 queue size, VC limit and 
+--                             VC timer was removed.
+-- 24-may-94: dch : a3ipxRipUpdateTime and a3ipxSapUpdateTime to be 
+--		    port-specific. deprecated a3ipxUpdateTime.
+--
+-- 25-may-94: kxy now, a3ipxRouteTable only displays the primary
+--            routes.  Also, when routes are added, it will accept only 
+--            primary routes.
+--
+-- 07-jul-94: kgo : to support IPX DOD spoofing, added new table,
+--		    a3ipxSpoofCtlTable (a3ComIPX 11) and its component 
+--		    objects.
+--
+-- 07-jul-94: dch : moved IpxWan/NoIpxWan to be under -ipx CONTrol,
+--		    instead of -nrip CONTrol, add HoldTimeMultiplier
+--		    under -nrip and -sap.
+--		    
+-- 29-jul-94: dch : added a3ipxX25configProfId for -IPX X25PROFileid
+--		    also rename a3ipxRipHoldTimeMultiple to
+--		    a3ipxRipHoldTimeFactor and a3ipxSapHoldTimeMultiple
+-- 		    to a3ipxSapHoldTimeFactor
+-- 10-nov-94: dch : a3ipxRipHoldTimeFactor and a3ipxSapHoldTimeFactor
+--		    now have range (1..24) and default 3.
+--
+-- changes for software release 8.2 (r5 of MIB):
+-- 20-mar-95: kxy:  Added a3ipxDefMetricHops and a3ipxDefMetricTicks to 
+--                  a3ipxPortconfigTable.  This is needed to support the 
+--                  IPX Default Route feature. Also added a3ipxRipCtl and
+--                  a3ipxSapCtl, and deprecated a3ipxSapCtlTalk, 
+--                  a3ipxSapCtlListen, a3ipxRipCtlTalk, and 
+--                  a3ipxRipCtlListen
+--		    
+
+       A3Com-IPX-r5-MIB DEFINITIONS ::= BEGIN
+
+       IMPORTS
+               enterprises
+                   FROM RFC1155-SMI
+               PhysAddress, DisplayString
+                   FROM RFC1213-MIB
+               MacAddress
+                   FROM RFC1286-MIB
+               OBJECT-TYPE
+                   FROM RFC-1212;
+
+        --
+        -- This MIB is for 3Com products that implement IPX routing
+        --
+
+        a3Com         OBJECT IDENTIFIER ::= { enterprises 43 }
+        brouterMIB    OBJECT IDENTIFIER ::= { a3Com 2 }
+        a3ComIPX      OBJECT IDENTIFIER ::= { brouterMIB 7 }
+
+        SMDSAddress ::= OCTET STRING (SIZE (8))
+        -- the 60-bit SMDS address, preceded by 4 bits with the
+        -- following values:
+        -- "1100" when representing an individual address
+        -- "1110" when representing a group address
+
+        RowStatus ::= INTEGER {
+                         active(1),
+                         notInService(2),
+                         notReady(3),                             
+                         createAndGo(4),
+                         createAndWait(5),
+                         destroy(6)
+        }
+  
+        --This data type, which has the same semantics as the RowStatus
+        --textual convention used in SNMPv2, is used to add and 
+        --delete entries from a table.
+        --
+        --The tables in this MIB allow a subset of the functionality
+        --provided by the RowStatus textual convention.  In particular
+        --row creation is allowed using only the createAndGo method.
+        --
+        --That is, when adding entries to this table, this object
+        --must be set to createAndGo(4).  The instance identifier
+        --for this object will define the values of the columns 
+        --that make up the index.  
+        --
+        --In the same PDU, the appropriate remaining columns
+        --of that row must be set as well.  The agent
+        --will immediately set the value of this object to
+        --active(1) if the row is correct.  If not, the agent
+        --will refuse the SET request and return an
+        --error code.
+        --
+        --To modify an existing entry, it must be removed
+        --and another entry with the desired changes added. 
+        --                   
+        --To remove an entry, set the value of this object
+        --to destroy(6).
+
+
+
+        --
+        -- The first group in the MIB is for general, non 
+        -- port-specific IPX related objects
+        --
+        a3ipxGeneral  OBJECT IDENTIFIER ::= { a3ComIPX 1 }
+        a3ipxControl  OBJECT IDENTIFIER ::= { a3ipxGeneral 7 }
+
+        --
+        -- IPX Network Number
+        --
+    
+        IPXNET ::= OCTET STRING (SIZE(4))
+
+
+
+        a3ipxRouteControl OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                "If this object is set to enabled(1), then IPX routing
+                 is enabled.  If this object is set to disabled(2),
+                 then IPX routing is disabled.  Note, if this is disabled(2),
+                 then RIP is disabled as well (for all Ports).
+
+                 If this is set to disabled(2), then all dynamic routing
+                 entries will be removed.  All entries in the server
+                 table will be removed as well.
+
+                 NOTE: for NETBuilders running sw version 8.0 and greater,
+                 this object is no longer supported.  a3ipxControlTable
+                 has replaced its functionality."
+            DEFVAL { disabled }
+        ::= { a3ipxGeneral 1 }
+                  
+        a3ipxWanBcastControl OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                "If this object is enabled(1), then the IPX router
+                 makes copies of all received WAN broadcast packets 
+                 and forwards them to all ports other than the one
+                 on which that packet was received.
+
+                 NOTE: for NETBuilders running sw version 8.0 and greater,
+                 this object is no longer supported.  a3ipxControlTable
+                 has replaced its functionality."
+            DEFVAL { enabled }
+        ::= { a3ipxGeneral 2 }
+
+        a3ipxUpdateTime OBJECT-TYPE
+            SYNTAX INTEGER (10..65535)
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                "This parameter specifies how often the router sends both
+                 RIP and SAP regular updates to exhange routing and service
+                 information.  This parameter is defined in units of seconds.
+
+                 NOTE: for NETBuilders running sw version 8.0 and greater,
+                 this object is no longer supported.  a3ipxRipUpdateTime
+                 and a3ipxSapUpdateTime have replaced its functionality."
+            DEFVAL { 60 }
+        ::= { a3ipxGeneral 3 }
+
+        a3ipxFlushRipSap OBJECT-TYPE
+            SYNTAX  INTEGER  {
+                    other (1),
+                    rip   (2),
+                    sap   (3),
+                    both  (4)
+            } 
+            ACCESS  read-write
+            STATUS  mandatory
+            DESCRIPTION
+                "This object is used to remove dynamic routing and
+                or sap entries quickly and efficiently.  Setting this 
+                object to rip (2) causes all dynamically entered routes 
+                to be removed from a3ipxRouteTable.
+
+                If this object is set to sap (3), all dynamicaly learned 
+                sap entries will be removed from a3ipxServerTable.  
+
+                If this object is set to both (4), all dynamic entries 
+                will be removed from both the routing table (a3ipxRouteTable)
+                and the sap table (a3ipxServerTable).
+                
+                If a GET REQUEST is received for this object, other (1) 
+                will be returned.  Setting this object to other (1) will have
+                no effect on any routing or sap entries."
+        ::= { a3ipxGeneral 4 }
+
+        a3ipxInternalNet OBJECT-TYPE
+            SYNTAX IPXNET
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "This object represents the router's internal network
+                number.  This is used during IPX WAN negotiation and is
+                the basis on which the MASTER/SLAVE selection is made.
+                The router with the lowest internal network number 
+                becomes the SLAVE of the link."
+        ::= { a3ipxGeneral 5 }
+
+        a3ipxRouterName OBJECT-TYPE
+            SYNTAX DisplayString (SIZE(0..48))
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "This object specifies the router's symbolic name and
+                is used during IPX WAN negotiations to build RIP/SAP
+                Information Request/Response packets."
+        ::= { a3ipxGeneral 6 }
+
+--
+-- This table specifies port specific 'control' oriented IPX parameters
+--
+
+        a3ipxControlTable OBJECT-TYPE
+            SYNTAX SEQUENCE OF A3ipxControlEntry
+            ACCESS not-accessible
+            STATUS mandatory
+            DESCRIPTION
+                "A list of port-specific IPX control parmeters.
+                This table is used currently to control ipx routing, 
+                WAN broadcasts, and WAN checksums."
+            ::= { a3ipxControl 1 }
+
+        a3ipxControlEntry OBJECT-TYPE
+            SYNTAX A3ipxControlEntry
+            ACCESS not-accessible
+            STATUS mandatory
+            DESCRIPTION
+                "Each entry in this table applies control over
+                a seperate port."
+            INDEX { a3ipxControlPort }
+            ::= { a3ipxControlTable 1 }
+
+        A3ipxControlEntry ::=
+            SEQUENCE {
+                a3ipxControlPort      INTEGER,
+                a3ipxControlRoute     INTEGER,
+                a3ipxControlWanBcast  INTEGER,
+                a3ipxControlChecksum  INTEGER,
+                a3ipxControlWanOpt    INTEGER
+            }
+
+        a3ipxControlPort OBJECT-TYPE
+            SYNTAX INTEGER
+            ACCESS read-only
+            STATUS mandatory
+            DESCRIPTION
+                "The IPX port to which this entry applies."
+        ::= { a3ipxControlEntry 1 }
+
+        a3ipxControlRoute OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "If this object is set to enabled(1), then IPX routing
+                 is enabled.  If this object is set to disabled(2),
+                 then IPX routing is disabled.  Note, if this is disabled(2),
+                 then RIP is disabled as well (for this Port).
+
+                 If this is set to disabled(2), then all dynamic routing
+                 entries will be removed.  All entries in the server
+                 table will be removed as well."
+            DEFVAL { disabled }
+        ::= { a3ipxControlEntry 2 }
+
+        a3ipxControlWanBcast OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "If this object is enabled(1), then the IPX router
+                 makes copies of all received WAN broadcast packets
+                 and forwards them to all ports other than the one
+                 on which that packet was received."
+            DEFVAL { enabled }
+        ::= { a3ipxControlEntry 3 }
+
+        a3ipxControlChecksum OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "If this object is set to enabled(1), Checksum will be
+                 generated and checked on IPX packet over WAN."
+            DEFVAL { disabled }
+        ::= { a3ipxControlEntry 4 }
+
+        a3ipxControlWanOpt OBJECT-TYPE
+            SYNTAX INTEGER {
+                wan  (1),
+                noWan(2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                 "This object is used to enable or disable the IPX WAN 
+                 feature on a specific port.  IPX WAN is the protocol
+                 Novell IPX uses to exchange necessary router to
+                 router information prior to exchanging IPX RIP and
+                 SAP information over various WAN links.  If this object
+                 has the value wan(1), the feature is enabled.  Otherwise
+                 it is disabled.  This object applies only to WAN ports.
+                 For software release 7.0, only ports supporting PPP offer
+                 this feature."
+            DEFVAL { noWan } 
+        ::= { a3ipxControlEntry 5 }
+
+
+--
+-- This next table controls RIP-IPX parameters
+--
+
+        a3ipxRipControlTable OBJECT-TYPE
+            SYNTAX SEQUENCE OF A3ipxRipControlEntry
+            ACCESS not-accessible
+            STATUS mandatory
+            DESCRIPTION
+                "A list of RIP Control parameter entries"
+        ::= { a3ComIPX 2 }
+
+        a3ipxRipControlEntry OBJECT-TYPE
+            SYNTAX A3ipxRipControlEntry
+            ACCESS not-accessible
+            STATUS mandatory
+            DESCRIPTION
+                "A list of parameters that determin how IPX updates
+                 its routing table." 
+            INDEX { a3ipxRipControlPort }
+        ::= { a3ipxRipControlTable 1 }
+
+        A3ipxRipControlEntry ::=
+            SEQUENCE {
+                a3ipxRipControlPort    INTEGER,
+                a3ipxRipControlSwitch  INTEGER, 
+                a3ipxRipControlTrigger INTEGER,
+                a3ipxRipControlPoison  INTEGER,
+                a3ipxRipControlMapOpt  INTEGER,
+                a3ipxRipControlWanOpt  INTEGER,
+                a3ipxRipControlPerRip  INTEGER,
+                a3ipxRipControlPerSap  INTEGER,
+                a3ipxRipControlTalk    INTEGER,
+                a3ipxRipControlListen  INTEGER,
+                a3ipxSapControlTalk    INTEGER,
+                a3ipxSapControlListen  INTEGER,
+		a3ipxRipCtl            INTEGER,
+		a3ipxSapCtl            INTEGER
+            }
+
+        a3ipxRipControlPort OBJECT-TYPE
+            SYNTAX INTEGER
+            ACCESS read-only
+            STATUS mandatory
+            DESCRIPTION
+                "The IPX port to which this entry applies."
+        ::= { a3ipxRipControlEntry 1 }
+
+        a3ipxRipControlSwitch OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                "If this object is set to enabled(1), IPX RIP exchanges 
+                 RIP information with its neighbors and maintains the
+                 routing table dynamically.  If this object is set to
+                 disabled(2), dynamic learning is stopped and no
+                 RIP updates are generated.
+
+                 NOTE: this object is no longer supported by NETBuilders
+                 running sw version 8.0 and greater.  The objects
+                 a3ipxRipControlTalk, a3ipxRipControlListen, 
+                 a3ipxSapControlTalk, and a3ipxSapControlListen have
+                 replaced this object's functionality."
+            DEFVAL { enabled }
+        ::= { a3ipxRipControlEntry 2 }
+
+        a3ipxRipControlTrigger OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "If this object is set to enabled(1), triggered
+                 responses are sent when the network topology changes,
+                 allowing the network to calculate potentially better
+                 routes.  If this object is disabled(2), topology
+                 change responses are not sent immediately, but are 
+                 included in the regular updates."
+            DEFVAL { enabled }
+        ::= { a3ipxRipControlEntry 3 }
+            
+        a3ipxRipControlPoison OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "If this object is set to enabled(1), Split Horizon with
+                 Poison Reverse is performed.  If this object is set to
+                 disabled(2), the router omits routes learned from one
+                 neighbor in regular updates sent to that neighbor."
+            DEFVAL { disabled }
+        ::= { a3ipxRipControlEntry 4 }
+
+        a3ipxRipControlMapOpt OBJECT-TYPE
+            SYNTAX INTEGER {
+                oldNbrMap(1),
+                newNbrMap(2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "X.25 addresses and Frame Relay DLCIs can be mapped in
+                 two different ways: by using IPX network numbers
+                 as previously implemented (OldNbrMap) or by using the
+                 Ethernet address of the remote NETBuilder currently 
+                 implemented (NewNbrMap).  This option is set to 
+                 NewNbrMap by default, but OldNbrMap should be selected
+                 to interoperate with a neighbor running earlier than
+                 5.0 bridge/router software." 
+            DEFVAL { newNbrMap }
+        ::= { a3ipxRipControlEntry 5 }
+
+        a3ipxRipControlWanOpt OBJECT-TYPE
+            SYNTAX INTEGER {
+                wan  (1),
+                noWan(2)
+            }
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                 "This object is used to enable or disable the IPX WAN 
+                 feature on a specific port.  IPX WAN is the protocol
+                 Novell IPX uses to exchange necessary router to
+                 router information prior to exchanging IPX RIP and
+                 SAP information over various WAN links.  If this object
+                 has the value wan(1), the feature is enabled.  Otherwise
+                 it is disabled.  This object applies only to WAN ports.
+                 For software release 7.0, only ports supporting PPP offer
+                 this feature."
+            DEFVAL { noWan } 
+        ::= { a3ipxRipControlEntry 6 }
+
+        a3ipxRipControlPerRip OBJECT-TYPE
+            SYNTAX INTEGER {
+                periodicRip    (1),
+                nonPeriodicRip (2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                 "This object is used to specify how this router
+                 generates IPX RIP updates.  If this object is set
+                 to periodicRip(1), the router will generate RIP
+                 updates periodically.  If this object is set to
+                 nonPeriodicRip(2), the router will generate
+                 incremental updates.  When selecting this option,
+                 make sure that all participating routers use
+                 the same option."
+            DEFVAL { periodicRip } 
+        ::= { a3ipxRipControlEntry 7 }
+
+        a3ipxRipControlPerSap OBJECT-TYPE
+            SYNTAX INTEGER {
+                periodicSap    (1),
+                nonPeriodicSap (2)
+            }
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                 "This object is used to specify how this router
+                 generates IPX SAP updates.  If this object is set
+                 to periodicSap(1), the router will generate SAP
+                 updates periodically.  If this object is set to
+                 nonPeriodicSap(2), the router will generate
+                 incremental updates.  When selecting this option,
+                 make sure that all participating routers use
+                 the same option."
+            DEFVAL{ periodicSap } 
+        ::= { a3ipxRipControlEntry 8 }
+
+        a3ipxRipControlTalk OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                "This object controls the transmission of IPX RIP
+                updates on this port.  If enabled, IPX RIP updates
+                are sent.  If disabled, they are not sent."
+            DEFVAL { enabled }
+        ::= { a3ipxRipControlEntry 9 }
+
+        a3ipxRipControlListen OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                "This object determines if IPX RIP updates are accepted
+                 over this port.  If this object is enabled(1), then the 
+                 IPX router listens to the incoming RIP updates.
+                 If this object is set to disabled(2), then the IPX
+                 router does not listen for IPX RIP updates."
+            DEFVAL { enabled }
+        ::= { a3ipxRipControlEntry 10 }
+
+        a3ipxSapControlTalk OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                "This object controls the transmission of IPX SAP
+                updates on this port.  If enabled, IPX SAP updates
+                are sent.  If disabled, they are not sent."
+            DEFVAL { enabled }
+        ::= { a3ipxRipControlEntry 11 }
+
+        a3ipxSapControlListen OBJECT-TYPE
+            SYNTAX INTEGER {
+                enabled(1),
+                disabled(2)
+            }
+            ACCESS read-write
+            STATUS deprecated
+            DESCRIPTION
+                "This object determines if IPX SAP updates are accepted
+                 over this port.  If this object is enabled(1), then the 
+                 IPX router listens to the incoming SAP updates.
+                 If this object is set to disabled(2), then the IPX
+                 router does not listen for IPX SAP updates."
+            DEFVAL { enabled }
+        ::= { a3ipxRipControlEntry 12 }
+
+        a3ipxRipCtl OBJECT-TYPE
+            SYNTAX INTEGER {
+		talkListen (1),
+		talkNoListen (2),
+		noTalkListen (3),
+		noTalkNoListen (4),
+		auto           (5)
+	    }
+	    ACCESS read-write
+	    STATUS mandatory
+	    DESCRIPTION
+		""
+        ::= { a3ipxRipControlEntry 13 }
+
+        a3ipxSapCtl OBJECT-TYPE
+            SYNTAX INTEGER {
+		talkListen (1),
+		talkNoListen (2),
+		noTalkListen (3),
+		noTalkNoListen (4),
+		auto           (5)
+	    }
+	    ACCESS read-write
+	    STATUS mandatory
+	    DESCRIPTION
+		""
+        ::= { a3ipxRipControlEntry 14 }
+
+      
+
+--
+-- This next table contains a list of IPX addresses that
+-- are reachable across a wide area network
+--
+
+          a3ipxWaAddrTable OBJECT-TYPE
+              SYNTAX SEQUENCE OF A3ipxWaAddrEntry
+              ACCESS not-accessible
+              STATUS mandatory
+              DESCRIPTION
+                  "A list of IPX entities reachable across a
+                  wide area network."
+          ::= { a3ComIPX 3 }
+
+          a3ipxWaAddrEntry OBJECT-TYPE
+              SYNTAX A3ipxWaAddrEntry
+              ACCESS not-accessible
+              STATUS mandatory
+              DESCRIPTION
+                  "Each entry contains the WAN Address of an IPX 
+                  entity.  Each entry also contains the IPX port
+                  over which the entity can be reached."
+              INDEX { a3ipxWaAddrEthAddress }
+          ::= { a3ipxWaAddrTable 1 }
+
+          A3ipxWaAddrEntry ::= SEQUENCE {
+              a3ipxWaAddrEthAddress    MacAddress,
+              a3ipxWaAddrPort          INTEGER,
+              a3ipxWaAddrDLType        INTEGER,
+              a3ipxWaAddrDLAddress     PhysAddress,
+              a3ipxWaAddrStatus        RowStatus
+          }
+
+          a3ipxWaAddrEthAddress OBJECT-TYPE
+              SYNTAX MacAddress
+              ACCESS read-only
+              STATUS mandatory
+              DESCRIPTION
+                  "The Ethernet address (IPX Node ID) of a remote IPX entity."
+          ::= { a3ipxWaAddrEntry 1 }
+
+          a3ipxWaAddrPort OBJECT-TYPE
+              SYNTAX INTEGER
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The IPX port through which the IPX entity identified 
+                  by a3ipxWaAddrEthAddress can be reached."
+          ::= { a3ipxWaAddrEntry 2 }
+
+          a3ipxWaAddrDLType OBJECT-TYPE
+              SYNTAX INTEGER {
+                   x25        (1),
+                   frameRelay (2),
+                   smds       (3)
+              }
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The type of address that is returned by 
+                   a3ipxWaAddrDLAddress."
+          ::= { a3ipxWaAddrEntry 3 }
+                   
+          a3ipxWaAddrDLAddress OBJECT-TYPE
+              SYNTAX PhysAddress
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The WAN address that is used to reach the IPX entity 
+                   corresponding to this table entry."
+          ::= { a3ipxWaAddrEntry 4 }
+
+          a3ipxWaAddrStatus OBJECT-TYPE
+              SYNTAX RowStatus
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                   "This object is used to add and delete entries
+                   in this table.  See the notes describing
+                   RowStatus at the beginning of this MIB."
+          ::= { a3ipxWaAddrEntry 5 } 
+
+--
+-- This next table lists the IPX networks attached to an IPX port
+--
+
+          a3ipxAttachedNetTable OBJECT-TYPE
+              SYNTAX SEQUENCE OF A3ipxAttachedNetEntry
+              ACCESS not-accessible
+              STATUS mandatory
+              DESCRIPTION
+                  "A list of the IPX Network Numbers attached to an IPX port."
+          ::= { a3ComIPX 4 }
+
+          a3ipxAttachedNetEntry OBJECT-TYPE
+              SYNTAX A3ipxAttachedNetEntry
+              ACCESS not-accessible
+              STATUS mandatory
+              DESCRIPTION
+                  "Each entry specifies an IPX network number, assigns
+                   it to a port, and specifies the header format to
+                   be used when sending IPX packets to that network.
+                   On Ethernet ports, up to four different IPX Network
+                   Numbers may be specified, of which only one may be
+                   primary.  On serial ports, only one IPX Network Number
+                   may be configured.  The header format assigned to a
+                   serial port is irrelevant.  The header format is
+                   determined, instead, by the owner of the port (X25, ppp,
+                   etc.)
+
+                   If an attached network number is removed, the server
+                   entries that are reachable through that network
+                   will be removed.  All routing entries that are 
+                   reachable through that network are removed as well."
+              INDEX { a3ipxAttachedNetNumber }
+          ::= { a3ipxAttachedNetTable 1 }
+ 
+          A3ipxAttachedNetEntry ::= SEQUENCE {
+              a3ipxAttachedNetNumber   IPXNET,
+              a3ipxAttachedNetPort     INTEGER,
+              a3ipxAttachedNetFormat   INTEGER,
+              a3ipxAttachedNetType     INTEGER,
+              a3ipxAttachedNetOperState INTEGER,
+              a3ipxAttachedNetStatus   RowStatus
+          }
+
+          a3ipxAttachedNetNumber OBJECT-TYPE
+              SYNTAX IPXNET
+              ACCESS read-only
+              STATUS mandatory
+              DESCRIPTION
+                  "The IPX Network Number associated with this table entry."
+          ::= { a3ipxAttachedNetEntry 1 }
+
+          a3ipxAttachedNetPort OBJECT-TYPE
+              SYNTAX INTEGER
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The port to which the IPX Network Number is assigned."
+          ::= { a3ipxAttachedNetEntry 2 }
+
+          a3ipxAttachedNetFormat OBJECT-TYPE
+              SYNTAX INTEGER {
+                   ethernet (1),
+                   ieee     (2),
+                   llc      (3),
+                   snap     (4),
+                   ppp      (5),
+                   x25      (6),
+                   fr       (7),
+                   smds     (8)
+              }
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The format of the header used on packets sent to the
+                   IPX Network Number associated with this table entry.
+
+                   This object can be set to 1, 2, 3, or 4 when adding
+                   an entry for a LAN interface.  For WAN interfaces,
+                   this object must be set to 5, 6, 7, or 8."
+          ::= { a3ipxAttachedNetEntry 3 } 
+
+          a3ipxAttachedNetType OBJECT-TYPE
+              SYNTAX INTEGER {
+                   primary(1),
+                   secondary(2)
+              }
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "When more than one IPX Network Number is assigned to a
+                   port, one must be labeled the primary number and the
+                   rest secondary."
+          ::= { a3ipxAttachedNetEntry 4 }
+
+          a3ipxAttachedNetOperState OBJECT-TYPE
+              SYNTAX INTEGER {
+                   up   (1),
+                   down (2)
+              }
+              ACCESS read-only
+              STATUS mandatory
+              DESCRIPTION
+                  "This identifies the current operational
+                  state of an attached IPX network."
+          ::= { a3ipxAttachedNetEntry 5 }
+
+          a3ipxAttachedNetStatus OBJECT-TYPE
+              SYNTAX RowStatus
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                   "This object is used to add and delete entries
+                   in this table.  See the notes describing
+                   RowStatus at the beginning of this MIB."
+          ::= { a3ipxAttachedNetEntry 6 } 
+
+
+--
+-- This table contains a list of IPX routes
+--
+          a3ipxRouteTable OBJECT-TYPE
+              SYNTAX SEQUENCE OF A3ipxRouteEntry
+              ACCESS not-accessible
+              STATUS mandatory
+              DESCRIPTION
+                  "A list of IPX routes"
+          ::= { a3ComIPX 5 }
+
+          a3ipxRouteEntry OBJECT-TYPE
+              SYNTAX A3ipxRouteEntry
+              ACCESS not-accessible
+              STATUS mandatory
+              DESCRIPTION
+                  "Each entry specifies an IPX route.  The destination
+                   of the route is specified by a3ipxRouteDestNet.  The
+                   next hop of the route is specified by a3ipxRouteAttachedNet 
+                   and a3ipxRouteDLAddress.  Note, IPX routing must be
+                   enabled before routes are exposed via this table."
+              INDEX { a3ipxRouteDestNet, a3ipxRouteType }
+          ::= { a3ipxRouteTable 1 }
+
+          A3ipxRouteEntry ::= SEQUENCE {
+              a3ipxRouteDestNet        IPXNET,
+              a3ipxRouteAttachedNet    IPXNET,
+              a3ipxRouteDLType         INTEGER,
+              a3ipxRouteDLAddress      PhysAddress,
+              a3ipxRouteHops           INTEGER,
+              a3ipxRouteType           INTEGER,
+              a3ipxRouteProto          INTEGER,
+              a3ipxRouteDelay          INTEGER,
+              a3ipxRouteStatus         RowStatus 
+          }
+
+          a3ipxRouteDestNet OBJECT-TYPE
+              SYNTAX IPXNET
+              ACCESS read-only
+              STATUS mandatory
+              DESCRIPTION
+                  "The IPX network number of the destination network.
+                  The value 0xfffffffe is used to represent the
+                  default route."
+          ::= { a3ipxRouteEntry 1 }
+
+          a3ipxRouteAttachedNet OBJECT-TYPE
+              SYNTAX IPXNET
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The network number of the directly connected network
+                   through which the router can reach the destination
+                   network."
+          ::= { a3ipxRouteEntry 2 }
+
+          a3ipxRouteDLType OBJECT-TYPE
+              SYNTAX INTEGER {
+                     ethernet      (1),
+                     x25           (2),
+                     frameRelay    (3),
+                     smds          (4)
+              }
+              ACCESS read-only
+              STATUS mandatory
+              DESCRIPTION
+                  "The type of network to which the closest router is 
+                  attached.  This value is determined by the value of 
+                  a3ipxRouteAttachedNet."
+          ::= { a3ipxRouteEntry 3 }
+ 
+          a3ipxRouteDLAddress OBJECT-TYPE
+              SYNTAX PhysAddress
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The Data Link address of the next hop router through which
+                   the IPX network can be reached.  The type of address is
+                   determined by the value of a3ipxRouteDLType." 
+          ::= { a3ipxRouteEntry 4 }
+
+          a3ipxRouteHops OBJECT-TYPE
+              SYNTAX INTEGER (1..15)
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The number of gateways that a packet has to pass through
+                   before reaching the destination network.  The maximum
+                   number of hops is 15."
+          ::= { a3ipxRouteEntry 5 }
+ 
+          a3ipxRouteType OBJECT-TYPE
+              SYNTAX INTEGER {
+                     primary (1),
+                     secondary (2)
+              }
+              ACCESS read-only
+              STATUS mandatory
+              DESCRIPTION
+                  "The IPX Router allows up to two routes (ie, two separate
+                  next hop routers) to a specific destination network,
+                  only one of which will be the primary route.  The
+                  determination of which is primary and which is secondary
+                  is based on the speed of the physical port used to
+                  reach the next hop routers.  If these are equal, the
+                  number of hops is used to make this determination.
+
+                  NOTE: NETBuilders running sw version 8.0 and greater
+                  will only display primary routes, and when routes are
+                  being added, only primary routes will be accepted."
+          ::= { a3ipxRouteEntry 6 }
+
+          a3ipxRouteProto OBJECT-TYPE
+              SYNTAX INTEGER {
+                        other   (1),
+                        static  (2), -- static route
+                        rip     (3)  -- dynamic route, learned via RIP
+              }
+              ACCESS read-only
+              STATUS mandatory
+              DESCRIPTION
+                  "This object specifies how the entry was made."
+          ::= { a3ipxRouteEntry 7 }
+
+          a3ipxRouteDelay  OBJECT-TYPE
+              SYNTAX INTEGER
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The delay associated with the route."
+          ::= { a3ipxRouteEntry 8 }
+
+          a3ipxRouteStatus OBJECT-TYPE
+               SYNTAX RowStatus
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "This object is used to add and delete entries
+                   in this table.  See the notes describing
+                   RowStatus at the beginning of this MIB.  Note,
+                   only statically learned routes may be removed
+                   via this object.  Dynamically learned routes
+                   may be removed via the object a3ipxFlushRipSap."
+          ::= { a3ipxRouteEntry 9 }
+
+
+--
+-- This next table has a list of reachable servers
+--
+	  a3ipxServerTable OBJECT-TYPE
+              SYNTAX SEQUENCE OF A3ipxServerEntry
+              ACCESS not-accessible
+              STATUS mandatory
+              DESCRIPTION
+                  "A list of servers reachable via this router"
+          ::= { a3ComIPX 6 }
+
+          a3ipxServerEntry OBJECT-TYPE
+              SYNTAX A3ipxServerEntry
+              ACCESS not-accessible
+              STATUS mandatory
+              DESCRIPTION
+                  "Each entry specifies the reachability of a server.
+		   The server name is specified by a3ipxServerName. The
+		   service is fully specified by a3ipxServerName, and
+		   a3ipxServerType."
+              INDEX { a3ipxServerName, a3ipxServerType}
+
+          ::= { a3ipxServerTable 1 }
+
+          A3ipxServerEntry ::= SEQUENCE {
+              a3ipxServerName             DisplayString (SIZE (0..47)),
+	      a3ipxServerType             OCTET STRING(SIZE(2)),
+              a3ipxServerNet              IPXNET,
+	      a3ipxServerDLAddress        MacAddress,
+              a3ipxServerSocket           OCTET STRING (SIZE(2)),
+              a3ipxServerProto            INTEGER,
+              a3ipxServerStatus           RowStatus 
+          }
+
+	  a3ipxServerName OBJECT-TYPE
+	      SYNTAX DisplayString (SIZE(0..47))
+	      ACCESS read-only
+	      STATUS mandatory
+	      DESCRIPTION
+		  "The name of the server."
+	  ::= { a3ipxServerEntry 1 }
+
+	  a3ipxServerType OBJECT-TYPE
+	      SYNTAX OCTET STRING(SIZE(2))
+	      ACCESS read-only
+	      STATUS mandatory
+	      DESCRIPTION
+		  "The type of service available on the server."
+	  ::= { a3ipxServerEntry 2 }
+	   
+	  a3ipxServerNet OBJECT-TYPE
+	      SYNTAX IPXNET	
+	      ACCESS read-write
+	      STATUS mandatory
+	      DESCRIPTION
+		  "The IPX network number on which the server resides."
+	  ::= { a3ipxServerEntry 3 }
+
+          a3ipxServerDLAddress OBJECT-TYPE
+	      SYNTAX MacAddress
+	      ACCESS read-write
+	      STATUS mandatory
+	      DESCRIPTION
+		  "The Mac address of the server."
+	  ::= { a3ipxServerEntry 4 }
+
+          a3ipxServerSocket OBJECT-TYPE
+              SYNTAX OCTET STRING (SIZE(2))
+              ACCESS read-write
+              STATUS mandatory
+              DESCRIPTION
+                  "The socket number of the service."
+	  ::= { a3ipxServerEntry 5 }
+                    
+          a3ipxServerProto OBJECT-TYPE
+               SYNTAX INTEGER {
+                         other    (1),
+                         static   (2),
+                         sap      (3)    -- dynamic, learned via sap
+               }
+               ACCESS read-only
+               STATUS mandatory
+               DESCRIPTION
+                   "This object identifies how the entry was
+                   made.  If the entry was learned via the 
+                   Service Advertisement Protocol, this object will
+                   have the value sap(3).  If the entry was entered
+                   statically, this object will have the value static(2)."
+          ::= { a3ipxServerEntry 6 } 
+
+          a3ipxServerStatus OBJECT-TYPE
+               SYNTAX RowStatus
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "This table currently does not allow entries to
+                   be added.  This object is used to delete entries
+                   from this table.  See the notes describing
+                   RowStatus at the beginning of this MIB.  Note,
+                   only statically learned service entries may
+                   be removed via this object.  To remove the
+                   dynamically learned entries, use the object 
+                   a3ipxFlushRipSap."
+          ::= { a3ipxServerEntry 7 }
+
+
+--
+-- This next table lists X25 configuration parameters
+-- used for sending IPX packets across an X25 network
+--
+          a3ipxX25configTable OBJECT-TYPE
+               SYNTAX SEQUENCE OF A3ipxX25configEntry
+               ACCESS not-accessible
+               STATUS mandatory
+               DESCRIPTION
+                   "A list of IPX X25 configuration entries."
+           ::= { a3ComIPX 7 }
+ 
+          a3ipxX25configEntry OBJECT-TYPE
+               SYNTAX A3ipxX25configEntry
+               ACCESS not-accessible
+               STATUS mandatory
+               DESCRIPTION
+                   "Each entry specifies a list of X25 configuration parameters
+                    applying to an IPX port."
+               INDEX { a3ipxX25configPort }
+          ::= { a3ipxX25configTable 1 }
+
+          A3ipxX25configEntry ::= SEQUENCE {
+               a3ipxX25configPort          INTEGER,
+               a3ipxX25configPID           INTEGER (1..'ff'h),
+               a3ipxX25configQueueSize     INTEGER (1..128),
+               a3ipxX25configVClimit       INTEGER (1..63),
+               a3ipxX25configVCtimer       INTEGER (1..512),
+               a3ipxX25configProfId        INTEGER (0..128)
+          }
+ 
+          a3ipxX25configPort OBJECT-TYPE
+               SYNTAX INTEGER
+               ACCESS read-only
+               STATUS mandatory
+               DESCRIPTION
+                   "The port number to which this table entry applies."
+          ::= { a3ipxX25configEntry 1 }
+ 
+          a3ipxX25configPID OBJECT-TYPE
+               SYNTAX INTEGER (1..'ff'h)
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "The protocol ID that is included in all outgoing IPX
+                    packets sent over the X25 port associated with this
+                    table entry."
+               DEFVAL { 'ee'h }
+          ::= { a3ipxX25configEntry 2 }
+ 
+          a3ipxX25configQueueSize OBJECT-TYPE
+               SYNTAX INTEGER (1..128)
+               ACCESS read-write
+               STATUS deprecated
+               DESCRIPTION
+                   "The maximum number of packets that can be queued
+                    for a specific DTE address when the virtual circuit
+                    or the X25 port is congested.
+
+                    NOTE: this object is no longer supported by NETBuilders
+                    running sw version 8.0 and greater.  The corresponding
+                    functionality has been replaced by the X25 Profile
+                    feature.  SNMP control over this feature will be
+                    added at a later date."
+               DEFVAL { 2 }
+          ::= { a3ipxX25configEntry 3 }
+     
+          a3ipxX25configVClimit OBJECT-TYPE
+               SYNTAX INTEGER (1..63)
+               ACCESS read-write
+               STATUS deprecated
+               DESCRIPTION
+                   "The maximum number of virtual circuits that can
+                    be established concurrently for IPX routing.
+
+                    NOTE: this object is no longer supported by NETBuilders
+                    running sw version 8.0 and greater.  The corresponding
+                    functionality has been replaced by the X25 Profile
+                    feature.  SNMP control over this feature will be
+                    added at a later date."
+              DEFVAL { 2 }
+          ::= { a3ipxX25configEntry 4 }
+ 
+          a3ipxX25configVCtimer OBJECT-TYPE
+               SYNTAX INTEGER (1..512)
+               ACCESS read-write
+               STATUS deprecated
+               DESCRIPTION
+                   "The maximum amount of time, in minutes, that can elapse
+                    when there is no activity on the X25 virtual circuit
+                    before it is cleared.  This applies to the first virtual
+                    circuit established for a particular DTE address.  IF
+                    more than one virtual circuit is established for the same
+                    DTE address, all are cleared (except for the first one
+                    established) when the first virtual circuit is not
+                    experiencing congestion.
+
+                    NOTE: this object is no longer supported by NETBuilders
+                    running sw version 8.0 and greater.  The corresponding
+                    functionality has been replaced by the X25 Profile
+                    feature.  SNMP control over this feature will be
+                    added at a later date."
+               DEFVAL { 2 }
+          ::= { a3ipxX25configEntry 5 }
+
+          a3ipxX25configProfId OBJECT-TYPE
+               SYNTAX INTEGER (0..255)
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "To specify an X.25 profile that will be used
+		    when the virtual circuit is set-up to carry 
+		    the IPX traffic. default (0) indicates that
+		    no x25 profile is specified."
+               DEFVAL { 0 }
+          ::= { a3ipxX25configEntry 6 }
+
+--
+-- SMDS Group Address Table
+--
+
+          a3ipxSmdsGroupAddressTable OBJECT-TYPE
+               SYNTAX SEQUENCE OF A3ipxSmdsGroupAddressEntry
+               ACCESS not-accessible
+               STATUS mandatory
+               DESCRIPTION
+                   "A list of SMDS Group Addresses assigned to IPX Ports."
+           ::= { a3ComIPX 8 }
+ 
+          a3ipxSmdsGroupAddressEntry OBJECT-TYPE
+               SYNTAX A3ipxSmdsGroupAddressEntry
+               ACCESS not-accessible
+               STATUS mandatory
+               DESCRIPTION
+                   "Each entry specifies the SMDS Group Address assigned 
+                    to an IPX port."
+               INDEX { a3ipxSmdsGaIpxPort }
+          ::= { a3ipxSmdsGroupAddressTable 1 }
+
+          A3ipxSmdsGroupAddressEntry ::= SEQUENCE {
+               a3ipxSmdsGaIpxPort          INTEGER,
+               a3ipxSmdsGaAddress          SMDSAddress
+          }
+
+          a3ipxSmdsGaIpxPort OBJECT-TYPE
+               SYNTAX INTEGER
+               ACCESS read-only
+               STATUS mandatory
+               DESCRIPTION
+                   "This identifies an IPX port to which the
+                   SMDS Group Address identified by the corresponding
+                   instance of a3ipxSmdsGaAddress is associated."
+          ::= { a3ipxSmdsGroupAddressEntry 1 }
+
+          a3ipxSmdsGaAddress OBJECT-TYPE
+               SYNTAX SMDSAddress
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "This identifies an SMDS Group address that
+                   is used as the IPX multicast address on the
+                   specified SMDS port.  If this object has a value
+                   of all zeros, then no SMDS Group address is
+                   defined for this port."
+          ::= { a3ipxSmdsGroupAddressEntry 2 }
+
+--
+-- IPX Preferred Server Table.  
+--
+-- This table lists those IPX servers that are offered in
+-- response to a "Get Nearest Server" request.  
+--
+
+          a3ipxPreferredSvrTable OBJECT-TYPE
+               SYNTAX SEQUENCE OF A3ipxPreferredSvrEntry
+               ACCESS not-accessible
+               STATUS mandatory
+               DESCRIPTION
+                   "A list of those IPX servers that are included
+                   in responses to 'Get Nearest Server' requests.
+                   Separate lists are kept for each port.  When
+                   a request is receive over a particular port, this
+                   system will respond with the preferred server
+                   assigned to that port.  If more than one preferred
+                   server has been assigned to a particular port,
+                   each server will be offered in a round robin 
+                   fashion.  That is, if serverA, serverB, and
+                   serverC have been assigned to port 1, serverA will
+                   be offered in response to the first request,
+                   serverB in response to the second request, and
+                   so on."
+           ::= { a3ComIPX 9 }
+ 
+          a3ipxPreferredSvrEntry OBJECT-TYPE
+               SYNTAX A3ipxPreferredSvrEntry
+               ACCESS not-accessible
+               STATUS mandatory
+               DESCRIPTION
+                   "Each entry specifies an IPX server that will
+                   be offered when a 'Get Nearest Server' request
+                   in received over a particular port."
+               INDEX { a3ipxPrefSvrPort, a3ipxPrefSvrName }
+          ::= { a3ipxPreferredSvrTable 1 }
+
+          A3ipxPreferredSvrEntry ::= SEQUENCE {
+               a3ipxPrefSvrPort          INTEGER,
+               a3ipxPrefSvrName          DisplayString (SIZE(0..47)),
+               a3ipxPrefSvrStatus        RowStatus
+          }
+
+          a3ipxPrefSvrPort OBJECT-TYPE
+               SYNTAX INTEGER
+               ACCESS read-only
+               STATUS mandatory
+               DESCRIPTION
+                   "This identifies an IPX port to which the
+                   IPX server identified by the corresponding
+                   instance of a3ipxPrefSvrName is associated."
+          ::= { a3ipxPreferredSvrEntry 1 }
+
+          a3ipxPrefSvrName OBJECT-TYPE
+               SYNTAX DisplayString (SIZE(0..47))
+               ACCESS read-only
+               STATUS mandatory
+               DESCRIPTION
+                   "This identifies an IPX server that is offered
+                   in response to 'Get Nearest Server' requests
+                   received over the port identified by a3ipxPrefSvrPort.
+                   If there exists more than one instance of this
+                   object for a particular port, each will be
+                   offered in a round robin fashion."
+          ::= { a3ipxPreferredSvrEntry 2 }
+
+          a3ipxPrefSvrStatus OBJECT-TYPE
+               SYNTAX RowStatus
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "This object is used to add and remove entries
+                   from this table.  See the definition of RowStatus
+                   at the beginning of this mib module for details."
+          ::= { a3ipxPreferredSvrEntry 3 }
+
+--
+-- This next table lists other port-oriented params
+--
+          a3ipxPortconfigTable OBJECT-TYPE
+               SYNTAX SEQUENCE OF A3ipxPortconfigEntry
+               ACCESS not-accessible
+               STATUS mandatory
+               DESCRIPTION
+                   "A list of port-specific parmeters."
+           ::= { a3ComIPX 10 }
+ 
+          a3ipxPortconfigEntry OBJECT-TYPE
+               SYNTAX A3ipxPortconfigEntry
+               ACCESS not-accessible
+               STATUS mandatory
+               DESCRIPTION
+                   "Each entry in this table applies the paramater over
+                   a seperate port."
+               INDEX { a3ipxPortconfigPort }
+          ::= { a3ipxPortconfigTable 1 }
+
+          A3ipxPortconfigEntry ::= SEQUENCE {
+               a3ipxPortconfigPort    INTEGER,
+               a3ipxRipUpdateTime     INTEGER (10..65535),
+               a3ipxSapUpdateTime     INTEGER (10..65535),
+               a3ipxDefMetricHops     INTEGER (0..15),
+               a3ipxDefMetricTicks    INTEGER (1..65535)
+          }
+ 
+          a3ipxPortconfigPort OBJECT-TYPE
+               SYNTAX INTEGER
+               ACCESS read-only
+               STATUS mandatory
+               DESCRIPTION
+                   "The port number to which this table entry applies."
+          ::= { a3ipxPortconfigEntry 1 }
+ 
+          a3ipxRipUpdateTime OBJECT-TYPE
+               SYNTAX INTEGER (10..65535)
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "This parameter specifies how often the router sends 
+                    RIP regular updates to exhange routing information.
+                    This parameter is defined in units of seconds."
+               DEFVAL { 60 }
+          ::= { a3ipxPortconfigEntry 2 }
+ 
+          a3ipxSapUpdateTime OBJECT-TYPE
+               SYNTAX INTEGER (10..65535)
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "This parameter specifies how often the router sends 
+                    Sap regular updates to exhange and service information.
+		    This parameter is defined in units of 
+                    seconds."
+               DEFVAL { 60 } 
+          ::= { a3ipxPortconfigEntry 3 }
+
+          a3ipxDefMetricHops OBJECT-TYPE
+               SYNTAX INTEGER (0..15)
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "This parameter specifies the hop value placed in NRIP
+                   advertisements of the default route.  If this object
+                   has the value 0, the default route is not advertised."
+               DEFVAL { 0 }
+          ::= { a3ipxPortconfigEntry 4 }
+
+          a3ipxDefMetricTicks OBJECT-TYPE
+               SYNTAX INTEGER (1..65535)
+               ACCESS read-write
+               STATUS mandatory
+               DESCRIPTION
+                   "This parameter specifies the number of ticks placed
+                   in NLSP advertisements of the default route."
+               DEFVAL { 1 }
+          ::= { a3ipxPortconfigEntry 5 }
+
+
+--
+-- This next table lists the port-oriented DOD Spoofing params
+--
+ 	a3ipxSpoofCtlTable OBJECT-TYPE
+      		SYNTAX SEQUENCE OF A3ipxSpoofCtlEntry
+               	ACCESS not-accessible
+               	STATUS mandatory
+               	DESCRIPTION
+                   	"A table of spoof controls for all the ports. Each row, 
+		    	represented by a3ipxSpoofCtlEntry, contains the various
+		    	spoof controls that are applicable to a port."
+	::= { a3ComIPX 11 }
+ 
+	a3ipxSpoofCtlEntry OBJECT-TYPE
+       		SYNTAX A3ipxSpoofCtlEntry
+               	ACCESS not-accessible
+               	STATUS mandatory
+               	DESCRIPTION
+                   	"Each entry represents the various spoof controls
+		    	applicable to a port."
+               	INDEX { a3ipxSpoofCtlPort }
+	::= { a3ipxSpoofCtlTable 1 }
+
+	A3ipxSpoofCtlEntry ::= SEQUENCE {
+		a3ipxSpoofCtlPort    	INTEGER,
+		a3ipxSpoofCtlWatchdog    INTEGER
+	}
+ 
+	a3ipxSpoofCtlPort OBJECT-TYPE
+		SYNTAX INTEGER
+               	ACCESS read-only
+               	STATUS mandatory
+               	DESCRIPTION
+             		"Specifies the port number, used as an index
+		    	to a row entry in the table."
+	::= { a3ipxSpoofCtlEntry 1 }
+ 
+	a3ipxSpoofCtlWatchdog OBJECT-TYPE
+               	SYNTAX INTEGER {
+                	enabled(1),
+                	disabled(2) 
+	       	}		
+               	ACCESS read-write
+               	STATUS mandatory
+               	DESCRIPTION
+                   	"Used to enable(1) or disable(2) the Spoofing of
+		    	Watchdog packets."
+               	DEFVAL { enabled }
+	::= { a3ipxSpoofCtlEntry 2 }
+
+
+--
+--			
+
+        a3ipxRipHoldTimeFactor OBJECT-TYPE
+            SYNTAX INTEGER (1..24)
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "This parameter specifies a factor that RIP uses to generate 
+                 a hold time. A holdtime is generated by HoldTimeFactor *
+                 UpdateTime.  A entry in RIP will be aged out if further
+		 update for it is not received within the hold time."
+            DEFVAL { 3 }
+        ::= { a3ipxGeneral 8 }
+
+        a3ipxSapHoldTimeFactor OBJECT-TYPE
+            SYNTAX INTEGER (1..24)
+            ACCESS read-write
+            STATUS mandatory
+            DESCRIPTION
+                "This parameter specifies a factor that SAP uses to generate 
+                 a hold time. A holdtime is generated by HoldTimeFactor *
+                 UpdateTime.  A entry in SAP will be aged out if further
+		 update for it is not received within the hold time."
+            DEFVAL { 3 }
+        ::= { a3ipxGeneral 9 }
+
+ 
+END
+

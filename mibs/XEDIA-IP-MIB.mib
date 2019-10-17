@@ -1,0 +1,1261 @@
+XEDIA-IP-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS 
+    MODULE-IDENTITY, OBJECT-TYPE, IpAddress, Gauge32, Integer32 --, Unsigned32
+        FROM SNMPv2-SMI
+    RowStatus, TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    xediaMibs
+        FROM XEDIA-REG
+    ifIndex, InterfaceIndex, InterfaceIndexOrZero
+        FROM IF-MIB
+    ;
+
+xediaIpMIB MODULE-IDENTITY
+    LAST-UPDATED "9702182155Z" -- February 18, 1997
+    ORGANIZATION "Xedia Corp."
+    CONTACT-INFO
+        "support@xedia.com"
+    DESCRIPTION
+        "This module defines additional objects for management of IP
+        in Xedia devices, above and beyond what is defined in the
+        IETF's IP-MIB."
+    ::= { xediaMibs 4 }
+
+-- Top-level organization of the MIB
+
+xipObjects          OBJECT IDENTIFIER ::= { xediaIpMIB 1 }
+xipNotifications    OBJECT IDENTIFIER ::= { xediaIpMIB 2 }
+xipConformance      OBJECT IDENTIFIER ::= { xediaIpMIB 3 }
+
+-- Kludge for older MIB compiler:
+Unsigned32 ::= Gauge32
+-- InterfaceIndex ::= INTEGER  used to force translation to IfName...
+
+-- ****************************************************************
+-- Object Definitions
+-- ****************************************************************
+
+--
+-- IP Address Configuration Table
+--
+
+xipIfIpAddrTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XipIfIpAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table that allows configuration of IP addresses (since the
+        ipAddrTable from the IP-MIB is read-only and not indexed by
+        ifIndex)."
+    ::= { xipObjects 1 }
+
+xipIfIpAddrEntry OBJECT-TYPE
+    SYNTAX      XipIfIpAddrEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a single IP address. Every entry with a
+        non-zero value of xipIfIpAddr in this table will have a
+        corresponding entry in the ipAddrTable, so adding an entry to
+        this table is how you add an entry to that, read-only, table.
+
+        Note that, unlike the ipAddrTable, this table's primary index
+        is the ifIndex. This makes it easier to list the addresses
+        associated with a particular interface. Some implementations
+        may limit this to one address per interface."
+    INDEX       { ifIndex, xipIfIpAddr }
+    ::= { xipIfIpAddrTable 1 }
+
+XipIfIpAddrEntry ::= SEQUENCE {
+    xipIfIpAddr                IpAddress,
+    xipIfIpAddrNetMask         IpAddress,
+    xipIfIpAddrBcastAddr       Unsigned32,
+    xipIfIpAddrReasmMaxSize    Unsigned32,
+    xipIfIpAddrProtos          BIT STRING,
+    xipIfIpAddrRowStatus       RowStatus,
+    xipIfIpAddrSrcAddr	       IpAddress,
+    xipIfIpAddrRouterAddress   TruthValue,
+    xipIfIpAddrSubnetProxyArp  INTEGER,
+    xipIfIpAddrSource          INTEGER
+}
+
+xipIfIpAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The IP address to which this entry's addressing information
+        pertains. The all-zeros value is an uninitialized value and
+        indicates the address has not been set yet."
+--    DEFVAL      { '00000000'h }
+    ::= { xipIfIpAddrEntry 1 }
+
+xipIfIpAddrNetMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The subnet mask associated with the IP address of this entry.
+        The value of the mask is an IP address with all the network
+        bits set to 1 and all the hosts bits set to 0. When the
+        xipIfIpAddr object is set, the agent may set
+        xipIfIpAddrNetMask automatically to the default mask based on
+        the class of the address."
+    DEFVAL      { '00000000'h }
+    ::= { xipIfIpAddrEntry 2 }
+
+xipIfIpAddrBcastAddr OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..1)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The value of the least-significant bit in the IP broadcast
+        address used for sending datagrams on the (logical) interface
+        associated with the IP address of this entry.  For example,
+        when the Internet standard all-ones broadcast address is used,
+        the value will be 1.  This value applies to both the subnet
+        and network broadcasts addresses used by the entity on this
+        (logical) interface."
+    DEFVAL      { 1 }
+    ::= { xipIfIpAddrEntry 3 }
+
+xipIfIpAddrReasmMaxSize OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The size of the largest IP datagram which this entity can
+        re-assemble from incoming IP fragmented datagrams received on
+        this interface."
+    DEFVAL      { 65535 }
+    ::= { xipIfIpAddrEntry 4 }
+
+xipIfIpAddrProtos OBJECT-TYPE
+    SYNTAX      BIT STRING {
+                    rip(0),
+                    ospf(1)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object indicates whether RIPv2 and OSPFv2 are enabled
+        for this address."
+--    DEFVAL      { { } }
+    ::= { xipIfIpAddrEntry 5 }
+
+xipIfIpAddrRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This object is used to add and remove entries from the
+        table. Note that some agents will only allow one IP address
+        per interface and therefore may automatically create an entry
+        in this table for every IP interface in the system. In this
+        case this object may be implemented in a minimal way (always
+        return a 'wrongValue' error on any SET request and always
+        return the value 'active(1)' when retrieved)."
+    REFERENCE
+        "RFC1903: Textual Conventions for Version 2 of the Simple
+        Network Management Protocol (SNMPv2)."
+    ::= { xipIfIpAddrEntry 6 }
+
+xipIfIpAddrSrcAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+	    "The IP address used as the src address in packets being transmitted
+        on an unnumbered interface.  The IP address should be the address
+        assigned to an IP interface."
+    DEFVAL      { '00000000'h }
+    ::= { xipIfIpAddrEntry 7 }
+
+xipIfIpAddrRouterAddress OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+	    "The value of this object is 'true(1)' if the IP address represented
+        by this entry is the router address, and 'false(2)' otherwise.  This entry
+        cannot be deleted if the value of this object is 'true(1)'."
+    DEFVAL      { false }
+    ::= { xipIfIpAddrEntry 8 }
+
+xipIfIpAddrSubnetProxyArp OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The administrative status for providing proxy arp for all hosts on
+         this subnet.  The value of 'enabled(1)' will cause the router to
+         respond to all ARPs with its own mac address.  This should only 
+         be enabled when all of the possible effects are understood."
+    DEFVAL      { disabled }
+    ::= { xipIfIpAddrEntry 9 }
+
+xipIfIpAddrSource OBJECT-TYPE
+    SYNTAX      INTEGER {
+              netmgmt   (1),  -- configured
+              internal  (2),  -- internally generated
+              peer-assigned (3)
+    }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        ""
+    ::= { xipIfIpAddrEntry 10 }
+
+-- 
+-- The Static Route Table
+-- 
+
+xipStaticRouteTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XipStaticRouteEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of static routes configured by the user. This table
+        is used instead of the ipRouteTable (from MIB-II) because that
+        table has no way of showing inactive static routes (routes
+        that are not in use in the actual routing table but may be in
+        the future, for example if an interface comes back up or if a
+        route added by a protocol such as OSPF ages out.)"
+    ::= { xipObjects 2 }
+
+xipStaticRouteEntry OBJECT-TYPE
+    SYNTAX      XipStaticRouteEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Information about a single static route."
+    INDEX       { xipStaticRouteDest, xipStaticRouteMask, 
+		  xipStaticRouteTos, xipStaticRouteNextHop }
+    ::= { xipStaticRouteTable 1 }
+
+XipStaticRouteEntry ::= SEQUENCE {
+    xipStaticRouteDest      IpAddress,
+    xipStaticRouteMask      IpAddress,
+    xipStaticRouteNextHop   IpAddress,
+    xipStaticRouteCost      Integer32,
+    xipStaticRoutePref      Integer32,
+    xipStaticRouteStatus    INTEGER,
+    xipStaticRouteRowStatus RowStatus,
+    xipStaticRouteTos       Integer32,
+    xipStaticRouteSource    INTEGER,
+    xipStaticRouteProxyArp  TruthValue,
+    xipStaticRouteVolatile  TruthValue
+}
+
+xipStaticRouteDest OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The destination IP address of this route.  An entry with a
+        value of 0.0.0.0 is considered a default route. Note the
+        unusual value of MAX-ACCESS (for an index object)."
+    ::= { xipStaticRouteEntry 1 }    
+
+xipStaticRouteMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "Indicate the mask to be logical-ANDed with the destination
+        address before being compared to the value in the ipRouteDest
+        field.  For those systems that do not support arbitrary subnet
+        masks, an agent constructs the value of the ipRouteMask by
+        determining whether the value of the correspondent ipRouteDest
+        field belong to a class-A, B, or C network, and then using one
+        of:
+        
+             mask           network
+             255.0.0.0      class-A
+             255.255.0.0    class-B
+             255.255.255.0  class-C
+        
+        If the value of the ipRouteDest is 0.0.0.0 (a default route),
+        then the mask value is also 0.0.0.0.  It should be noted that
+        all IP routing subsystems implicitly use this mechanism."
+    ::= { xipStaticRouteEntry 2 }
+
+xipStaticRouteNextHop OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The IP address of the next hop of this route.  (In the case
+        of a route bound to an interface which is realized via a
+        broadcast media, the value of this field is the agent's IP
+        address on that interface.)"
+    ::= { xipStaticRouteEntry 3 }
+
+xipStaticRouteCost OBJECT-TYPE
+    SYNTAX      Integer32 (1..65534)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The cost associated with this static route.  It only has 
+         significance as compared to other static routes for the
+         same destination network, mask, and tos."
+    DEFVAL      { 1 }
+    ::= { xipStaticRouteEntry 4 }
+
+xipStaticRoutePref OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The preference associated with this route. This will be
+        installed as ipRouteMetric2, an alternate routine metric for
+        this route. Note that the presence of the DEFVAL means that
+        the user does not need to supply the value on a create,
+        however, the actual value will be determined by the agent and
+        will not be -1."
+    DEFVAL      { -1 }
+    ::= { xipStaticRouteEntry 5 }
+
+xipStaticRouteStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    active(1), 
+                    inactive(2)
+                }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An indication of whether this static route is installed in
+        the IP forwarding database (which means it will be returned in
+        the ipRouteTable). A static entry may be configured in this
+        table but not be in the actual routing table because its
+        associated interface may be down."
+    ::= { xipStaticRouteEntry 6 }
+
+xipStaticRouteRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The object that allows static routes to be created and
+        deleted. This object only supports the values 'createAndGo(4)'
+        and 'destroy(6)' which create and delete rows
+        respectively. When setting the value to 'createAndGo(4)', the
+        xipStaticNextHop object must have an explicit value set (and
+        the xipStaticRouteDest object is set implicitly via the instance id).
+        The other objects can take their default values."
+    ::= { xipStaticRouteEntry 7 }
+
+xipStaticRouteTos OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The Type of Service associated with the route."
+    ::= { xipStaticRouteEntry 8 }
+
+xipStaticRouteSource OBJECT-TYPE
+    SYNTAX  INTEGER {
+              netmgmt   (1),  -- configured
+              internal  (2),  -- internally generated
+              builder   (3)   -- generated by QVPN Builder
+              }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The source of this route, either configured by management
+         or generated by some autoconfiguration process (internally
+         or through external application)."
+    ::= { xipStaticRouteEntry 9 }
+
+xipStaticRouteProxyArp OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The value of this object is 'true' if proxy arp has been installed
+         for this static route.  Initially, this is only used for auto-generated
+         static routes/proxy arp for VPN configurations."
+    DEFVAL      { false }
+    ::= { xipStaticRouteEntry 10 }
+
+xipStaticRouteVolatile OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The value of this object is 'true' if this static route entry is not
+         stored in NVRAM."
+    DEFVAL      { false }
+    ::= { xipStaticRouteEntry 11 }
+
+--
+-- The Interface ARP Table
+--
+
+xipIfArpTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XipIfArpEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table of per-interface ARP configuration."
+    ::= { xipObjects 3 }
+
+xipIfArpEntry OBJECT-TYPE
+    SYNTAX      XipIfArpEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "ARP configuration for a specific (datalink) interface. This
+        table 'sparce-augments' the ifTable from the IF-MIB: it
+        contains an entry for every interface that supports ARP."
+    INDEX       { ifIndex }
+    ::= { xipIfArpTable 1 }
+
+XipIfArpEntry ::= SEQUENCE {
+    xipIfArpCacheTimeout    Integer32
+}
+
+xipIfArpCacheTimeout OBJECT-TYPE
+    SYNTAX      Integer32 (2..60)
+    UNITS       "minutes"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The timeout value, in minutes, that is used to age out 
+	 entries from the ARP cache (the ipNetToMediaTable)."
+    DEFVAL      { 20 }
+    ::= { xipIfArpEntry 1 }
+
+--
+-- Xedia - IP Routing Info
+--
+xipRouteObjects  OBJECT IDENTIFIER ::= { xipObjects 4 }
+
+xipRouteCurrentCount OBJECT-TYPE
+    SYNTAX      INTEGER  
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The number of existing routes in the Xedia Route Table.
+	 For each Dest/mask route entry, it is the count of ALL
+	 next hops contained under ALL TOSes."
+    ::= { xipRouteObjects 1 }
+
+xipRouteCurrentNetworks OBJECT-TYPE
+    SYNTAX      INTEGER  
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The number of existing routed Networks in the internal
+	 Route Table.  It is the total number of Dest/Mask (network)
+	 route entries.  Usually, it will also represent the number
+	 of route entries in the standard Route Table, except when
+	 there are Dest addresses with multiple masks."
+    ::= { xipRouteObjects 2 }
+
+xipRouteConfiguredMaxRoutes OBJECT-TYPE
+    SYNTAX      INTEGER (0..500000)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+	     "The maximum number of routed Networks in the internal
+	 Route Table.  It is the maximum total number of Dest/Mask 
+	 (network) route entries.  Depending upon system configuration
+	 and the number of route entries in the route table that are
+	 destination addresses with multple masks, it may not be 
+	 possible to have a route table with the maximum number of
+	 routed networks.  If this variable is changed, it will not
+	 take effect until the box is reset."
+    DEFVAL  { 81920 }
+    ::= { xipRouteObjects 3 }
+
+xipRouteOperationalMaxRoutes OBJECT-TYPE
+    SYNTAX      INTEGER (0..500000)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current value of the maximum number of routed networks
+	 in the internal route table, read from configuration memory upon
+	 startup."
+    ::= { xipRouteObjects 4 }
+
+xipRouteConfiguredMaxMemory OBJECT-TYPE
+    SYNTAX      INTEGER (131072..16777216)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum amount of memory that is available to be 
+	 allocated to the routing protocols. If this variable is changed, 
+	 it will not take effect until the box is reset.  Depending 
+	 upon system configuration, it may not be possible to set this
+	 variable to the maximum allowable value."
+    DEFVAL  { 2097152 }
+    ::= { xipRouteObjects 5 }
+
+xipRouteOperationalMaxMemory OBJECT-TYPE
+    SYNTAX      INTEGER (131072..16777216)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current value of the maximum amount of memory that is 
+	 available to be allocated to the routing protocols, read from 
+	 configuration memory upon startup."
+    ::= { xipRouteObjects 6 }
+
+xipRouteMaxFwdEntries OBJECT-TYPE
+    SYNTAX      INTEGER (1024..20480)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of forwarding cache entries 
+         allocated. If this value is changed, it will 
+	 not take effect until the box is reset.  Depending upon
+	 system configuration, it may not be possible to set this
+	 variable to the maximum allowable value."
+    DEFVAL  { 10240 }
+    ::= { xipRouteObjects 7 }
+
+xipRouteCurrentFwdEntries OBJECT-TYPE
+    SYNTAX      INTEGER (0..20000)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The current number of active entries in the forwarding cache."
+    ::= { xipRouteObjects 8 }
+
+--
+-- Xedia - the IP routing table
+--
+-- The IP routing table contains an entry for each route
+-- presently known to this entity.  It is very similar to the
+-- standard IP Route table, except the index is more complex.
+--
+-- Actually, the indexing scheme is exactly like rfc2096, although
+-- we will NOT be supporting the SETs.  The 'static route' table
+-- above will allow for the configuration of routes.
+--
+xipRouteTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XipRouteEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current  
+    DESCRIPTION
+    "This entity's IP Routing table."
+    ::= { xipObjects 5 }
+
+xipRouteEntry OBJECT-TYPE
+    SYNTAX      XipRouteEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current  
+    DESCRIPTION
+    "A route to a particular destination."
+    INDEX   { xipRouteDest, xipRouteMask, xipRouteTos, xipRouteNextHop }
+    ::= { xipRouteTable 1 }
+
+XipRouteEntry ::=
+    SEQUENCE {
+    xipRouteDest     IpAddress,
+    xipRouteMask     IpAddress,
+    xipRouteTos      Integer32,
+    xipRouteNextHop  IpAddress,
+    xipRouteIfIndex  InterfaceIndex,
+    xipRouteType     INTEGER,
+    xipRouteProto    INTEGER,
+    xipRouteInfo     OBJECT IDENTIFIER,
+    xipRouteAge      INTEGER,
+    xipRouteMetric1  INTEGER,
+    xipRouteMetric2  INTEGER,
+    xipRouteDistance INTEGER
+    }
+
+xipRouteDest OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The destination IP address of this route.  An
+    entry with a value of 0.0.0.0 is considered a
+    default route.  Multiple routes to a single
+    destination can appear in the table, but access to
+    such multiple entries is dependent on the table-
+    access mechanisms defined by the network
+    management protocol in use."
+    ::= { xipRouteEntry 1 }
+
+xipRouteMask OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Indicate the mask to be logical-ANDed with the
+    destination address before being compared to the
+    value in the ipRouteDest field.  
+    If the value of the ipRouteDest is 0.0.0.0 (a
+    default route), then the mask value is also
+    0.0.0.0.  It should be noted that all IP routing
+    subsystems implicitly use this mechanism."
+    ::= { xipRouteEntry 2 }
+
+xipRouteTos OBJECT-TYPE
+    SYNTAX     Integer32
+    MAX-ACCESS read-only
+    STATUS     current
+    DESCRIPTION
+       "The policy specifier is the IP TOS Field.  The encoding
+       of IP TOS is as specified  by  the  following convention.
+       Zero indicates the default path if no more  specific
+       policy applies.
+
+       +-----+-----+-----+-----+-----+-----+-----+-----+
+       |                 |                       |     |
+       |   PRECEDENCE    |    TYPE OF SERVICE    |  0  |
+       |                 |                       |     |
+       +-----+-----+-----+-----+-----+-----+-----+-----+
+
+                IP TOS                IP TOS
+           Field     Policy      Field     Policy
+           Contents    Code      Contents    Code
+           0 0 0 0  ==>   0      0 0 0 1  ==>   2
+           0 0 1 0  ==>   4      0 0 1 1  ==>   6
+           0 1 0 0  ==>   8      0 1 0 1  ==>  10
+           0 1 1 0  ==>  12      0 1 1 1  ==>  14
+           1 0 0 0  ==>  16      1 0 0 1  ==>  18
+           1 0 1 0  ==>  20      1 0 1 1  ==>  22
+           1 1 0 0  ==>  24      1 1 0 1  ==>  26
+           1 1 1 0  ==>  28      1 1 1 1  ==>  30"
+    ::= { xipRouteEntry 3 }
+
+xipRouteNextHop OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The IP address of the next hop of this route.
+    (In the case of a route bound to an interface
+    which is realized via a broadcast media, the value
+    of this field is the agent's IP address on that
+    interface.)"
+    ::= { xipRouteEntry 4 }
+
+xipRouteIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex 
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The index value which uniquely identifies the
+    local interface through which the next hop of this
+    route should be reached.  The interface identified
+    by a particular value of this index is the same
+    interface as identified by the same value of
+    ifIndex."
+    ::= { xipRouteEntry 5 }
+
+xipRouteType OBJECT-TYPE
+    SYNTAX  INTEGER {
+              other  (1), -- aka 'other'    not specified by this MIB
+              reject (2), -- aka 'invalid'  route which discards traffic
+              local  (3), -- aka 'direct'   local interface
+              remote (4)  -- aka 'indirect' remote destination
+              }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The type of route.  Note that the values
+    direct(3) and indirect(4) refer to the notion of
+    direct and indirect routing in the IP
+    architecture."
+    ::= { xipRouteEntry 6 }
+
+xipRouteProto OBJECT-TYPE
+    SYNTAX  INTEGER {
+              other     (1),  -- not specified
+              local     (2),  -- local interface
+              netmgmt   (3),  -- static route
+              icmp      (4),  -- result of ICMP Redirect
+  
+              -- the following are all dynamic
+              -- routing protocols
+
+              egp        (5),  -- Exterior Gateway Protocol
+              ggp        (6),  -- Gateway-Gateway Protocol
+              hello      (7),  -- FuzzBall HelloSpeak
+              rip        (8),  -- Berkeley RIP or RIP-II
+              isIs       (9),  -- Dual IS-IS
+              esIs       (10), -- ISO 9542
+              ciscoIgrp  (11), -- Cisco IGRP
+              bbnSpfIgp  (12), -- BBN SPF IGP
+              ospf       (13), -- Open Shortest Path First
+              bgp        (14), -- Border Gateway Protocol
+              idpr       (15), -- InterDomain Policy Routing
+              ciscoEigrp (16)  -- Cisco EIGRP
+              }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The routing mechanism via which this route was
+    learned.  Inclusion of values for gateway routing
+    protocols is not intended to imply that hosts
+    should support those protocols."
+    ::= { xipRouteEntry 7 }
+
+xipRouteInfo OBJECT-TYPE
+    SYNTAX      OBJECT IDENTIFIER
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "A reference to MIB definitions specific to the
+    particular routing protocol which is responsible
+    for this route, as determined by the value
+    specified in the route's ipRouteProto value.  If
+    this information is not present, its value should
+    be set to the OBJECT IDENTIFIER { 0 0 }, which is
+    a syntatically valid object identifier, and any
+    conformant implementation of ASN.1 and BER must be
+    able to generate and recognize this value."
+    ::= { xipRouteEntry 8 }
+
+xipRouteAge OBJECT-TYPE
+    SYNTAX      INTEGER
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+    "The number of seconds since this route was last
+    updated or otherwise determined to be correct.
+    Note that no semantics of `too old' can be implied
+    except through knowledge of the routing protocol
+    by which the route was learned."
+    ::= { xipRouteEntry 9 }
+
+xipRouteMetric1 OBJECT-TYPE
+    SYNTAX      INTEGER
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "The primary routing metric for this route.  The
+    semantics of this metric are determined by the
+    routing-protocol specified in the route's
+    ipRouteProto value.  If this metric is not used,
+    its value should be set to -1."
+    ::= { xipRouteEntry 10 }
+
+xipRouteMetric2 OBJECT-TYPE
+    SYNTAX      INTEGER
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "An alternate routing metric for this route.  The
+    semantics of this metric are determined by the
+    routing-protocol specified in the route's
+    ipRouteProto value.  If this metric is not used,
+    its value should be set to -1."
+    ::= { xipRouteEntry 11 }
+
+xipRouteDistance OBJECT-TYPE
+    SYNTAX      INTEGER (0..255)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+    "Administrative distance of the route.  When
+     new route is added, route with smaller distance
+     takes precedence over the route with higher value."
+    ::= { xipRouteEntry 12 }
+
+xipGeneral          OBJECT IDENTIFIER ::= { xipObjects 6 }
+
+--
+-- IP directed broadcasts global control
+--
+xipFwdDirectedBroadcast OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The administrative status for forwarding directed broadcasts. A
+        value of 'enabled(1)' allows directed broadcasts to be forwarded
+        on all interfaces while 'disabled(2)' disables the forwarding of
+        directed broadcasts on all interfaces in the box." 
+    DEFVAL      { disabled }
+    ::= { xipGeneral 1 }
+
+--
+-- ICMP redirects global control
+--
+xipIcmpRedirect OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The administrative status for generating ICMP redirect messages.
+        A value of 'enabled(1)' allows ICMP redirect messages to be 
+        generated on all interfaces while 'disabled(2)' disables the 
+        generation of ICMP redirect messages by the box."
+    DEFVAL      { disabled }
+    ::= { xipGeneral 2 }
+    
+xipDefaultNetwork OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION 
+         "An IP network address to be used for default forwarding.  The 
+          specific actions taken with this address depend on the operations
+          or protocols configured to use it."
+    DEFVAL      { 0 }
+    ::= { xipGeneral 3 }
+    
+xipRouterAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION 
+         "The IP address currently being used as the router address."
+    ::= { xipGeneral 4 }
+
+--
+-- ICMP rate limiting global control
+--
+
+xipIcmpRateLimiting OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The administrative status for ICMP rate limiting. A value
+        of 'enabled(1)' allows the rate of ICMP error messages to be
+        limited on all interfaces while 'disabled(2)' disables ICMP
+        rate limiting on all interfaces in the box." 
+    DEFVAL      { disabled }
+    ::= { xipGeneral 5 }
+
+--
+-- ICMP rate limiting limit
+--
+
+xipIcmpRateLimit OBJECT-TYPE
+    SYNTAX      INTEGER 
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The value which limits how often ICMP error messages are
+        sent to a destination. The value is expressed in seconds."
+    DEFVAL      { 1 }
+    ::= { xipGeneral 6 }
+
+xipForwardingTable OBJECT-TYPE 
+    SYNTAX         SEQUENCE OF XipForwardingEntry
+    MAX-ACCESS     not-accessible
+    STATUS         current
+    DESCRIPTION
+    "This entity's IP forwarding table."
+    ::= { xipObjects 7 }
+
+xipForwardingEntry OBJECT-TYPE
+    SYNTAX      XipForwardingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current  
+    DESCRIPTION
+    "Information about a single IP forwarding table entry.  This MIB
+     is no longer supported because the forwarding table now is 
+     index by destination and source IP addresses"
+    INDEX   { xipForwardingDest }
+    ::= { xipForwardingTable 1 }
+
+XipForwardingEntry ::=
+    SEQUENCE {
+    xipForwardingDest     IpAddress,
+    xipForwardingNextHop  IpAddress,
+    xipForwardingType     INTEGER,
+    xipForwardingIfIndex  InterfaceIndex
+    }
+
+xipForwardingDest OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The destination IP address of this forwarding table
+    entry."
+    ::= { xipForwardingEntry 1 }
+
+xipForwardingNextHop OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The next hop IP address used to forward traffic to 
+    the destination IP address of this forwarding table
+    entry."
+    ::= { xipForwardingEntry 2 }
+
+xipForwardingType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                     unicast (1),
+                     directedBroadcast (2),
+                     local (3)
+    }
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The type of traffic forwarded using this forwarding table
+    entry."
+    ::= { xipForwardingEntry 3 }
+
+xipForwardingIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The index value which uniquely identifies the
+    local interface through which the destination of thie
+    forwarding entry should be reached.The interface identified
+    by a particular value of this index is the same
+    interface as identified by the same value of
+    ifIndex."
+    ::= { xipForwardingEntry 4 }
+
+xipDSForwardingTable OBJECT-TYPE 
+    SYNTAX         SEQUENCE OF XipDSForwardingEntry
+    MAX-ACCESS     not-accessible
+    STATUS         current
+    DESCRIPTION
+    "This entity's IP forwarding table.  It is based on destination + 
+     source IP addresses.  It holds the forwarding entries for
+     unicast, multicast, directed broadcast, and locally destined packets."
+    ::= { xipObjects 8 }
+
+xipDSForwardingEntry OBJECT-TYPE
+    SYNTAX      XipDSForwardingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current  
+    DESCRIPTION
+    "Information about a single IP forwarding table entry."
+    INDEX   { xipDSForwardingDest, xipDSForwardingSource }
+    ::= { xipDSForwardingTable 1 }
+
+XipDSForwardingEntry ::=
+    SEQUENCE {
+    xipDSForwardingDest     IpAddress,
+    xipDSForwardingSource   IpAddress,
+    xipDSForwardingNextHop  IpAddress,
+    xipDSForwardingType     INTEGER,
+    xipDSForwardingIfIndex  InterfaceIndex
+    }
+
+xipDSForwardingDest OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The destination IP address of this forwarding table
+    entry."
+    ::= { xipDSForwardingEntry 1 }
+
+xipDSForwardingSource OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The source IP address of this forwarding table
+    entry."
+    ::= { xipDSForwardingEntry 2 }
+
+xipDSForwardingNextHop OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The next hop IP address used to forward traffic to 
+    the destination IP address of this forwarding table
+    entry."
+    ::= { xipDSForwardingEntry 3 }
+
+xipDSForwardingType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                     unicast (1),
+                     directedBroadcast (2),
+                     local (3),
+                     multicast (4)
+    }
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The type of traffic forwarded using this forwarding table
+    entry."
+    ::= { xipDSForwardingEntry 4 }
+
+xipDSForwardingIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndex
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The index value which uniquely identifies the
+    local interface through which the destination of thie
+    forwarding entry should be reached.The interface identified
+    by a particular value of this index is the same
+    interface as identified by the same value of
+    ifIndex."
+    ::= { xipDSForwardingEntry 5 }
+
+--
+-- xipDSIForwarding* objects replaces xipDSForwarding* objects
+-- for support of multicasting.  
+-- In the new table, forwarding IfIndex is a table index
+-- 
+
+xipDSIForwardingTable OBJECT-TYPE 
+    SYNTAX         SEQUENCE OF XipDSIForwardingEntry
+    MAX-ACCESS     not-accessible
+    STATUS         current
+    DESCRIPTION
+    "This entity's IP forwarding table.  It is based on destination + 
+     source IP addresses.  It holds the forwarding entries for
+     unicast, multicast, directed broadcast, and locally destined packets."
+    ::= { xipObjects 9 }
+
+xipDSIForwardingEntry OBJECT-TYPE
+    SYNTAX      XipDSIForwardingEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current  
+    DESCRIPTION
+    "Information about a single IP forwarding table entry."
+    INDEX   { xipDSIForwardingDest, xipDSIForwardingSource,
+		xipDSIForwardingIfIndex }
+    ::= { xipDSIForwardingTable 1 }
+
+XipDSIForwardingEntry ::=
+    SEQUENCE {
+    xipDSIForwardingDest     IpAddress,
+    xipDSIForwardingSource   IpAddress,
+    xipDSIForwardingIfIndex  InterfaceIndexOrZero,
+    xipDSIForwardingNextHop  IpAddress,
+    xipDSIForwardingType     INTEGER
+    }
+
+xipDSIForwardingDest OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The destination IP address of this forwarding table
+    entry."
+    ::= { xipDSIForwardingEntry 1 }
+
+xipDSIForwardingSource OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The source IP address of this forwarding table
+    entry."
+    ::= { xipDSIForwardingEntry 2 }
+
+xipDSIForwardingIfIndex OBJECT-TYPE
+    SYNTAX      InterfaceIndexOrZero
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The index value which uniquely identifies the
+    local interface through which the destination of thie
+    forwarding entry should be reached.The interface identified
+    by a particular value of this index is the same
+    interface as identified by the same value of
+    ifIndex."
+    ::= { xipDSIForwardingEntry 3 }
+
+xipDSIForwardingNextHop OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The next hop IP address used to forward traffic to 
+    the destination IP address of this forwarding table
+    entry."
+    ::= { xipDSIForwardingEntry 4 }
+
+xipDSIForwardingType OBJECT-TYPE
+    SYNTAX      INTEGER {
+                     unicast (1),
+                     directedBroadcast (2),
+                     local (3),
+		     drop (4),
+		     dropDirBcast (5), 
+		     localDirBcast (6),
+                     localMulticast (7),
+                     multicast (8), 
+		     localIGMP (9), 
+		     dropMulticast (10)
+    }
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+    "The type of traffic forwarded using this forwarding table
+    entry."
+    ::= { xipDSIForwardingEntry 5 }
+
+xipIfTable OBJECT-TYPE
+    SYNTAX         SEQUENCE OF XipIfEntry
+    MAX-ACCESS     not-accessible
+    STATUS         current
+    DESCRIPTION
+    "A table of information stored per IP physical or logical interface.
+     The entries of this table are automatically created when a new IP
+     interface is created corresponding to a new sublayer."
+    ::= { xipObjects 10 }
+
+xipIfEntry OBJECT-TYPE
+    SYNTAX      XipIfEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+    "Information about a single IP interface."
+    INDEX   { ifIndex }
+    ::= { xipIfTable 1 }
+
+XipIfEntry ::=
+    SEQUENCE {
+    xipIfPrimaryAddr  IpAddress,
+    xipIfNegotiateAddr INTEGER
+    }
+
+xipIfPrimaryAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+    "The IP address used as the receiving address when there is some ambiguity
+     as to which IP address would receive it (e.g. multinetted interfaces).
+     If a single address is configured on an interface, that address is
+     used.  If more than one address is configured, the first one configured
+     is used but it can be modified through this parameter."
+    DEFVAL      { '00000000'h }
+    ::= { xipIfEntry 1 }
+
+xipIfNegotiateAddr OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+    "If the value of this variable is 'enabled(1)', it will be assumed that 
+     the interface will receive an IP address from a peer (typically a PPP
+     peer).  Addition of an IP address to the interface any other way will
+     not be allowed.  If the IP interface is stacked above a datalink which 
+     supports dial-on-demand, an unnumbered IP address will be added to
+     the interface while the link is down."
+    DEFVAL      { disabled }
+    ::= { xipIfEntry 2 }
+
+
+
+-- ****************************************************************
+-- Conformance Information
+-- ****************************************************************
+
+xipCompliances OBJECT IDENTIFIER ::= { xipConformance 1 }
+xipGroups      OBJECT IDENTIFIER ::= { xipConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+xipCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for all agents that support this
+        MIB. A compliant agent implements all objects defined in this
+        MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS {
+        xipAllGroup
+    }
+    ::= { xipCompliances 1 }
+
+--
+-- Object Groups
+--
+
+xipAllGroup OBJECT-GROUP
+    OBJECTS {
+        xipIfIpAddr,
+        xipIfIpAddrNetMask,
+        xipIfIpAddrBcastAddr,
+        xipIfIpAddrReasmMaxSize,
+        xipIfIpAddrProtos,
+        xipIfIpAddrRowStatus,
+        xipIfIpAddrSrcAddr,
+        xipIfIpAddrRouterAddress,
+        xipIfIpAddrSubnetProxyArp,
+        xipIfIpAddrSource,
+        xipStaticRouteDest,
+        xipStaticRouteMask,
+        xipStaticRouteNextHop,
+        xipStaticRouteCost,
+        xipStaticRoutePref,
+        xipStaticRouteStatus,
+        xipStaticRouteRowStatus,
+        xipStaticRouteTos,
+        xipStaticRouteSource,
+        xipStaticRouteProxyArp,
+        xipIfArpCacheTimeout,
+        xipRouteCurrentCount,
+        xipRouteCurrentNetworks,
+        xipRouteConfiguredMaxRoutes,
+        xipRouteOperationalMaxRoutes,
+        xipRouteConfiguredMaxMemory,
+        xipRouteOperationalMaxMemory,
+        xipRouteMaxFwdEntries,
+        xipRouteCurrentFwdEntries,
+        xipRouteDest,
+        xipRouteMask,
+        xipRouteTos,
+        xipRouteNextHop,
+        xipRouteIfIndex,
+        xipRouteType,
+        xipRouteProto,
+        xipRouteInfo,
+        xipRouteAge,
+        xipRouteMetric1,
+        xipRouteMetric2,
+        xipRouteDistance,
+        xipFwdDirectedBroadcast,
+        xipIcmpRedirect,
+        xipDefaultNetwork,
+        xipRouterAddress,
+        xipIcmpRateLimiting,
+        xipIcmpRateLimit,
+        xipForwardingDest,
+        xipForwardingNextHop,
+        xipForwardingType,
+        xipForwardingIfIndex,
+        xipDSForwardingDest,
+        xipDSForwardingSource,
+        xipDSForwardingNextHop,
+        xipDSForwardingType,
+        xipDSForwardingIfIndex,
+        xipIfPrimaryAddr,
+        xipIfNegotiateAddr
+    }
+    STATUS      current
+    DESCRIPTION
+        "The set of all accessible objects in this MIB."
+    ::= { xipGroups 1 }
+
+END
+
+

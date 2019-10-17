@@ -1,0 +1,1849 @@
+-- Based on CONAN MPANL LMI (Call Control) Driver Design Document 
+-- (Rev 1.3, dated 5/18/97)
+-- 
+-- MIB Revision : 1.0 dated 5-19-97
+-- Change Desc. : Initial submittal - R. Carmona.
+--
+-- MIB Revision : 1.1 dated 8-11-97
+-- Change Desc. : Corrected CUGIC object types to be DisplayString
+-- 		  in MLMIServiceTable Entry object lists (mcm/nvm) 
+--		  - R. Carmona.
+-- 
+-- MIB Revision : 1.2 dated 8-21-97
+-- Change Desc. : Added 2 DNA Suffix objects (mcm/nvm) that provide
+--		  correspondence to 4400 Services. - R. Carmona.
+--
+-- MIB Revision : 1.3 dated 10-8-97
+-- Change Desc. : Replaced MPA with 4400, and other minor changes - B. Jafari. 
+-- 
+--
+-- MIB Revision : 1.4 dated 10-10-97
+-- Change Desc. : Added nvmMLMIServiceRowStatus to the nvmMLMIService table
+--                Also added enumeration 4 to (msm/nvm) MLMIServiceCugAccess
+--                as per request Chaoping Wu. 4400 release 2.0     -S. Gaur
+--
+-- MIB Revision : 1.5 dated 10-21-97
+-- Change Desc. : Added new 'modify' type to the 'nvmMLMIServiceRowStatus'
+--                object to allow modifications to the nvmMLMIService table - B. Jafari.
+--
+-- *** RELEASE 3.0 ***
+-- MIB Revision : 1.6 dated 6-11-98
+-- Change Desc. : Added the (mcm/nvm)MLMINetlinkTable,mcmMLMINetlinkStatusTable,
+--                mcmMLMICircuitStausTable, mcmMLMINetlinkStatTable,
+--                and the mcmMLMICircuitStatTable.
+--                Obsoleted (mcm/nvm)MLMIGenCfg4400Type and 
+--                mcmMLMICntrAction objects.
+--                Changed an enumeration from modify to active and
+--                the access from write-only to read-write for 
+--                nvmMLMIServiceRowStatus.
+--                Added four new traps. 
+--                Replaced all instances of the "4400" string with
+--                the generic string "access device".                    -S. Gaur
+--
+-- MIB Revision : 1.7 dated 7-7-98
+-- Change Desc. : In the table mcmMLMINetlinkStatusTable, obsoleted the two 
+--		     objects mcmMLMINetlinkStatusTx(Rx)Thrput...as per e-mail 
+--		     from M. Kim dated 7/3/98. - R. Carmona
+--
+-- MIB Revision : 1.8 dated 7-24-98
+-- Change Desc. : Removed the nvmMLMINetlinkMpanlMode object from the 
+--                nvmMLMINetlinkTable(modification made prior to 
+--                table publication).
+--		                                                         -S. Gaur
+-- MIB Revision : 1.9 dated 8-7-98
+-- Change Desc. : Increased the range to 1 to 34 for mcmMLMICircStatusCallingDNA,
+--                mcmMLMICircStatusCalledDNA.
+--                                                                       -S. Gaur
+
+
+MICOM-MPANL-LMI-MIB DEFINITIONS ::= BEGIN
+	IMPORTS
+		Counter 
+			FROM RFC1155-SMI
+		OBJECT-TYPE
+			FROM RFC-1212
+		DisplayString
+			FROM RFC1213-MIB
+                mcmSysAsciiTimeOfDay
+                        FROM MICOM-SYS-MIB
+                TRAP-TYPE
+                        FROM RFC-1215
+		micom-oscar
+			FROM MICOM-OSCAR-MIB;
+
+
+-- group OBJECT IDENTIFIERs
+
+	micom-mlmi		OBJECT IDENTIFIER ::= {micom-oscar 20}
+	mlmi-configuration	OBJECT IDENTIFIER ::= {micom-mlmi 1}
+	mlmi-control		OBJECT IDENTIFIER ::= {micom-mlmi 2}
+	mlmi-statistics 	OBJECT IDENTIFIER ::= {micom-mlmi 3}
+        mlmi-status             OBJECT IDENTIFIER ::= {micom-mlmi 4}
+
+
+-- Note: The following groups contain 2 related groups/tables for all configuration
+--       functionality. 
+--	 1) The Standard or Operational Parameters (Operational) provide the
+--	 SNMP management interface with the access devices operational modules.
+--	 Objects defined for this interface begin with the 'mcm' prefix.
+--	 2) The Configuration Parameters (Configuration) provide the SNMP 
+--	 management interface with a stored configuration for a particular
+--       access device.
+--	 Objects defined for this interface begin with the 'nvm' prefix.
+--	
+
+
+--  Operational Parameter ("mcm") Groups/Tables
+
+
+--  the MPANL LMI General Configuration Parameters Group 
+--  (Standard/Operational Parameters)
+
+--  This group provides the MPANL LMI general configuration parameters (Operational)
+
+mcmMLMIGenCfg4400Type OBJECT-TYPE
+	SYNTAX	INTEGER {
+		micom-4400 (1),
+		nortel-DPN-4400 (2)
+		}
+	ACCESS	read-only
+	STATUS	obsolete
+	DESCRIPTION
+	  "NAME = ;
+ 	   DESC = ** NOTE:THIS OBJECT IS OBSOLETE AND NO \
+                  LONGER SUPPORTED IN RELEASE 3.0 AND \
+                  BEYOND. \
+                  The value of this object indicates the \
+                  access devices hardware type for use  \
+                  by the MPANL LMI protocol.\
+                  (Operational);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { nortel-DPN-4400 }
+	::= { mlmi-configuration 1 }
+
+mcmMLMIGenCfgSoftwareRev OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE (0..16))
+	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = This object identifies the MLMI software \
+		  module revision number. (Operational);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+     	::= { mlmi-configuration 2 }
+
+
+--  the MPANL LMI Service Configuration Parameters Table 
+--  (Standard/Operational Parameters)
+
+--  This table provides the MPANL LMI service configuration parameters.
+--  These parameters are actually a group of VCs that are used for a specific service
+--  such as LAN, voice, RSI, transparent data and PVC passthrough. (Operational)
+
+mcmMLMIServiceTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmMLMIServiceEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+ 	  "NAME = ; 
+    	   DESC = The MPANL LMI Service Configuration Parameters \
+		  table. (Operational);
+   	   HELP = ;
+    	   CAPABILITIES = NET_CFG, VPN_DISP;"
+ 	::= { mlmi-configuration 3 }
+
+mcmMLMIServiceEntry OBJECT-TYPE
+	SYNTAX  McmMLMIServiceEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+ 	DESCRIPTION
+   	  "NAME = ; 
+    	   DESC = An entry in the MPANL LMI Service Configuration \
+            		  Parameters table. (Operational);
+    	   HELP = ;
+    	   CAPABILITIES = ;"
+ 	INDEX    { mcmMLMIServiceIfIndex }
+	::= { mcmMLMIServiceTable 1 }
+
+McmMLMIServiceEntry ::= SEQUENCE {
+	mcmMLMIServiceIfIndex		INTEGER,
+	mcmMLMIServiceCUGFacility	INTEGER,
+	mcmMLMIServiceCUGAccess		INTEGER,
+	mcmMLMIServiceCUGICType		INTEGER,
+	mcmMLMIServiceCUGIC		DisplayString,
+	mcmMLMIServiceDNASuffix		DisplayString
+	}
+
+mcmMLMIServiceIfIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The ifIndex of the MPANL LMI interface. \
+		  (Analogous to the ifIndex pointer in the \
+		  MIB II Interfaces Group, but specific to \
+		  the MPANL LMI Service Configuration table.) \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMIServiceEntry 1 }
+
+mcmMLMIServiceCUGFacility OBJECT-TYPE
+	SYNTAX	INTEGER {
+		no-CUG (1),
+		simple-CUG (2),
+		cUG-selection (3)
+		}
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The value of this object indicates the CUG \
+		  (Close User Group) facility type. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { no-CUG }
+     	::= { mcmMLMIServiceEntry 2 }
+
+mcmMLMIServiceCUGAccess OBJECT-TYPE
+	SYNTAX	INTEGER {
+		no-right (1),
+		outgoing-access-right (2),
+		incoming-access-right (3),
+                incoming-outgoing-access-right (4)
+		}
+	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+       	  "NAME = ; 
+	   DESC = The value of this object indicates the subscribed \
+		  CUG access rights. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { no-right }
+	::= { mcmMLMIServiceEntry 3 }
+
+mcmMLMIServiceCUGICType OBJECT-TYPE
+	SYNTAX	INTEGER {
+		national-IC (1),
+		international-IC (2)
+		}
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The value of this object indicates the CUG \
+		  Interlock Code type. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { national-IC }
+	::= { mcmMLMIServiceEntry 4 }
+
+mcmMLMIServiceCUGIC OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE (1..5))
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The value of this object indicates the CUG \
+		  Interlock Codes (in T.50) that belong to the \
+		  particular access device service. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMIServiceEntry 5 }
+
+mcmMLMIServiceDNASuffix OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE (0..3))
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The value of this object contains up to \
+		  3 bytes of DNA Suffix (in T.50) that is \
+		  associated with the service. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMIServiceEntry 6 }
+
+
+
+--  The MPANL LMI Netlink Configuration Parameters Table 
+
+mcmMLMINetlinkTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmMLMINetlinkEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+ 	  "NAME = ; 
+    	   DESC = The MPANL LMI Netlink Configuration Parameters \
+		  table. (Operational);
+   	   HELP = ;
+    	   CAPABILITIES = NET_DISP, VPN_DISP;"
+ 	::= { mlmi-configuration 6 }
+
+mcmMLMINetlinkEntry OBJECT-TYPE
+	SYNTAX  McmMLMINetlinkEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+ 	DESCRIPTION
+   	  "NAME = ; 
+    	   DESC = An entry in the MPANL LMI Netlink Configuration \
+            		  Parameters table. (Operational);
+    	   HELP = ;
+    	   CAPABILITIES = ;"
+ 	INDEX   { mcmMLMINetlinkIfIndex }
+	::= { mcmMLMINetlinkTable 1 }
+
+McmMLMINetlinkEntry ::= SEQUENCE {
+        mcmMLMINetlinkIfIndex                INTEGER,
+	mcmMLMINetlinkTunnelingPVCDlci       INTEGER,
+	mcmMLMINetlinkMpanlMode		     INTEGER,
+	mcmMLMINetlinkDLCIAssignMethod	     INTEGER,
+	mcmMLMINetlinkRstrtT316Timer         INTEGER,
+	mcmMLMINetlinkRstrtAckT317Timer      INTEGER,
+        mcmMLMINetlinkNumUnsuccesRstrtAtmpts INTEGER
+	}
+
+mcmMLMINetlinkIfIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object \
+                  identifies a unique netlink \
+                  index value in the netlink \
+                  operational table.\		  		 
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkEntry 1 }
+
+mcmMLMINetlinkTunnelingPVCDlci OBJECT-TYPE
+	SYNTAX	INTEGER (16..991)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The DLCI associated with the \
+                  tunneling PVC;		  		 
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkEntry 2 }
+
+mcmMLMINetlinkMpanlMode OBJECT-TYPE
+	SYNTAX	INTEGER {
+                dte (1),
+                dce (2)
+                }
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The MPANL port mode.;
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkEntry 3 }
+
+mcmMLMINetlinkDLCIAssignMethod OBJECT-TYPE
+	SYNTAX	INTEGER {
+                increment (1),
+                decrement (2)
+                }
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The DLCI assignment method \
+                  used for the dce option only.; 
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkEntry 4 }
+
+mcmMLMINetlinkRstrtT316Timer OBJECT-TYPE
+	SYNTAX	INTEGER (0..16)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object  \
+                  indicates the time in seconds \
+                  of when the Q.933 Message is \
+                  restarted.;
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkEntry 5 }
+
+mcmMLMINetlinkRstrtAckT317Timer OBJECT-TYPE
+	SYNTAX	INTEGER (0..16)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object  \
+                  indicates the time in seconds \
+                  of when the Q.933 Ack Message is \
+                  restarted.;
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkEntry 6 }
+
+mcmMLMINetlinkNumUnsuccesRstrtAtmpts OBJECT-TYPE
+	SYNTAX	INTEGER (1..5)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object  \
+                  indicates the number of  \
+                  unsuccessful restart attempts. \
+       		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkEntry 7 }
+
+
+--  "Parallel" Configuration Parameter ("nvm") Groups/Tables
+
+
+--  the MPANL LMI General Configuration Parameters Group 
+--  (Configuration Parameters)
+
+--  This group provides the MPANL LMI general configuration parameter (Configuration)
+
+nvmMLMIGenCfg4400Type OBJECT-TYPE
+	SYNTAX	INTEGER {
+		micom-4400 (1),
+		nortel-DPN-4400 (2)
+		}
+	ACCESS	read-write
+	STATUS	obsolete
+	DESCRIPTION
+	  "NAME = ;
+ 	   DESC = ** NOTE:THIS OBJECT IS OBSOLETE AND NO \
+                  LONGER SUPPORTED IN RELEASE 3.0 AND \
+                  BEYOND. \
+	          The value of this object indicates the \
+                  access devices hardware type for use \
+                  by the MPANL LMI  protocol.\
+                  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL { nortel-DPN-4400 }
+	::= { mlmi-configuration 4 }
+
+
+--  the MPANL LMI Service Configuration Parameters Table 
+--  (Configuration Parameters)
+
+--  This table provides the MPANL LMI service configuration parameters.
+--  These parameters are actually a group of VCs that are used for a specific service
+--  such as LAN, voice, RSI, transparent data and PVC passthrough. (Configuration)
+
+nvmMLMIServiceTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF NvmMLMIServiceEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+ 	  "NAME = ; 
+    	   DESC = The MPANL LMI Service Configuration Parameters \
+		  table. (Configuration);
+   	   HELP = ;
+    	   CAPABILITIES = NET_CFG, VPN_DISP;"
+ 	::= { mlmi-configuration 5 }
+
+nvmMLMIServiceEntry OBJECT-TYPE
+	SYNTAX  NvmMLMIServiceEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+ 	DESCRIPTION
+   	  "NAME = ; 
+    	   DESC = An entry in the MPANL LMI Service Configuration \
+            		  Parameters table. (Configuration);
+    	   HELP = ;
+    	   CAPABILITIES = ;"
+ 	INDEX   { nvmMLMIServiceIfIndex }
+	::= { nvmMLMIServiceTable 1 }
+
+NvmMLMIServiceEntry ::= SEQUENCE {
+	nvmMLMIServiceIfIndex		INTEGER,
+	nvmMLMIServiceCUGFacility	INTEGER,
+	nvmMLMIServiceCUGAccess		INTEGER,
+	nvmMLMIServiceCUGICType		INTEGER,
+	nvmMLMIServiceCUGIC		DisplayString,
+	nvmMLMIServiceDNASuffix		DisplayString,
+        nvmMLMIServiceRowStatus         INTEGER
+	}
+
+nvmMLMIServiceIfIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The ifIndex of the MPANL LMI interface. \
+		  (Analogous to the ifIndex pointer in the \
+		  MIB II Interfaces Group, but specific to \
+		  the MPANL LMI Service Configuration table.) \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmMLMIServiceEntry 1 }
+
+nvmMLMIServiceCUGFacility OBJECT-TYPE
+	SYNTAX	INTEGER {
+		no-CUG (1),
+		simple-CUG (2),
+		cUG-selection (3)
+		}
+    	ACCESS  read-write
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The value of this object indicates the CUG \
+		  (Close User Group) facility type. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { no-CUG }
+     	::= { nvmMLMIServiceEntry 2 }
+
+nvmMLMIServiceCUGAccess OBJECT-TYPE
+	SYNTAX	INTEGER {
+		no-right (1),
+		outgoing-access-right (2),
+		incoming-access-right (3),
+                incoming-outgoing-access-right (4)
+		}
+	ACCESS  read-write
+     	STATUS  mandatory
+     	DESCRIPTION
+       	  "NAME = ; 
+	   DESC = The value of this object indicates the subscribed \
+		  CUG access rights. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { no-right }
+	::= { nvmMLMIServiceEntry 3 }
+
+nvmMLMIServiceCUGICType OBJECT-TYPE
+	SYNTAX	INTEGER {
+		national-IC (1),
+		international-IC (2)
+		}
+    	ACCESS  read-write
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The value of this object indicates the CUG \
+		  Interlock Code type. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { national-IC }
+	::= { nvmMLMIServiceEntry 4 }
+
+nvmMLMIServiceCUGIC OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE (1..5))
+    	ACCESS  read-write
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The value of this object indicates the CUG \
+		  Interlock Codes (in T.50) that belong to the \
+		  particular access device service. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmMLMIServiceEntry 5 }
+
+nvmMLMIServiceDNASuffix OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE (0..3))
+    	ACCESS  read-write
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The value of this object contains up to \
+		  3 bytes of DNA Suffix (in T.50) that is \
+		  associated with the service. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmMLMIServiceEntry 6 }
+
+nvmMLMIServiceRowStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+        add (1),
+        delete (2),
+        active (3)
+        }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION
+      "NAME = ;
+       DESC = This object is used to create, modify and delete \
+	      rows in the nvmMLMIService Table. (Configuration);
+       HELP = The active enumeration only indicates the status \
+              of a row. A row is automatically set to active \
+              after it is added. To modify a row it must be \
+              in the active state.;
+       CAPABILITIES = ;"
+    ::= { nvmMLMIServiceEntry 7 }
+
+
+
+--  The MPANL LMI Netlink Configuration Parameters Table 
+
+nvmMLMINetlinkTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF NvmMLMINetlinkEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+ 	  "NAME = ; 
+    	   DESC = The MPANL LMI Netlink Configuration Parameters \
+		  table. (Configuration);
+   	   HELP = ;
+    	   CAPABILITIES = NET_CFG, VPN_DISP;"
+ 	::= { mlmi-configuration 7 }
+
+nvmMLMINetlinkEntry OBJECT-TYPE
+	SYNTAX  NvmMLMINetlinkEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+ 	DESCRIPTION
+   	  "NAME = ; 
+    	   DESC = An entry in the MPANL LMI Netlink Configuration \
+            		  Parameters table. (Configuration);
+    	   HELP = ;
+    	   CAPABILITIES = ;"
+ 	INDEX   { nvmMLMINetlinkIfIndex }
+	::= { nvmMLMINetlinkTable 1 }
+
+NvmMLMINetlinkEntry ::= SEQUENCE {
+        nvmMLMINetlinkIfIndex                 INTEGER,
+	nvmMLMINetlinkTunnelingPVCDlci        INTEGER,
+	nvmMLMINetlinkDLCIAssignMethod	      INTEGER,
+	nvmMLMINetlinkRstrtT316Timer          INTEGER,
+	nvmMLMINetlinkRstrtAckT317Timer       INTEGER,
+        nvmMLMINetlinkNumUnsuccesRstrtAtmpts  INTEGER
+	}
+
+nvmMLMINetlinkIfIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object \
+                  identifies a unique netlink \
+                  index value in the netlink \
+                  configuration table. \		  		 
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmMLMINetlinkEntry 1 }
+
+nvmMLMINetlinkTunnelingPVCDlci OBJECT-TYPE
+	SYNTAX	INTEGER (16..991)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The DLCI associated with the \
+                  tunneling PVC \		  		 
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmMLMINetlinkEntry 2 }
+
+nvmMLMINetlinkDLCIAssignMethod OBJECT-TYPE
+	SYNTAX	INTEGER {
+                increment (1),
+                decrement (2)
+                }
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The DLCI assignment method \
+                  used for the dce option only.\
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+        DEFVAL { increment }
+	::= { nvmMLMINetlinkEntry 3 }
+
+nvmMLMINetlinkRstrtT316Timer OBJECT-TYPE
+	SYNTAX	INTEGER (0..16)
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object  \
+                  indicates the time in seconds \
+                  of when the Q.933 Message is \
+                  restarted.\
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+       DEFVAL { 5 }
+	::= { nvmMLMINetlinkEntry 4 }
+
+nvmMLMINetlinkRstrtAckT317Timer OBJECT-TYPE
+	SYNTAX	INTEGER (0..16)
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object  \
+                  indicates the time in seconds \
+                  of when the Q.933 Ack Message is \
+                  restarted.\
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+        DEFVAL { 5 }
+	::= { nvmMLMINetlinkEntry 5 }
+
+nvmMLMINetlinkNumUnsuccesRstrtAtmpts OBJECT-TYPE
+	SYNTAX	INTEGER (1..5)
+	ACCESS	read-write
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object  \
+                  indicates the number of  \
+                  unsuccessful restart attempts. \
+       		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+        DEFVAL { 2 }
+	::= { nvmMLMINetlinkEntry 6 }
+
+--  the MPANL LMI Statistics Group (Operational Parameters - Counters)
+
+--  This table provides counters to be used for monitoring during debugging and
+--  performance characterization. 
+
+mcmMLMIStatsActiveVCs OBJECT-TYPE
+	SYNTAX	Counter
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = Counter representing the number of active VCs \
+		  maintained by the MLMI.
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+     	::= { mlmi-statistics 1 }
+
+mcmMLMIStatsRequestedCalls OBJECT-TYPE
+	SYNTAX	Counter
+	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+       	  "NAME = ; 
+	   DESC = Counter representing the number of SL_CONNECT_REQ \
+		  received by the MLMI from upper applications. ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+	::= { mlmi-statistics 2 }
+
+mcmMLMIStatsInitiatedCalls OBJECT-TYPE
+	SYNTAX	Counter
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = Counter representing the number of setup messages \
+		  sent to MPANL masters. ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+     	::= { mlmi-statistics 3 }
+
+mcmMLMIStatsFailedCalls OBJECT-TYPE
+	SYNTAX	Counter
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = Counter representing the number of calls \
+		  rejected by MLMI during establishment phase. ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+     	::= { mlmi-statistics 4 }
+
+mcmMLMIStatsSucceededCalls OBJECT-TYPE
+	SYNTAX	Counter
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = Counter representing the number of calls \
+		  established by MLMI. ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+     	::= { mlmi-statistics 5 }
+
+mcmMLMIStatsReleasedCalls OBJECT-TYPE
+	SYNTAX	Counter
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = Counter representing the number of call release \
+		  messages received by MLMI. ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+     	::= { mlmi-statistics 6 }
+
+mcmMLMIStatsDisconnectedCalls OBJECT-TYPE
+	SYNTAX	Counter
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = Counter representing the number of disconnect requests \
+		  received by MLMI from upper applications. ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+     	::= { mlmi-statistics 7 }
+
+mcmMLMIStatsAdmittedCUGs OBJECT-TYPE
+	SYNTAX	Counter
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = Counter representing the number of admitted calls \
+		  whose setup messages have the correct CUG. ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+     	::= { mlmi-statistics 8 }
+
+mcmMLMIStatsRejectedCUGs OBJECT-TYPE
+	SYNTAX	Counter
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = Counter representing the number of rejected calls \
+		  whose setup messages have the wrong CUG. ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP;"
+     	::= { mlmi-statistics 9 }
+
+
+--  the MPANL LMI Netlink Statistics Table 
+
+mcmMLMINetlinkStatTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmMLMINetlinkStatEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+ 	  "NAME = ; 
+    	   DESC = The MPANL LMI Netlink Statistic Parameters \
+		  table.;
+   	   HELP = ;
+    	   CAPABILITIES = NET_DISP, VPN_DISP;"
+ 	::= { mlmi-statistics 10 }
+
+mcmMLMINetlinkStatEntry OBJECT-TYPE
+	SYNTAX  McmMLMINetlinkStatEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+ 	DESCRIPTION
+   	  "NAME = ; 
+    	   DESC = An entry in the MPANL LMI Netlink \
+                  Statistic Parameters table.;
+    	   HELP = ;
+    	   CAPABILITIES = ;"
+ 	INDEX   { mcmMLMINetlinkStatIfIndex }
+	::= { mcmMLMINetlinkStatTable 1 }
+
+McmMLMINetlinkStatEntry ::= SEQUENCE {
+        mcmMLMINetlinkStatIfIndex           INTEGER,
+	mcmMLMINetlinkStatMsgRxSetup        INTEGER,
+	mcmMLMINetlinkStatMsgTxSetup        Counter,
+	mcmMLMINetlinkStatMsgRxCallPrcdngs  Counter,
+	mcmMLMINetlinkStatMsgTxCallPrcdngs  Counter,
+	mcmMLMINetlinkStatMsgRxConn         Counter,
+	mcmMLMINetlinkStatMsgTxConn         Counter,
+	mcmMLMINetlinkStatMsgRxDisConn      Counter,
+	mcmMLMINetlinkStatMsgTxDisConn      Counter,
+	mcmMLMINetlinkStatMsgRxRls          Counter,
+	mcmMLMINetlinkStatMsgTxRls          Counter,
+	mcmMLMINetlinkStatMsgRxRlseComp     Counter,
+	mcmMLMINetlinkStatMsgTxRlseComp     Counter,
+	mcmMLMINetlinkStatMsgRxStatusInq    Counter,
+	mcmMLMINetlinkStatMsgTxStatusInq    Counter,
+	mcmMLMINetlinkStatMsgRxStatus       Counter,
+	mcmMLMINetlinkStatMsgTxStatus       Counter,
+	mcmMLMINetlinkStatLocalSVC          Counter,
+	mcmMLMINetlinkStatTransitSVC        Counter,
+	mcmMLMINetlinkStatVoiceCalls        Counter,
+	mcmMLMINetlinkStatLanCalls          Counter,
+	mcmMLMINetlinkStatRsiCalls          Counter,
+	mcmMLMINetlinkStatSpvcCalls         Counter,
+	mcmMLMINetlinkStatLnkupCnt          Counter,
+        mcmMLMINetlinkStatLnkDownCnt        Counter
+        }
+
+
+mcmMLMINetlinkStatIfIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object \
+                  identifies a unique netlink \
+                  index value in the netlink \
+                  statistics table.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkStatEntry 1 }	
+
+mcmMLMINetlinkStatMsgRxSetup OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of setup messages \
+                  received.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 2 }
+
+mcmMLMINetlinkStatMsgTxSetup OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of setup messages \
+                  transmitted.; 
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 3 }
+
+mcmMLMINetlinkStatMsgRxCallPrcdngs OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of call proceeding \
+                  messages received.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 4 }
+
+mcmMLMINetlinkStatMsgTxCallPrcdngs OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of call proceeding \
+                  messages transmitted.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 5 }
+
+mcmMLMINetlinkStatMsgRxConn OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of connect messages \
+                  received.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 6 }
+
+mcmMLMINetlinkStatMsgTxConn OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of connect messages \
+                  transmitted.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 7 }
+
+mcmMLMINetlinkStatMsgRxDisConn OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of disconnect messages \
+                  received.; 
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 8 }
+
+mcmMLMINetlinkStatMsgTxDisConn OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of disconnect messages \
+                  transmitted.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 9 }
+
+mcmMLMINetlinkStatMsgRxRls OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of release messages \
+                  received.; 
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 10 }
+
+mcmMLMINetlinkStatMsgTxRls OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of release messages \
+                  transmitted.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 11 }
+
+mcmMLMINetlinkStatMsgRxRlseComp OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;1
+	   DESC = The number of release complete \
+                  messages received.; 
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 12 }
+
+mcmMLMINetlinkStatMsgTxRlseComp OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of release complete \
+                  messages transmitted.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 13 }
+
+mcmMLMINetlinkStatMsgRxStatusInq OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of status inquiry \
+                  messages received.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 14 }
+
+mcmMLMINetlinkStatMsgTxStatusInq OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of status inquiry \
+                  messages transmitted.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 15 }
+
+mcmMLMINetlinkStatMsgRxStatus OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of status requests \
+                  received.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 16 }
+
+mcmMLMINetlinkStatMsgTxStatus OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of status requests \
+                  transmitted.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 17 }
+
+mcmMLMINetlinkStatLocalSVC OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of local SVCs.; 
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 18 }
+
+mcmMLMINetlinkStatTransitSVC OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of transit SVCs.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 19 }
+
+mcmMLMINetlinkStatVoiceCalls OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of voice calls \
+                  on this link.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 20 }
+
+mcmMLMINetlinkStatLanCalls OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of LAN calls on \
+                  this link.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 21 }
+
+mcmMLMINetlinkStatRsiCalls OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of RSI calls on \
+                  this link.; 
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 22 }
+
+mcmMLMINetlinkStatSpvcCalls OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of SVC calls on \
+                  this link.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 23 }
+
+mcmMLMINetlinkStatLnkupCnt OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of times the \
+                  MPANL came up.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 24 }
+
+mcmMLMINetlinkStatLnkDownCnt OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of times the \
+                  MPANL came down.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatEntry 25 }
+
+
+--  the MPANL LMI Circuit Statistics Table 
+
+mcmMLMICircuitStatTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmMLMICircuitStatEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+ 	  "NAME = ; 
+    	   DESC = The MPANL LMI Circuit Statistic Parameters \
+		  table.;
+   	   HELP = ;
+    	   CAPABILITIES = NET_DISP, VPN_DISP;"
+ 	::= { mlmi-statistics 11 }
+
+mcmMLMICircuitStatEntry OBJECT-TYPE
+	SYNTAX  McmMLMICircuitStatEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+ 	DESCRIPTION
+   	  "NAME = ; 
+    	   DESC = An entry in the MPANL LMI Circuit \
+                  Statistic Parameters table.;
+    	   HELP = ;
+    	   CAPABILITIES = ;"
+ 	INDEX {mcmMLMICircuitStatIfIndex,mcmMLMICircuitStatSVCDLCI}
+	::= { mcmMLMICircuitStatTable 1 }
+
+McmMLMICircuitStatEntry ::= SEQUENCE {
+        mcmMLMICircuitStatIfIndex            INTEGER,
+        mcmMLMICircuitStatSVCDLCI            INTEGER,
+	mcmMLMICircuitStatMsgRxStatus        Counter,
+	mcmMLMICircuitStatMsgTxStatus        Counter,
+	mcmMLMICircuitStatMsgRxStatusInq     Counter,
+	mcmMLMICircuitStatMsgTxStatusInq     Counter
+        }
+
+mcmMLMICircuitStatIfIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object \
+                  identifies a unique circuit \
+                  index value in the circuit \
+                  statistics table.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMICircuitStatEntry 1 }
+
+mcmMLMICircuitStatSVCDLCI OBJECT-TYPE
+	SYNTAX	INTEGER (17..991)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The Data link Connection \
+                  Identifier(DLCI) for a \
+                  particular Switched Virtual \
+                  Circuit(SVC).;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatEntry 2 }
+
+mcmMLMICircuitStatMsgRxStatus OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of status messages \
+                  received on a specific SVC.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatEntry 3 }
+
+mcmMLMICircuitStatMsgTxStatus OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of setup messages \
+                  transmitted on a specific SVC.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatEntry 4 }
+
+mcmMLMICircuitStatMsgRxStatusInq OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of status inquiries \
+                  received on a specific SVC.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatEntry 5 }
+
+
+mcmMLMICircuitStatMsgTxStatusInq OBJECT-TYPE
+	SYNTAX	Counter 
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The number of status inquiries \ 
+                  transmitted on a specific SVC.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatEntry 6 }
+
+
+
+--  the MPANL LMI Netlink Status Table (Operational Parameters)
+
+mcmMLMINetlinkStatusTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmMLMINetlinkStatusEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+ 	  "NAME = ; 
+    	   DESC = The MPANL LMI Netlink Status Parameters \
+		  table.;
+   	   HELP = ;
+    	   CAPABILITIES = NET_DISP, VPN_DISP;"
+ 	::= { mlmi-status 1 }
+
+mcmMLMINetlinkStatusEntry OBJECT-TYPE
+	SYNTAX  McmMLMINetlinkStatusEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+ 	DESCRIPTION
+   	  "NAME = ; 
+    	   DESC = An entry in the MPANL LMI Netlink Status \
+            		  Parameters table.;
+    	   HELP = ;
+    	   CAPABILITIES = ;"
+ 	INDEX   { mcmMLMINetlinkStatusIfIndex }
+	::= { mcmMLMINetlinkStatusTable 1 }
+
+McmMLMINetlinkStatusEntry ::= SEQUENCE {
+        mcmMLMINetlinkStatusIfIndex         INTEGER,
+	mcmMLMINetlinkStatusMPANLStatus     INTEGER,
+	mcmMLMINetlinkStatusRestartState    INTEGER,
+	mcmMLMINetlinkStatusLAPFState	    INTEGER,
+	mcmMLMINetlinkStatusFrCoreState	    INTEGER,
+	mcmMLMINetlinkStatusTxThrput        INTEGER,
+        mcmMLMINetlinkStatusRxThrput        INTEGER
+        }
+
+mcmMLMINetlinkStatusIfIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object \
+                  identifies a unique netlink \
+                  index value in the netlink \
+                  status table.;		  		 
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMINetlinkStatusEntry 1 }
+
+mcmMLMINetlinkStatusMPANLStatus OBJECT-TYPE
+	SYNTAX	INTEGER {
+                up   (1),
+                down (2)
+                }
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The MPANL link status for both \
+                  DTE and DCE.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatusEntry 2 }
+
+mcmMLMINetlinkStatusRestartState OBJECT-TYPE
+	SYNTAX	INTEGER {
+                none              (1),
+                rstrtRqstSent     (2),
+                rstrtRqstReceived (3)
+                }
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The Q.933 link recovery restart \
+                  states.;		  
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatusEntry 3 }
+
+mcmMLMINetlinkStatusLAPFState OBJECT-TYPE
+	SYNTAX	INTEGER {
+                up   (1),
+                down (2)
+                }
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The LAPF state as seen by \
+                  MLMI.;		  
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatusEntry 4 }
+
+mcmMLMINetlinkStatusFrCoreState OBJECT-TYPE
+	SYNTAX	INTEGER {
+                up (1),
+                down (2)
+                }
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The Frame Relay Core state \
+                  as seen by MLMI.;		  
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatusEntry 5 }
+
+mcmMLMINetlinkStatusTxThrput OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  obsolete
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = This object has been OBSOLETED for software \
+		  releases beginning with Release 3.0. \
+		  The total throughput in bytes, \
+                  used for outgoing traffic on \
+                  the netlink.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatusEntry 6 }
+
+mcmMLMINetlinkStatusRxThrput OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  obsolete
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = This object has been OBSOLETED for software \
+		  releases beginning with Release 3.0. \
+		  The total throughput in bytes, \
+                  for incoming traffic on the \
+                  netlink.;		  
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMINetlinkStatusEntry 7 }
+
+
+--  the MPANL LMI Circuit Status Table (Operational Parameters)
+
+mcmMLMICircuitStatusTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmMLMICircuitStatusEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+ 	  "NAME = ; 
+    	   DESC = The MPANL LMI Circuit Status Parameters \
+		  table.;
+   	   HELP = ;
+    	   CAPABILITIES = NET_DISP, VPN_DISP;"
+ 	::= { mlmi-status 2 }
+
+mcmMLMICircuitStatusEntry OBJECT-TYPE
+	SYNTAX  McmMLMICircuitStatusEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+ 	DESCRIPTION
+   	  "NAME = ; 
+    	   DESC = An entry in the MPANL LMI Circuit Status \
+            		  Parameters table.;
+    	   HELP = ;
+    	   CAPABILITIES = ;"
+ 	INDEX { mcmMLMICircuitStatusIfIndex, mcmMLMICircuitStatusSVCDLCI }
+	::= { mcmMLMICircuitStatusTable 1 }
+
+McmMLMICircuitStatusEntry ::= SEQUENCE {
+        mcmMLMICircuitStatusIfIndex            INTEGER,
+        mcmMLMICircuitStatusSVCDLCI            INTEGER,
+	mcmMLMICircStatusRejectCause           INTEGER,
+	mcmMLMICircStatusSVCType               INTEGER,
+	mcmMLMICircStatusAttriSetupPriority    INTEGER,
+	mcmMLMICircStatusAttriHoldPriority     INTEGER,
+	mcmMLMICircStatusAttriDiscardPriority  INTEGER,
+        mcmMLMICircStatusClaimedBandWidth      INTEGER,
+        mcmMLMICircStatusQoSTxThrput           INTEGER,
+        mcmMLMICircStatusQoSRxThrput           INTEGER,
+        mcmMLMICircStatusQoSTxBrstSizGrntd     INTEGER,
+        mcmMLMICircStatusQoSRxBrstSizGrntd     INTEGER,
+        mcmMLMICircStatusQoSTxExRateGrntd      INTEGER,
+        mcmMLMICircStatusQoSRxExRateGrntd      INTEGER,
+        mcmMLMICircStatusPeerDLCI              INTEGER,
+        mcmMLMICircStatusPeerNetwork           INTEGER,
+        mcmMLMICircStatusCallingDNA            DisplayString,
+        mcmMLMICircStatusCalledDNA             DisplayString
+        
+        }
+
+mcmMLMICircuitStatusIfIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object \
+                  identifies a unique netlink \
+                  index value in the netlink \
+                  status table.;		  		 
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmMLMICircuitStatusEntry 1 }
+
+mcmMLMICircuitStatusSVCDLCI OBJECT-TYPE
+	SYNTAX	INTEGER (17..991)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The Data link Connection 
+                  Identifier(DLCI) for a 
+                  particular Switched Virtual
+                  Circuit(SVC).;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 2 }
+
+mcmMLMICircStatusRejectCause OBJECT-TYPE
+	SYNTAX	INTEGER (1..512)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The reject cause codes for \
+                  SVCs.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 3 }
+
+mcmMLMICircStatusSVCType OBJECT-TYPE
+	SYNTAX	INTEGER {
+                rfc1490         (1),
+                voice           (2),
+                switched        (3),
+                rfc1490switched (4),
+                rsi             (5)
+                }
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = 
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 4 }
+
+mcmMLMICircStatusAttriSetupPriority OBJECT-TYPE
+	SYNTAX	INTEGER {
+                onePriority   (1),
+                twoPriority   (2),
+                threePriority (3),
+                fourPriority  (4),
+                fivePriority  (5)
+                }
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC =  Circuit attribute setup priority, \
+                   where onePriority is highest.;       	
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 5 }
+
+mcmMLMICircStatusAttriHoldPriority OBJECT-TYPE
+	SYNTAX	INTEGER {
+                onePriority   (1),
+                twoPriority   (2),
+                threePriority (3),
+                fourPriority  (4),
+                fivePriority  (5)
+                }
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC =  Circuit attribute holding priority, \
+                   where onePriority is highest.;  
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 6 }
+
+mcmMLMICircStatusAttriDiscardPriority OBJECT-TYPE
+	SYNTAX	INTEGER {
+                onePriority   (1),
+                twoPriority   (2),
+                threePriority (3),
+                fourPriority  (4),
+                fivePriority  (5)
+                }
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC =  Circuit attribute discard priority, \
+                   where priority1 is the highest \
+                   priority.;  
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 7 }
+
+mcmMLMICircStatusClaimedBandWidth OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The required bandwidth in bytes \
+                  for the SVC call.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 8 }
+
+mcmMLMICircStatusQoSTxThrput OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The transmit throughput \
+                  granted in bytes.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 9 }
+
+mcmMLMICircStatusQoSRxThrput OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The received throughput \
+                  granted in bytes.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 10 }
+
+mcmMLMICircStatusQoSTxBrstSizGrntd OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The transmit burst size \
+                  granted in bytes.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 11 }
+
+mcmMLMICircStatusQoSRxBrstSizGrntd OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The received burst size \
+                  granted in bytes.; 
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 12 }
+
+mcmMLMICircStatusQoSTxExRateGrntd OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The transmit excess rate \
+                  granted in bytes.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 13 }
+
+mcmMLMICircStatusQoSRxExRateGrntd OBJECT-TYPE
+	SYNTAX	INTEGER (0..2560000)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The received excess rate \
+                  granted in bytes.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 14 }
+
+mcmMLMICircStatusPeerDLCI OBJECT-TYPE
+	SYNTAX	INTEGER (16..991)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The DLCI number at the other \
+                  side of the connection.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 15 }
+
+mcmMLMICircStatusPeerNetwork OBJECT-TYPE
+	SYNTAX	INTEGER (1..64)
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The Network number at the other \
+                  side of the connection.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 16 }
+
+mcmMLMICircStatusCallingDNA OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(1..34))
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The Calling DNA number associated \
+                  with the Data link Connection \
+                  Identifier(DLCI) for a \
+                  particular Switched Virtual \
+                  Circuit(SVC).;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 17 }
+
+mcmMLMICircStatusCalledDNA OBJECT-TYPE
+	SYNTAX	DisplayString (SIZE(1..34))
+    	ACCESS  read-only
+     	STATUS  mandatory
+     	DESCRIPTION
+          "NAME = ;
+	   DESC = The Called DNA number associated \
+                  with the Data link Connection \
+                  Identifier(DLCI) for a \
+                  particular Switched Virtual \
+                  Circuit(SVC).;
+	   HELP = ;
+	   CAPABILITIES = ;"
+     	::= { mcmMLMICircuitStatusEntry 18 }
+
+
+--  the MPANL LMI Counter Reset Group (Operational Parameter - Control)
+
+--  The MLMI Counter Reset Object
+
+mcmMLMICntrAction OBJECT-TYPE
+	SYNTAX  INTEGER { 
+		reset (1) 
+		}
+	ACCESS	write-only
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+ 	   DESC = ** NOTE:THIS OBJECT IS OBSOLETE AND NO \
+                  LONGER SUPPORTED IN RELEASE 3.0 AND \
+                  BEYOND. \
+                  Setting this object to reset(1) will zero \
+		  the values of the counters in the MPANL \
+		  LMI Statistics group.;
+	   HELP = When set to reset(1), the following counter \
+		  objects are reset: \
+		mcmMLMIStatsActiveVCs \
+		mcmMLMIStatsRequestedCalls \
+		mcmMLMIStatsInitiatedCalls \
+		mcmMLMIStatsFailedCalls \
+		mcmMLMIStatsSucceededCalls \
+		mcmMLMIStatsReleasedCalls \
+		mcmMLMIStatsDisconnectedCalls \
+		mcmMLMIStatsAdmittedCUGs \
+		mcmMLMIStatsRejectedCUGs;
+	   CAPABILITIES = NET_OPER, VPN_OPER;"
+	::= { mlmi-control 1 }
+
+
+-- Trap Messages
+
+mcmLMISVCCallRejected TRAP-TYPE
+    ENTERPRISE  micom-mlmi
+    VARIABLES   { mcmSysAsciiTimeOfDay,  mcmMLMINetlinkIfIndex }
+    DESCRIPTION
+      "NAME = ;
+       DESC = This trap will be generated from the PANL LMI \
+              module. It will trigger if a SVC Call is rejected \
+              because the outgoing netlink number is \
+              identical to the incoming netlink number.\ 
+              Severity Level: MAJOR.;
+       HELP = Please verify the configuration parameters of \
+              the netlink number or DNA number.;"
+                            
+    ::= 1
+
+mcmLMIIncompatibleType TRAP-TYPE
+    ENTERPRISE  micom-mlmi
+    VARIABLES   { mcmSysAsciiTimeOfDay, mcmMLMINetlinkIfIndex }
+    DESCRIPTION
+      "NAME = ;
+       DESC = This trap will be generated from the PANL LMI \
+              module.  It will trigger if incompatible 
+              access devices are connected. \
+              Severity Level: MAJOR.;
+       HELP = Check model types for compatiblity.;"
+              
+    ::= 2
+
+mcmLMIT317TimerExpired TRAP-TYPE
+    ENTERPRISE  micom-mlmi
+    VARIABLES   { mcmSysAsciiTimeOfDay, mcmMLMINetlinkIfIndex }
+    DESCRIPTION
+      "NAME = ;
+       DESC = This trap will be generated from PANL LMI \
+              module.  It will trigger if the T317 timer \
+              expires.\
+              Severity Level: INFORMATIVE.; 
+       HELP = Check to see if all circuits have been cleared.;"
+                            
+    ::= 3
+
+mcmMLMIReachedMaxUnsucessfulRestartAttemps TRAP-TYPE
+    ENTERPRISE  micom-mlmi
+    VARIABLES   { mcmSysAsciiTimeOfDay, mcmMLMINetlinkIfIndex}
+    DESCRIPTION
+      "NAME = ;
+       DESC = This trap will be generated from the PANL LMI \
+              module. It will trigger if the number of \
+              the unsuccessful restart attempts reaches \
+              reaches its maximum.\
+              Severity Level: INFORMATIVE.;
+       HELP = Check the number of restart attempts allowed \
+              in configuration.;"
+              
+              
+    ::= 4
+
+END

@@ -1,0 +1,911 @@
+-- Open issues:
+
+--   None of this is set in stone and will be modified as needed
+
+--   ../emissary/emissary -partial xedia_reg.mib xntp.mib -o xntp.ctl.stub
+--   ../emissary/emissary -skel xedia_reg.mib xntp.mib xntp.ctl -o xntp.c.stub
+
+-- ================================================================
+
+XEDIA-NETWORK-TIME-PROTOCOL-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+     MODULE-IDENTITY, OBJECT-TYPE, Integer32, IpAddress, Counter32
+          FROM SNMPv2-SMI
+     TEXTUAL-CONVENTION, RowStatus, DisplayString
+          FROM SNMPv2-TC
+     MODULE-COMPLIANCE, OBJECT-GROUP
+          FROM SNMPv2-CONF
+     xediaMibs
+        FROM XEDIA-REG
+     ;
+
+xediaNetworkTimeProtocolMIB MODULE-IDENTITY
+     LAST-UPDATED "9812151655Z" -- December 15, 1998
+     ORGANIZATION "Xedia Corp."
+     CONTACT-INFO
+          "support@xedia.com"
+     DESCRIPTION
+          "This module defines objects for the management of Xedia's
+           implementation of the Network Time Protocol. This imlementation
+           is based on RFC1305 and its successors.
+
+           The purpose of the Network Time Protocol is to allow Internet
+           hosts to syncronize to Universal Coordinated Time (UTC) through a
+           set of distributed time servers."  
+    ::= { xediaMibs 26 }
+
+
+-- ================================================================
+-- Top-level organization of the MIB
+-- ================================================================
+
+xntpObjects          OBJECT IDENTIFIER ::= { xediaNetworkTimeProtocolMIB 1 }
+xntpConformance      OBJECT IDENTIFIER ::= { xediaNetworkTimeProtocolMIB 2 }
+
+-- ================================================================
+-- Textual Conventions (datatypes)
+-- ================================================================
+
+
+XntpIpAddress ::= TEXTUAL-CONVENTION
+     STATUS          current
+     DESCRIPTION
+          "An IPv4 address."
+     SYNTAX          IpAddress
+
+XntpPort ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT    "d"
+     STATUS          current
+     DESCRIPTION
+          "A UDP port number."
+     SYNTAX          Integer32 (0..65535)
+
+XntpDateAndTime ::= TEXTUAL-CONVENTION
+     STATUS          current
+     DESCRIPTION
+          "The value of an NTP time stamp. The value is expressed in
+           date and time format in the UTC timescale. The accuracy of
+           the time is in microseconds. The value is expressed as:
+
+                    'yyyy/mm/dd hh:mm:ss:uuuuuu'
+           where:
+                    y = year, m = month, d = day, h = hour, m = minute,
+                    s = second, and u = microsecond."
+     SYNTAX          DisplayString (SIZE (26))
+
+XntpSeconds ::= TEXTUAL-CONVENTION
+     STATUS           current
+     DESCRIPTION
+          "A value expressed in positive or negative seconds and microseconds."
+     SYNTAX          DisplayString (SIZE (13))
+
+XntpAssociationMode ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT   "d"
+     STATUS         current
+     DESCRIPTION
+          "The association mode indicates the mode of the peer with
+           which the local system is syncronizing.
+
+          +--------------------+-------+
+          |  ASSOCIATION TYPE  | VALUE |
+          +--------------------+-------+
+
+             UNSPECIFIED         0
+             SYMMETRIC ACTIVE    1
+             SYMMETRIC PASSIVE   2
+             CLIENT              3
+             SERVER              4
+         "
+     SYNTAX         INTEGER { unspecifed(0), symActive(1), symPassive(2),
+                              client(3), server(4) }
+
+XntpLeapIndication ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT   "d"
+     STATUS         current
+     DESCRIPTION
+          "The leap indicator indicates leap second warning and syncronization
+           status.
+
+          +--------------------+-------+
+          |  LEAP INDICATIONS  | VALUE |
+          +--------------------+-------+
+
+             NO WARNING                 0
+             LAST MINUTE HAS 61 SECS    1
+             LAST MINUTE HAS 59 SECS    2
+             UNSYNCRONIZED              3
+         "
+     SYNTAX         INTEGER { noWarning(0), insertSecond(1), 
+                              deleteSecond(2), unsyncronized(3) }
+
+XntpCounter ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT    "d"
+     STATUS          current
+     DESCRIPTION
+          "A 32 bit counter."
+     SYNTAX          Counter32
+
+XntpAssociationCondition ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT   "d"
+     STATUS         current
+     DESCRIPTION
+          "Indicates the condition of the peer after the last 
+           run of the algorithm to select the syncronization source.
+
+          +--------------------+-------+
+          |      CONDITION     | VALUE |
+          +--------------------+-------+
+
+             REJECTED            0
+             FALSETICKER         1
+             ELIMINATED          2
+             OUTLYER             3
+             SYNCCANDIDATE       4
+             DISTSYSPEER         5
+             SYSPEER             6
+
+
+         "
+     SYNTAX         INTEGER { rejected(0), eliminated(1), falseticker(2),
+                              outlyer(3), syncCandidate(4), distSysPeer(5),
+                              sysPeer(6) }
+
+XntpReachability ::= TEXTUAL-CONVENTION
+     DISPLAY-HINT    "o"
+     STATUS          current
+     DESCRIPTION
+          "An octal representation of the reachability register."
+     SYNTAX          INTEGER
+
+-- ================================================================
+-- Object Definitions
+-- ================================================================
+
+-- Xedia Network Time Protocol Status Group
+
+-- The Status Group is a set of objects that display the NTP System Variables
+
+     xntpSystem  OBJECT IDENTIFIER ::= { xntpObjects 1 }
+
+     xntpAdminStatus  OBJECT-TYPE
+          SYNTAX       INTEGER {
+            enabled     (1),
+            disabled    (2)
+          }
+          MAX-ACCESS   read-write
+          STATUS       current
+          DESCRIPTION
+           "Determines the NTP agent is operational."
+          DEFVAL { disabled }
+     ::= { xntpSystem 1 }
+
+     xntpSrcAddressStatus  OBJECT-TYPE
+          SYNTAX       INTEGER {
+            enabled     (1),
+            disabled    (2)
+          }
+          MAX-ACCESS   read-write
+          STATUS       current
+          DESCRIPTION
+           "Determines if the NTP agent will send all packets from a specified
+            source address."
+          DEFVAL { disabled }
+     ::= { xntpSystem 2 }
+
+     xntpStratum  OBJECT-TYPE
+          SYNTAX       Integer32
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the stratum of local clock."
+     ::= { xntpSystem 3 }
+
+     xntpMode  OBJECT-TYPE
+          SYNTAX       XntpAssociationMode
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the association mode."
+     ::= { xntpSystem 4 }
+
+     xntpPrecision  OBJECT-TYPE
+          SYNTAX       Integer32
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the precision of the local clock."
+     ::= { xntpSystem 5 }
+
+
+     xntpClockSource  OBJECT-TYPE
+          SYNTAX       XntpIpAddress
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Identifies the current synchronization source."
+     ::= { xntpSystem 6 }
+
+     xntpPollInterval  OBJECT-TYPE
+          SYNTAX       Integer32
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the minimum interval between transmitted
+            messages. It is expressed in seconds as a power of 2."
+     ::= { xntpSystem 7 }
+
+     xntpLeapIndicator  OBJECT-TYPE
+          SYNTAX       XntpLeapIndication
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates leap second status and NTP syncronization 
+            status."
+     ::= { xntpSystem 8 }
+
+     xntpRootDelay  OBJECT-TYPE
+          SYNTAX       XntpSeconds
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the delay to the root of the syncronization 
+            subnet." 
+     ::= { xntpSystem 9 }
+
+     xntpRootDispersion  OBJECT-TYPE
+          SYNTAX       XntpSeconds
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the maximum error relative to the root of the
+            syncronization subnet." 
+     ::= { xntpSystem 10 }
+
+     xntpReferenceTimestamp  OBJECT-TYPE
+          SYNTAX       XntpDateAndTime
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "The last time the local clock was updated. If never updated,
+            the value is zero."
+     ::= { xntpSystem 11 }
+
+     xntpLocalTime  OBJECT-TYPE
+          SYNTAX       XntpDateAndTime
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "The current time in NTP timescale."
+     ::= { xntpSystem 12 }
+
+-- Xedia Network Time Protocol Counters
+
+-- The counters show the number of packets processed by NTP
+
+     xntpCounters  OBJECT IDENTIFIER ::= { xntpObjects 2 }
+
+     xntpPacketsIn  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of packets received by NTP."
+     ::= { xntpCounters 1 }
+
+     xntpBadVersion  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of packets discarded because of an invalid
+            version number."
+     ::= { xntpCounters 2 }
+
+     xntpBadStratum  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of packets discarded because of an invalid
+            stratum."
+     ::= { xntpCounters 3 }
+
+     xntpBadLength OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of packets discarded because of an invalid
+            length."
+     ::= { xntpCounters 4 }
+
+     xntpBadMode  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of packets discarded because of an invalid
+            or unsupported mode."
+     ::= { xntpCounters 5 }
+
+     xntpBadHeader  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of packets discarded because of an invalid
+            header."
+     ::= { xntpCounters 6 }
+
+     xntpBadData  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of packets discarded because of invalid
+            data."
+     ::= { xntpCounters 7 }
+
+
+     xntpPacketsOut  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of packets sent by NTP."
+     ::= { xntpCounters 8 }
+
+     xntpPhaseAdjustments  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of times the local clock was phase
+            adjusted."
+     ::= { xntpCounters 9 }
+
+     xntpStepAdjustments  OBJECT-TYPE
+          SYNTAX       XntpCounter
+          MAX-ACCESS   read-only
+          STATUS       current
+          DESCRIPTION
+           "Indicates the number of times the local clock was step
+            adjusted."
+     ::= { xntpCounters 10 }
+
+
+-- **********************************************
+--  Not sure what the reprecussion of deleting an
+--  entry will be especially if it happens to be
+--  the current syncronization source
+-- ***********************************************/
+
+-- Xedia Network Time Protocol Server Table
+
+-- The server table shows every server with which the host
+-- will attempt to form a client association
+
+     xntpServerTable  OBJECT-TYPE
+          SYNTAX   SEQUENCE OF XntpServerEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of configured servers "
+          ::= { xntpObjects 3 }
+
+     xntpServerEntry  OBJECT-TYPE
+          SYNTAX XntpServerEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for every configured
+                server."
+          INDEX { xntpServer }
+          ::= { xntpServerTable 1 } 
+
+     XntpServerEntry ::= SEQUENCE {
+          xntpServer           XntpIpAddress,
+          xntpServerVersion    Integer32,
+          xntpServerMinPoll    Integer32,
+          xntpServerMaxPoll    Integer32,
+          xntpServerRowStatus  RowStatus
+     }
+
+     xntpServer  OBJECT-TYPE
+          SYNTAX  XntpIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The IP address of a server with which to attempt
+                client/server association."
+          ::= { xntpServerEntry 1 }
+
+     xntpServerVersion  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The version of the server."
+          DEFVAL { 3 }
+          ::= { xntpServerEntry 2 }
+
+     xntpServerMinPoll  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The minimum poll interval for the server as a power of two."
+          DEFVAL { 6 }
+          ::= { xntpServerEntry 3 }
+
+     xntpServerMaxPoll  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The maximum poll interval for the server as a power of two."
+          DEFVAL { 10 }
+          ::= { xntpServerEntry 4 }
+
+     xntpServerRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "This object only supports the values of 'createAndGo',
+                'active' and 'destroy'. Changing the value of this
+                object to 'destroy' has the effect of removing the 
+                entry. To create an entry, this object must be set
+                to 'createAndGo'."
+          ::= { xntpServerEntry 5 }
+
+-- Xedia Network Time Protocol SAPeer Table
+
+-- The symmetric active peer table shows every peer with which the
+-- host will attempt to form a symmetric active association
+
+     xntpSAPeerTable  OBJECT-TYPE
+          SYNTAX   SEQUENCE OF XntpSAPeerEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The current set of configured symmetric active peers"
+          ::= { xntpObjects 4 }
+
+     xntpSAPeerEntry  OBJECT-TYPE
+          SYNTAX XntpSAPeerEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for every configured
+                symmetric active peer."
+          INDEX { xntpSAPeer }
+          ::= { xntpSAPeerTable 1 } 
+
+     XntpSAPeerEntry ::= SEQUENCE {
+          xntpSAPeer           XntpIpAddress,
+          xntpSAPeerVersion    Integer32,
+          xntpSAPeerMinPoll    Integer32,
+          xntpSAPeerMaxPoll    Integer32,
+          xntpSAPeerRowStatus  RowStatus
+     }
+
+     xntpSAPeer  OBJECT-TYPE
+          SYNTAX  XntpIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The IP address of a peer with which to attempt to form
+                a symmetric passive association."
+          ::= { xntpSAPeerEntry 1 }
+
+     xntpSAPeerVersion  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The version of the peer."
+          DEFVAL { 3 }
+          ::= { xntpSAPeerEntry 2 }
+
+     xntpSAPeerMinPoll  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The minimum poll interval for the peer as a power of two."
+          DEFVAL { 6 }
+          ::= { xntpSAPeerEntry 3 }
+
+     xntpSAPeerMaxPoll  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "The maximum poll interval for the peer as a power of two."
+          DEFVAL { 10 }
+          ::= { xntpSAPeerEntry 4 }
+
+     xntpSAPeerRowStatus  OBJECT-TYPE
+          SYNTAX  RowStatus
+          MAX-ACCESS  read-create
+          STATUS  current
+          DESCRIPTION
+               "This object only supports the values of 'createAndGo',
+                'active' and 'destroy'. Changing the value of this
+                object to 'destroy' has the effect of removing the 
+                entry. To create an entry, this object must be set
+                to 'createAndGo'."
+          ::= { xntpSAPeerEntry 5 }
+
+-- Xedia Network Time Protocol Association Table
+
+-- The server table shows every peer for which an active
+-- association exists.
+
+     xntpAssocTable  OBJECT-TYPE
+          SYNTAX   SEQUENCE OF XntpAssocEntry
+          MAX-ACCESS  not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The set of current associations"
+          ::= { xntpObjects 5 }
+
+     xntpAssocEntry  OBJECT-TYPE
+          SYNTAX XntpAssocEntry
+          MAX-ACCESS not-accessible
+          STATUS   current
+          DESCRIPTION
+               "The information maintained for every association."
+          INDEX { xntpAssocPeerAddr }
+          ::= { xntpAssocTable 1 } 
+
+     XntpAssocEntry ::= SEQUENCE {
+          xntpAssocPeerAddr             XntpIpAddress,
+          xntpAssocPeerPort             XntpPort,
+          xntpAssocPeerPoll             Integer32,
+          xntpAssocHostAddr             XntpIpAddress,
+          xntpAssocHostPort             XntpPort,
+          xntpAssocHostPoll             Integer32,
+          xntpAssocHostMode             XntpAssociationMode,
+          xntpAssocPeerMode             XntpAssociationMode,
+          xntpAssocPeerStratum          Integer32,
+          xntpAssocPeerPrecision        Integer32,
+          xntpAssocPeerLeap             XntpLeapIndication,
+          xntpAssocPeerCondition        XntpAssociationCondition,
+          xntpAssocPeerConfig           INTEGER,
+          xntpAssocPeerRootDelay        XntpSeconds,
+          xntpAssocPeerRootDispersion   XntpSeconds,
+          xntpAssocPeerOffset           XntpSeconds,
+          xntpAssocPeerDelay            XntpSeconds,
+          xntpAssocPeerDispersion       XntpSeconds,
+          xntpAssocPeerReachability     XntpReachability,
+          xntpAssocPeerRefrTimestamp    XntpDateAndTime,
+          xntpAssocPeerXmitTimestamp    XntpDateAndTime,
+          xntpAssocPeerOrigTimestamp    XntpDateAndTime,
+          xntpAssocPeerRecvTimestamp    XntpDateAndTime
+     }
+
+     xntpAssocPeerAddr  OBJECT-TYPE
+          SYNTAX  XntpIpAddress
+          MAX-ACCESS  not-accessible
+          STATUS  current
+          DESCRIPTION
+               "The IP address of the peer."
+          ::= { xntpAssocEntry 1 }
+
+     xntpAssocPeerPort   OBJECT-TYPE
+          SYNTAX  XntpPort
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The port number of the peer."
+          ::= { xntpAssocEntry 2 }
+
+     xntpAssocPeerPoll  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The peer's poll interval indicated as a power of two."
+          ::= { xntpAssocEntry 3 }
+
+     xntpAssocHostAddr   OBJECT-TYPE
+          SYNTAX  XntpIpAddress
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The IP address used by the local peer."
+          ::= { xntpAssocEntry 4 }
+
+     xntpAssocHostPort  OBJECT-TYPE
+          SYNTAX  XntpPort
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The port number used by the local peer."
+          ::= { xntpAssocEntry 5 }
+
+     xntpAssocHostPoll  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The host's poll interval indicated as a power of two."
+          ::= { xntpAssocEntry 6 }
+
+     xntpAssocHostMode  OBJECT-TYPE
+          SYNTAX  XntpAssociationMode
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The association mode of the host."
+          ::= { xntpAssocEntry 7 }
+
+
+     xntpAssocPeerMode  OBJECT-TYPE
+          SYNTAX  XntpAssociationMode
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The association mode of the peer."
+          ::= { xntpAssocEntry 8 }
+
+     xntpAssocPeerStratum  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The stratum of the peer's clock "
+          ::= { xntpAssocEntry 9 }
+
+     xntpAssocPeerPrecision  OBJECT-TYPE
+          SYNTAX  Integer32
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "The precesion of the peer's clock in seconds to the
+                nearest power of two."
+          ::= { xntpAssocEntry 10 }
+ 
+     xntpAssocPeerLeap  OBJECT-TYPE
+          SYNTAX  XntpLeapIndication
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The peer's leap second status."
+          ::= { xntpAssocEntry 11 }
+
+     xntpAssocPeerCondition  OBJECT-TYPE
+          SYNTAX  XntpAssociationCondition
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The peer's condition."
+          ::= { xntpAssocEntry 12 }
+
+
+     xntpAssocPeerConfig  OBJECT-TYPE
+          SYNTAX  INTEGER {
+            dynamic     (0),
+            configured  (1)
+          }
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+               "Indicates whether the associated was created as the
+                result of manual configuration."
+          ::= { xntpAssocEntry 13 }
+
+     xntpAssocPeerRootDelay  OBJECT-TYPE
+          SYNTAX  XntpSeconds
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The peer's delay to the root of the sycnronization
+                 subnet." 
+          ::= { xntpAssocEntry 14 }
+
+     xntpAssocPeerRootDispersion  OBJECT-TYPE
+          SYNTAX  XntpSeconds
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The maximum error of the peer relative to the root of 
+                 the syncronization subnet."
+          ::= { xntpAssocEntry 15 }
+
+     xntpAssocPeerOffset  OBJECT-TYPE
+          SYNTAX  XntpSeconds
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The offset of the peer's clock relative to the local
+                 clock."
+          ::= { xntpAssocEntry 16 }
+
+     xntpAssocPeerDelay  OBJECT-TYPE
+          SYNTAX  XntpSeconds
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The roundtrip delay of the peer clock relative to the
+                 local clock over the network path between them." 
+          ::= { xntpAssocEntry 17 }
+
+     xntpAssocPeerDispersion  OBJECT-TYPE
+          SYNTAX  XntpSeconds
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The maximum error of the peer clock relative to the
+                 local clock over the network path between them."
+          ::= { xntpAssocEntry 18 }
+
+     xntpAssocPeerReachability  OBJECT-TYPE
+          SYNTAX  XntpReachability
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The reachability of the peer expressed in octal."
+          ::= { xntpAssocEntry 19 }
+
+
+     xntpAssocPeerRefrTimestamp  OBJECT-TYPE
+          SYNTAX  XntpDateAndTime
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The last time the peer's local clock was updated."
+          ::= { xntpAssocEntry 20 }
+
+     xntpAssocPeerXmitTimestamp  OBJECT-TYPE
+          SYNTAX  XntpDateAndTime
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The local time when the NTP message departed the
+                 sender."
+          ::= { xntpAssocEntry 21 }
+
+     xntpAssocPeerOrigTimestamp  OBJECT-TYPE
+          SYNTAX  XntpDateAndTime
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The time at the peer when its latest NTP message was
+                 sent."
+          ::= { xntpAssocEntry 22 }
+
+     xntpAssocPeerRecvTimestamp  OBJECT-TYPE
+          SYNTAX  XntpDateAndTime
+          MAX-ACCESS read-only
+          STATUS  current
+          DESCRIPTION
+                "The local time when the latest NTP message from the
+                 peer was received."
+          ::= { xntpAssocEntry 23 }
+
+-- ================================================================
+-- Conformance Information
+-- ================================================================
+ 
+xntpCompliances      OBJECT IDENTIFIER ::= { xntpConformance 1 }
+xntpGroups           OBJECT IDENTIFIER ::= { xntpConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+xntpCompliance MODULE-COMPLIANCE
+     STATUS      current
+     DESCRIPTION
+          "The compliance statement for all agents that support this
+          MIB. A compliant agent implements all objects defined in this
+          MIB."
+     MODULE  -- this module
+     MANDATORY-GROUPS {
+          xntpSystemGroup,
+          xntpCountersGroup,
+          xntpServerGroup,
+          xntpSAPeerGroup,
+          xntpAssocGroup
+     }
+     ::= { xntpCompliances 1 }
+
+xntpSystemGroup OBJECT-GROUP
+     OBJECTS {
+          xntpAdminStatus,
+          xntpSrcAddressStatus,
+          xntpStratum,
+          xntpMode,
+          xntpPrecision,
+          xntpClockSource,
+          xntpPollInterval,
+          xntpLeapIndicator,
+          xntpRootDelay,
+          xntpRootDispersion,
+          xntpReferenceTimestamp,
+          xntpLocalTime
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for the Network Time Protocol."
+     ::= { xntpGroups 1 }
+
+xntpCountersGroup OBJECT-GROUP
+     OBJECTS {
+          xntpPacketsIn,
+          xntpBadVersion,
+          xntpBadStratum,
+          xntpBadLength,
+          xntpBadMode,
+          xntpBadHeader,
+          xntpBadData,
+          xntpPacketsOut,
+          xntpPhaseAdjustments,
+          xntpStepAdjustments
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for the Network Time Protocol."
+     ::= { xntpGroups 2 }
+
+xntpServerGroup OBJECT-GROUP
+     OBJECTS {
+          xntpServerVersion,
+          xntpServerMinPoll,
+          xntpServerMaxPoll,
+          xntpServerRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for the Network Time Protocol."
+     ::= { xntpGroups 3 }
+
+xntpSAPeerGroup OBJECT-GROUP
+     OBJECTS {
+          xntpSAPeerVersion,
+          xntpSAPeerMinPoll,
+          xntpSAPeerMaxPoll,
+          xntpSAPeerRowStatus
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for the Network Time Protocol."
+     ::= { xntpGroups 4 }
+
+xntpAssocGroup  OBJECT-GROUP  
+     OBJECTS {
+          xntpAssocPeerPort,
+          xntpAssocPeerPoll,
+          xntpAssocHostAddr,
+          xntpAssocHostPort,
+          xntpAssocHostPoll,
+          xntpAssocHostMode,
+          xntpAssocPeerMode,
+          xntpAssocPeerStratum,
+          xntpAssocPeerPrecision,
+          xntpAssocPeerLeap,
+          xntpAssocPeerCondition,
+          xntpAssocPeerConfig,
+          xntpAssocPeerRootDelay,
+          xntpAssocPeerRootDispersion,
+          xntpAssocPeerOffset,
+          xntpAssocPeerDelay,
+          xntpAssocPeerDispersion,
+          xntpAssocPeerReachability,
+          xntpAssocPeerRefrTimestamp,
+          xntpAssocPeerXmitTimestamp,
+          xntpAssocPeerOrigTimestamp,
+          xntpAssocPeerRecvTimestamp
+     }
+     STATUS      current
+     DESCRIPTION
+          "These objects are required for the Network Time Protocol."
+     ::= { xntpGroups 5 }
+
+END
+
+

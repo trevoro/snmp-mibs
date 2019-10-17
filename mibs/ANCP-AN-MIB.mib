@@ -1,0 +1,923 @@
+-- extracted from draft-ietf-ancp-mib-an-00.txt
+-- at Wed Jun 27 06:08:26 2007
+
+ANCP-AN-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+       MODULE-IDENTITY, OBJECT-TYPE,
+       Unsigned32, mib-2, TimeTicks,
+       NOTIFICATION-TYPE
+            FROM SNMPv2-SMI                            -- [RFC2578]
+       ZeroBasedCounter32
+            FROM RMON2-MIB                             -- [RFC4502]
+       ifIndex      FROM IF-MIB                        -- [RFC2863]
+       InetAddressType, InetAddress, InetPortNumber
+            FROM INET-ADDRESS-MIB                      -- [RFC4001]
+       MODULE-COMPLIANCE, OBJECT-GROUP,
+       NOTIFICATION-GROUP
+            FROM SNMPv2-CONF                           -- [RFC2580]
+       GsmpVersion, GsmpNameType, GsmpPartitionIdType
+            FROM GSMP-MIB                              -- [RFC3295]
+       RowStatus, TEXTUAL-CONVENTION, TruthValue
+            FROM SNMPv2-TC;                            -- [RFC2579]
+
+ancpAnMIB MODULE-IDENTITY
+       LAST-UPDATED "200706140000Z" -- 14 June 2007
+       ORGANIZATION "IETF ANCP Working Group"
+       CONTACT-INFO
+              " Editors:
+
+                        Stefaan De Cnodder
+                        Alcatel-Lucent
+                Postal: Copernicuslaan 50
+                        B-2018 Antwerp
+                        Belgium
+                EMail:  stefaan.de_cnodder@alcatel-lucent.be
+                Phone:  +32 3 240 85 15
+
+                        Moti Morgenstern
+                        ECI Telecom Ltd.
+                Postal: 30 Hasivim St.
+                        Petach Tikva 49517,
+                        Israel.
+                Email:  moti.morgenstern@ecitele.com
+                Phone:  +972 3 926 6258
+              "
+       DESCRIPTION
+           "The MIB module for entities implementing the access node
+            side of the Access Node Control Protocol (ANCP).
+            Copyright (C) The IETF Trust (2007).  The initial version of
+            this MIB module was published in RFC yyyy; for full legal
+            notices see the RFC itself."
+-- RFC Ed.: replace yyyy with actual RFC number & remove this note
+       REVISION "200706140000Z" -- 14 June 2007
+       DESCRIPTION "Initial version as published in RFC yyyy."
+-- RFC Ed.: replace yyyy with actual RFC number & remove this note
+       ::= { mib-2 1 }
+-- The value xxx to be assigned by IANA.
+
+ancpAnNotifications              OBJECT IDENTIFIER ::= { ancpAnMIB 0 }
+ancpAnObjects                    OBJECT IDENTIFIER ::= { ancpAnMIB 1 }
+ancpAnConformance                OBJECT IDENTIFIER ::= { ancpAnMIB 2 }
+
+GsmpSubVersion            ::= TEXTUAL-CONVENTION
+       STATUS     current
+       DESCRIPTION
+             "The subversion numbers defined for the GSMP protocol."
+       SYNTAX     Unsigned32
+
+AncpAnSessionCapabilities ::= TEXTUAL-CONVENTION
+       STATUS current
+       DESCRIPTION
+             "ANCP capabilities supported by the AN.
+              The following capabilities are available:
+                 topologyDiscovery (0)- Access Topology Discovery
+                 lineConfig (1)       - Line Configuration
+                 multicast (2)        - Multicast
+                 l2Oam (3)            - Layer 2 OAM
+              A bit set means the associated capability is supported."
+       SYNTAX BITS {
+                     topologyDiscovery (0),
+                     lineConfig (1),
+                     multicast (2),
+                     l2Oam (3)
+                   }
+
+--
+-- Global ANCP Control Parameters
+--
+-- The following scalar parameters globally control the behavior
+-- of the ANCP implementation
+--
+
+ancpAnPartitionsUsed OBJECT-TYPE
+       SYNTAX INTEGER { partitionsUnused (1), partitionsUsed (2) }
+       MAX-ACCESS     read-write
+       STATUS         current
+       DESCRIPTION
+             "This object allows the manager to specify whether or not
+              to use the 'Partition ID' field in the GSMP message
+              header.  When set to 'partitionsUnused' the application
+              does not use partitions and the
+              ancpAnSessionConfigPartitionId object MUST be zero for all
+              sessions.  In addition, rows SHOULD not be created in the
+              ancpAnInterfaceConfigTable.  When set to 'partitionsUsed'
+              the application uses partitions and the
+              ancpAnSessionConfigPartitionId object MUST be set, for
+              every session, to a nonzero value.  In such a case, rows
+              are created in ancpAnInterfaceConfigTable.  The default
+              value zero in ancpAnInterfaceConfigPartitionId object
+              means that the operator did not associate the interface
+              with a particular partition.  Note that modifying the
+              value of this object is restricted. E.g., prior to setting
+              it from 'partitionsUsed' to 'partitionsUnused'
+              ancpAnSessionConfigRowStatus objects for all sessions
+              should be set to notInService and the partition ID value
+              MUST be set to zero.
+              The value of this object is persistent."
+       DEFVAL { partitionsUnused }
+       ::= { ancpAnObjects 1 }
+
+--
+-- Configuration of ANCP Sessions
+--
+
+ancpAnNextSessionId OBJECT-TYPE
+       SYNTAX     Unsigned32
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The object reports the next index (potential value of
+              ancpAnSessionConfigSessionId) which is available for
+              creating a new row in ancpAnSessionConfigTable.
+              If no such value is available (e.g., the table is full or
+              any other reason) the object reports '0' (zero).
+              An available value V becomes unavailable when a row is
+              actually created with ancpAnSessionConfigSessionId=V and
+              until then consecutive GET commands with this object may
+              return the same value V. Note that eventually only one row
+              creation with the value V can succeed.
+              An unavailable value V becomes available again when a row
+              with ancpAnSessionConfigSessionId=V in
+              ancpAnSessionConfigTable is deleted."
+       ::= { ancpAnObjects 2 }
+
+ancpAnSessionConfigTable OBJECT-TYPE
+       SYNTAX SEQUENCE OF AncpAnSessionConfigEntry
+       MAX-ACCESS not-accessible
+       STATUS     current
+       DESCRIPTION
+             "This table represents the ANCP sessions in the access
+              node. An entry in this table needs to be configured
+              (created) before an ANCP session might be started."
+       ::= { ancpAnObjects 3 }
+
+ancpAnSessionConfigEntry OBJECT-TYPE
+       SYNTAX     AncpAnSessionConfigEntry
+       MAX-ACCESS not-accessible
+       STATUS     current
+       DESCRIPTION
+             "An entry in the table showing the data for a
+              specific actual or yet to be established session.
+              If partitions are used, one session corresponds to
+              one specific access node partition."
+       INDEX { ancpAnSessionConfigSessionId }
+       ::= { ancpAnSessionConfigTable 1 }
+
+AncpAnSessionConfigEntry ::= SEQUENCE {
+       ancpAnSessionConfigSessionId           Unsigned32,
+       ancpAnSessionConfigRowStatus           RowStatus,
+       ancpAnSessionConfigGsmpVersion         GsmpVersion,
+       ancpAnSessionConfigGsmpSubVersion      GsmpSubVersion,
+       ancpAnSessionConfigEncapsulationType   INTEGER,
+       ancpAnSessionConfigCapabilities        AncpAnSessionCapabilities,
+       ancpAnSessionConfigAliveTimer          Unsigned32,
+       ancpAnSessionConfigPortReportShaper    Unsigned32,
+       ancpAnSessionConfigAggregateReportShaper  Unsigned32,
+       ancpAnSessionConfigTransportRetryTimer Unsigned32,
+       ancpAnSessionConfigAncpRetryTimer      Unsigned32,
+       ancpAnSessionConfigAnName              GsmpNameType,
+       ancpAnSessionConfigPartitionId         GsmpPartitionIdType,
+       ancpAnSessionConfigWindowSize          Unsigned32,
+       ancpAnSessionConfigNasIpAddressType    InetAddressType,
+       ancpAnSessionConfigNasIpAddress        InetAddress,
+       ancpAnSessionConfigEncapPortNumber     InetPortNumber,
+       ancpAnSessionConfigNotifyDnEnable      TruthValue,
+       ancpAnSessionConfigNotifyUpEnable      TruthValue
+}
+
+ancpAnSessionConfigSessionId OBJECT-TYPE
+       SYNTAX     Unsigned32 (1..255)
+       MAX-ACCESS not-accessible
+       STATUS     current
+       DESCRIPTION
+             "A system generated index to distinguish between
+              different sessions. Session may be actually established
+              or just potential."
+       ::= { ancpAnSessionConfigEntry 1 }
+
+ancpAnSessionConfigRowStatus OBJECT-TYPE
+       SYNTAX     RowStatus
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "An object that allows entries in this table to
+              be created, modified and deleted using the RowStatus
+              convention.
+              A SET operation to any other attribute in this row, when
+              this object is set to 'active' (1), MUST be rejected with
+              an SNMP error (e.g., inconsistentValue).
+              In order to perform a SET operation to any other attribute
+              in this table the manager MUST set this object to
+              notInService (2). After setting the object back to
+              'active' the implementation MAY tear down the session and
+              recreate it, depending on what session attributes have
+              been modified. "
+       ::= { ancpAnSessionConfigEntry 2 }
+
+ancpAnSessionConfigGsmpVersion OBJECT-TYPE
+       SYNTAX     GsmpVersion
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The maximum version number of the GSMP protocol that
+              may be used in this session. The value of this object
+              is persistent."
+       DEFVAL { 3 }
+       ::= { ancpAnSessionConfigEntry 3 }
+
+ancpAnSessionConfigGsmpSubVersion OBJECT-TYPE
+       SYNTAX     GsmpSubVersion
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The maximum subversion number of the GSMP protocol that
+              may be used in this session. The value of this object
+              is persistent."
+       DEFVAL { 1 }
+       ::= { ancpAnSessionConfigEntry 4 }
+
+ancpAnSessionConfigEncapsulationType OBJECT-TYPE
+       SYNTAX INTEGER {
+                  tcp(1)
+              }
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "Required encapsulation for this session. The value of
+              this object is persistent."
+       DEFVAL { tcp }
+       ::= { ancpAnSessionConfigEntry 5 }
+
+ancpAnSessionConfigCapabilities OBJECT-TYPE
+       SYNTAX     AncpAnSessionCapabilities
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "ANCP capabilities supported by the AN in this session.
+              When all bits are set to zero then this means that no
+              capabilities are supported. The value of this object
+              is persistent."
+       DEFVAL { { topologyDiscovery, l2Oam } }
+       ::= { ancpAnSessionConfigEntry 6 }
+
+ancpAnSessionConfigAliveTimer OBJECT-TYPE
+       SYNTAX     Unsigned32(1..255)
+       UNITS      "deciseconds"
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The timer specifies the nominal time between periodic
+              adjacency protocol messages generated by the access node.
+              It is a constant for the duration of an ANCP session. The
+              timer is specified in units of 100ms. The value of this
+              object is persistent."
+       DEFVAL { 100 }
+       ::= { ancpAnSessionConfigEntry 7 }
+
+ancpAnSessionConfigPortReportShaper OBJECT-TYPE
+       SYNTAX     Unsigned32(1..255)
+       UNITS      "deciseconds"
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The timer specifies the nominal time between
+              2 EventReport messages related to the same port.
+              It is a constant for the duration of a GSMP session.
+              The timer is specified in units of 100ms. The value
+              of this object is persistent."
+
+       DEFVAL { 10 }
+       ::= { ancpAnSessionConfigEntry 8 }
+
+ancpAnSessionConfigAggregateReportShaper OBJECT-TYPE
+       SYNTAX     Unsigned32(1..2550)
+       UNITS      "centiseconds"
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The timer specifies the nominal time between
+              2 EventReport messages related to any port.
+              It is a constant for the duration of a GSMP session.
+              The timer is specified in units of 10ms. The value
+              of this object is persistent."
+       DEFVAL { 10 }
+       ::= { ancpAnSessionConfigEntry 9 }
+
+ancpAnSessionConfigTransportRetryTimer OBJECT-TYPE
+       SYNTAX     Unsigned32(0..255)
+       UNITS      "deciseconds"
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The timer specifies the nominal time between 2 transport
+              connection setup attempts done by the access node.
+              The transport protocol is specified in
+              ancpAnSessionConfigEncapsulationType.
+              The timer is specified in units of 100ms.
+              A value 0 means that the access node will NOT
+              initiate nor setup the transport connection. The
+              value of this object is persistent."
+       DEFVAL { 10 }
+       ::= { ancpAnSessionConfigEntry 10 }
+
+ancpAnSessionConfigAncpRetryTimer OBJECT-TYPE
+       SYNTAX     Unsigned32(0..255)
+       UNITS      "deciseconds"
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The timer specifies the nominal time between
+              2 ANCP connection setup attempts.
+              The timer is specified in units of 100ms.
+              A value 0 means that the access node will NOT
+              spontaneously trigger an ANCP session.
+              Whatever the setting of this timer, the access
+              node shall always listen for ANCP session setup.
+              The value of this object is persistent."
+
+       DEFVAL { 10 }
+       ::= { ancpAnSessionConfigEntry 11 }
+
+ancpAnSessionConfigAnName OBJECT-TYPE
+       SYNTAX     GsmpNameType
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The name of the access node. The first three octets must
+              be an Organizationally Unique Identifier (OUI) that
+              identifies the manufacturer of the access node. This can
+              be (one of) the MAC address(es) of the access node on the
+              network side.
+              When set to zero, the access node shall autonomously
+              decide on using the most appropriate MAC address of the
+              access node. Then the actually used access node name can
+              be read from ancpAnCurrentSessionAnName.
+              The value of this object is persistent."
+       DEFVAL { '000000000000'H }
+       ::= { ancpAnSessionConfigEntry 12 }
+
+ancpAnSessionConfigPartitionId OBJECT-TYPE
+       SYNTAX     GsmpPartitionIdType
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The Id for this session's specific access node partition.
+              This object has a meaning only if partitions are used
+              (ancpAnPartitionsUsed='partitionsUsed') and is ignored
+              otherwise.
+              The value of this object is persistent."
+       DEFVAL { '00'H }
+       ::= { ancpAnSessionConfigEntry 13 }
+
+ancpAnSessionConfigWindowSize OBJECT-TYPE
+       SYNTAX     Unsigned32(1..65535)
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The maximum number of unacknowledged request messages
+              that may be transmitted by the controller without the
+              possibility of loss. This field is used to prevent
+              request messages from being lost in the access node
+              because of overflow in the receive buffer. The field is
+              a hint to the controller. The value of this object is
+              persistent."
+       DEFVAL { 10 }
+       ::= { ancpAnSessionConfigEntry 14 }
+
+ancpAnSessionConfigNasIpAddressType OBJECT-TYPE
+       SYNTAX     InetAddressType
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The type of address in ancpAnSessionConfigNasIpAddress.
+              The value of this object is persistent."
+       ::= { ancpAnSessionConfigEntry 15 }
+
+ancpAnSessionConfigNasIpAddress OBJECT-TYPE
+       SYNTAX     InetAddress
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The IP address used for the ANCP session peer (NAS).
+              The value of this object is persistent."
+       ::= { ancpAnSessionConfigEntry 16 }
+
+ancpAnSessionConfigEncapPortNumber OBJECT-TYPE
+       SYNTAX     InetPortNumber
+       MAX-ACCESS read-create
+       STATUS     current
+       DESCRIPTION
+             "The port number used for the transport protocol
+              establishment to the ANCP peer.
+              The value of this object is persistent."
+       DEFVAL { 6068 }
+       ::= { ancpAnSessionConfigEntry 17 }
+
+ancpAnSessionConfigNotifyDnEnable OBJECT-TYPE
+       SYNTAX     TruthValue
+       MAX-ACCESS read-write
+       STATUS     current
+       DESCRIPTION
+             "This object specifies if ancpAnSessionDown
+              notification should be generated when this session
+              leaves the 'estab' state as given by
+              ancpAnCurrentSessionState in the corresponding row
+              in ancpAnCurrentSessionTable.
+              The value of this object is persistent."
+       DEFVAL { false }
+       ::= { ancpAnSessionConfigEntry 18 }
+
+ancpAnSessionConfigNotifyUpEnable OBJECT-TYPE
+       SYNTAX     TruthValue
+       MAX-ACCESS read-write
+       STATUS     current
+       DESCRIPTION
+             "This object specifies if ancpAnSessionUp
+              notification should be generated when this session
+              goes to 'estab' state as given by
+              ancpAnCurrentSessionState in the corresponding row
+              in ancpAnCurrentSessionTable.
+              The value of this object is persistent."
+       DEFVAL { false }
+       ::= { ancpAnSessionConfigEntry 19 }
+
+--
+-- Operational Information of ANCP Sessions
+--
+
+ancpAnCurrentSessionTable OBJECT-TYPE
+       SYNTAX SEQUENCE OF AncpAnCurrentSessionEntry
+       MAX-ACCESS not-accessible
+       STATUS     current
+       DESCRIPTION
+             "This table gives actual information of the sessions
+              in the access node.
+              A row in this table is created when the corresponding row
+              in the ancpAnSessionConfigTable is created.
+              A row in this table is deleted when the corresponding row
+              in the ancpAnSessionConfigTable is deleted."
+       ::= { ancpAnObjects 4 }
+
+ancpAnCurrentSessionEntry OBJECT-TYPE
+       SYNTAX     AncpAnCurrentSessionEntry
+       MAX-ACCESS not-accessible
+       STATUS     current
+       DESCRIPTION
+             "An entry in the table showing the data for a
+              specific actual session."
+       INDEX { ancpAnSessionConfigSessionId }
+       ::= { ancpAnCurrentSessionTable 1 }
+
+AncpAnCurrentSessionEntry ::= SEQUENCE {
+       ancpAnCurrentSessionState              INTEGER,
+       ancpAnCurrentSessionGsmpVersion        GsmpVersion,
+       ancpAnCurrentSessionGsmpSubVersion     GsmpSubVersion,
+       ancpAnCurrentSessionAnName             GsmpNameType,
+       ancpAnCurrentSessionNasName            GsmpNameType,
+       ancpAnCurrentSessionAnIpAddressType    InetAddressType,
+       ancpAnCurrentSessionAnIpAddress        InetAddress,
+       ancpAnCurrentSessionAnInstance         Unsigned32,
+       ancpAnCurrentSessionNasInstance        Unsigned32,
+       ancpAnCurrentSessionCapabilities       AncpAnSessionCapabilities,
+       ancpAnCurrentSessionStartUptime        TimeTicks,
+       ancpAnCurrentSessionDiscontinuityTime  TimeTicks,
+       ancpAnCurrentSessionStatSentMessages   ZeroBasedCounter32,
+       ancpAnCurrentSessionStatReceivedValidMessages ZeroBasedCounter32,
+       ancpAnCurrentSessionStatDiscardedMessages     ZeroBasedCounter32
+}
+
+ancpAnCurrentSessionState OBJECT-TYPE
+       SYNTAX     INTEGER {
+                      null(1),
+                      synsent(2),
+                      synrcvd(3),
+                      estab(4)
+                  }
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The state of this session.
+              The null (1) state is returned if the proper
+              encapsulation data is not yet configured, if the row is
+              not in active status or if the session is in NULL state
+              as defined in the GSMP specification."
+       ::= { ancpAnCurrentSessionEntry 1 }
+
+ancpAnCurrentSessionGsmpVersion OBJECT-TYPE
+       SYNTAX     GsmpVersion
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The actual version number of the GSMP protocol that
+              is used in this session.
+              This object has value 0 if ancpAnCurrentSessionState is
+              not estab(4)."
+       ::= { ancpAnCurrentSessionEntry 2 }
+
+ancpAnCurrentSessionGsmpSubVersion OBJECT-TYPE
+       SYNTAX     GsmpSubVersion
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The actual subversion number of the GSMP protocol that
+              may be used in this session.
+              This object has value 0 if ancpAnCurrentSessionState is
+              not estab(4)."
+       ::= { ancpAnCurrentSessionEntry 3 }
+
+ancpAnCurrentSessionAnName OBJECT-TYPE
+       SYNTAX     GsmpNameType
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The name of the access node used in this session.
+              It should be the same as ancpAnSessionConfigAnName if that
+              object is not set to zero.  If ancpAnSessionConfigAnName
+              is set to zero, then this object will contain the MAC
+              address selected by the access node as described in the
+              description of ancpAnSessionConfigAnName.
+              The value of this object is used as value for the
+              'Sender Name' field in the header of the ANCP messages
+              generated for this session by the AN."
+       ::= { ancpAnCurrentSessionEntry 4 }
+
+ancpAnCurrentSessionNasName OBJECT-TYPE
+       SYNTAX     GsmpNameType
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The name of the NAS as advertised in the adjacency
+              message.
+              The value of this object is set to the value of the
+              'Sender Name' field in the header of the ANCP messages
+              received on this session.  This object has value 0 if
+              ancpAnCurrentSessionState is not estab(4)."
+       ::= { ancpAnCurrentSessionEntry 5 }
+
+ancpAnCurrentSessionAnIpAddressType OBJECT-TYPE
+       SYNTAX     InetAddressType
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The type of address in ancpAnCurrentSessionAnIpAddress."
+       ::= { ancpAnCurrentSessionEntry 6 }
+
+ancpAnCurrentSessionAnIpAddress OBJECT-TYPE
+       SYNTAX     InetAddress
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The IP address used for the access node."
+       ::= { ancpAnCurrentSessionEntry 7 }
+
+ancpAnCurrentSessionAnInstance OBJECT-TYPE
+       SYNTAX     Unsigned32(0..16777215)
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The instance number used by the access node during this
+              session. The Instance number is a 24-bit number
+              that should be guaranteed to be unique within
+              the recent past and to change when the link
+              or node comes back up after going down. Zero is
+              not a valid instance number.
+              This object has value 0 if ancpAnCurrentSessionState is
+              not estab(4)."
+       ::= { ancpAnCurrentSessionEntry 8 }
+
+ancpAnCurrentSessionNasInstance OBJECT-TYPE
+       SYNTAX     Unsigned32(0..16777215)
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The instance number used by the NAS during this
+              session. The Instance number is a 24-bit number
+              that should be guaranteed to be unique within
+              the recent past and to change when the link
+              or node comes back up after going down.
+              This object has value 0 if ancpAnCurrentSessionState is
+              not estab(4)."
+       ::= { ancpAnCurrentSessionEntry 9 }
+
+ancpAnCurrentSessionCapabilities OBJECT-TYPE
+       SYNTAX     AncpAnSessionCapabilities
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The common ANCP capabilities supported by the AN and
+              NAS in this session.
+              The object has the value 0 if no capabilities are
+              supported
+              or if ancpAnCurrentSessionState is not estab(4)."
+       ::= { ancpAnCurrentSessionEntry 10 }
+
+ancpAnCurrentSessionStartUptime OBJECT-TYPE
+       SYNTAX     TimeTicks
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The value of sysUpTime when the session came to
+              established state.
+              This object has value 0 if ancpAnCurrentSessionState is
+              not estab(4)."
+       ::= { ancpAnCurrentSessionEntry 11 }
+
+ancpAnCurrentSessionDiscontinuityTime OBJECT-TYPE
+       SYNTAX     TimeTicks
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The value of sysUpTime on the most recent occasion at
+              which session's counters suffered a discontinuity.
+              If no such discontinuities have occurred since then,
+              this object contains the same value as
+              ancpAnCurrentSessionStartUptime."
+       ::= { ancpAnCurrentSessionEntry 12 }
+
+ancpAnCurrentSessionStatSentMessages OBJECT-TYPE
+       SYNTAX     ZeroBasedCounter32
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The number of messages that have been sent in this session
+              by the access node.
+              All ANCP messages pertaining to this session after
+              the session came to established state shall
+              be counted, also including adjacency protocol messages
+              and failure response messages.
+              Discontinuities of this counter are indicated by
+              ancpAnCurrentSessionDiscontinuityTime."
+       ::= { ancpAnCurrentSessionEntry 13 }
+
+ancpAnCurrentSessionStatReceivedValidMessages OBJECT-TYPE
+       SYNTAX     ZeroBasedCounter32
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The number of messages that have been received and
+              processed in this session by the access node.
+              All ANCP messages pertaining to this session after
+              the session came to established state shall
+              be counted, also including adjacency protocol messages
+              and failure response messages.
+              Discontinuities of this counter are indicated by
+              ancpAnCurrentSessionDiscontinuityTime."
+       ::= { ancpAnCurrentSessionEntry 14 }
+
+ancpAnCurrentSessionStatDiscardedMessages OBJECT-TYPE
+       SYNTAX     ZeroBasedCounter32
+       MAX-ACCESS read-only
+       STATUS     current
+       DESCRIPTION
+             "The number of messages that in this session have been
+              received and discarded for whatever reason by the access
+              node.
+              All ANCP messages pertaining to this session after
+              the session came to established state shall
+              be counted, also including adjacency protocol messages
+              and failure response messages.
+              Discontinuities of this counter are indicated by
+              ancpAnCurrentSessionDiscontinuityTime."
+       ::= { ancpAnCurrentSessionEntry 15 }
+
+--
+-- Partitions
+--
+
+ancpAnInterfaceConfigTable OBJECT-TYPE
+       SYNTAX SEQUENCE OF AncpAnInterfaceConfigEntry
+       MAX-ACCESS not-accessible
+       STATUS     current
+       DESCRIPTION
+             "This table configures the association of user facing
+              interfaces to ANCP partitions in the access node.
+              An entry in this table needs to be added by the agent
+              for each relevant user facing interface with the value
+              of ancpAnInterfaceConfigPartitionId set to zero at the
+              time of the creation of the row. A relevant user facing
+              interface is created whenever a row is created in the
+              ifTable of the IF-MIB that can be controlled by ANCP.
+              When such an interface is deleted from the ifTable, the
+              corresponding row in this table has to be removed by the
+              agent.
+              Rows should only be created by the agent when
+              ancpAnPartitionsUsed is set to 'partitionsUsed'.  If no
+              partitions are used, then no rows should be created in
+              this table."
+       ::= { ancpAnObjects 5 }
+
+ancpAnInterfaceConfigEntry OBJECT-TYPE
+       SYNTAX     AncpAnInterfaceConfigEntry
+       MAX-ACCESS not-accessible
+       STATUS     current
+       DESCRIPTION
+             "An entry in the table showing the partition id for a
+              specific user facing interface"
+       INDEX { ifIndex }
+       ::= { ancpAnInterfaceConfigTable 1 }
+
+AncpAnInterfaceConfigEntry ::= SEQUENCE {
+       ancpAnInterfaceConfigPartitionId         GsmpPartitionIdType
+}
+ancpAnInterfaceConfigPartitionId OBJECT-TYPE
+       SYNTAX     GsmpPartitionIdType
+       MAX-ACCESS read-write
+       STATUS     current
+       DESCRIPTION
+             "A partition Id associated with the related ifIndex.
+              Upon creation of the row, the value is set to '00'H.
+              The value of this object is persistent."
+       DEFVAL { '00'H }
+       ::= { ancpAnInterfaceConfigEntry 1 }
+
+--
+-- Notifications
+--
+
+ancpAnSessionDown NOTIFICATION-TYPE
+       OBJECTS {
+                 ancpAnCurrentSessionAnIpAddressType,
+                 ancpAnCurrentSessionAnIpAddress,
+                 ancpAnSessionConfigNasIpAddressType,
+                 ancpAnSessionConfigNasIpAddress,
+                 ancpAnCurrentSessionAnInstance,
+                 ancpAnCurrentSessionNasInstance,
+                 ancpAnCurrentSessionStartUptime,
+                 ancpAnCurrentSessionStatSentMessages,
+                 ancpAnCurrentSessionStatReceivedValidMessages,
+                 ancpAnCurrentSessionStatDiscardedMessages
+               }
+       STATUS current
+       DESCRIPTION
+             "This notification is generated whenever an ANCP session
+              goes down.  A session can go down for several reasons:
+              1) The ANCP session can be deleted by a manager from the
+                 ancpAnSessionConfigTable, and hence it will also be
+                 removed from the ancpAnCurrentSessionTable.
+              2) The session can go operational down due to some
+                 malfunction in the network, the AN, or the NAS.  In
+                 this case, the ANCP session will be still in the
+                 ancpAnSessionConfigTable and ancpAnCurrentSessionTable,
+                 but the ancpAnCurrentSessionState moves from the estab
+                 state to another state."
+       ::= { ancpAnNotifications 1 }
+
+ancpAnSessionUp NOTIFICATION-TYPE
+       OBJECTS {
+                 ancpAnCurrentSessionAnInstance
+               }
+       STATUS current
+       DESCRIPTION
+            "This notification is generated when an ANCP session enters
+             the estab state as given by ancpAnCurrentSessionState.
+             Since ancpAnCurrentSessionAnInstance identifies the ANCP
+             session uniquely the other attributes can be derived from
+             this attribute."
+       ::= { ancpAnNotifications 2 }
+
+--
+-- ANCP AN Compliance
+--
+
+ancpAnGroups            OBJECT IDENTIFIER ::= { ancpAnConformance 1 }
+ancpAnCompliances       OBJECT IDENTIFIER ::= { ancpAnConformance 2 }
+
+ancpAnModuleCompliance MODULE-COMPLIANCE
+       STATUS current
+       DESCRIPTION
+             "The compliance statement for agents that support
+              the ANCP MIB module for access nodes."
+       MODULE -- this module
+       MANDATORY-GROUPS {
+                          ancpAnConfigGroup,
+                          ancpAnCurrentGroup,
+                          ancpAnInterfaceGroup,
+                          ancpAnNotificationsGroup
+                        }
+       ::= { ancpAnCompliances 1 }
+
+-- units of conformance
+
+ancpAnConfigGroup OBJECT-GROUP
+       OBJECTS {
+                 ancpAnNextSessionId,
+                 ancpAnSessionConfigRowStatus,
+                 ancpAnSessionConfigGsmpVersion,
+                 ancpAnSessionConfigGsmpSubVersion,
+                 ancpAnSessionConfigEncapsulationType,
+                 ancpAnSessionConfigCapabilities,
+                 ancpAnSessionConfigAliveTimer,
+                 ancpAnSessionConfigPortReportShaper,
+                 ancpAnSessionConfigAggregateReportShaper,
+                 ancpAnSessionConfigTransportRetryTimer,
+                 ancpAnSessionConfigAncpRetryTimer,
+                 ancpAnSessionConfigAnName,
+                 ancpAnSessionConfigPartitionId,
+                 ancpAnSessionConfigWindowSize,
+                 ancpAnSessionConfigNasIpAddressType,
+                 ancpAnSessionConfigNasIpAddress,
+                 ancpAnSessionConfigEncapPortNumber
+               }
+       STATUS current
+       DESCRIPTION
+             "These objects apply to the configuration of ANCP
+              sessions in access nodes."
+       ::= { ancpAnGroups 1 }
+
+ancpAnCurrentGroup OBJECT-GROUP
+       OBJECTS {
+                  ancpAnCurrentSessionState,
+                  ancpAnCurrentSessionGsmpVersion,
+                  ancpAnCurrentSessionGsmpSubVersion,
+                  ancpAnCurrentSessionAnName,
+                  ancpAnCurrentSessionNasName,
+                  ancpAnCurrentSessionAnIpAddressType,
+                  ancpAnCurrentSessionAnIpAddress,
+                  ancpAnCurrentSessionAnInstance,
+                  ancpAnCurrentSessionNasInstance,
+                  ancpAnCurrentSessionCapabilities,
+                  ancpAnCurrentSessionStartUptime,
+                  ancpAnCurrentSessionDiscontinuityTime,
+                  ancpAnCurrentSessionStatSentMessages,
+                  ancpAnCurrentSessionStatReceivedValidMessages,
+                  ancpAnCurrentSessionStatDiscardedMessages,
+                  ancpAnSessionConfigNotifyDnEnable,
+                  ancpAnSessionConfigNotifyUpEnable
+               }
+       STATUS current
+       DESCRIPTION
+             "These objects show the operational state of all ANCP
+              sessions configured in the access node."
+       ::= { ancpAnGroups 2 }
+
+ancpAnInterfaceGroup OBJECT-GROUP
+       OBJECTS {
+                  ancpAnPartitionsUsed,
+                  ancpAnInterfaceConfigPartitionId
+               }
+       STATUS current
+       DESCRIPTION
+             "These objects are used to assign user facing interface to
+              partitions."
+       ::= { ancpAnGroups 3 }
+
+ancpAnNotificationsGroup NOTIFICATION-GROUP
+       NOTIFICATIONS {
+                       ancpAnSessionDown,
+                       ancpAnSessionUp
+                     }
+       STATUS current
+       DESCRIPTION
+             "These notifications inform management stations about
+              changes in the state of ANCP sessions."
+       ::= { ancpAnGroups 4 }
+
+END
+
+-- 
+--    Copyright (C) The IETF Trust (2007).
+-- 
+--    This document is subject to the rights, licenses and restrictions
+--    contained in BCP 78, and except as set forth therein, the authors
+--    retain all their rights.
+-- 
+--    This document and the information contained herein are provided on an
+--    "AS IS" basis and THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS
+--    OR IS SPONSORED BY (IF ANY), THE INTERNET SOCIETY, THE IETF TRUST AND
+--    THE INTERNET ENGINEERING TASK FORCE DISCLAIM ALL WARRANTIES, EXPRESS
+--    OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF
+--    THE INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+--    WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+-- 
+-- 
+-- Intellectual Property
+-- 
+--    The IETF takes no position regarding the validity or scope of any
+--    Intellectual Property Rights or other rights that might be claimed to
+--    pertain to the implementation or use of the technology described in
+--    this document or the extent to which any license under such rights
+--    might or might not be available; nor does it represent that it has
+--    made any independent effort to identify any such rights.  Information
+--    on the procedures with respect to rights in RFC documents can be
+--    found in BCP 78 and BCP 79.
+-- 
+--    Copies of IPR disclosures made to the IETF Secretariat and any
+--    assurances of licenses to be made available, or the result of an
+--    attempt made to obtain a general license or permission for the use of
+--    such proprietary rights by implementers or users of this
+--    specification can be obtained from the IETF on-line IPR repository at
+--    http://www.ietf.org/ipr.
+-- 
+--    The IETF invites any interested party to bring to its attention any
+--    copyrights, patents or patent applications, or other proprietary
+--    rights that may cover technology that may be required to implement
+--    this standard.  Please address the information to the IETF at
+--    ietf-ipr@ietf.org.
+-- 
+-- 
+-- Acknowledgment
+-- 
+--    Funding for the RFC Editor function is provided by the IETF
+--    Administrative Support Activity (IASA).
+

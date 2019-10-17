@@ -1,0 +1,482 @@
+-- 
+-- Copyright 1999 by Fore Systems, Inc. 
+-- Converted to SMIv2 rfc 2578,2579,2580 - STD 58
+--
+--
+-- Copyright 1997 by Fore Systems, Inc.
+--
+-- This is a FORE-proprietary MIB that facilitates the creation of 
+-- service applications, such as FR/ATM and FUNI.
+--
+-- It also supports the conversion between service id and service
+-- Ifindex.
+--
+-- When a SNMP manager wants to create a service,
+-- the following steps are to be followed:
+--  1. Get and set the next available service ifindex from the
+--     ifReserveNextIndex object to reserve the next available ifIndex
+--  2. Set the row status of the ifCreateEntry using the service
+--     ifindex to createAndWait, and the ifCreateIfType to the
+--     desired application type, and the ifCreateServiceStatus to
+--     underConfig
+--  3. If the application type is accepted, then set the row status
+--     of the ifCreateEntry to active. This completes the creation
+--     of an active entry in the ifCreateTable. However, the service
+--     creation process is not completed until all the related MIB
+--     tables are populated. The ifCreateServiceStatus object is
+--     used to signal the remaining process
+--  4. Populate all the desired MIB tables, such as DSX1 fractional
+--     table, ifStack table, if table, service-specific MIB tables
+--  5. Finally, set the ifCreateServiceStatus to active. 
+--  6. To delete a service, set the ifCreateServiceStatus to inactive or
+--     ifCreateRowStatus to destroy.
+--
+--  The ifConvertToIfIndexTable is required to allow the conversion of
+--  service id into the corresponding service ifindex. The service
+--  id is in BNPC notation (e.g. 1A1:31), which stands for Board,
+--  Netmod, Port and Channel Number. The service id serves as a
+--  unique handle for the users to reference a service instance
+--  in an ASX-1000 switch. This service id is stored in CDB (
+--  configuration database) and is non-volatile when compared to
+--  service ifindex. The ifConvertFmIfIndexTable does the inverse
+--  mapping function.
+--
+--  These two ifConversionTables are created automatically when the row 
+--  status of ifCreateEntry is set to active.
+--
+----------------------------------------------------------------------
+
+
+Fore-Ifcreate-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+        Integer32,
+        OBJECT-TYPE,
+        MODULE-IDENTITY         FROM SNMPv2-SMI
+        DisplayString,
+        RowStatus,
+        TestAndIncr             FROM SNMPv2-TC
+        ifExtensions            FROM Fore-Common-MIB
+	InterfaceIndex		FROM IF-MIB;
+
+  foreIfcreateMIB        MODULE-IDENTITY
+     LAST-UPDATED    "9704011044-0400"
+     ORGANIZATION    "FORE"
+     CONTACT-INFO    "
+             Postal: FORE Systems Inc.
+                     1000 FORE Drive
+                     Warrendale, PA 15086-7502
+             Tel:    +1 724 742 6900
+             Email:  nm_mibs@fore.com
+             Web:    http://www.fore.com"
+     DESCRIPTION
+             "This MIB module defines an ifCreateTable to
+              facilitates the creation of FR/ATM and FUNI
+              services. It also defines an ifConversionTable
+              to allow the conversion between service id and
+              service ifindex."
+    ::= { ifExtensions 5 }
+
+
+--------------------------------------------------------------
+--
+-- The ifReserveNextIndex object serves as the handle to
+-- reserve the next available ifIndex via a test and
+-- increment operation.
+--
+-- The ifCreateTable incorporates the information
+-- neccessary for the creation of a service applications.
+--
+
+  ifReserveNextIndex OBJECT-TYPE
+  SYNTAX            TestAndIncr
+  MAX-ACCESS            read-write
+  STATUS            current
+  DESCRIPTION
+    "The next available IfIndex for service creation."
+  ::= { ifExtensions 1 }
+
+
+  ifCreateTable            OBJECT-TYPE
+  SYNTAX                   SEQUENCE OF IfCreateEntry
+  MAX-ACCESS                   not-accessible
+  STATUS                   current
+  DESCRIPTION
+    "The Interface creation table"
+  ::= { ifExtensions 2 }
+
+  ifCreateEntry            OBJECT-TYPE
+  SYNTAX                   IfCreateEntry
+  MAX-ACCESS                   not-accessible
+  STATUS                   current
+  DESCRIPTION
+    "Entry associated with IfCreate table entry."
+  INDEX   { ifCreateIfIndex }
+  ::= { ifCreateTable 1 }
+
+ IfCreateEntry ::= 
+     SEQUENCE {
+        ifCreateIfIndex                 InterfaceIndex,
+        ifCreateIfType                  INTEGER,
+        ifCreateRowStatus               RowStatus,
+        ifCreateServiceStatus           INTEGER,
+        ifCreateName                    DisplayString,
+        ifCreateIfTrapSupport           INTEGER,
+        ifCreateServiceId		DisplayString
+     }
+
+ ifCreateIfIndex            OBJECT-TYPE
+     SYNTAX                 InterfaceIndex
+     MAX-ACCESS                 read-only
+     STATUS                 current
+     DESCRIPTION
+       "The interface index of this service."
+     ::= { ifCreateEntry 1 }
+
+
+ ifCreateIfType            OBJECT-TYPE
+     SYNTAX                INTEGER {
+                   otherIfType(1),            -- none of following       
+                   regular1822(2),
+                   hdh1822(3),
+                   ddnX25(4),   
+                   rfc877x25(5),        
+                   ethernetCsmacd(6),   
+                   iso88023Csmacd(7),
+                   iso88024TokenBus(8),
+                   iso88025TokenRing(9),
+                   iso88026Man(10),
+                   starLan(11),
+                   proteon10Mbit(12),
+                   proteon80Mbit(13),
+                   hyperchannel(14),
+                   fddi(15),
+                   lapb(16),
+                   sdlc(17),
+                   ds1e1(18),            -- DS1-MIB
+                   e1(19),             -- Obsolete see DS1-MIB
+                   basicISDN(20),
+                   primaryISDN(21),
+                   propPointToPointSerial(22), -- proprietary serial
+                   ppp(23),
+                   softwareLoopback(24),
+                   eon(25),            -- CLNP over IP 
+                   ethernet3Mbit(26),
+                   nsip(27),           -- XNS over IP
+                   slip(28),           -- generic SLIP
+                   ultra(29),          -- ULTRA technologies
+                   ds3(30),            -- DS3-MIB
+                   sip(31),            -- SMDS
+                   frameRelay(32),     -- DTE only. 
+                   rs232(33),
+                   para(34),           -- parallel-port
+                   arcnet(35),         -- arcnet
+                   arcnetPlus(36),     -- arcnet plus
+                   atm(37),            -- ATM cells
+                   miox25(38),
+                   sonet(39),          -- SONET or SDH 
+                   x25ple(40),
+                   iso88022llc(41),
+                   localTalk(42),
+                   smdsDxi(43),
+                   frameRelayService(44),  -- FRNETSERV-MIB
+                   v35(45),
+                   hssi(46),
+                   hippi(47),
+                   modem(48),          -- Generic modem
+                   aal5(49),           -- AAL5 over ATM
+                   sonetPath(50),
+                   sonetVT(51),
+                   smdsIcip(52),       -- SMDS InterCarrier Interface
+                   propVirtual(53),    -- proprietary virtual/internal
+                   propMultiplexor(54),-- proprietary multiplexing
+                   ieee80212(55),      -- 100BaseVG
+                   fibreChannel(56),   -- Fibre Channel
+                   hippiInterface(57), -- HIPPI interfaces     
+                   frameRelayInterconnect(58), -- Obsolete use either
+                                       -- frameRelay(32) or 
+                                       -- frameRelayService(44).
+                   aflane8023(59),     -- ATM Emulated LAN for 802.3
+                   aflane8025(60),     -- ATM Emulated LAN for 802.5
+                   cctEmul(61),        -- ATM Emulated circuit          
+                   fastEther(62),      -- Fast Ethernet (100BaseT)
+                   isdn(63),           -- ISDN and X.25           
+                   v11(64),            -- CCITT V.11/X.21             
+                   v36(65),            -- CCITT V.36                  
+                   g703at64k(66),      -- CCITT G703 at 64Kbps
+                   g703at2mb(67),      -- Obsolete see DS1-MIB
+                   qllc(68),           -- SNA QLLC                    
+                   fastEtherFX(69),    -- Fast Ethernet (100BaseFX)   
+                   channel(70),        -- channel                     
+                   ieee80211(71),      -- radio spread spectrum      
+                   ibm370parChan(72),  -- IBM System 360/370 OEMI Channel
+                   escon(73),          -- IBM Enterprise Systems Connection
+                   dlsw(74),           -- Data Link Switching
+                   isdns(75),          -- ISDN S/T interface
+                   isdnu(76),          -- ISDN U interface
+                   lapd(77),           -- Link Access Protocol D
+                   ipSwitch(78),       -- IP Switching Objects
+                   rsrb(79),           -- Remote Source Route Bridging
+                   atmLogical(80),     -- ATM Logical Port
+                   ds0(81),            -- Digital Signal Level 0
+                   ds0Bundle(82),      -- group of ds0s on the same ds1
+                   bsc(83),            -- Bisynchronous Protocol
+                   async(84),          -- Asynchronous Protocol
+                   cnr(85),            -- Combat Net Radio
+                   iso88025Dtr(86),    -- ISO 802.5r DTR
+                   eplrs(87),          -- Ext Pos Loc Report Sys
+                   arap(88),           -- Appletalk Remote Access Protocol
+                   propCnls(89),       -- Proprietary Connectionless Protocol
+                   hostPad(90),        -- CCITT-ITU X.29 PAD Protocol
+                   termPad(91),        -- CCITT-ITU X.3 PAD Facility
+                   frameRelayMPI(92),  -- Multiproto Interconnect over FR
+                   x213(93),           -- CCITT-ITU X213
+                   adsl(94),           -- Asymmetric Digital Subscriber Loop
+                   radsl(95),          -- Rate-Adapt. Digital Subscriber Loop
+                   sdsl(96),           -- Symmetric Digital Subscriber Loop
+                   vdsl(97),           -- Very H-Speed Digital Subscrib. Loop
+                   iso88025CRFPInt(98), -- ISO 802.5 CRFP
+                   myrinet(99),        -- Myricom Myrinet
+                   voiceEM(100),       -- voice recEive and transMit
+                   voiceFXO(101),      -- voice Foreign Exchange Office
+                   voiceFXS(102),      -- voice Foreign Exchange Station
+                   voiceEncap(103),    -- voice encapsulation
+                   voiceOverIp(104),   -- voice over IP encapsulation
+                   atmDxi(105),        -- ATM DXI
+                   atmFuni(106),       -- ATM FUNI
+                   pppMultilinkBundle(107)  -- PPP Multilink Bundle
+	    }
+     MAX-ACCESS                read-create
+     STATUS                current
+     DESCRIPTION
+       "The type of the interface to be created."
+     ::= { ifCreateEntry 2 }
+
+ ifCreateRowStatus         OBJECT-TYPE
+     SYNTAX                RowStatus
+     MAX-ACCESS                read-create
+     STATUS                current
+     DESCRIPTION
+       "This object is used to create new rows in this table,
+        and to delete existing rows."
+     ::= { ifCreateEntry 3 }
+
+ ifCreateServiceStatus     OBJECT-TYPE
+     SYNTAX                INTEGER {
+                                underConfig(1),
+                                active(2),
+                                inactive(3)
+                           }
+     MAX-ACCESS                read-create
+     STATUS                current
+     DESCRIPTION
+       "This object specifies the status of the service under
+       creation. The service status is set to underConfig at
+       the beginning of the service creation process. The service 
+       creation process is not considered completed until all the 
+       related MIB objects are set up properly. Then the service
+       status is set to active. The default status is inactive."
+     DEFVAL { inactive }
+     ::= { ifCreateEntry 4 }
+
+ ifCreateName              OBJECT-TYPE
+     SYNTAX                DisplayString
+     MAX-ACCESS                read-create
+     STATUS                current
+     DESCRIPTION 
+       "The object specifies the name assigned to the interface."
+     ::= { ifCreateEntry 5 }
+
+ ifCreateIfTrapSupport     OBJECT-TYPE
+     SYNTAX                INTEGER {
+                                enabled(1),
+                                disabled(2)
+                           }
+     MAX-ACCESS                read-create
+     STATUS                current
+     DESCRIPTION 
+       "The object specifies whether interface traps should
+        be generated for this interface."
+     DEFVAL { enabled }
+     ::= { ifCreateEntry 6 }
+
+ ifCreateServiceId         OBJECT-TYPE
+     SYNTAX                DisplayString
+     MAX-ACCESS                read-create
+     STATUS                current
+     DESCRIPTION 
+       "The object specifies the serviceID assigned to the interface."
+     ::= { ifCreateEntry 7 }
+
+
+
+--------------------------------------------------------------
+-- The ifConvertToIfIndexTable incorporates the information
+-- neccessary for the conversion from service id (i.e.
+-- board id, netmod id, port id, channel id) into
+-- service ifindex.
+--
+
+
+ ifConvertToIfIndexTable      OBJECT-TYPE
+  SYNTAX                      SEQUENCE OF IfConvertToIfIndexEntry
+  MAX-ACCESS                      not-accessible
+  STATUS                      current
+  DESCRIPTION
+    "The Interface conversion table for converting service id (i.e.
+     board id, netmod id, port id, channel id) into service ifindex."
+  ::= { ifExtensions 3 }
+
+  ifConvertToIfIndexEntry      OBJECT-TYPE
+  SYNTAX                       IfConvertToIfIndexEntry
+  MAX-ACCESS                       not-accessible
+  STATUS                       current
+  DESCRIPTION
+    "An entry associated with ifConvertToIfIndex table."
+  INDEX   { ifConvertToIfIndexBoardId, ifConvertToIfIndexNetmodId,
+            ifConvertToIfIndexPortId,  ifConvertToIfIndexChannelId }
+  ::= { ifConvertToIfIndexTable 1 }
+
+ IfConvertToIfIndexEntry ::= 
+     SEQUENCE {
+        ifConvertToIfIndexBoardId       Integer32,
+        ifConvertToIfIndexNetmodId      Integer32,
+        ifConvertToIfIndexPortId        Integer32,
+        ifConvertToIfIndexChannelId     Integer32,
+        ifConvertToIfIndexIfIndex       InterfaceIndex
+        }
+
+ ifConvertToIfIndexBoardId          OBJECT-TYPE
+     SYNTAX                         Integer32
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "This object identifies the board id associated with a 
+        FUNI or FRATM service id in BNPC notation."
+     ::= { ifConvertToIfIndexEntry 1 }
+
+ ifConvertToIfIndexNetmodId         OBJECT-TYPE
+     SYNTAX                         Integer32
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "This object identifies the netmod id associated with a 
+        FUNI or FRATM service id in BNPC notation."
+     ::= { ifConvertToIfIndexEntry 2 }
+
+ ifConvertToIfIndexPortId           OBJECT-TYPE
+     SYNTAX                         Integer32
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "This object identifies the port id associated with a 
+        FUNI or FRATM service id in BNPC notation."
+     ::= { ifConvertToIfIndexEntry 3 }
+
+ ifConvertToIfIndexChannelId        OBJECT-TYPE
+     SYNTAX                         Integer32
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "This object identifies the channel id associated with a 
+        FUNI or FRATM service id in BNPC notation."
+     ::= { ifConvertToIfIndexEntry 4 }
+
+ ifConvertToIfIndexIfIndex          OBJECT-TYPE
+     SYNTAX                         InterfaceIndex
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "The service ifindex that is associated with this service id."
+     ::= { ifConvertToIfIndexEntry 5 }
+
+
+
+--------------------------------------------------------------
+-- The ifConvertFmIfIndexTable incorporates the information
+-- neccessary for the conversion from service ifindex into
+-- service id (i.e. board id, netmod id, port id, channel id).
+--
+
+
+ ifConvertFmIfIndexTable      OBJECT-TYPE
+  SYNTAX                      SEQUENCE OF IfConvertFmIfIndexEntry
+  MAX-ACCESS                      not-accessible
+  STATUS                      current
+  DESCRIPTION
+    "The Interface conversion table for converting service ifindex
+     into service id (i.e. board id, netmod id, port id, channel id)."
+  ::= { ifExtensions 4 }
+
+  ifConvertFmIfIndexEntry        OBJECT-TYPE
+  SYNTAX                         IfConvertFmIfIndexEntry
+  MAX-ACCESS                         not-accessible
+  STATUS                         current
+  DESCRIPTION
+    "An entry associated with ifConvertFmIfIndex table."
+  INDEX   { ifConvertFmIfIndexIfIndex }
+  ::= { ifConvertFmIfIndexTable 1 }
+
+ IfConvertFmIfIndexEntry ::= 
+     SEQUENCE {
+        ifConvertFmIfIndexIfIndex       InterfaceIndex,
+        ifConvertFmIfIndexBoardId       Integer32,
+        ifConvertFmIfIndexNetmodId      Integer32,
+        ifConvertFmIfIndexPortId        Integer32,
+        ifConvertFmIfIndexChannelId     Integer32
+        }
+
+ ifConvertFmIfIndexIfIndex          OBJECT-TYPE
+     SYNTAX                         InterfaceIndex
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "The service ifindex that is associated with this service id."
+     ::= { ifConvertFmIfIndexEntry 1 }
+
+
+ ifConvertFmIfIndexBoardId          OBJECT-TYPE
+     SYNTAX                         Integer32
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "This object identifies the board id associated with a 
+        FUNI or FRATM service id in BNPC notation."
+     ::= { ifConvertFmIfIndexEntry 2 }
+
+ ifConvertFmIfIndexNetmodId         OBJECT-TYPE
+     SYNTAX                         Integer32
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "This object identifies the netmod id associated with a 
+        FUNI or FRATM service id in BNPC notation."
+     ::= { ifConvertFmIfIndexEntry 3 }
+
+ ifConvertFmIfIndexPortId           OBJECT-TYPE
+     SYNTAX                         Integer32
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "This object identifies the port id associated with a 
+        FUNI or FRATM service id in BNPC notation."
+     ::= { ifConvertFmIfIndexEntry 4 }
+
+ ifConvertFmIfIndexChannelId        OBJECT-TYPE
+     SYNTAX                         Integer32
+     MAX-ACCESS                         read-only
+     STATUS                         current
+     DESCRIPTION
+       "This object identifies the channel id associated with a 
+        FUNI or FRATM service id in BNPC notation."
+     ::= { ifConvertFmIfIndexEntry 5 }
+
+
+
+
+--------------------------------------------------------------
+
+
+END
+
+

@@ -1,0 +1,768 @@
+FUNI-MIB DEFINITIONS ::= BEGIN
+
+        IMPORTS
+                MODULE-IDENTITY, OBJECT-TYPE,
+                Counter32, Gauge32,
+                enterprises                          FROM SNMPv2-SMI
+                TEXTUAL-CONVENTION                   FROM SNMPv2-TC
+                ifIndex                              FROM IF-MIB
+                MODULE-COMPLIANCE, OBJECT-GROUP      FROM SNMPv2-CONF;
+
+----------------------------------------------------------------------------
+-- The FUNI MIB.
+
+atmfFuniMIB MODULE-IDENTITY
+        LAST-UPDATED    "9705080000Z"
+        ORGANIZATION    "The ATM Forum"
+        CONTACT-INFO
+            "The ATM Forum
+             2570 West El Camino Real, Suite 304
+             Mountain View, CA 94040-1313 USA
+             Phone: +1 415-949-6700
+             Fax:   +1 415-949-6705
+             info@atmforum.com"
+        DESCRIPTION
+            "The MIB module for managing a Version 2.0 FUNI logical interface."
+        ::= { atmfFuni 1}
+
+----------------------------------------------------------------------------
+-- The object identifier subtree for the FUNI MIB.
+
+atmForum                OBJECT IDENTIFIER ::= { enterprises 353 }
+atmForumNetworkManagement       OBJECT IDENTIFIER ::= { atmForum 5 }
+atmfFuni                OBJECT IDENTIFIER  ::= { atmForumNetworkManagement 6}
+
+funiMIBObjects          OBJECT IDENTIFIER ::= { atmfFuniMIB 1 }
+
+----------------------------------------------------------------------------
+--  Textual conventions for the FUNI MIB.
+
+    FuniValidVpi ::= TEXTUAL-CONVENTION
+        STATUS        current
+        DESCRIPTION
+            "This object defines the valid VPI values for a FUNI logical
+             interface.  Note  for Mode 1a, 1b and 3, 10 bits in the FUNI
+             frame header are used to identify the FUNI frame address; 4 of
+             these 10 bits map to the 4 least-significant bits in the VPI
+             field of an ATM cell header, for a total of 16 VPI values in
+             the limited range of 0..15.In Mode 4, 24 bits in
+             the FUNI frame header are used to identify the FUNI frame
+             address; 8 of these 24 bits map to the 8 bits in the VPI field
+             of an ATM cell header, for a total of 256 VPI values in the
+             full range of 0..255."
+        SYNTAX        INTEGER (0..255)
+
+
+FuniValidVci ::= TEXTUAL-CONVENTION
+        STATUS        current
+        DESCRIPTION
+            "This object defines the valid VCI values for a FUNI logical
+             interface.  Note  in Mode 1a, 1b and 3, 10 bits in the FUNI
+             frame header are used to identify the FUNI frame address; 6 of
+             these 10 bits map to the 6 least-significant bits in the VCI
+             field of an ATM cell header, for a total of 64 VCI values in
+             the limited rate of 0..63.  In Mode 4, 24 bits in
+             the FUNI frame header are used to identify the FUNI frame
+             address; 16 of these 24 bits map to the 16 bits in the VCI
+             field of an ATM cell header, for a total of 65536 VCI values in
+             the full range of 0..65535.  Also note that VCI values 0
+             through 31, while considered valid, have been reserved by the
+             ITU-T and the ATM Forum for various non-user applications
+             (e.g., signaling, ILMI, etc.), and should be avoided for normal
+             user applications."
+        SYNTAX        INTEGER (0..65535)
+
+------------------------------------------------------------------------------------
+-- The FUNI MIB contains three tables which allow FUNI specific configuration
+-- and access to FUNI specific statistics. In addition to the MIB groups 
+-- defined here access will be required to the IF-MIB and the AToM-MIB in order
+-- to configure manage the physical interface and the ATM connections respecively.
+--
+-- FUNI V2.0 supports four different Modes of operation. Modes 1a and 1b are the same
+-- as in the V1.0 specification. Modes 3 and 4 are optional and new to V2.0.
+-- All modes with the exception of Mode 4 have a two byte FUNI header. Mode 4 has a
+-- four byte FUNI header.
+-- Modes 3 and 4 always have a 32 bit CRC and support a minimum SDU size of 9232
+-- octets. These modes only support AAL5.
+-- Mode 1a and 1b support a minimum SDU size of 4096 octets and either a 16 bit
+-- or 32 bit CRC. Both modes support AAL5 and Mode 1b also supports AAL3/4.
+--
+-- The tables contained in this MIB are:-
+--    FUNI Interface Configuration Table
+--    FUNI Interface Statistics Table
+--    FUNI Virtual Connection Statistics Table
+------------------------------------------------------------------------------------
+
+-- This is the FUNI logical interface configuration group.
+
+funiIfConfTable OBJECT-TYPE
+        SYNTAX        SEQUENCE OF FuniIfConfEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "A table of FUNI logical interface configuration information.
+             This table provides objects not normally available in the
+             IF-MIB or the ATM-MIB."
+        ::= { funiMIBObjects 1 }
+
+funiIfConfEntry OBJECT-TYPE
+        SYNTAX        FuniIfConfEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the FUNI logical interface configuration
+             information table."
+        INDEX         { ifIndex }
+        ::= { funiIfConfTable 1 }
+
+
+FuniIfConfEntry ::=
+        SEQUENCE {
+                funiIfConfMode            INTEGER,
+                funiIfConfFcsBits         INTEGER,
+                funiIfConfSigSupport      INTEGER,
+                funiIfConfSigVpi          FuniValidVpi,
+                funiIfConfSigVci          FuniValidVci,
+                funiIfConfIlmiSupport     INTEGER,
+                funiIfConfIlmiVpi         FuniValidVpi,
+                funiIfConfIlmiVci         FuniValidVci,
+                funiIfConfOamSupport      INTEGER
+                }
+
+funiIfConfMode OBJECT-TYPE
+        SYNTAX        INTEGER {
+                       mode1a (1),
+                       mode1b (2),
+                       mode3 (3),
+                       mode4 (4)
+                      }
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object allows the mode of operation for this FUNI
+             logical interface to be configured."
+        DEFVAL { mode1a }
+        ::= { funiIfConfEntry 1 }
+
+funiIfConfFcsBits OBJECT-TYPE
+        SYNTAX        INTEGER { fcsBits16(1), fcsBits32(2) }
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object specifies whether a 16- or 32-bit FCS is used in
+             each FUNI frame header over this FUNI logical interface."
+        DEFVAL        { fcsBits16 }
+        ::= { funiIfConfEntry 2 }
+
+funiIfConfSigSupport OBJECT-TYPE
+        SYNTAX        INTEGER { enabled(1), disabled(2) }
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object specifies whether support for signaling is enabled
+             or disabled on this FUNI logical interface.  A FUNI logical
+             interface that cannot support signaling must only allow the
+             value disabled(2).  Specifying the type of signaling used on
+             a FUNI logical interface is beyond the scope of the FUNI MIB."
+        DEFVAL        { disabled }
+        ::= { funiIfConfEntry 3 }
+
+funiIfConfSigVpi OBJECT-TYPE
+        SYNTAX        FuniValidVpi
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object specifies the VPI value used for signaling on this
+             FUNI logical interface.  This object is valid only if signaling
+             is supported on this FUNI logical interface."
+        DEFVAL        { 0 }
+        ::= { funiIfConfEntry 4 }
+
+
+funiIfConfSigVci OBJECT-TYPE
+        SYNTAX        FuniValidVci
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object specifies the VCI value used for signaling on this
+             FUNI logical interface.  This object is valid only if signaling
+             is supported on this FUNI logical interface."
+        DEFVAL        { 5 }
+        ::= { funiIfConfEntry 5 }
+
+funiIfConfIlmiSupport OBJECT-TYPE
+        SYNTAX        INTEGER { enabled(1), disabled(2) }
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object specifies whether ILMI is enabled or disabled on
+             this FUNI logical interface.  A FUNI logical interface that
+             cannot support ILMI must only allow the value disabled(2)."
+        DEFVAL        { disabled }
+        ::= { funiIfConfEntry 6 }
+
+funiIfConfIlmiVpi OBJECT-TYPE
+        SYNTAX        FuniValidVpi
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object specifies the VPI value used for ILMI on this
+             FUNI logical interface.  This object is valid only if ILMI
+             is supported on this FUNI logical interface."
+        DEFVAL        { 0 }
+        ::= { funiIfConfEntry 7 }
+
+funiIfConfIlmiVci OBJECT-TYPE
+        SYNTAX        FuniValidVci
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object specifies the VCI value used for ILMI on this
+             FUNI logical interface.  This object is valid only if ILMI
+             is supported on this FUNI logical interface."
+        DEFVAL        { 16 }
+        ::= { funiIfConfEntry 8 }
+
+funiIfConfOamSupport OBJECT-TYPE
+        SYNTAX        INTEGER { enabled(1), disabled(2) }
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "This object specifies whether support for OAM cell/frame
+             translation is enabled or disabled on this FUNI logical
+             interface.  A FUNI logical interface that cannot support OAM
+             cell/frame translation must only allow the value disabled(2)."
+        DEFVAL        { disabled }
+        ::= { funiIfConfEntry 9 }
+
+
+----------------------------------------------------------------------------
+-- This is the FUNI logical interface statistics table.
+
+funiIfStatsTable OBJECT-TYPE
+        SYNTAX        SEQUENCE OF FuniIfStatsEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "A table of statistical information recorded at a FUNI logical
+             interface."
+        ::= { funiMIBObjects 2 }
+
+funiIfStatsEntry OBJECT-TYPE
+        SYNTAX        FuniIfStatsEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the FUNI logical interface statistics table."
+        INDEX         { ifIndex }
+        ::= { funiIfStatsTable 1 }
+
+FuniIfStatsEntry ::=
+        SEQUENCE {
+                funiIfEstablishedPvccs     Gauge32,
+                funiIfEstablishedSvccs     Gauge32,
+                funiIfRxAbortedFrames      Counter32,
+                funiIfRxTooShortFrames     Counter32,
+                funiIfRxTooLongFrames      Counter32,
+                funiIfRxFcsErrFrames       Counter32,
+                funiIfRxUnknownFaFrames    Counter32,
+                funiIfRxDiscardedFrames    Counter32,
+                funiIfTxTooLongFrames      Counter32,
+                funiIfTxLenErrFrames       Counter32,
+                funiIfTxCrcErrFrames       Counter32,
+                funiIfTxPartialFrames      Counter32,
+                funiIfTxTimeOutFrames      Counter32,
+                funiIfTxDiscardedFrames    Counter32
+                }
+
+funiIfEstablishedPvccs OBJECT-TYPE
+        SYNTAX        Gauge32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of permanent VCCs established on this FUNI logical
+             interface."
+        ::= { funiIfStatsEntry 1 }
+
+funiIfEstablishedSvccs OBJECT-TYPE
+        SYNTAX        Gauge32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of switched VCCs established on this FUNI logical
+             interface."
+        ::= { funiIfStatsEntry 2 }
+
+funiIfRxAbortedFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of aborted frames received on this FUNI logical
+             interface.  A frame is
+             considered aborted after receiving 7 or more continuous ones."
+        ::= { funiIfStatsEntry 3 }
+
+funiIfRxTooShortFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of frames received on this FUNI logical interface
+             that were too short, and were thus discarded.  The minimum
+             frame size is 5 octets."
+        ::= { funiIfStatsEntry 4 }
+
+funiIfRxTooLongFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of frames received on this FUNI logical interface
+             that were too large, and were thus discarded."
+        ::= { funiIfStatsEntry 5 }
+
+funiIfRxFcsErrFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of frames received on this FUNI logical interface
+             that contained FCS errors, and were thus discarded."
+        ::= { funiIfStatsEntry 6 }
+
+funiIfRxUnknownFaFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-write
+        STATUS        current
+        DESCRIPTION
+            "The number of frames received on this FUNI logical interface
+             with an unrecognized frame address (e.g., frames that were
+             received on an unknown FUNI logical interface virtual channel
+             link, such as an unestablished SVC or an unprovisioned PVC."
+        ::= { funiIfStatsEntry 7 }
+
+funiIfRxDiscardedFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of frames received on this FUNI logical interface
+             that were discarded due to any reason other than those
+             described in other objects in this table (e.g., frames that
+             were discarded because insufficient buffer space was available
+             for storing the frame)."
+        ::= { funiIfStatsEntry 8 }
+
+funiIfTxTooLongFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of frames that were too large to be transmitted on
+             this FUNI logical interface, and were thus discarded."
+        ::= { funiIfStatsEntry 9 }
+
+
+funiIfTxLenErrFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of reassembled frames intended to be transmitted on
+             this FUNI logical interface for which the AAL5 PDU trailer
+             length fields did not match the actual PDU length, and were
+             thus discarded."
+        ::= { funiIfStatsEntry 10 }
+
+funiIfTxCrcErrFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of reassembled frames intended to be transmitted on
+             this FUNI logical interface for which the AAL5 PDU, AAL3/4, or
+             OAM cell had CRC errors, and were thus discarded."
+        ::= { funiIfStatsEntry 11 }
+
+funiIfTxPartialFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of frames which could not be completely reassembled
+             for reasons other than a reassembly timeout (e.g., missing
+             AAL3/4 BOM cells, etc.), and were thus discarded before being
+             transmitted on this FUNI logical interface."
+        ::= { funiIfStatsEntry 12 }
+
+funiIfTxTimeOutFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of frames which could not be completely reassembled
+             due to a reassembly timeout, and were thus discarded before
+             being transmitted on this FUNI logical interface."
+        ::= { funiIfStatsEntry 13 }
+
+funiIfTxDiscardedFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of frames intended to be transmitted on this FUNI
+             logical interface that were discarded due to any reason other
+             than those described in other objects in this table (e.g.,
+             frames that were discarded because insufficient buffer space
+             was available for reassembling the frame)."
+        ::= { funiIfStatsEntry 14 }
+
+
+----------------------------------------------------------------------------
+-- This is the FUNI virtual channel link statistics table.
+
+funiVclStatsTable OBJECT-TYPE
+        SYNTAX        SEQUENCE OF FuniVclStatsEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "A table of FUNI statistical information for individual FUNI
+             virtual channel links on FUNI logical interfaces."
+        ::= { funiMIBObjects 3 }
+
+funiVclStatsEntry OBJECT-TYPE
+        SYNTAX        FuniVclStatsEntry
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "An entry in the FUNI virtual channel link statistics table."
+        INDEX         { ifIndex,
+                        funiVclFaVpi,
+                        funiVclFaVci
+                        }
+        ::= { funiVclStatsTable 1 }
+
+FuniVclStatsEntry ::=
+        SEQUENCE {
+                funiVclFaVpi              FuniValidVpi,
+                funiVclFaVci              FuniValidVci,
+                funiVclRxClp0Frames       Counter32,
+                funiVclRxTotalFrames      Counter32,
+                funiVclTxClp0Frames       Counter32,
+                funiVclTxTotalFrames      Counter32,
+                funiVclRxClp0Octets       Counter32,
+                funiVclRxTotalOctets      Counter32,
+                funiVclTxClp0Octets       Counter32,
+                funiVclTxTotalOctets      Counter32,
+                funiVclRxErrors           Counter32,
+                funiVclTxErrors           Counter32,
+                funiVclRxOamFrames        Counter32,
+                funiVclTxOamFrames        Counter32
+                }
+
+funiVclFaVpi OBJECT-TYPE
+        SYNTAX        FuniValidVpi
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "The VPI field of this FUNI virtual channel link, as identified
+             within the frame address of the FUNI frame header."
+        ::= { funiVclStatsEntry 1 }
+
+funiVclFaVci OBJECT-TYPE
+        SYNTAX        FuniValidVci
+        MAX-ACCESS    not-accessible
+        STATUS        current
+        DESCRIPTION
+            "The VCI field of this FUNI virtual channel link, as identified
+             within the frame address of the FUNI frame header."
+        ::= { funiVclStatsEntry 2 }
+
+
+funiVclRxClp0Frames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of FUNI frames with CLP=0 that were received over
+             this FUNI virtual channel link."
+        ::= { funiVclStatsEntry 3 }
+
+funiVclRxTotalFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The total number of FUNI frames that were received over this
+             FUNI virtual channel link."
+        ::= { funiVclStatsEntry 4 }
+
+funiVclTxClp0Frames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of FUNI frames with CLP=0 that were transmitted over
+             this FUNI virtual channel link."
+        ::= { funiVclStatsEntry 5 }
+
+funiVclTxTotalFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The total number of FUNI frames that were transmitted over this
+             FUNI virtual channel link."
+        ::= { funiVclStatsEntry 6 }
+
+funiVclRxClp0Octets OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of octets within FUNI frames with CLP=0 that were
+             received over this FUNI virtual channel link (excluding the
+             opening flag, header octets, FCS octets, and closing flag).
+             This is intended to count only those octets within the user
+             payload of each FUNI frame received with CLP=0."
+        ::= { funiVclStatsEntry 7 }
+
+funiVclRxTotalOctets OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The total number of octets within all FUNI frames that were
+             received over this FUNI virtual channel link (excluding the
+             opening flag, header octets, FCS octets, and closing flag).
+             This is intended to count only those octets within the user
+             payload of each received FUNI frame."
+        ::= { funiVclStatsEntry 8 }
+
+
+funiVclTxClp0Octets OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of octets within FUNI frames with CLP=0 that were
+             transmitted over this FUNI virtual channel link (excluding the
+             opening flag, header octets, FCS octets, and closing flag).
+             This is intended to count only those octets within the user
+             payload of each of each FUNI frame transmitted with CLP=0."
+        ::= { funiVclStatsEntry 9 }
+
+funiVclTxTotalOctets OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The total number of octets within all FUNI frames that were
+             transmitted over this FUNI virtual channel link (excluding the
+             opening flag, header octets, FCS octets, and closing flag).
+             This is intended to count only those octets within the user
+             payload of each transmitted FUNI frame."
+        ::= { funiVclStatsEntry 10 }
+
+funiVclRxErrors OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of errored FUNI frames that were discarded after
+             being received over this FUNI virtual channel link.  More
+             detail on errors detected on individual FUNI virtual channel
+             links is not available on a per-VCL basis, but is available on
+             a per-interface basis via the various counters in the FUNI
+             logical interface statistics table."
+        ::= { funiVclStatsEntry 11 }
+
+funiVclTxErrors OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of FUNI frame reassembly processes that were aborted
+             due an error before transmitting any FUNI frame over this FUNI
+             virtual channel link.  More detail on errors detected on
+             individual FUNI virtual channel links is not available on a
+             per-VCL basis, but is available on a per-interface basis via
+             the various counters in the FUNI logical interface statistics
+             table."
+        ::= { funiVclStatsEntry 12 }
+
+funiVclRxOamFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of FUNI OAM frames (i.e., with FID1=1 and FID2=0)
+             that were received over this FUNI virtual channel link."
+        ::= { funiVclStatsEntry 13 }
+
+
+funiVclTxOamFrames OBJECT-TYPE
+        SYNTAX        Counter32
+        MAX-ACCESS    read-only
+        STATUS        current
+        DESCRIPTION
+            "The number of FUNI OAM frames (i.e., with FID1=1 and FID2=0)
+             that were transmitted over this FUNI virtual channel link."
+        ::= { funiVclStatsEntry 14 }
+
+----------------------------------------------------------------------------
+-- conformance information
+
+funiMIBConformance    OBJECT IDENTIFIER ::= { atmfFuniMIB 2 }
+funiMIBCompliances    OBJECT IDENTIFIER ::= { funiMIBConformance 1 }
+funiMIBGroups         OBJECT IDENTIFIER ::= { funiMIBConformance 2 }
+
+-- compliance statements
+
+funiMIBCompliance MODULE-COMPLIANCE
+        STATUS        current
+        DESCRIPTION 
+            "The compliance statement for entities which implement the
+             FUNI MIB.
+
+             Groups of FUNI objects required for management of a FUNI
+             logical interface on a FUNI network or user device are
+             identified by the suffix MinGroup.
+
+             Groups of optional FUNI objects are identified by the suffix
+             OptionalGroup."
+
+        MODULE -- this module
+        MANDATORY-GROUPS {
+                           funiIfConfMinGroup,
+                           funiIfStatsMinGroup
+                           }
+
+        OBJECT        funiIfConfMode
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support modes other than 1a (and thus to specify
+             whether these modes are used) is optional."
+
+        OBJECT        funiIfConfFcsBits
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support a 32-bit FCS (and thus to specify
+             whether a 16- or 32-bit FCS is used) is optional for Mode 
+             1a and 1b."
+
+        OBJECT        funiIfConfSigSupport
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support signaling (and thus to specify whether
+             support for it is enabled or disabled) is optional."
+
+        OBJECT        funiIfConfSigVpi
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support SVCs (and thus to specify the VPI to be
+             used on the signaling channel) is optional."
+
+
+        OBJECT        funiIfConfSigVci
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support SVCs (and thus to specify the VCI to be
+             used on the signaling channel) is optional."
+
+        OBJECT        funiIfConfIlmiSupport
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support ILMI (and thus to specify whether it is
+             enabled or disabled) is optional."
+
+        OBJECT        funiIfConfIlmiVpi
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support ILMI (and thus to specify the VPI to be
+             used on the ILMI channel) is optional."
+
+        OBJECT        funiIfConfIlmiVci
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support ILMI (and thus to specify the VCI to be
+             used on the ILMI channel) is optional."
+
+        OBJECT        funiIfConfOamSupport
+        MIN-ACCESS    read-only
+        DESCRIPTION
+            "The ability to support OAM cell/frame translation (and thus to
+             specify whether support for it is enabled or disabled) is
+             optional."
+
+        ::= { funiMIBCompliances 1 }
+
+-- units of conformance
+
+funiIfConfMinGroup OBJECT-GROUP
+        OBJECTS {
+                  funiIfConfMode,
+                  funiIfConfFcsBits,
+                  funiIfConfSigSupport,
+                  funiIfConfSigVpi,
+                  funiIfConfSigVci,
+                  funiIfConfIlmiSupport,
+                  funiIfConfIlmiVpi,
+                  funiIfConfIlmiVci,
+                  funiIfConfOamSupport
+                  }
+        STATUS        current
+        DESCRIPTION
+            "A collection of per-FUNI logical interface configuration
+             objects required for management of a minimum function FUNI
+             logical interface."
+        ::= { funiMIBGroups 1 }
+
+
+funiIfStatsMinGroup OBJECT-GROUP
+        OBJECTS {
+                  funiIfEstablishedPvccs,
+                  funiIfEstablishedSvccs,
+                  funiIfRxAbortedFrames,
+                  funiIfRxTooShortFrames,
+                  funiIfRxTooLongFrames,
+                  funiIfRxFcsErrFrames,
+                  funiIfRxUnknownFaFrames,
+                  funiIfRxDiscardedFrames,
+                  funiIfTxTooLongFrames,
+                  funiIfTxLenErrFrames,
+                  funiIfTxCrcErrFrames,
+                  funiIfTxPartialFrames,
+                  funiIfTxTimeOutFrames,
+                  funiIfTxDiscardedFrames
+                  }
+        STATUS        current
+        DESCRIPTION
+            "A collection of per-FUNI logical interface statistics
+             objects required for management of a minimum function FUNI
+             logical interface."
+        ::= { funiMIBGroups 2 }
+
+funiVclStatsOptionalGroup OBJECT-GROUP
+        OBJECTS {
+                  funiVclRxClp0Frames,
+                  funiVclRxTotalFrames,
+                  funiVclTxClp0Frames,
+                  funiVclTxTotalFrames,
+                  funiVclRxClp0Octets,
+                  funiVclRxTotalOctets,
+                  funiVclTxClp0Octets,
+                  funiVclTxTotalOctets,
+                  funiVclRxErrors,
+                  funiVclTxErrors,
+                  funiVclRxOamFrames,
+                  funiVclTxOamFrames
+                  }
+        STATUS        current
+        DESCRIPTION
+            "A collection of optional per-VCL statistics objects used to
+             manage individual FUNI virtual channel links."
+        ::= { funiMIBGroups 3 }
+
+END

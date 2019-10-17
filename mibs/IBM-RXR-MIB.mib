@@ -1,0 +1,2815 @@
+
+
+IBM-RXR-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+           Counter, Gauge, TimeTicks, enterprises
+                   FROM RFC1155-SMI
+           OBJECT-TYPE
+                   FROM RFC-1212
+           TRAP-TYPE
+                   FROM RFC-1215
+           PhysAddress
+                   FROM RFC-1213;
+
+
+
+ibm                           OBJECT IDENTIFIER ::= { enterprises 2 }
+
+ibmProd                       OBJECT IDENTIFIER ::= { ibm 6 }
+
+routeXpander                  OBJECT IDENTIFIER ::= { ibmProd 26 }
+
+
+   -- All representations of MAC addresses in this MIB Module use,
+   -- as a textual convention (i.e. this convention does not affect
+   -- their encoding), the data type:
+
+   MacAddress ::= OCTET STRING (SIZE (6))    -- a 6 octet address in
+                                             -- the "canonical" order
+   -- defined by IEEE 802.1a, i.e., as if it were transmitted least
+   -- significant bit first, even though 802.5 (in contrast to other
+   -- 802.x protocols) requires MAC addresses to be transmitted most
+   -- significant bit first.
+   --
+   -- 16-bit addresses, if needed, are represented by setting their
+   -- upper 4 octets to all 0's, i.e., AAFF would be represented
+   -- as 00000000AAFF.
+
+
+   -- Similarly, all representations of Bridge-Id in this MIB Module
+   -- use, as a textual convention (i.e. this convention does not affect
+   -- their encoding), the data type:
+
+   BridgeId ::= OCTET STRING (SIZE (8))   -- the Bridge-Identifier as
+                                          -- used in the Spanning Tree
+   -- Protocol to uniquely identify a bridge.  Its first two octets
+   -- (in network byte order) contain a priority value and its last
+   -- 6 octets contain the MAC address used to refer to a bridge in a
+   -- unique fashion (typically, the numerically smallest MAC address
+   -- of all ports on the bridge).
+   -- Several objects in this MIB module represent values of timers
+   -- used by the Spanning Tree Protocol.  In this MIB, these timers
+   -- have values in units of hundreths of a second (i.e. 1/100 secs).
+   -- These timers, when stored in a Spanning Tree Protocol's BPDU,
+   -- are in units of 1/256 seconds.  Note, however, that 802.1d/D9
+   -- specifies a settable granularity of no more than 1 second for
+   -- these timers.  To avoid ambiguity, a data type is defined here
+   -- as a textual convention and all representation of these timers
+   -- in this MIB module are defined using this data type.  An algorithm
+   -- is also defined for converting between the different units, to
+   -- ensure a timer's value is not distorted by multiple conversions.
+   -- The data type is:
+
+   Timeout ::= INTEGER      -- a STP timer in units of 1/100 seconds
+
+   -- To convert a Timeout value into a value in units of
+   -- 1/256 seconds, the following algorithm should be used:
+   --
+   --      b  = floor( (n * 256) / 100)
+   --
+   -- where:
+   --      floor   =  quotient [ignore remainder]
+   --      n is the value in 1/100 second units
+   --      b is the value in 1/256 second units
+   --
+   -- To convert the value from 1/256 second units back to
+   -- 1/100 seconds, the following algorithm should be used:
+   --
+   --      n = ceiling( (b * 100) / 256)
+   --
+   -- where:
+   --      ceiling =  quotient [if remainder is 0], or
+   --                 quotient + 1 [if remainder is non-zero]
+   --      n is the value in 1/100 second units
+   --      b is the value in 1/256 second units
+   --
+   -- Note: it is important that the arithmetic operations are done
+   -- in the order specified (i.e., multiply first, divide second).
+
+   rxr1dBridge   OBJECT IDENTIFIER ::= { routeXpander 1 }
+
+
+   -- groups in the Bridge MIB
+
+   rxr1dBase     OBJECT IDENTIFIER ::= { rxr1dBridge 1 }
+
+   rxr1dStp      OBJECT IDENTIFIER ::= { rxr1dBridge 2 }
+
+   rxr1dSr       OBJECT IDENTIFIER ::= { rxr1dBridge 3 }
+
+   rxr1dTp       OBJECT IDENTIFIER ::= { rxr1dBridge 4 }
+
+   rxr1dStatic   OBJECT IDENTIFIER ::= { rxr1dBridge 5 }
+
+
+   -- the rxr1dBase group
+
+   -- Implementation of the rxr1dBase group is mandatory for all
+   -- bridges.
+
+   rxr1dBaseBridgeAddress OBJECT-TYPE
+       SYNTAX  MacAddress
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The MAC address used by this bridge when it must
+               be referred to in a unique fashion.   It is
+               recommended that this be the numerically smallest
+               MAC address of all ports that belong to this
+               bridge.  However it is only required to be unique.
+               When concatenated with rxr1dStpPriority a unique
+               BridgeIdentifier is formed which is used in the
+               Spanning Tree Protocol."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Sections 6.4.1.1.3 and 3.12.5"
+       ::= { rxr1dBase 1 }
+
+   rxr1dBaseNumPorts OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of ports controlled by this bridging
+               entity."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.4.1.1.3"
+       ::= { rxr1dBase 2 }
+
+   rxr1dBaseType OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   unknown(1),
+                   transparent-only(2),
+                   sourceroute-only(3),
+                   srt(4)
+               }
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates what type of bridging this bridge can
+               perform.  If a bridge is actually performing a
+               certain type of bridging this will be indicated by
+               entries in the port table for the given type."
+       ::= { rxr1dBase 3 }
+
+   -- The Generic Bridge Port Table
+
+   rxr1dBasePortTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Rxr1dBasePortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table that contains generic information about
+               every port that is associated with this bridge.
+               Transparent, source-route, and srt ports are
+               included."
+       ::= { rxr1dBase 4 }
+
+   rxr1dBasePortEntry OBJECT-TYPE
+       SYNTAX  Rxr1dBasePortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A list of information for each port of the
+               bridge."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.4.2, 6.6.1"
+       INDEX  { rxr1dBasePort }
+       ::= { rxr1dBasePortTable 1 }
+
+   Rxr1dBasePortEntry ::=
+       SEQUENCE {
+           rxr1dBasePort
+               INTEGER,
+           rxr1dBasePortIfIndex
+               INTEGER,
+           rxr1dBasePortCircuit
+               OBJECT IDENTIFIER,
+           rxr1dBasePortDelayExceededDiscards
+               Counter,
+           rxr1dBasePortMtuExceededDiscards
+               Counter
+       }
+
+   rxr1dBasePort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The port number of the port for which this entry
+               contains bridge management information."
+       ::= { rxr1dBasePortEntry 1 }
+
+   rxr1dBasePortIfIndex OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The value of the instance of the ifIndex object,
+               defined in [4,6], for the interface corresponding
+               to this port."
+       ::= { rxr1dBasePortEntry 2 }
+
+   rxr1dBasePortCircuit OBJECT-TYPE
+       SYNTAX  OBJECT IDENTIFIER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "For a port which (potentially) has the same value
+               of rxr1dBasePortIfIndex as another port on the
+               same bridge, this object contains the name of an
+               object instance unique to this port.  For example,
+               in the case where multiple ports correspond one-
+               to-one with multiple X.25 virtual circuits, this
+               value might identify an (e.g., the first) object
+               instance associated with the X.25 virtual circuit
+               corresponding to this port.
+
+               For a port which has a unique value of
+               rxr1dBasePortIfIndex, this object can have the
+               value { 0 0 }."
+       ::= { rxr1dBasePortEntry 3 }
+
+   rxr1dBasePortDelayExceededDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames discarded by this port due
+               to excessive transit delay through the bridge.  It
+               is incremented by both transparent and source
+               route bridges."
+       REFERENCE
+                "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { rxr1dBasePortEntry 4 }
+
+   rxr1dBasePortMtuExceededDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames discarded by this port due
+               to an excessive size.  It is incremented by both
+               transparent and source route bridges."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { rxr1dBasePortEntry 5 }
+
+
+   -- the rxr1dStp group
+
+   -- Implementation of the rxr1dStp group is optional.  It is
+   -- implemented by those bridges that support the Spanning Tree
+   -- Protocol.  Transparent, Source Route, and SRT bridges will
+   -- implement this group only if they support the Spanning Tree
+   -- Protocol.
+
+
+   rxr1dStpProtocolSpecification OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   unknown(1),
+                   decLb100(2),
+                   ieee8021d(3)
+               }
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "An indication of what version of the Spanning
+               Tree Protocol is being run.  The value
+               'decLb100(2)' indicates the DEC LANbridge 100
+               Spanning Tree protocol.  IEEE 802.1d
+               implementations will return 'ieee8021d(3)'.  If
+               future versions of the IEEE Spanning Tree Protocol
+               are released that are incompatible with the
+               current version a new value will be defined."
+       ::= { rxr1dStp 1 }
+
+   rxr1dStpPriority OBJECT-TYPE
+       SYNTAX  INTEGER (0..65535)
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The value of the write-able portion of the Bridge
+               ID, i.e., the first two octets of the (8 octet
+               long) Bridge ID.  The other (last) 6 octets of the
+               Bridge ID are given by the value of
+               rxr1dBaseBridgeAddress."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.7"
+       ::= { rxr1dStp 2 }
+
+   rxr1dStpTimeSinceTopologyChange OBJECT-TYPE
+       SYNTAX  TimeTicks
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The time (in hundredths of a second) since the
+               last time a topology change was detected by the
+               bridge entity."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.8.1.1.3"
+       ::= { rxr1dStp 3 }
+
+   rxr1dStpTopChanges OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The total number of topology changes detected by
+               this bridge since the management entity was last
+               reset or initialized."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.8.1.1.3"
+       ::= { rxr1dStp 4 }
+
+   rxr1dStpDesignatedRoot OBJECT-TYPE
+       SYNTAX  BridgeId
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The bridge identifier of the root of the spanning
+               tree as determined by the Spanning Tree Protocol
+               as executed by this node.  This value is used as
+               the Root Identifier parameter in all Configuration
+               Bridge PDUs originated by this node."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.1"
+       ::= { rxr1dStp 5 }
+
+   rxr1dStpRootCost OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The cost of the path to the root as seen from
+               this bridge."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.2"
+       ::= { rxr1dStp 6 }
+
+   rxr1dStpRootPort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The port number of the port which offers the
+               lowest cost path from this bridge to the root
+               bridge."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.3"
+       ::= { rxr1dStp 7 }
+
+   rxr1dStpMaxAge OBJECT-TYPE
+       SYNTAX  Timeout
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum age of Spanning Tree Protocol
+               information learned from the network on any port
+               before it is discarded, in units of hundredths of
+               a second.  This is the actual value that this
+               bridge is currently using."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.4"
+       ::= { rxr1dStp 8 }
+
+   rxr1dStpHelloTime OBJECT-TYPE
+       SYNTAX  Timeout
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The amount of time between the transmission of
+               Configuration bridge PDUs by this node on any port
+               when it is the root of the spanning tree or trying
+               to become so, in units of hundredths of a second.
+               This is the actual value that this bridge is
+               currently using."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.5"
+       ::= { rxr1dStp 9 }
+
+   rxr1dStpHoldTime OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "This time value determines the interval length
+               during which no more than two Configuration bridge
+               PDUs shall be transmitted by this node, in units
+               of hundredths of a second."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.14"
+       ::= { rxr1dStp 10 }
+
+   rxr1dStpForwardDelay OBJECT-TYPE
+       SYNTAX  Timeout
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "This time value, measured in units of hundredths
+               of a second, controls how fast a port changes its
+               spanning state when moving towards the Forwarding
+               state.  The value determines how long the port
+               stays in a particular state before moving to the
+               next state.  For example, how long a port stays in
+               the Listening state when moving from Blocking to
+               Learning.  This value is also used, when a
+               topology change has been detected and is underway,
+               to age all dynamic entries in the Forwarding
+               Database.  [Note that this value is the one that
+               this bridge is currently using, in contrast to
+               rxr1dStpBridgeForwardDelay which is the value that
+               this bridge and all others would start using
+               if/when this bridge were to become the root.]"
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.6"
+       ::= { rxr1dStp 11 }
+
+
+
+
+   rxr1dStpBridgeMaxAge OBJECT-TYPE
+       SYNTAX  Timeout (600..4000)
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The value that all bridges use for MaxAge when
+               this bridge is acting as the root.  Note that
+               802.1d/D9 specifies that the range for this
+               parameter is related to the value of
+               rxr1dStpBridgeHelloTime. The granularity of this
+               timer is specified by 802.1d/D9 to be 1 second.
+               An agent may return a badValue error if a set is
+               attempted to a value which is not a whole number
+               of seconds."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.8"
+       ::= { rxr1dStp 12 }
+
+   rxr1dStpBridgeHelloTime OBJECT-TYPE
+       SYNTAX  Timeout (100..1000)
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The value that all bridges use for HelloTime when
+               this bridge is acting as the root.  The
+               granularity of this timer is specified by
+               802.1d/D9 to be 1 second.  An agent may return a
+               badValue error if a set is attempted to a value
+               which is not a whole number of seconds."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.9"
+       ::= { rxr1dStp 13 }
+
+   rxr1dStpBridgeForwardDelay OBJECT-TYPE
+       SYNTAX  Timeout (400..3000)
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The value that all bridges use for ForwardDelay
+               when this bridge is acting as the root.  Note that
+               802.1d/D9 specifies that the range for this
+               parameter is related to the value of
+               rxr1dStpBridgeMaxAge.  The granularity of this
+               timer is specified by 802.1d/D9 to be 1 second.
+               An agent may return a badValue error if a set is
+               attempted to a value which is not a whole number
+               of seconds."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.3.10"
+       ::= { rxr1dStp 14 }
+
+
+   -- The Spanning Tree Port Table
+
+   rxr1dStpPortTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Rxr1dStpPortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table that contains port-specific information
+               for the Spanning Tree Protocol."
+       ::= { rxr1dStp 15 }
+
+   rxr1dStpPortEntry OBJECT-TYPE
+       SYNTAX  Rxr1dStpPortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A list of information maintained by every port
+               about the Spanning Tree Protocol state for that
+               port."
+       INDEX   { rxr1dStpPort }
+       ::= { rxr1dStpPortTable 1 }
+
+   Rxr1dStpPortEntry ::=
+       SEQUENCE {
+           rxr1dStpPort
+               INTEGER,
+           rxr1dStpPortPriority
+               INTEGER,
+           rxr1dStpPortState
+               INTEGER,
+           rxr1dStpPortEnable
+               INTEGER,
+           rxr1dStpPortPathCost
+               INTEGER,
+           rxr1dStpPortDesignatedRoot
+               BridgeId,
+           rxr1dStpPortDesignatedCost
+               INTEGER,
+           rxr1dStpPortDesignatedBridge
+               BridgeId,
+           rxr1dStpPortDesignatedPort
+               OCTET STRING,
+           rxr1dStpPortForwardTransitions
+               Counter
+       }
+
+   rxr1dStpPort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The port number of the port for which this entry
+               contains Spanning Tree Protocol management
+               information."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.8.2.1.2"
+       ::= { rxr1dStpPortEntry 1 }
+
+   rxr1dStpPortPriority OBJECT-TYPE
+       SYNTAX  INTEGER (0..255)
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The value of the priority field which is
+               contained in the first (in network byte order)
+               octet of the (2 octet long) Port ID.  The other
+               octet of the Port ID is given by the value of
+               rxr1dStpPort."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.5.1"
+       ::= { rxr1dStpPortEntry 2 }
+
+   rxr1dStpPortState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   disabled(1),
+                   blocking(2),
+                   listening(3),
+                   learning(4),
+                   forwarding(5),
+                   broken(6)
+               }
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The port's current state as defined by
+               application of the Spanning Tree Protocol.  This
+               state controls what action a port takes on
+               reception of a frame.  If the bridge has detected
+               a port that is malfunctioning it will place that
+               port into the broken(6) state.  For ports which
+               are disabled (see rxr1dStpPortEnable), this object
+               will have a value of disabled(1)."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.5.2"
+       ::= { rxr1dStpPortEntry 3 }
+
+   rxr1dStpPortEnable OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   enabled(1),
+                   disabled(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The enabled/disabled status of the port."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.5.2"
+       ::= { rxr1dStpPortEntry 4 }
+
+   rxr1dStpPortPathCost OBJECT-TYPE
+       SYNTAX  INTEGER (1..65535)
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The contribution of this port to the path cost of
+               paths towards the spanning tree root which include
+               this port."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.5.3"
+       ::= { rxr1dStpPortEntry 5 }
+
+   rxr1dStpPortDesignatedRoot OBJECT-TYPE
+       SYNTAX  BridgeId
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique Bridge Identifier of the Bridge
+               recorded as the Root in the Configuration BPDUs
+               transmitted by the Designated Bridge for the
+               segment to which the port is attached."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.5.4"
+       ::= { rxr1dStpPortEntry 6 }
+
+   rxr1dStpPortDesignatedCost OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The path cost of the Designated Port of the
+               segment connected to this port.  This value is
+               compared to the Root Path Cost field in received
+               bridge PDUs."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.5.5"
+       ::= { rxr1dStpPortEntry 7 }
+
+   rxr1dStpPortDesignatedBridge OBJECT-TYPE
+       SYNTAX  BridgeId
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The Bridge Identifier of the bridge which this
+               port considers to be the Designated Bridge for
+               this port's segment."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.5.6"
+       ::= { rxr1dStpPortEntry 8 }
+
+   rxr1dStpPortDesignatedPort OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (2))
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The Port Identifier of the port on the Designated
+               Bridge for this port's segment."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 4.5.5.7"
+       ::= { rxr1dStpPortEntry 9 }
+
+   rxr1dStpPortForwardTransitions OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of times this port has transitioned
+               from the Learning state to the Forwarding state."
+       ::= { rxr1dStpPortEntry 10 }
+
+
+   -- the rxr1dSr group
+
+   -- Implementation of the rxr1dSr group is optional.  It is
+   -- implemented by those bridges that support the source route
+   -- bridging mode, including Source Route and SRT bridges.
+
+   rxr1dSrPortTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Rxr1dSrPortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table that contains information about every
+               port that is associated with this source route
+               bridge."
+       ::= { rxr1dSr 1 }
+
+   rxr1dSrPortEntry OBJECT-TYPE
+       SYNTAX  Rxr1dSrPortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A list of information for each port of a source
+               route bridge."
+       INDEX   { rxr1dSrPort }
+       ::= { rxr1dSrPortTable 1 }
+
+   Rxr1dSrPortEntry ::=
+       SEQUENCE {
+           rxr1dSrPort
+               INTEGER,
+           rxr1dSrPortHopCount
+               INTEGER,
+           rxr1dSrPortLocalSegment
+               INTEGER,
+           rxr1dSrPortBridgeNum
+               INTEGER,
+           rxr1dSrPortTargetSegment
+               INTEGER,
+           rxr1dSrPortLargestFrame
+               INTEGER,
+           rxr1dSrPortSTESpanMode
+               INTEGER,
+           rxr1dSrPortSpecInFrames
+               Counter,
+           rxr1dSrPortSpecOutFrames
+               Counter,
+           rxr1dSrPortApeInFrames
+               Counter,
+           rxr1dSrPortApeOutFrames
+               Counter,
+           rxr1dSrPortSteInFrames
+               Counter,
+           rxr1dSrPortSteOutFrames
+               Counter,
+           rxr1dSrPortSegmentMismatchDiscards
+               Counter,
+           rxr1dSrPortDuplicateSegmentDiscards
+               Counter,
+           rxr1dSrPortHopCountExceededDiscards
+               Counter
+       }
+
+   rxr1dSrPort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The port number of the port for which this entry
+               contains Source Route management information."
+       ::= { rxr1dSrPortEntry 1 }
+
+   rxr1dSrPortHopCount OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum number of routing descriptors allowed
+               in an All Paths or Spanning Tree Explorer frames."
+       ::= { rxr1dSrPortEntry 2 }
+
+   rxr1dSrPortLocalSegment OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The segment number that uniquely identifies the
+               segment to which this port is connected. Current
+               source routing protocols limit this value to the
+               range: 0 through 4095. A value of 65535 signifies
+               that no segment number is assigned to this port."
+       ::= { rxr1dSrPortEntry 3 }
+
+   rxr1dSrPortBridgeNum OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "A bridge number uniquely identifies a bridge when
+               more than one bridge is used to span the same two
+               segments.  Current source routing protocols limit
+               this value to the range: 0 through 15. A value of
+               65535 signifies that no bridge number is assigned
+               to this bridge."
+       ::= { rxr1dSrPortEntry 4 }
+
+   rxr1dSrPortTargetSegment OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The segment number that corresponds to the target
+               segment this port is considered to be connected to
+               by the bridge.  Current source routing protocols
+               limit this value to the range: 0 through 4095. A
+               value of 65535 signifies that no target segment is
+               assigned to this port."
+       ::= { rxr1dSrPortEntry 5 }
+
+   -- It would be nice if we could use ifMtu as the size of the
+   -- largest frame, but we can't because ifMtu is defined to be
+   -- the size that the (inter-)network layer can use which can
+   -- differ from the MAC layer (especially if several layers of
+   -- encapsulation are used).
+
+   rxr1dSrPortLargestFrame OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   rxr1dSrMtu516   (516),
+                   rxr1dSrMtu1500  (1500),
+                   rxr1dSrMtu2052  (2052),
+                   rxr1dSrMtu4472  (4472),
+                   rxr1dSrMtu8144  (8144),
+                   rxr1dSrMtu11407 (11407), -- yes this is correct don't
+                   rxr1dSrMtu17800 (17800), -- ask me where it came from.
+                   rxr1dSrMtu65535 (65535)
+               }
+
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum size of the INFO field (LLC and
+               above) that this port can send/receive.  It does
+               not include any MAC level (framing) octets.  The
+               value of this object is used by this bridge to
+               determine whether a modification of the
+               LargestFrame (LF, see [14]) field of the Routing
+               Control field of the Routing Information Field is
+               necessary.  Valid values as defined by the 802.5
+               source routing bridging specification[14] are 516,
+               1500, 2052, 4472, 8144, 11407, 17800, and 65535
+               octets.  Behavior of the port when an illegal
+               value is written is implementation specific.  It
+               is recommended that a reasonable legal value be
+               chosen."
+       ::= { rxr1dSrPortEntry 6 }
+
+   rxr1dSrPortSTESpanMode OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   auto-span(1),
+                   disabled(2),
+                   forced(3)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "Determines how this port behaves when presented
+               with a Spanning Tree Explorer frame.  The value
+               'disabled(2)' indicates that the port will not
+               accept or send Spanning Tree Explorer packets; any
+               STE packets received will be silently discarded.
+               The value 'forced(3)' indicates the port will
+               always accept and propagate Spanning Tree Explorer
+               frames.  This allows a manually configured
+               Spanning Tree for this class of packet to be
+               configured.  Note that unlike transparent bridging
+               this is not catastrophic to the network if there
+               are loops.  The value 'auto-span(1)' can only be
+               returned by a bridge that both implements the
+               Spanning Tree Protocol and has use of the protocol
+               enabled on this port. The behavior of the port for
+               Spanning Tree Explorer frames is determined by the
+               state of rxr1dStpPortState.  If the port is in the
+               'forwarding' state, the frame will be accepted or
+               propagated.  Otherwise it will be silently
+               discarded."
+       ::= { rxr1dSrPortEntry 7 }
+
+   rxr1dSrPortSpecInFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of specifically routed frames that
+               have been received from this port's segment."
+       ::= { rxr1dSrPortEntry 8 }
+
+   rxr1dSrPortSpecOutFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of specifically routed frames that
+               this port has transmitted on its segment."
+       ::= { rxr1dSrPortEntry 9 }
+
+   rxr1dSrPortApeInFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of all paths explorer frames that have
+               been received by this port from its segment."
+       ::= { rxr1dSrPortEntry 10 }
+
+   rxr1dSrPortApeOutFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of all paths explorer frames that have
+               been transmitted by this port on its segment."
+       ::= { rxr1dSrPortEntry 11 }
+
+   rxr1dSrPortSteInFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of spanning tree explorer frames that
+               have been received by this port from its segment."
+       ::= { rxr1dSrPortEntry 12 }
+
+   rxr1dSrPortSteOutFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of spanning tree explorer frames that
+               have been transmitted by this port on its
+               segment."
+       ::= { rxr1dSrPortEntry 13 }
+
+   rxr1dSrPortSegmentMismatchDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of explorer frames that have been
+               discarded by this port because the routing
+               descriptor field contained an invalid adjacent
+               segment value."
+       ::= { rxr1dSrPortEntry 14 }
+
+   rxr1dSrPortDuplicateSegmentDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames that have been discarded by
+               this port because the routing descriptor field
+               contained a duplicate segment identifier."
+       ::= { rxr1dSrPortEntry 15 }
+
+   rxr1dSrPortHopCountExceededDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of explorer frames that have been
+               discarded by this port because the Routing
+               Information Field has exceeded the maximum route
+               descriptor length."
+       ::= { rxr1dSrPortEntry 16 }
+
+
+   -- the rxr1dTp group
+
+   -- Implementation of the rxr1dTp group is optional.  It is
+   -- implemented by those bridges that support the transparent
+   -- bridging mode.  A transparent or SRT bridge will implement
+   -- this group.
+
+
+   rxr1dTpLearnedEntryDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The total number of Forwarding Database entries,
+               which have been or would have been learnt, but
+               have been discarded due to a lack of space to
+               store them in the Forwarding Database.  If this
+               counter is increasing, it indicates that the
+               Forwarding Database is regularly becoming full (a
+               condition which has unpleasant performance effects
+               on the subnetwork).  If this counter has a
+               significant value but is not presently increasing,
+               it indicates that the problem has been occurring
+               but is not persistent."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.7.1.1.3"
+       ::= { rxr1dTp 1 }
+
+   rxr1dTpAgingTime OBJECT-TYPE
+       SYNTAX   INTEGER
+       ACCESS   read-write
+       STATUS   mandatory
+       DESCRIPTION
+               "The timeout period in seconds for aging out
+               dynamically learned forwarding information."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.7.1.1.3"
+       ::= { rxr1dTp 2 }
+
+
+   --  The Forwarding Database for Transparent Bridges
+
+   rxr1dTpFdbTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Rxr1dTpFdbEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table that contains information about unicast
+               entries for which the bridge has forwarding and/or
+               filtering information.  This information is used
+               by the transparent bridging function in
+               determining how to propagate a received frame."
+       ::= { rxr1dTp 3 }
+
+   rxr1dTpFdbEntry OBJECT-TYPE
+       SYNTAX  Rxr1dTpFdbEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Information about a specific unicast MAC address
+               for which the bridge has some forwarding and/or
+               filtering information."
+       INDEX   { rxr1dTpFdbAddress }
+       ::= { rxr1dTpFdbTable 1 }
+
+   Rxr1dTpFdbEntry ::=
+       SEQUENCE {
+           rxr1dTpFdbAddress
+               MacAddress,
+           rxr1dTpFdbPort
+               INTEGER,
+           rxr1dTpFdbStatus
+               INTEGER
+       }
+
+   rxr1dTpFdbAddress OBJECT-TYPE
+       SYNTAX  MacAddress
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "A unicast MAC address for which the bridge has
+               forwarding and/or filtering information."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 3.9.1, 3.9.2"
+       ::= { rxr1dTpFdbEntry 1 }
+
+   rxr1dTpFdbPort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "Either the value '0', or the port number of the
+               port on which a frame having a source address
+               equal to the value of the corresponding instance
+               of rxr1dTpFdbAddress has been seen.  A value of
+               '0' indicates that the port number has not been
+               learned but that the bridge does have some
+               forwarding/filtering information about this
+               address (e.g. in the rxr1dStaticTable).
+               Implementors are encouraged to assign the port
+               value to this object whenever it is learned even
+               for addresses for which the corresponding value of
+               rxr1dTpFdbStatus is not learned(3)."
+
+       ::= { rxr1dTpFdbEntry 2 }
+
+   rxr1dTpFdbStatus OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   other(1),
+                   invalid(2),
+                   learned(3),
+                   self(4),
+                   mgmt(5)
+               }
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The status of this entry.  The meanings of the
+               values are:
+
+                 other(1)   : none of the following.  This would
+                              include the case where some other
+                              MIB object (not the corresponding
+                              instance of rxr1dTpFdbPort, nor an
+                              entry in the rxr1dStaticTable) is
+                              being used to determine if and how
+                              frames addressed to the value of
+                              the corresponding instance of
+                              rxr1dTpFdbAddress are being
+                              forwarded.
+
+                 invalid(2) : this entry is not longer valid
+                              (e.g., it was learned but has since
+                              aged-out), but has not yet been
+                              flushed from the table.
+
+                 learned(3) : the value of the corresponding
+                              instance of rxr1dTpFdbPort was
+                              learned, and is being used.
+
+                 self(4)    : the value of the corresponding
+                              instance of rxr1dTpFdbAddress
+                              represents one of the bridge's
+                              addresses.  The corresponding
+                              instance of rxr1dTpFdbPort
+                              indicates which of the bridge's
+                              ports has this address.
+
+                 mgmt(5)    : the value of the corresponding
+                              instance of rxr1dTpFdbAddress is
+                              also the value of an existing
+                              instance of rxr1dStaticAddress."
+       ::= { rxr1dTpFdbEntry 3 }
+
+
+   --  Port Table for Transparent Bridges
+
+   rxr1dTpPortTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Rxr1dTpPortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table that contains information about every
+               port that is associated with this transparent
+               bridge."
+       ::= { rxr1dTp 4 }
+
+   rxr1dTpPortEntry OBJECT-TYPE
+       SYNTAX  Rxr1dTpPortEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A list of information for each port of a
+               transparent bridge."
+       INDEX   { rxr1dTpPort }
+       ::= { rxr1dTpPortTable 1 }
+
+   Rxr1dTpPortEntry ::=
+       SEQUENCE {
+           rxr1dTpPort
+               INTEGER,
+           rxr1dTpPortMaxInfo
+               INTEGER,
+           rxr1dTpPortInFrames
+               Counter,
+           rxr1dTpPortOutFrames
+               Counter,
+           rxr1dTpPortInDiscards
+               Counter
+       }
+
+   rxr1dTpPort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The port number of the port for which this entry
+               contains Transparent bridging management
+               information."
+       ::= { rxr1dTpPortEntry 1 }
+
+   -- It would be nice if we could use ifMtu as the size of the
+   -- largest INFO field, but we can't because ifMtu is defined
+   -- to be the size that the (inter-)network layer can use which
+   -- can differ from the MAC layer (especially if several layers
+   -- of encapsulation are used).
+
+   rxr1dTpPortMaxInfo OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum size of the INFO (non-MAC) field that
+               this port will receive or transmit."
+       ::= { rxr1dTpPortEntry 2 }
+
+   rxr1dTpPortInFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames that have been received by
+               this port from its segment. Note that a frame
+               received on the interface corresponding to this
+               port is only counted by this object if and only if
+               it is for a protocol being processed by the local
+               bridging function."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { rxr1dTpPortEntry 3 }
+
+   rxr1dTpPortOutFrames OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of frames that have been transmitted
+               by this port to its segment.  Note that a frame
+               transmitted on the interface corresponding to this
+               port is only counted by this object if and only if
+               it is for a protocol being processed by the local
+               bridging function."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { rxr1dTpPortEntry 4 }
+
+   rxr1dTpPortInDiscards OBJECT-TYPE
+       SYNTAX   Counter
+       ACCESS   read-only
+       STATUS   mandatory
+       DESCRIPTION
+               "Count of valid frames received which were
+               discarded (i.e., filtered) by the Forwarding
+               Process."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.6.1.1.3"
+       ::= { rxr1dTpPortEntry 5 }
+
+   -- The Static (Destination-Address Filtering) Database
+
+   -- Implementation of this group is optional.
+
+
+   rxr1dStaticTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF Rxr1dStaticEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "A table containing filtering information
+               configured into the bridge by (local or network)
+               management specifying the set of ports to which
+               frames received from specific ports and containing
+               specific destination addresses are allowed to be
+               forwarded.  The value of zero in this table as the
+               port number from which frames with a specific
+               destination address are received, is used to
+               specify all ports for which there is no specific
+               entry in this table for that particular
+               destination address.  Entries are valid for
+               unicast and for group/broadcast addresses."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 6.7.2"
+       ::= { rxr1dStatic 1 }
+
+   rxr1dStaticEntry OBJECT-TYPE
+       SYNTAX  Rxr1dStaticEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Filtering information configured into the bridge
+               by (local or network) management specifying the
+               set of ports to which frames received from a
+               specific port and containing a specific
+               destination address are allowed to be forwarded."
+       REFERENCE
+               "P802.1d/D9, July 14,1989: Section 6.7.2"
+       INDEX   { rxr1dStaticAddress, rxr1dStaticReceivePort }
+       ::= { rxr1dStaticTable 1 }
+
+   Rxr1dStaticEntry ::=
+       SEQUENCE {
+           rxr1dStaticAddress
+               MacAddress,
+           rxr1dStaticReceivePort
+               INTEGER,
+           rxr1dStaticAllowedToGoTo
+               OCTET STRING,
+           rxr1dStaticStatus
+               INTEGER
+       }
+
+   rxr1dStaticAddress OBJECT-TYPE
+       SYNTAX  MacAddress
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The destination MAC address in a frame to which
+               this entry's filtering information applies.  This
+               object can take the value of a unicast address, a
+               group address or the broadcast address."
+       REFERENCE
+               "P802.1d/D9, July 14, 1989: Section 3.9.1, 3.9.2"
+       ::= { rxr1dStaticEntry 1 }
+
+   rxr1dStaticReceivePort OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "Either the value '0', or the port number of the
+               port from which a frame must be received in order
+               for this entry's filtering information to apply.
+               A value of zero indicates that this entry applies
+               on all ports of the bridge for which there is no
+               other applicable entry."
+       ::= { rxr1dStaticEntry 2 }
+
+   rxr1dStaticAllowedToGoTo OBJECT-TYPE
+       SYNTAX  OCTET STRING
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The set of ports to which frames received from a
+               specific port and destined for a specific MAC
+               address, are allowed to be forwarded.  Each octet
+               within the value of this object specifies a set of
+               eight ports, with the first octet specifying ports
+               1 through 8, the second octet specifying ports 9
+               through 16, etc.  Within each octet, the most
+               significant bit represents the lowest numbered
+               port, and the least significant bit represents the
+               highest numbered port.  Thus, each port of the
+               bridge is represented by a single bit within the
+               value of this object.  If that bit has a value of
+               '1' then that port is included in the set of
+               ports; the port is not included if its bit has a
+               value of '0'.  (Note that the setting of the bit
+               corresponding to the port from which a frame is
+               received is irrelevant.)"
+       ::= { rxr1dStaticEntry 3 }
+
+   rxr1dStaticStatus OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   other(1),
+                   invalid(2),
+                   permanent(3),
+                   deleteOnReset(4),
+                   deleteOnTimeout(5)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "This object indicates the status of this entry.
+                    other(1) - this entry is currently in use but
+                         the conditions under which it will
+                         remain so are different from each of the
+                         following values.
+                    invalid(2) - writing this value to the object
+                         removes the corresponding entry.
+                    permanent(3) - this entry is currently in use
+                         and will remain so after the next reset
+                         of the bridge.
+                    deleteOnReset(4) - this entry is currently in
+                         use and will remain so until the next
+                         reset of the bridge.
+                    deleteOnTimeout(5) - this entry is currently
+                         in use and will remain so until it is
+                         aged out."
+       ::= { rxr1dStaticEntry 4 }
+
+   -- Traps for use by Bridges
+
+   -- Traps for the Spanning Tree Protocol
+
+   newRoot TRAP-TYPE
+       ENTERPRISE  rxr1dBridge
+       DESCRIPTION
+               "The newRoot trap indicates that the sending agent
+               has become the new root of the Spanning Tree; the
+               trap is sent by a bridge soon after its election
+               as the new root, e.g., upon expiration of the
+               Topology Change Timer immediately subsequent to
+               its election."
+       ::= 1
+
+   topologyChange TRAP-TYPE
+       ENTERPRISE  rxr1dBridge
+       DESCRIPTION
+               "A topologyChange trap is sent by a bridge when
+               any of its configured ports transitions from the
+               Learning state to the Forwarding state, or from
+               the Forwarding state to the Blocking state.  The
+               trap is not sent if a newRoot trap is sent for the
+               same transition."
+       ::= 2
+
+
+   -- This MIB defines the management information for a system using the IPX
+   -- protocol.  The MIB consists of four groups:
+   --
+   --  1. System Group - contains general information ablout all instances
+   --                    of IPX on the system.
+   --
+   --  2. Circuit Group - contains information about all circuits used by
+   --                     IPx on the system.
+   --
+   --  3. Forwarding Group - contains generic routing information that
+   --                        must be provided by any IPX routing protocol.
+   --
+   --  4. Services Group - contains information about all known services.
+   --
+   -- The MIB is designed to provide a basic framework for the management
+   -- of systems implementing the IPX protocol.  Additional MIBs may be
+   -- created (especially in the area of IPX routing protocols) to contain
+   -- more specific information.  Whenever possible, these additional MIBs
+   -- should follow the format of this IPX MIB.  Information in these MIBs
+   -- should be linked to this MIB via the use of the system instance
+   -- identifier mentioned above.
+
+
+   rxripxRouter  OBJECT IDENTIFIER ::= { routeXpander 2 }
+
+   ipx           OBJECT IDENTIFIER ::= { rxripxRouter 1 }
+
+
+   -- Groups
+
+   ipxSystem     OBJECT IDENTIFIER ::= { ipx 1 }
+
+   ipxCircuit    OBJECT IDENTIFIER ::= { ipx 2 }
+
+   ipxForwarding OBJECT IDENTIFIER ::= { ipx 3 }
+
+   ipxServices   OBJECT IDENTIFIER ::= { ipx 4 }
+
+
+   -- Types
+
+   NetNumber ::= OCTET STRING (SIZE (4))
+
+
+   -- System Group
+   --  This group contains global information about each instance of IPX
+   --  running on one system.
+
+   -- System Table
+   --  This table contains one entry for each instance of IPX running on
+   --  the system.
+
+   ipxSysTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF IPXSysEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "The IPX System table."
+       ::= { ipxSystem 1 }
+
+   ipxSysEntry OBJECT-TYPE
+       SYNTAX  IPXSysEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Each entry corresponds to one instance of IPX running
+               on the system."
+       INDEX  { ipxSysInstance }
+       ::= { ipxSysTable 1 }
+
+   IPXSysEntry ::=
+       SEQUENCE {
+           ipxSysInstance
+               INTEGER,
+           ipxSysExistState
+               INTEGER,
+           ipxSysIntNetNumExists
+               INTEGER,
+           ipxSysIntNetNum
+               NetNumber,
+           ipxSysName
+               OCTET STRING,
+           ipxSysMaxPathSplits
+               INTEGER,
+           ipxSysMaxHops
+               INTEGER,
+           ipxSysVersionMajor
+               INTEGER,
+           ipxSysVersionMinor
+               INTEGER,
+           ipxSysInReceives
+               Counter,
+           ipxSysInTooManyHops
+               Counter,
+           ipxSysInHdrErrors
+               Counter,
+           ipxSysInUnknownSockets
+               Counter,
+           ipxSysInFiltered
+               Counter,
+           ipxSysInCompressDiscards
+               Counter,
+           ipxSysInDiscards
+               Counter,
+           ipxSysInDelivers
+               Counter,
+           ipxSysNETBIOSPackets
+               Counter,
+           ipxSysForwPackets
+               Counter,
+           ipxSysOutRequests
+               Counter,
+           ipxSysOutNoRoutes
+               Counter,
+           ipxSysOutFiltered
+               Counter,
+           ipxSysOutCompressDiscards
+               Counter,
+           ipxSysOutMalformedRequests
+               Counter,
+           ipxSysOutDiscards
+               Counter,
+           ipxSysOutPackets
+               Counter,
+           ipxSysCircCount
+               Counter,
+           ipxSysDestCount
+               Counter,
+           ipxSysServCount
+               Counter,
+           ipxSysResourceFailures
+               Counter,
+           ipxSysConfigSockets
+               Counter,
+           ipxSysMaxOpenSockets
+               Counter,
+           ipxSysOpenSocketFails
+               Counter
+       }
+
+   ipxSysInstance OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique identifier of the instance of IPX to which this
+               row corresponds.  This value may be written only when
+               creating a new entry in the table."
+       ::= { ipxSysEntry 1 }
+
+   ipxSysExistState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   off(1),
+                   on(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The validity of this entry in the IPX system table.
+               Setting this field to off indicates that this entry may be
+               deleted from the system table at the IPX implemntation's
+               discretion."
+       ::= { ipxSysEntry 2 }
+
+   ipxSysIntNetNumExists OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   no(1),
+                   yes(2)
+               }
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates whether this instance of IPX has an internal
+               network number."
+       ::= { ipxSysEntry 3 }
+
+   ipxSysIntNetNum OBJECT-TYPE
+       SYNTAX  NetNumber
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The IPX internal network number of this instance of IPX.
+               This value is undefined if the value of
+               ipxSysIntNetNumExists is no."
+       ::= { ipxSysEntry 4 }
+
+   ipxSysName OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (0..48))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The readable name for this system."
+       ::= { ipxSysEntry 5 }
+
+   ipxSysMaxPathSplits OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum number of paths with equal routing metric
+               value which this instance of IPX may split
+               between when forwarding packets."
+       ::= { ipxSysEntry 6 }
+
+   ipxSysMaxHops OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum number of hops a packet may take."
+       ::= { ipxSysEntry 7 }
+
+   ipxSysVersionMajor OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The major version of IPX supported."
+       ::= { ipxSysEntry 8 }
+
+   ipxSysVersionMinor OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The minor version of IPX supported."
+       ::= { ipxSysEntry 9 }
+
+   ipxSysInReceives OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The total number of IPX packets received, including
+               those received in error."
+       ::= { ipxSysEntry 10 }
+
+   ipxSysInTooManyHops OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX packets discarded due to exceeding the
+               maximum hop count."
+       ::= { ipxSysEntry 11 }
+
+   ipxSysInHdrErrors OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX packets discarded due to errors in
+               their headers, including ant IPX packet with a size less
+               than the minimum of 30 bytes."
+       ::= { ipxSysEntry 12 }
+
+   ipxSysInUnknownSockets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX packets discarded because the
+               destination socket was not open."
+       ::= { ipxSysEntry 13 }
+
+   ipxSysInFiltered OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of incoming IPX packets discarded due to
+               filtering."
+       ::= { ipxSysEntry 14 }
+
+   ipxSysInCompressDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of incoming IPX packets discarded due to
+               decompression errors."
+       ::= { ipxSysEntry 15 }
+
+   ipxSysInDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX packets received but discarded due to
+               processing decision."
+       ::= { ipxSysEntry 16 }
+
+   ipxSysInDelivers OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The total number of IPX packets delivered locally,
+               including packets from local applications."
+       ::= { ipxSysEntry 17 }
+
+   ipxSysNETBIOSPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The total number of NetBIOS packets received."
+       ::= { ipxSysEntry 18 }
+
+   ipxSysForwPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX packets forwarded."
+       ::= { ipxSysEntry 19 }
+
+   ipxSysOutRequests OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX packets supplied locally for
+               transmission, not including any packets counted in
+               ipxForwPackets."
+       ::= { ipxSysEntry 20 }
+
+   ipxSysOutNoRoutes OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX packets discarded because no route was
+               found."
+       ::= { ipxSysEntry 21 }
+
+   ipxSysOutFiltered OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of outgoing IPX packets discarded due to
+               filtering."
+       ::= { ipxSysEntry 22 }
+
+   ipxSysOutCompressDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of outgoing IPX packets discarded due to
+               compression errors."
+       ::= { ipxSysEntry 23 }
+
+   ipxSysOutMalformedRequests OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX packets supplied locally that contained
+               errors in their structure."
+       ::= { ipxSysEntry 24 }
+
+   ipxSysOutDiscards OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of outgoing IPX packets discarded due to
+               processing decision."
+       ::= { ipxSysEntry 25 }
+
+   ipxSysOutPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The total number of IPX packets transmitted."
+       ::= { ipxSysEntry 26 }
+
+   ipxSysCircCount OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of circuits known to this instance of IPX."
+       ::= { ipxSysEntry 27 }
+
+   ipxSysDestCount OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of currently reachable destinations known to
+               this instance of IPX."
+       ::= { ipxSysEntry 28 }
+
+   ipxSysServCount OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of services known to this instance of IPX."
+       ::= { ipxSysEntry 29 }
+
+   ipxSysResourceFailures OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of times this instance of IPX has been
+               unable to obtain needed resources (memory, etc.)."
+       ::= { ipxSysEntry 30 }
+
+   ipxSysConfigSockets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The configured maximum number of IPX sockets that may be
+               open at one time."
+       ::= { ipxSysEntry 31 }
+
+   ipxSysMaxOpenSockets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum number of IPX sockets actually open at one
+               time on this system."
+       ::= { ipxSysEntry 32 }
+
+   ipxSysOpenSocketFails OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of IPX socket open calls which failed."
+       ::= { ipxSysEntry 33 }
+
+
+   -- Circuit Group
+   --  This group contains management information for each circuit known
+   --  to this system.
+
+   -- Circuit Table
+   --  The Circuit table contains an entry for each circuit known to the
+   --  system.
+
+   ipxCircTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF IPXCircEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "The Circuit table."
+       ::= { ipxCircuit 1 }
+
+   ipxCircEntry OBJECT-TYPE
+       SYNTAX  IPXCircEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Each entry corresponds to one circuit known to the
+               system."
+       INDEX  { ipxCircSysInstance, ipxCircIndex }
+       ::= { ipxCircTable 1 }
+
+   IPXCircEntry ::=
+       SEQUENCE {
+           ipxCircSysInstance
+               INTEGER,
+           ipxCircIndex
+               INTEGER,
+           ipxCircExistState
+               INTEGER,
+           ipxCircOperState
+               INTEGER,
+           ipxCircIfIndex
+               NetNumber,
+           ipxCircName
+               OCTET STRING,
+           ipxCircInfo
+               OCTET STRING,
+           ipxCircType
+               INTEGER,
+           ipxCircLocalMaxPacketSize
+               INTEGER,
+           ipxCircCompressState
+               INTEGER,
+           ipxCircCompressSlots
+               INTEGER,
+           ipxCircCompressedSent
+               INTEGER,
+           ipxCircUncompressedSent
+               INTEGER,
+           ipxCircMediaType
+               INTEGER,
+           ipxCircNetNumber
+               NetNumber,
+           ipxCircStateChanges
+               Counter,
+           ipxCircInitFails
+               Counter,
+           ipxCircDelay
+               INTEGER,
+           ipxCircThroughput
+               INTEGER
+       }
+
+   ipxCircSysInstance OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique identifier of the instance of IPX
+               to which this entry corresponds.  This value may be
+               written only when creating a new entry in the table."
+       ::= { ipxCircEntry 1 }
+
+   ipxCircIndex OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The identifier of this circuit, unique within the
+               instance of IPX.  This value may be written
+               only when creating a new entry in the table."
+       ::= { ipxCircEntry 2 }
+
+   ipxCircExistState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   off(1),
+                   on(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The validity of this circuit entry.  A circuit with this
+               value set to off may be deleted from the table at the
+               IPX implementation's discretion."
+       ::= { ipxCircEntry 3 }
+
+   ipxCircOperState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   off(1),
+                   on(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The operational state of the circuit."
+       ::= { ipxCircEntry 4 }
+
+   ipxCircIfIndex OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The value of ifIndex for the interface used by this
+               circuit.  This value may be written only when creating
+               a new entry in the table."
+       ::= { ipxCircEntry 5 }
+
+   ipxCircName OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (0..20))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The readable name for the circuit."
+       ::= { ipxCircEntry 6 }
+
+   ipxCircInfo OBJECT-TYPE
+       SYNTAX  OCTET STRING
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "Additional readable information for the circuit.  The
+               content of this field is implementation defined."
+       ::= { ipxCircEntry 7 }
+
+   ipxCircType OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   other(1),
+                   broadcast(2),
+                   ptToPt(3),
+                   wanRIP(4),
+                   unnumberedRIP(5),
+                   dwnamic(6),
+                   wanWS(7)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The type of the circuit."
+       ::= { ipxCircEntry 8 }
+
+   ipxCircLocalMaxPacketSize OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum size (including header), in bytes, that the
+               system supports locally on this circuit."
+       ::= { ipxCircEntry 9 }
+
+   ipxCircCompressState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   off(1),
+                   on(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The compression state on this circuit.  This value may
+               be written only when creating a new entry in the table."
+       ::= { ipxCircEntry 10 }
+
+   ipxCircCompressSlots OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of compression slots available on this
+               circuit.  This value may be written only when creating a
+               new entry in the table."
+       ::= { ipxCircEntry 11 }
+
+   ipxCircCompressedSent OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of compressed packets sent."
+       ::= { ipxCircEntry 12 }
+
+   ipxCircUncompressedSent OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of packets sent without being compressed
+               even though compression was turned on for this circuit."
+       ::= { ipxCircEntry 13 }
+
+   ipxCircMediaType OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE(2))
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The media type used on this circuit."
+       ::= { ipxCircEntry 14 }
+
+   ipxCircNetNumber OBJECT-TYPE
+       SYNTAX  NetNumber
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The IPX network number to which this circuit is bound."
+       ::= { ipxCircEntry 15 }
+
+   ipxCircStateChanges OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of times the circuit has changed state."
+       ::= { ipxCircEntry 16 }
+
+   ipxCircInitFails OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of times that initialization of this
+               circuit has failed."
+       ::= { ipxCircEntry 17 }
+
+   ipxCircDelay OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The period of time, in milliseconds, that it takes to
+               transmit one byte of data, excluding protocol headers,
+               to a destination on the other end of the circuit, if
+               the circuit is free of other traffic."
+       ::= { ipxCircEntry 18 }
+
+   ipxCircThroughput OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The amounf of data, in bits per second, that may flow
+               through the circuit if there is no other traffic."
+       ::= { ipxCircEntry 19 }
+
+
+   -- Forwarding Group
+   --  This group provides a representation of the forwarding database used
+   --  by all instances of IPX on the system.
+
+   -- Destination Table
+   --  The Destination table contains information about all known
+   --  destinations.
+
+   ipxDestTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF IPXDestEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "The Destination table contains information about all
+                known destinations."
+       ::= { ipxForwarding 1 }
+
+   ipxDestEntry OBJECT-TYPE
+       SYNTAX  IPXDestEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Each entry corresponds to one destination."
+       INDEX  { ipxDestSysInstance, ipxDestNetNum }
+       ::= { ipxDestTable 1 }
+
+   IPXDestEntry ::=
+       SEQUENCE {
+           ipxDestSysInstance
+               INTEGER,
+           ipxDestNetNum
+               NetNumber,
+           ipxDestProtocol
+               INTEGER,
+           ipxDestCost
+               INTEGER,
+           ipxDestHopCount
+               INTEGER,
+           ipxDestNextHopCircIndex
+               INTEGER,
+           ipxDestNextHopNICAddress
+               OCTET STRING,
+           ipxDestNextHopNetNum
+               NetNumber,
+           ipxDestType
+               INTEGER
+       }
+
+   ipxDestSysInstance OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique identifier of the instance of IPX
+               to which this row corresponds.  This value may be written
+               only when creating a new entry with ipxDestProtocol
+               equal to static."
+       ::= { ipxDestEntry 1 }
+
+   ipxDestNetNum OBJECT-TYPE
+       SYNTAX  NetNumber
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The IPX network number of the destination.  This value
+               may be written only when creating a new entry with
+               ipxDestProtocol equal to static."
+       ::= { ipxDestEntry 2 }
+
+   ipxDestProtocol OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   other(1),
+                   local(2),
+                   rip(3),
+                   nlsp(4),
+                   static(5)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The routing protocol from which knowledge of this
+               destination was obtained.  This value may be written only
+               when creating a new entry with ipxDestProtocol equal
+               to static."
+       ::= { ipxDestEntry 3 }
+
+   ipxDestCost OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The cost to reach this destination.  The meaning of the
+               cost value is dependent on the routing protocol (i. e.
+               Cost = delay in ticks for RIP, Cost = total path default
+               cost for NLSP, etc.).  This value may be written only
+               when creating a new entry with ipxDestProtocol equal
+               to static."
+       ::= { ipxDestEntry 4 }
+
+   ipxDestHopCount OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of hops necessary to reach the destination.
+               This value may be written only when creating a new entry
+               with ipxDestProtocol equal to static."
+       ::= { ipxDestEntry 5 }
+
+   ipxDestNextHopCircIndex OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique identifier of the circuit used to reach the
+               next hop.  This value may be written only when creating
+               a new entry with ipxDestProtocol equal to static."
+       ::= { ipxDestEntry 6 }
+
+   ipxDestNextHopNICAddress OBJECT-TYPE
+       SYNTAX  OCTET STRING
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The NIC address of the next hop.  This value may be
+               written only when creating a new entry with
+               ipxDestProtocol equal to static."
+       ::= { ipxDestEntry 7 }
+
+   ipxDestNextHopNetNum OBJECT-TYPE
+       SYNTAX  NetNumber
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The IPX network number of the next hop.  This value may
+               be written only when creating a new entry with
+               ipxDestProtocol equal to static."
+       ::= { ipxDestEntry 8 }
+
+   ipxDestType OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   unknown(1),
+                   nlspLevel1Router(2),
+                   router(4),
+                   network(5)
+               }
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates whether the destination is a network or a
+               router."
+       ::= { ipxDestEntry 9 }
+
+
+   -- Services Group
+   --  The Services group contains management information for all known
+   --  services.
+
+   -- Services Table
+   --  This table contains the services information indexed by service
+   --  name and type.
+
+   ipxServTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF IPXServEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "The table of services, indexed by name and type."
+       ::= { ipxServices 1 }
+
+   ipxServEntry OBJECT-TYPE
+       SYNTAX  IPXServEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Each entry corresponds to one service."
+       INDEX  { ipxServSysInstance, ipxServName, ipxServTypeValue }
+       ::= { ipxServTable 1 }
+
+   IPXServEntry ::=
+       SEQUENCE {
+           ipxServSysInstance
+               INTEGER,
+           ipxServName
+               OCTET STRING,
+           ipxServTypeValue
+               OCTET STRING,
+           ipxServType
+               INTEGER,
+           ipxServProtocol
+               INTEGER,
+           ipxServNetNum
+               NetNumber,
+           ipxServNode
+               OCTET STRING,
+           ipxServSocket
+               OCTET STRING
+       }
+
+   ipxServSysInstance OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique identifier of the instance of IPX
+               to which this entry corresponds.  This value may be
+               written only when creating entries with the value of
+               ipxServProtocol equal to static."
+       ::= { ipxServEntry 1 }
+
+   ipxServName OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (0..48))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The service name.  This value may be written only when
+               creating entries with the value of ipxServProtocol
+               equal to static."
+       ::= { ipxServEntry 2 }
+
+   ipxServTypeValue OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (2))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The service type's hexadecimal value.  This value may be
+               written only when creating entries with the value of
+               ipxServProtocol equal to static."
+       ::= { ipxServEntry 3 }
+
+   ipxServType OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   unknown(1)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The service type.  This value may be written only when
+               creating entries with the value of ipxServProtocol
+               equal to static."
+       ::= { ipxServEntry 4 }
+
+   ipxServProtocol OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   other(1),
+                   local(2),
+                   nlsp(4),
+                   static(5),
+                   sap(6)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The protocol from which knowledge of this service was
+               obtained.  This value may be written only when the value
+               of ipxServProtocol is equal to static."
+       ::= { ipxServEntry 5 }
+
+   ipxServNetNum OBJECT-TYPE
+       SYNTAX  NetNumber
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The IPX network number portion of the IPX address of the
+               service.  This value may be written only when creating
+               entries with the value of ipxServProtocol equal to
+               static."
+       ::= { ipxServEntry 6 }
+
+   ipxServNode OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (6))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The node portion of the IPX address of the service.  This
+               value may be written only when creating entries with the
+               value of ipxServProtocol equal to static."
+       ::= { ipxServEntry 7 }
+
+   ipxServSocket OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (2))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The socket portion of the IPX address of the service.
+               This value may be written only when creating entries with
+               the value of ipxServProtocol equal to static."
+       ::= { ipxServEntry 8 }
+
+   -- Destination Services Table
+   --  This table contains the services information indexed by address,
+   --  name, and type.
+
+   ipxDestServTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF IPXDestServEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "The table of services, indexed by address, name,
+               and type."
+       ::= { ipxServices 2 }
+
+   ipxDestServEntry OBJECT-TYPE
+       SYNTAX  IPXDestServEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Each entry corresponds to one service."
+       INDEX  { ipxDestServSysInstance, ipxDestServNetNum,
+                ipxDestServNode, ipxDestServSocket,
+                ipxDestServName, ipxDestServTypeValue }
+       ::= { ipxDestServTable 1 }
+
+   IPXDestServEntry ::=
+       SEQUENCE {
+           ipxDestServSysInstance
+               INTEGER,
+           ipxDestServNetNum
+               NetNumber,
+           ipxDestServNode
+               OCTET STRING,
+           ipxDestServSocket
+               OCTET STRING,
+           ipxDestServName
+               OCTET STRING,
+           ipxDestServTypeValue
+               OCTET STRING,
+           ipxDestServType
+               INTEGER,
+           ipxDestServProtocol
+               INTEGER
+       }
+
+   ipxDestServSysInstance OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique identifier of the instance of IPX
+               to which this entry corresponds.  This value may be
+               written only when creating entries with the value of
+               ipxDestServProtocol equal to static."
+       ::= { ipxDestServEntry 1 }
+
+   ipxDestServNetNum OBJECT-TYPE
+       SYNTAX  NetNumber
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The IPX network number portion of the IPX address of the
+               service.  This value may be written only when creating
+               entries with the value of ipxDestServProtocol equal to
+               static."
+       ::= { ipxDestServEntry 2 }
+
+   ipxDestServNode OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (6))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The node portion of the IPX address of the service.  This
+               value may be written only when creating entries with the
+               value of ipxDestServProtocol equal to static."
+       ::= { ipxDestServEntry 3 }
+
+   ipxDestServSocket OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (2))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The socket portion of the IPX address of the service.
+               This value may be written only when creating entries with
+               the value of ipxDestServProtocol equal to static."
+       ::= { ipxDestServEntry 4 }
+
+   ipxDestServName OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (0..48))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The service name.  This value may be written only when
+               creating entries with the value of ipxDestServProtocol
+               equal to static."
+       ::= { ipxDestServEntry 5 }
+
+   ipxDestServTypeValue OBJECT-TYPE
+       SYNTAX  OCTET STRING (SIZE (2))
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The service type's hexadecimal value.  This value may be
+               written only when creating entries with the value of
+               ipxDestServProtocol equal to static."
+       ::= { ipxDestServEntry 6 }
+
+   ipxDestServType OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   unknown(1)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The service type.  This value may be written only when
+               creating entries with the value of ipxDestServProtocol
+               equal to static."
+       ::= { ipxDestServEntry 7 }
+
+   ipxDestServProtocol OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   other(1),
+                   local(2),
+                   nlsp(4),
+                   static(5),
+                   sap(6)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The protocol from which knowledge of this service was
+               obtained.  This value may be written only when the value
+               of ipxDestServProtocol is equal to static."
+       ::= { ipxDestServEntry 8 }
+
+
+   -- This MIB defines the management information for the RIP and SAP
+   -- protocols running in an IPX environment.  It provides information in
+   -- addition to that contained in the IPX MIB itself.  All tables in this
+   -- MIB are linked to an instance of IPX via the system instance
+   -- identifier as defined in the IPX MIB.
+
+
+   ripsap        OBJECT IDENTIFIER ::= { rxripxRouter 2 }
+
+
+   -- Groups
+
+   ripsapSystem  OBJECT IDENTIFIER ::= { ripsap 1 }
+
+   ripsapCircuit OBJECT IDENTIFIER ::= { ripsap 2 }
+
+
+   -- Types
+
+   NetNumber ::= OCTET STRING (SIZE (4))
+
+
+   -- System Group
+   --  This group contains global information about each instance of
+   --  RIP/SAP running on one system.
+
+   -- System Table
+   --  This table contains an entry for each instance of RIP/SAP
+   --  running on the system.
+
+   ripsapSysTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF RIPSAPSysEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "The RIP/SAP system table."
+       ::= { ripsapSystem 1 }
+
+   ripsapSysEntry OBJECT-TYPE
+       SYNTAX  RIPSAPSysEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Each entry corresponds to one instance of RIP/SAP
+               running on the system."
+       INDEX  { ripsapSysInstance }
+       ::= { ripsapSysTable 1 }
+
+   RIPSAPSysEntry ::=
+       SEQUENCE {
+           ripsapSysInstance
+               INTEGER,
+           ripsapSysRIPState
+               INTEGER,
+           ripsapSysRIPIncorrectPackets
+               Counter,
+           ripsapSysSAPState
+               INTEGER,
+           ripsapSysSAPIncorrectPackets
+               Counter
+       }
+
+   ripsapSysInstance OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique identifier of the instance of RIP/SAP to
+               which this row corresponds.  This value links the
+               instance of RIP/SAP to an instance of IPX running on the
+               system (i. e. the value of ripsapSysInstance should be the
+               same as a value of ipxSysInstance).  This value may be
+               written only when creating a new entry in the table."
+       ::= { ripsapSysEntry 1 }
+
+   ripsapSysRIPState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   off(1),
+                   on(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates the operational state of this instance of RIP."
+       ::= { ripsapSysEntry 2 }
+
+   ripsapSysSAPState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   off(1),
+                   on(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates the operational state of this instance of SAP."
+       ::= { ripsapSysEntry 3 }
+
+   ripsapSysRIPIncorrectPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of times that an incorrectly formatted RIP
+               packet was received."
+       ::= { ripsapSysEntry 4 }
+
+   ripsapSysSAPIncorrectPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of times that an incorrectly formatted SAP
+               packet was received."
+       ::= { ripsapSysEntry 5 }
+
+
+   -- Circuit Group
+   --  This group contains RIP and SAP management information for each
+   --  circuit known to this system.
+
+   -- Circuit Table
+   --  The Circuit table contains an entry for each circuit known to the
+   --  system.
+
+   ripsapCircTable OBJECT-TYPE
+       SYNTAX  SEQUENCE OF RIPSAPCircEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "The Circuit table."
+       ::= { ripsapCircuit 1 }
+
+   ripsapCircEntry OBJECT-TYPE
+       SYNTAX  RIPSAPCircEntry
+       ACCESS  not-accessible
+       STATUS  mandatory
+       DESCRIPTION
+               "Each entry corresponds to one circuit known to the
+               system."
+       INDEX  { ripsapCircSysInstance, ripsapCircIndex }
+       ::= { ripsapCircTable 1 }
+
+   RIPSAPCircEntry ::=
+       SEQUENCE {
+           ripsapCircSysInstance
+               INTEGER,
+           ripsapCircIndex
+               INTEGER,
+           ripsapCircRIPState
+               INTEGER,
+           ripsapCircRIPPace
+               INTEGER,
+           ripsapCircRIPUpdate
+               INTEGER,
+           ripsapCircRIPAgeMultiplier
+               INTEGER,
+           ripsapCircRIPPacketSize
+               INTEGER,
+           ripsapCircRIPOutPackets
+               Counter,
+           ripsapCircRIPInPackets
+               Counter,
+           ripsapCircSAPState
+               INTEGER,
+           ripsapCircSAPPace
+               INTEGER,
+           ripsapCircSAPUpdate
+               INTEGER,
+           ripsapCircSAPAgeMultiplier
+               INTEGER,
+           ripsapCircSAPGetNearestServerReply
+               INTEGER,
+           ripsapCircSAPPacketSize
+               INTEGER,
+           ripsapCircSAPOutPackets
+               Counter,
+           ripsapCircSAPInPackets
+               Counter
+       }
+
+   ripsapCircSysInstance OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The unique identifier of the instance of RIP/SAP and IPX
+               (via ipxSysInstance) to which this entry corresponds.
+               This value may be written only when creating a new entry in
+               the table."
+       ::= { ripsapCircEntry 1 }
+
+   ripsapCircIndex OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The identifier of this circuit, unique within the
+               instance of RIP/SAP.  This value corresponds to the circuit
+               identifier found in ipxCircIndex.  This value may be
+               written only when creating a new entry in the table."
+       ::= { ripsapCircEntry 2 }
+
+   ripsapCircRIPState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   off(1),
+                   on(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates whether RIP information may be sent/received
+               over this circuit."
+       ::= { ripsapCircEntry 3 }
+
+   ripsapCircRIPPace OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum pace, in packets per second, at which RIP
+               packets may be sent on this circuit."
+       ::= { ripsapCircEntry 4 }
+
+   ripsapCircRIPUpdate OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The RIP periodic update interval, in seconds."
+       ::= { ripsapCircEntry 5 }
+
+   ripsapCircRIPAgeMultiplier OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The holding multiplier for information received in RIP
+               periodic updates."
+       ::= { ripsapCircEntry 6 }
+
+   ripsapCircRIPPacketSize OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The RIP packet size used on this circuit."
+       ::= { ripsapCircEntry 7 }
+
+   ripsapCircRIPOutPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of RIP packets sent on this circuit."
+       ::= { ripsapCircEntry 8 }
+
+   ripsapCircRIPInPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of RIP packets received on this circuit."
+       ::= { ripsapCircEntry 9 }
+
+   ripsapCircSAPState OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   off(1),
+                   on(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates whether SAP information may be sent/received
+               over this circuit."
+       ::= { ripsapCircEntry 10 }
+
+   ripsapCircSAPPace OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The maximum pace, in packets per second, at which SAP
+               packets may be sent on this circuit."
+       ::= { ripsapCircEntry 11 }
+
+   ripsapCircSAPUpdate OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The SAP periodic update interval, in seconds."
+       ::= { ripsapCircEntry 12 }
+
+   ripsapCircSAPAgeMultiplier OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The holding multiplier for information received in SAP
+               periodic updates."
+       ::= { ripsapCircEntry 13 }
+
+   ripsapCircSAPPacketSize OBJECT-TYPE
+       SYNTAX  INTEGER
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "The SAP packet size used on this circuit."
+       ::= { ripsapCircEntry 14 }
+
+   ripsapCircSAPGetNearestServerReply OBJECT-TYPE
+       SYNTAX  INTEGER {
+                   no(1),
+                   yes(2)
+               }
+       ACCESS  read-write
+       STATUS  mandatory
+       DESCRIPTION
+               "Indicates whether to respond to SAP Get Nearest Server
+               requests received on this circuit."
+       ::= { ripsapCircEntry 15 }
+
+   ripsapCircSAPOutPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of SAP packets sent on this circuit."
+       ::= { ripsapCircEntry 16 }
+
+   ripsapCircSAPInPackets OBJECT-TYPE
+       SYNTAX  Counter
+       ACCESS  read-only
+       STATUS  mandatory
+       DESCRIPTION
+               "The number of SAP packets received on this circuit."
+       ::= { ripsapCircEntry 17 }
+
+   END
+

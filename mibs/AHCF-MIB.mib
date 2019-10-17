@@ -1,0 +1,1408 @@
+-- extracted from draft-yadawad-disman-ahcf-00.txt
+-- at Sat Mar 13 06:17:33 2004
+
+ AHCF-MIB DEFINITIONS ::= BEGIN 
+  
+ IMPORTS 
+       mib-2, MODULE-IDENTITY, OBJECT-TYPE,   
+       Integer32,Gauge32, NOTIFICATION-TYPE  
+            FROM SNMPv2-SMI                   -- RFC2578 
+       RowStatus, DisplayString, TimeStamp  
+            FROM SNMPv2-TC                    -- RFC2579 
+       InternationalDisplayString  
+            FROM HOST-RESOURCES-MIB           -- RFC2790 
+       OwnerString  
+            FROM RMON-MIB                     -- RFC2021 
+       MODULE-COMPLIANCE, OBJECT-GROUP,  
+       NOTIFICATION-GROUP  
+           FROM SNMPv2-CONF;                  -- RFC2580 
+  
+  
+    ahcfMIB MODULE-IDENTITY 
+      LAST-UPDATED "200403100000Z"            -- March 10, 2004 
+      ORGANIZATION "IETF Distributed Management Working Group" 
+      CONTACT-INFO 
+           "WG EMail: disman@ietf.org 
+           Subscribe: disman-request@ietf.org 
+           http://www.ietf.org/html.charters/disman-charter.html 
+            
+           Chair:    Randy Presuhn 
+                     randy_presuhn@mindspring.com 
+  
+           Editors:  Hemanth Kumar 
+                     Hemanth Yamijala 
+                     Raja Shekar CS 
+                     Shailaja Yadawad 
+                     Novell Inc 
+                     Tel: +91-80-25731858 Ext 2035 
+                     Email: yshailaja@novell.com" 
+           DESCRIPTION 
+                "The MIB module describes a object definition  
+                for history collection." 
+           REVISION    "200403100000Z"        -- March 10, 2004 
+           DESCRIPTION 
+                "Initial version." 
+           ::= { mib-2 7777 }  -- to be assigned by IANA 
+  
+      ahcfObjects         OBJECT IDENTIFIER ::= { ahcfMIB 1 } 
+      ahcfNotifications   OBJECT IDENTIFIER ::= { ahcfMIB 2 } 
+      ahcfConformance     OBJECT IDENTIFIER ::= { ahcfMIB 3 } 
+  
+ -- ================================================================ 
+ -- Advanced History Collection Framework MIB (ahcfMIB) 
+ -- ================================================================ 
+  
+ -- The Advanced History Collection Framework MIB combines  
+ -- mechanisms seen in the alarm and history groups of RMON mib to  
+ -- provide user-specified history collection, utilizing two  
+ -- additional control tables and one additional data table. This  
+ -- function has traditionally been done by NMS applications, via  
+ -- periodic polling.  The ahcf group allows this task to be  
+ -- offloaded to an SNMP probe. Data (an ASN.1 INTEGER based object)  
+ -- is collected in the same manner as any history data table (e.g.  
+ -- etherHistoryTable) except that the user specifies the MIB  
+ -- variable which needs to be collected. The user can specify a  
+ -- scalar variable (a leaf object that can have only one instance)  
+ -- or a columnar variable (an object that appears in a mib table  
+ -- which can have several instances) for history collection. 
+       
+ -- The ahcfObjects group has three tables and one scalar group. 
+ -- 
+ --        1. ahcfConfigTable 
+ --        2. ahcfInstanceTable 
+ --        3. ahcfSampleTable 
+ --        4. ahcfSysInfo 
+  
+ --   ahcfConfigTable: 
+ -- ================================================================    
+ --   ahcfConfigTable is an one-dimensional read-create table. The  
+ --   management station MUST configure this table prior to using any  
+ --   functionality of this framework. When a management station needs  
+ --   to create a row in the ahcfConfigTable, it MUST provide at least  
+ --   the object identifier of the particular MIB variable to be  
+ --   sampled (ahcfConfigObjectVariable) and its type  
+ --   ahcfConfigObjectType, whether scalar or columnar).   
+ --   Each row created in the ahcfConfigTable corresponds to one or  
+ --   more associated rows in ahcfInstanceTable.  
+  
+ --   When a management station successfully creates a row in this  
+ --   table, the agent MUST check the oid type (ahcfConfigObjectType)  
+ --   of the created row. If the ahcfConfigObjectType is columnar, the  
+ --   agent MUST find out all the instances of the  
+ --   ahcfConfigObjectVariable and create a row in ahcfInstanceTable   
+ --   for each instance. Incase ahcfConfigObjectType is scalar, the  
+ --   agent MUST create one row in the ahcfInstanceTable for  
+ --   ahcfConfigObjectVariable. If a row in is ahcfConfigTable deleted  
+ --   or deactivated, the agent MUST delete all associated entries in  
+ --   the ahcfInstanceTable and the ahcfSampleTable. Each row in  
+ --   ahcfConfigTable with ahcfConfigObjectType as columnar MAY be  
+ --   associated with a set of identifier variables. The identifier  
+ --   variables are a set of columnar variables of the same MIB table  
+ --   as the ahcfConfigObjectVariable, whose values will uniquely  
+ --   identify a row in the MIB table. The agent SHALL use the  
+ --   identifier variables to uniquely identify a row in the MIB table  
+ --   across many reboots of the SNMP agent or the host machine  
+ --   running the SNMP agent.  
+       
+ --   The management station MAY choose to configure history  
+ --   collection on specific instances of the ahcfConfigObjectVariable  
+ --   through filters.  
+  
+ --   ahcfInstanceTable: 
+ -- ================================================================    
+ --   This table is a 2-d read-write table. Agent MUST populate this  
+ --   table based on a row created in ahcfConfigTable. Each row of  
+ --   this table is associated with only one row of ahcfConfigTable  
+ --   and the row inherits common settings from the corresponding row  
+ --   in ahcfConfigTable. The management station MAY also configure  
+ --   settings for each row of this table.  
+  
+ --   Once a row is created in the ahcfInstanceTable, the agent MUST  
+ --   start history collection such that a sample will be taken at the  
+ --   next hour boundary. A sample MUST be collected and the value  
+ --   stored in ahcfSampleTable at the specified intervals. Each row  
+ --   in the ahcfSampleTable denotes a sample collected for a row of  
+ --   the ahcfInstanceTable over a specific interval. Once the number  
+ --   of samples reach ahcfInstanceBucketsRequested value, the oldest  
+ --   samples MUST be overwritten with the new samples and number of  
+ --   samples will stay at ahcfInstanceBucketsRequested value. If a  
+ --   row's trending status (ahcfInstanceTrendingState) is disabled,  
+ --   agent MUST not collect the samples until  
+ --   ahcfInstanceTrendingState is enabled. If threshold checking for  
+ --   this row is enabled (ahcfInstanceThresholdState) , the sample  
+ --   value at each interval MUST be compared with threshold  
+ --   parameters configured and a notification MUST be sent if a  
+ --   violation is detected. The agent MUST also handle changes in the  
+ --   MIB table that ahcfConfigObjectVariable belongs to if the  
+ --   ahcfConfigObjectType is columnar (such as a row addition,  
+ --   removal or change in the order of instances). 
+  
+ --   ahcfSampleTable: 
+ -- ================================================================    
+ --   The ahcfSampleTable is a 3-d read-only table containing the  
+ --   sample data of associated rows in the ahcfInstanceTable. Each  
+ --   entry represents the value of a single MIB instance during a  
+ --   specific sampling interval (or the rate of change during the  
+ --   interval). A sample value is stored in two objects an absolute  
+ --   value and a status object. This allows numbers from -(2G-1) to  
+ --   +4G to be stored.  The status object also indicates whether a  
+ --   sample is valid. This allows data collection to continue if  
+ --   periodic retrieval of a particular instance fails for any  
+ --   reason. 
+       
+ --   ahcfSysInfo: 
+ -- ================================================================ 
+  
+ --   This is a scalar group which provides the date, time and Time  
+ --   zone of the agent machine. 
+       
+ --   ahcfNotifications: 
+ --   The ahcfNotifications group contains the notification variable  
+ --   definitions and notification definitions. 
+  
+ --   ahcfConformance:  
+ --   The ahcfConformance group contains the conformance definitions  for 
+ --   the AHCF-MIB. 
+  
+ -- ================================================================ 
+ --   ahcfConfigTable  
+ -- ================================================================ 
+  
+      ahcfConfigTable OBJECT-TYPE 
+           SYNTAX SEQUENCE OF AhcfConfigEntry 
+           MAX-ACCESS not-accessible 
+           STATUS current 
+           DESCRIPTION 
+                "A list of data-collection configuration entries." 
+      ::= { ahcfObjects 1 } 
+  
+      ahcfConfigEntry OBJECT-TYPE 
+           SYNTAX AhcfConfigEntry 
+           MAX-ACCESS not-accessible 
+           STATUS current 
+           DESCRIPTION 
+                "List of parameters that set up sampling on a user  
+                specified MIB variable(a scalar variable or a  
+                columnar variable)." 
+      INDEX { ahcfConfigIndex }  
+      ::= { ahcfConfigTable 1 } 
+  
+  
+      AhcfConfigEntry ::= SEQUENCE 
+      { 
+           ahcfConfigIndex               Integer32, 
+           ahcfConfigObjectVariable      OBJECT IDENTIFIER, 
+           ahcfConfigObjectType          INTEGER, 
+           ahcfConfigObjects             Integer32, 
+           ahcfConfigSampleType          INTEGER, 
+           ahcfConfigObjectName          InternationalDisplayString, 
+           ahcfConfigIdentifierVariables DisplayString, 
+           ahcfConfigFilterType          INTEGER, 
+           ahcfConfigFilterSpec1         InternationalDisplayString, 
+           ahcfConfigFilterSpec2         InternationalDisplayString, 
+           ahcfConfigFilterSpec3         InternationalDisplayString, 
+           ahcfConfigOwner               OwnerString, 
+           ahcfConfigDefaultInterval     Integer32, 
+           ahcfConfigDefaultBucketsReq   Integer32, 
+           ahcfConfigStatus              RowStatus 
+      } 
+  
+      ahcfConfigIndex OBJECT-TYPE 
+           SYNTAX Integer32 (1..65535) 
+      MAX-ACCESS not-accessible 
+      STATUS current 
+           DESCRIPTION 
+                "An index that uniquely identifies an entry in the 
+                ahcfConfigTable. " 
+      ::= { ahcfConfigEntry 1 } 
+  
+      ahcfConfigObjectVariable OBJECT-TYPE  
+           SYNTAX OBJECT IDENTIFIER 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION  
+                "The object identifier of the particular MIB variable  
+                to be sampled. 
+  
+                Only variables that resolve to an ASN.1 primitive type  
+                of Integer32 (Integer32, Counter, Gauge, or TimeTicks)  
+                MUST be specified. Refer to RFC 2578 - Structure of  
+                Management Information Version 2 (SMIv2)for details 
+  
+                If ahcfConfigObjectType is 'scalar', then this will  
+                Contain the complete object identifier that needs to  
+                be sampled. 
+  
+                If ahcfConfigObjectType is 'columnar', then this will       
+                contain the object identifier of a column in a table  
+                that needs to be sampled. 
+  
+                This object MUST NOT be modified if the associated 
+                ahcfConfigStatus object is equal to active(1)." 
+      ::= { ahcfConfigEntry 2 }  
+  
+      ahcfConfigObjectType OBJECT-TYPE 
+           SYNTAX INTEGER { 
+                     scalar(1), 
+                     columnar(2) 
+                } 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "The type of the object variable specified in  
+                ahcfConfigObjectVariable. 
+  
+                If this object is set to 'scalar', then          
+                ahcfConfigObjectVariable will contain the complete  
+                object identifier that needs to be sampled. If this  
+                object is set to 'columnar', ahcfConfigObjectVariable  
+                this will contain the object identifier of a column in  
+                a table that needs to be sampled. 
+  
+                This object MUST NOT be modified if the associated       
+                ahcfConfigStatus object is equal to active(1)." 
+
+      DEFVAL { scalar } 
+      ::= { ahcfConfigEntry 3 } 
+  
+      ahcfConfigObjects OBJECT-TYPE 
+           SYNTAX Integer32 (0..65535) 
+           MAX-ACCESS read-only 
+           STATUS current 
+           DESCRIPTION 
+                "The number of rows in the ahcfInstanceTable  
+                associated with this ahcfConfigEntry. If           
+                ahcfConfigObjectType is 'scalar', then this will be 1. 
+                If ahcfConfigObjectType  is 'columnar', then this will 
+                contain the number of instances for which a row has  
+                been created in ahcfInstanceTable for the given    
+                columnar object id." 
+      ::= { ahcfConfigEntry 4 } 
+  
+      ahcfConfigSampleType OBJECT-TYPE 
+           SYNTAX INTEGER { 
+           absoluteValue(1), 
+                deltaValue(2) 
+                } 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "The method of sampling the selected variable for  
+                storage in the ahcfSampleTable.  
+  
+                If the value of this object is absoluteValue(1), the  
+                value of the selected variable will be copied directly 
+                into the sample entry. 
+  
+                If the value of this object is deltaValue(2), the  
+                value of the selected variable at the last sample will 
+                be subtracted from the current value, and the      
+                difference will be stored in the history bucket. If the 
+                associated ahcfInstanceObjectVariable instance could  
+                not be obtained at the previous sample interval, then a 
+                delta sample is not possible, and the value of the  
+                associated ahcfSampleValStatus object for this interval 
+                will be valueNotAvailable(1). 
+  
+                This object MUST NOT be modified if the associated 
+                ahcfConfigStatus object is equal to active(1)." 
+
+      DEFVAL { absoluteValue } 
+      ::= { ahcfConfigEntry 5 } 
+  
+      ahcfConfigObjectName OBJECT-TYPE 
+           SYNTAX InternationalDisplayString 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "A printable string which describes the object being  
+                sampled. 
+  
+                For example, if the object being sampled is the disk  
+                space usage defined in the Host Resources MIB  
+                (RFC 1514)  
+                hrStorage.hrStorageTable.hrStorageEntry.hrStorageUsed, 
+                the object name can be 'Used Disk Space'." 
+      ::= { ahcfConfigEntry 6 } 
+  
+      ahcfConfigIdentifierVariables OBJECT-TYPE 
+           SYNTAX DisplayString 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "One or more MIB variables which provide a unique  
+                identifier for the object oid to be sampled. This  
+                is meaningful only if the ahcfConfigObjectType is  
+                'columnar'.  
+  
+                The identifier can be specified in terms of another     
+                columnar oid of the same MIB table (or an augmented  
+                table or a table that has the same INDEX clause as this  
+                table) that will remain unique and constant over many  
+                restarts of the management agent or the managed system.  
+  
+                The identifier oids can be of any ASN.1 type. The need 
+                for an identifier oid is to counter the changes in the 
+                ordering of rows in the MIB table. 
+  
+                The format for this variable is  
+                ([Oid1][,Oid2][,Oid3]) 
+  
+                Maximum of 3 identifier oids can be specified. A  
+                value of '()' is used as the default value for this  
+                variable and it represents zero identifier oids. 
+                For example, if the object being sampled is the disk  
+                space usage defined in the Host Resources MIB  
+                (RFC 1514)  
+                hrStorage.hrStorageTable.hrStorageEntry.hrStorageUsed, 
+                then the description of the storage medium  
+                (hrStorageDescr) can be used as the identifier oid.  
+                The value for this variable will be  
+                (1.3.6.1.2.1.25.2.3.1.3) 
+  
+                The reason for using a identifier oid is because the  
+                order of rows in hrStorageTable need not be same over  
+                time. If there are two storage media ('/' and ' /usr') 
+                and a new media is added (say '/var'), a new row may be 
+                created in between the two existing rows in the table  
+                making the contents of hrStorageTable ('/', '/var' and 
+                '/usr'). This will change the index of the mib variable  
+                hrStorageUsed for '/usr'. In order to obtain the new  
+                index value for the row for '/usr' and to collect and  
+                store the samples correctly, the agent uses the    
+                identifier oid. Without the concept of an identifier  
+                variable the agent cannot detect that the second row  
+                now represents '/var' and will wrongly store the data  
+                for '/var' in the samples for '/usr'" 
+      DEFVAL { "()" } 
+      ::= { ahcfConfigEntry 7 } 
+  
+      ahcfConfigFilterType OBJECT-TYPE 
+           SYNTAX INTEGER { 
+                inclusive(1), 
+                exclusive(2), 
+                nofilters(3) 
+            } 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "The type of filters specified for this config entry. 
+                This is meaningful only if the ahcfConfigObjectType  
+                is 'columnar'. 
+  
+                If ahcfConfigFilterType is inclusive, an instance of     
+                ahcfConfigObjectVariable is selected for sampling  
+                only if the values of the ahcfConfigIdentifierVariables 
+                for the same instance match one of the filters     
+                specified (variables defined below). 
+  
+                If ahcfConfigFilterType is exclusive, an instance of     
+                ahcfConfigObjectVariable is selected for sampling  
+                only if the values of the ahcfConfigIdentifierVariables 
+                for the same instance do not match any of the filters  
+                specified (variables defined below). 
+  
+                This object MUST NOT be modified if the associated 
+                ahcfConfigStatus object is equal to active(1)." 
+      DEFVAL { nofilters } 
+      ::= { ahcfConfigEntry 8 } 
+  
+      ahcfConfigFilterSpec1 OBJECT-TYPE 
+           SYNTAX InternationalDisplayString 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "A filter for selecting the rows of a MIB table that  
+                need to be sampled. This is meaningful only if the  
+                ahcfConfigObjectType is 'columnar'. 
+       
+                A filter can be specified in terms of the  
+                values of identifier oids given in                 
+                ahcfConfigIdentifierVariables.  
+  
+                The format for this variable is  
+                ([Oid1 Value][,Oid2 Value][,Oid3 Value]) 
+  
+                Oid1, Oid2 and Oid3 are the identifier oids specified  
+                in ahcfConfigIdentifierVariables. Value for a maximum  
+                of 3 identifier oids can be specified. A value of '()' 
+                is used as the default value for this variable and it  
+                will not be considered as a valid filter.  
+  
+                For example, if the object being sampled is the disk  
+                space usage defined in the Host Resources MIB  
+                (RFC 1514)           
+                hrStorage.hrStorageTable.hrStorageEntry.hrStorageUsed, 
+                and the description of the storage medium  
+                (hrStorageDescr) is being used as the identifier oid.  
+                If there are three logical storage media ('/', '/usr'  
+                and '/var') and the user only wants to monitor the disk  
+                usage of media '/usr', then ahcfConfigFilterType can be 
+                set to 'inclusive' and ahcfConfigFilterSpec1 can be set 
+                to (/usr) 
+  
+                If the user wants to monitor disk usage of all media  
+                other than '/', then ahcfConfigFilterType can be set to 
+                'exclusive' and ahcfConfigFilterSpec1 can be set to (/) 
+  
+                Maximum of three filters can be specified using  
+                ahcfConfigFilterSpec1, 2 and 3. The filter specs MUST  
+                be modifiable when the value of ahcfConfigStatus object 
+                is equal to active(1). The agent MUST re-evaluate the  
+                filters and retain the sample data for mib instances  
+                which were being sampled before and which pass the new 
+                filters also.  
+  
+                For example, if the ahcfConfigFilterSpec1 was  
+                previously (/) and ahcfConfigFilterSpec2 is set to  
+                (/usr), then the agent MUST retain the previous sample 
+                data for the medium '/' and start collecting data for  
+                '/usr'. 
+  
+                Note that if there are two identifier oids, the user  
+                can decide to provide the value for only Oid1 in the  
+                filters by leaving the value of Oid2 empty.  
+                That is (<value for Oid1>,)" 
+      DEFVAL { "()" } 
+      ::= { ahcfConfigEntry 9 } 
+  
+      ahcfConfigFilterSpec2 OBJECT-TYPE 
+           SYNTAX InternationalDisplayString 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "A filter for specifying the rows of a MIB table that  
+                need to be sampled. Refer to description for  
+                ahcfConfigFilterSpec1 for details." 
+      DEFVAL { "()" } 
+      ::= { ahcfConfigEntry 10 } 
+  
+      ahcfConfigFilterSpec3 OBJECT-TYPE 
+           SYNTAX InternationalDisplayString 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "A filter for specifying the rows of a MIB table that  
+                need to be sampled. Refer to description for       
+       
+                ahcfConfigFilterSpec1 for details." 
+      DEFVAL { "()" } 
+      ::= { ahcfConfigEntry 11 }     
+  
+      ahcfConfigOwner OBJECT-TYPE 
+           SYNTAX OwnerString 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION  
+                "The entity that configured this entry and is  
+                therefore using the resources assigned to it." 
+      ::= { ahcfConfigEntry 12 } 
+  
+      ahcfConfigDefaultInterval OBJECT-TYPE 
+           SYNTAX Integer32 (1..2147483647) 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "The default value to be used for  
+                ahcfInstanceInterval if a new row has to be created in 
+                ahcfInstanceTable for this config entry. 
+  
+                If the ahcfConfigObjectType is 'columnar' and the  
+                SNMP probe detects at run time that a new instance is   
+                available in the table (e.g. a new logical storage  
+                media is added to hrStorageTable), then the probe  
+                creates a new entry in the ahcfInstanceTable and uses  
+                the ahcfConfigDefaultInterval as the value of      
+                ahcfInstanceInterval for this new entry.  
+  
+                The user can then modify the ahcfInstanceInterval if  
+                required to a value more specific to the new entry  
+                created (the new logical storage media added to    
+                hrStorageTable)." 
+      DEFVAL { 1800 } 
+      ::= { ahcfConfigEntry 13 } 
+  
+      ahcfConfigDefaultBucketsReq OBJECT-TYPE 
+           SYNTAX Integer32 (1..65535) 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "The default value to be used for   
+                ahcfInstanceBucketsRequested if a new entry has  
+                to be created in ahcfInstanceTable for this config  
+                entry. 
+  
+                If the ahcfConfigObjectType is 'columnar' and the SNMP   
+                probe detects at runtime that a new instance is    
+                available in the table (e.g. a new logical storage  
+                media is added to hrStorageTable),then the probe   
+                creates a new entry in the ahcfInstanceTable and uses  
+                the ahcfConfigDefaultBucketsReq as the value of    
+                ahcfInstanceBucketsRequested for this new entry. 
+  
+                The user can then modify the                       
+                ahcfInstanceBucketsRequested if required to a value  
+                more specific to the new entry created (the new logical 
+                storage media added to hrStorageTable)." 
+      DEFVAL { 50 } 
+      ::= { ahcfConfigEntry 14 } 
+  
+      ahcfConfigStatus OBJECT-TYPE 
+           SYNTAX RowStatus 
+           MAX-ACCESS read-create 
+           STATUS current 
+           DESCRIPTION 
+                "The status of this variable history configuration      
+                entry. 
+  
+                An entry MUST NOT exist in the active state unless all 
+                objects in the entry have an appropriate value. 
+  
+                If this object is not equal to active(1), all      
+                associated entries in the ahcfInstanceTable and the  
+                ahcfSampleTable shall be deleted." 
+      ::= { ahcfConfigEntry 15 } 
+  
+  
+ -- ================================================================ 
+ --   ahcfInstanceTable 
+ -- ================================================================ 
+      ahcfInstanceTable OBJECT-TYPE 
+           SYNTAX SEQUENCE OF AhcfInstanceEntry 
+           MAX-ACCESS not-accessible 
+           STATUS current 
+           DESCRIPTION 
+                "List of MIB variable instances to be sampled based on 
+                the configuration in ahcfConfigTable." 
+      ::= { ahcfObjects 2 } 
+  
+  
+      ahcfInstanceEntry OBJECT-TYPE 
+           SYNTAX AhcfInstanceEntry 
+           MAX-ACCESS not-accessible 
+           STATUS current 
+           DESCRIPTION 
+                "A MIB instance to be sampled periodically. 
+                 
+                Entries in this table are created when an associated  
+                ahcfConfigEntry is created or new instances are    
+                detected for an existing ahcfConfigEntry." 
+      INDEX { ahcfConfigIndex, ahcfInstanceIndex }  
+      ::= { ahcfInstanceTable 1 } 
+  
+      AhcfInstanceEntry ::= SEQUENCE 
+      { 
+           ahcfInstanceIndex             Integer32, 
+           ahcfInstanceObjectVariable    OBJECT IDENTIFIER, 
+           ahcfInstanceInterval          Integer32, 
+           ahcfInstanceName              InternationalDisplayString, 
+           ahcfInstanceBucketsRequested  Integer32, 
+           ahcfInstanceBucketsGranted    Integer32, 
+           ahcfInstanceLastSampleIndex   Integer32, 
+           ahcfInstanceTrendingState     INTEGER, 
+           ahcfInstanceThresholdState    INTEGER, 
+           ahcfInstanceAlarmType         INTEGER, 
+           ahcfInstanceAlarmSeverity     INTEGER, 
+           ahcfInstanceRisingThreshold   Integer32, 
+           ahcfInstanceFallingThreshold  Integer32, 
+           ahcfInstanceStatus            INTEGER 
+      } 
+  
+      ahcfInstanceIndex OBJECT-TYPE 
+           SYNTAX Integer32 (1..65535) 
+           MAX-ACCESS not-accessible 
+           STATUS current 
+           DESCRIPTION 
+                "An index used to uniquely identify an entry in the 
+                ahcfInstance table.  Each such entry defines a 
+                MIB instance to be sampled periodically." 
+      ::= { ahcfInstanceEntry 1 } 
+  
+      ahcfInstanceObjectVariable OBJECT-TYPE  
+           SYNTAX OBJECT IDENTIFIER 
+           MAX-ACCESS read-only 
+           STATUS current 
+           DESCRIPTION  
+                "The object identifier of the particular MIB instance   
+                to be sampled. 
+  
+                If ahcfConfigObjectType is 'scalar', then this will be  
+                same as the ahcfConfigObjectVariable (the complete  
+                object identifier that needs to be sampled). 
+  
+                If ahcfConfigObjectType is 'columnar', then this will  
+                be one of the instances of ahcfConfigObjectVariable." 
+      ::= { ahcfInstanceEntry 2 }  
+  
+      ahcfInstanceInterval OBJECT-TYPE 
+           SYNTAX Integer32 (1..2147483647) 
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "The interval in seconds over which the data is sampled 
+                for each bucket in the part of the ahcf table      
+                associated with this ahcfInstanceEntry. 
+  
+                If the ahcfConfigObjectType is 'columnar' and the  
+                SNMP probe detects at run time that a new instance is   
+                available in the table (e.g. a new logical storage  
+                media is added to hrStorageTable), then the probe  
+                creates a new entry in the ahcfInstanceTable and uses  
+                the ahcfConfigDefaultInterval as the value of      
+                ahcfInstanceInterval for this new entry.  
+  
+                The user can then modify the ahcfInstanceInterval if  
+                required to a value more specific to the new entry  
+                created (the new logical storage media added to    
+                hrStorageTable). 
+                Because the counters in a bucket may overflow at their 
+                maximum value with no indication, a prudent manager  
+                will take into account the possibility of overflow in  
+                any of the associated counters. It is important to  
+                consider the minimum time in which any counter could  
+                overflow on a particular media type and set the    
+                ahcfInstanceInterval object to a value less than this  
+                interval. 
+  
+                This object MUST NOT be modified if the associated 
+                ahcfInstanceStatus object is equal to valid(1)." 
+      ::= { ahcfInstanceEntry 3 } 
+  
+      ahcfInstanceName OBJECT-TYPE 
+           SYNTAX InternationalDisplayString 
+           MAX-ACCESS read-only 
+           STATUS current 
+           DESCRIPTION 
+                "Unique name for the object instance being sampled. 
+                This value can be used by the management console when 
+                displaying the history statistics. 
+  
+                The format of this is 
+                [Oid1 Value][,Oid2 Value][,Oid3 Value] 
+  
+                Oid1, Oid2 and Oid3 are the identifier oids specified  
+                in ahcfConfigIdentifierVariables. 
+  
+                For example, if the object being sampled is the disk  
+                space usage defined in the Host Resources MIB  
+                (RFC 1514)  
+                hrStorage.hrStorageTable.hrStorageEntry.hrStorageUsed 
+                and the description of the storage medium          
+                (hrStorageDescr)  
+                is used as the identifier oid, then the instance name  
+                can be '/', '/var', '/usr' " 
+      ::= { ahcfInstanceEntry 4 } 
+  
+      ahcfInstanceBucketsRequested OBJECT-TYPE 
+           SYNTAX Integer32 (1..65535) 
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "The requested number of discrete time intervals over  
+                which data is to be saved in the part of the       
+                ahcfSampleTable associated with this ahcfConfigEntry. 
+  
+                When this object is created, the probe SHOULD set  
+                ahcfInstanceBucketsGranted as closely to this object as 
+                is possible for the particular probe implementation and 
+                available resources. 
+  
+                This object MUST NOT be modified if the associated  
+                ahcfInstanceStatus object is equal to valid(1)." 
+      ::= { ahcfInstanceEntry 5 } 
+  
+      ahcfInstanceBucketsGranted OBJECT-TYPE 
+           SYNTAX Integer32 (1..65535) 
+         MAX-ACCESS read-only 
+         STATUS current 
+         DESCRIPTION 
+                "The number of discrete sampling intervals over which  
+                data shall be saved in the part of ahcfSampleTable  
+                associated with this ahcfConfigEntry.  
+               
+                If the ahcfConfigObjectType is 'columnar' and the SNMP   
+                probe detects at runtime that a new instance is    
+                available in the table (e.g. a new logical storage  
+                media is added to hrStorageTable),then the probe   
+                creates a new entry in the ahcfInstanceTable and uses  
+                the ahcfConfigDefaultBucketsReq as the value of    
+                ahcfInstanceBucketsRequested for this new entry. 
+  
+                The user can then modify the                       
+                ahcfInstanceBucketsRequested if required to a value  
+                more specific to the new entry created (the new logical 
+                storage media added to hrStorageTable). 
+  
+                When the associated ahcfInstanceBucketsRequested object 
+                is created, the probe SHOULD set this object as closely 
+                to the requested value as is possible for the      
+                particular probe implementation and available      
+                resources.  
+  
+                There will be times when the actual number of buckets   
+                associated with this entry is less than the value of  
+                this object. In this case, at the end of each sampling 
+                interval, a new bucket will be added to the        
+                ahcfSampleTable. 
+  
+                When the number of buckets reaches the value of this    
+                object and a new bucket is to be added to the      
+                ahcfSampleTable, the oldest bucket associated with this 
+                ahcfConfigEntry shall be deleted by the agent so that  
+                the new bucket can be added." 
+      ::= { ahcfInstanceEntry 6 } 
+  
+      ahcfInstanceLastSampleIndex OBJECT-TYPE 
+           SYNTAX Integer32 (0..2147483647) 
+           MAX-ACCESS read-only 
+           STATUS current 
+           DESCRIPTION 
+                "The value of ahcfSampleIndex for the 
+                most recent sample in the associated history. 
+                Zero if no samples have yet been taken." 
+      ::= { ahcfInstanceEntry 7 } 
+  
+      ahcfInstanceTrendingState OBJECT-TYPE 
+           SYNTAX INTEGER { 
+                enabled(1), 
+                disabled(2), 
+                instanceNotAvailable(3) 
+                } 
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "The current state of history collection for the  
+                ahcfInstanceEntry. When the state is 'enabled', each    
+                sampled value will be added to the history. 
+  
+                When the state is 'disabled', sampled values will not  
+                be added to the stored history. The management console 
+                     MAY detect the missing samples by looking at the  
+                     ahcfSampleTimeStamp. 
+  
+                The state 'instanceNotAvailable' indicates that history  
+                collection is enabled for this object but the specified 
+                object is not available in the mib view. 
+                This variable may be set to instanceNotAvailable by the 
+                SNMP probe but not by a SNMP manager." 
+      DEFVAL { enabled } 
+      ::= { ahcfInstanceEntry 8 } 
+  
+      ahcfInstanceThresholdState OBJECT-TYPE 
+           SYNTAX INTEGER { 
+                enabled(1), 
+                disabled(2) 
+                } 
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "The current state of threshold monitoring for this 
+                ahcfInstanceEntry. 
+  
+                When the state is 'enabled', the sampled value will be 
+                compared to the configured thresholds, and a       
+                notification generated if appropriate. 
+  
+                When the state is 'disabled', the thresholds will be 
+                ignored, and no notification will ever be generated. 
+  
+                If ahcfInstanceTrendingState is disabled and  
+                ahcfInstanceThresholdState is enabled the MIB variable 
+                will be sampled but not stored. Only threshold checking  
+                will be done. 
+  
+                ahcfInstanceThresholdState can be 'enabled' only if the 
+                corresponding value of ahcfInstanceAlarmType is not  
+                'undefined'." 
+      DEFVAL { disabled } 
+      ::= { ahcfInstanceEntry 9 } 
+  
+      ahcfInstanceAlarmType OBJECT-TYPE 
+           SYNTAX INTEGER { 
+                risingAlarm(1), 
+                fallingAlarm(2), 
+                risingOrFallingAlarm(3), 
+                undefined(4) 
+                } 
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "The alarm that may be sent when this entry is first 
+                set to valid. If the first sample after this entry 
+                becomes valid is greater than or equal to the 
+                risingThreshold and ahcfInstanceAlarmType is equal to 
+                risingAlarm(1) or risingOrFallingAlarm(3), then a 
+                single rising alarm will be generated.  If the first 
+                sample after this entry becomes valid is less than 
+                or equal to the fallingThreshold and 
+                ahcfInstanceAlarmType is equal to fallingAlarm(2) or 
+                risingOrFallingAlarm(3), then a single falling 
+                alarm will be generated." 
+      DEFVAL { undefined } 
+      ::= { ahcfInstanceEntry 10 } 
+  
+      ahcfInstanceAlarmSeverity OBJECT-TYPE 
+           SYNTAX INTEGER { 
+                severe(1), 
+                major(2), 
+                minor(3), 
+                informational(4), 
+                unknown(5) 
+                } 
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "The type of the notification that needs to be sent for 
+                a threshold violation. The management console can use  
+                this value to identify the importance of a particular  
+                notification." 
+      DEFVAL { unknown } 
+      ::= { ahcfInstanceEntry 11 } 
+  
+      ahcfInstanceRisingThreshold OBJECT-TYPE 
+           SYNTAX Integer32 (0..2147483647) 
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "A threshold for the sampled variable.  
+  
+                When the current sampled value is greater than or equal 
+                to this threshold, and the value at the last sampling  
+                interval was less than this threshold, and the value of 
+                ahcfInstanceThresholdType is 'risingAlarm' or      
+                'risingOrFallingAlarm', a single notification will be  
+                generated. 
+  
+                After a notification is generated, another such    
+           notification will not be generated until the sampled    
+           value falls below this threshold and reaches the        
+           ahcfInstanceFallingThreshold. 
+  
+                That is, the hysterisis mechanism is used to limit the 
+                generation of events. This mechanism generates one  
+                event as a threshold is crossed in the appropriate  
+                direction. 
+  
+                No more events are generated for that threshold until  
+                the opposite threshold is crossed." 
+      DEFVAL { 0 } 
+      ::= { ahcfInstanceEntry 12 } 
+  
+      ahcfInstanceFallingThreshold OBJECT-TYPE 
+           SYNTAX Integer32 (0..2147483647) 
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "A threshold for the sampled variable.   
+                 
+                When the current sampled value is less than or equal to           
+                this threshold, and the value at the last sampling       
+                interval was   greater than this threshold, and the  
+                value of ahcfInstanceThresholdType is 'fallingAlarm' or 
+                'risingOrFallingAlarm', a single notification will be  
+                generated. 
+  
+                After a notification is generated, another such    
+                notification will not be generated until the sampled  
+                value rises above this threshold and reaches the   
+                ahcfInstanceRisingThreshold." 
+      DEFVAL { 0 } 
+      ::= { ahcfInstanceEntry 13 } 
+  
+      ahcfInstanceStatus OBJECT-TYPE 
+           SYNTAX INTEGER { 
+                valid(1), 
+                invalid(2) 
+                } 
+
+           MAX-ACCESS read-write 
+           STATUS current 
+           DESCRIPTION 
+                "The status of this ahcfInstanceEntry.                  
+  
+                ahcfInstanceEntry may be set to invalid, to modify one 
+                or more of ahcfInstanceInterval,                   
+                ahcfInstanceBucketsRequested or ahcfInstanceAlarmType. 
+                 
+                On setting this value to invalid, all the samples  
+                collected till now for this instance will be discarded. 
+  
+                Sampling starts again when this value is set to valid." 
+      ::= { ahcfInstanceEntry 14 } 
+  
+ -- ================================================================ 
+ --   ahcfSampleTable  
+ -- ================================================================ 
+  
+      ahcfSampleTable OBJECT-TYPE 
+           SYNTAX SEQUENCE OF AhcfSampleEntry 
+           MAX-ACCESS not-accessible 
+           STATUS current 
+           DESCRIPTION 
+                "List of historical samples for user-defined MIB  
+                variables." 
+      ::= { ahcfObjects 3 } 
+  
+      ahcfSampleEntry OBJECT-TYPE 
+           SYNTAX AhcfSampleEntry 
+           MAX-ACCESS not-accessible 
+           STATUS current 
+           DESCRIPTION 
+                "Historical samples for a particular user-defined MIB  
+                variable." 
+      INDEX { ahcfConfigIndex, ahcfInstanceIndex, ahcfSampleIndex }  
+      ::= { ahcfSampleTable 1 } 
+  
+      AhcfSampleEntry ::= SEQUENCE 
+      { 
+           ahcfSampleIndex         Integer32, 
+           ahcfSampleAbsValue      Gauge32, 
+           ahcfSampleValStatus     INTEGER, 
+           ahcfSampleTimeStamp     TimeStamp 
+
+      } 
+  
+      ahcfSampleIndex OBJECT-TYPE 
+           SYNTAX Integer32 (1..65535) 
+           MAX-ACCESS not-accessible 
+           STATUS current 
+           DESCRIPTION 
+                "An index that uniquely identifies the particular  
+                sample this entry represents among all samples     
+                associated with the same ahcfConfigEntry. This index  
+                starts at 1 and increases by one as each new sample is 
+                taken." 
+      ::= { ahcfSampleEntry 1 } 
+  
+      ahcfSampleAbsValue OBJECT-TYPE 
+          SYNTAX Gauge32 
+          MAX-ACCESS read-only 
+          STATUS current 
+          DESCRIPTION 
+                "The absolute value (i.e. unsigned value) of the user-  
+                specified statistic during the last sampling period.  
+  
+                The value during the current sampling period is not  
+                made available until the period is completed. 
+  
+                To obtain the true value for this sampling interval,  
+                the associated instance of ahcfSampleValStatus MUST be 
+                checked, and ahcfSampleAbsValue adjusted as necessary. 
+  
+                If the MIB instance could not be accessed during the  
+                sampling interval, then this object will have a value  
+                of zero and the associated instance of             
+                ahcfSampleAbsValue will be set to                  
+                'valueNotAvailable(1)'." 
+     ::= { ahcfSampleEntry 2 } 
+  
+      ahcfSampleValStatus OBJECT-TYPE 
+          SYNTAX INTEGER { 
+                valueNotAvailable(1), 
+            valuePositive(2), 
+            valueNegative(3) 
+           } 
+          MAX-ACCESS read-only 
+          STATUS current 
+          DESCRIPTION 
+                "This object indicates the validity and sign of the  
+                data in the associated instance of ahcfSampleAbsValue. 
+  
+                If the MIB instance could not be accessed during the 
+                sampling interval, then 'valueNotAvailable(1)' will be  
+                returned. 
+  
+                If the sample is valid and actual value of the sample  
+                is greater than or equal to zero then              
+                'valuePositive(2)' is returned. 
+  
+                If the sample is valid and the actual value of the  
+                sample is less than zero, 'valueNegative(3)' will be  
+                returned.       
+       
+                The associated instance of ahcfSampleAbsValue SHOULD be  
+                multiplied by -1 to obtain the true sample value." 
+      ::= { ahcfSampleEntry 3 } 
+  
+      ahcfSampleTimeStamp OBJECT-TYPE 
+           SYNTAX TimeStamp 
+           MAX-ACCESS read-only 
+           STATUS current 
+           DESCRIPTION 
+                "This timestamp is the absolute date and time 
+                (UTC) that the sample was taken, expressed as 
+                seconds since midnight on January 1, 1970 
+  
+                If the probe keeps track of the time of day,  
+                it SHOULD take the first sample of the history  
+                at a time such that when the next hour of the day 
+                begins, a sample is collected at that instant. 
+  
+                Note that following this rule may require the probe to  
+                delay collecting the first sample of the history." 
+      ::= { ahcfSampleEntry 4 } 
+  
+ -- ================================================================ 
+ --   ahcfSysInfo 
+ -- ================================================================ 
+  
+      ahcfSysInfo    OBJECT IDENTIFIER ::= { ahcfObjects 4 } 
+      ahcfSysTime OBJECT-TYPE 
+           SYNTAX TimeStamp 
+           MAX-ACCESS read-only 
+           STATUS current 
+           DESCRIPTION 
+                "The date and time (UTC) on the SNMP probe." 
+      ::= { ahcfSysInfo 1 } 
+  
+      ahcfSysTimeZone OBJECT-TYPE 
+           SYNTAX InternationalDisplayString (SIZE(0..20)) 
+           MAX-ACCESS read-only 
+           STATUS current 
+           DESCRIPTION 
+                "The time zone in which this SNMP probe resides.  The   
+                string is in the format -  
+                <Time Zone Name><Time Zone Offset>  
+                where 'Time Zone Offset' is +hh:mm or -hh:mm " 
+      ::= { ahcfSysInfo 2 } 
+  
+      ahcfSysDaylightSavings OBJECT-TYPE 
+           SYNTAX INTEGER { 
+                enabled(1), 
+                disabled(2) 
+                } 
+           MAX-ACCESS read-only 
+           STATUS current 
+           DESCRIPTION 
+                "Indicates whether daylight savings time is applicable 
+                or not." 
+      ::= { ahcfSysInfo 3 } 
+  
+ -- ================================================================ 
+ --   ahcfNotifications 
+ -- ================================================================ 
+  
+  ahcfNotificationDefs OBJECT IDENTIFIER ::= { ahcfNotifications 0 } 
+  ahcfNotificationInfo OBJECT IDENTIFIER ::= { ahcfNotifications 1 } 
+  
+ -- ================================================================ 
+ --   ahcfNotificationDefs 
+ -- ================================================================ 
+  
+      ahcfRisingAlarm NOTIFICATION-TYPE 
+           OBJECTS {  
+                ahcfProbeName, ahcfNotificationTime,               
+                ahcfRisingThreshold, ahcfFallingThreshold,         
+                ahcfInterval, ahcfInstanceId, ahcfAlarmSeverity 
+            } 
+           STATUS current 
+           DESCRIPTION 
+                "A rising alarm notification generated by the AHCF-MIB. 
+  
+                When the ahcfInstanceThresholdState is 'enabled', the  
+                sampled value will be compared to the configured   
+                thresholds, and a notification generated if        
+                appropriate. 
+  
+                The notification will contain the name of the probe  
+                that generated the notification, the time at which it  
+                was generated, the rising threshold, falling threshold, 
+                sampling interval configured, the unique identifier for 
+                the instance if the ahcfConfigObjectType is columnar  
+                and the severity configured by the user for a      
+                notification related to this instance. 
+  
+                When the state is 'disabled', the thresholds will be 
+                ignored, and no notification will ever be generated. 
+                " 
+      ::= { ahcfNotificationDefs 1 } 
+  
+      ahcfFallingAlarm NOTIFICATION-TYPE 
+           OBJECTS { 
+                ahcfProbeName, ahcfNotificationTime,               
+                ahcfRisingThreshold, ahcfFallingThreshold,         
+                ahcfInterval, ahcfInstanceId, ahcfAlarmSeverity 
+            } 
+           STATUS current 
+           DESCRIPTION 
+           "A falling alarm notification generated by the AHCF-MIB. 
+  
+           Refer to the description of ahcfRisingAlarm for details." 
+      ::= { ahcfNotificationDefs 2 } 
+  
+  
+ -- ================================================================ 
+ --   ahcfNotificationInfo 
+ -- 
+ --   The objects in the ahcfNotificationInfo group exist solely for  
+ --   use as var-binds in notifications.   
+ --   They are not-accessible as objects in their own right. 
+ -- ================================================================ 
+  
+       
+      ahcfProbeName OBJECT-TYPE 
+           SYNTAX InternationalDisplayString (SIZE(0..48)) 
+           MAX-ACCESS accessible-for-notify 
+           STATUS current 
+           DESCRIPTION 
+                "The name of this probe" 
+      ::= { ahcfNotificationInfo 1 } 
+  
+      ahcfNotificationTime OBJECT-TYPE 
+           SYNTAX TimeStamp 
+           MAX-ACCESS accessible-for-notify 
+           STATUS current 
+           DESCRIPTION 
+                "The UTC time in seconds at which the notification was 
+                generated." 
+      ::= { ahcfNotificationInfo 2 } 
+  
+      ahcfRisingThreshold OBJECT-TYPE 
+           SYNTAX Integer32 
+           MAX-ACCESS accessible-for-notify 
+           STATUS current 
+           DESCRIPTION 
+                "The rising threshold value specified by the user in 
+                 the ahcfInstanceEntry for which this notification is  
+                generated." 
+      ::= { ahcfNotificationInfo 3 } 
+  
+      ahcfFallingThreshold OBJECT-TYPE 
+           SYNTAX Integer32 
+           MAX-ACCESS accessible-for-notify 
+           STATUS current 
+           DESCRIPTION 
+                "The falling threshold value specified by the user in 
+                 the ahcfInstanceEntry for which this notification is  
+                generated." 
+      ::= { ahcfNotificationInfo 4 } 
+  
+      ahcfInterval OBJECT-TYPE 
+           SYNTAX Integer32 
+           MAX-ACCESS accessible-for-notify 
+           STATUS current 
+           DESCRIPTION 
+                "The sample interval in seconds specified by the user  
+                in the ahcfInstanceEntry for which this notification is 
+                generated." 
+      ::= { ahcfNotificationInfo 5 } 
+  
+      ahcfInstanceId OBJECT-TYPE 
+           SYNTAX InternationalDisplayString 
+           MAX-ACCESS accessible-for-notify 
+           STATUS current 
+           DESCRIPTION 
+                "The descriptive name for the object instance sampled 
+                For example, if the object being sampled is the disk  
+                space usage defined in the hrStorageTable of Host  
+                Resources MIB (hrStorageUsed) and the description of  
+                the storage medium hrStorageDescr) is used as the  
+                identifier oid, then this will be the value of     
+                hrStorageDescr." 
+      ::= { ahcfNotificationInfo 6 } 
+  
+      ahcfAlarmSeverity OBJECT-TYPE 
+           SYNTAX Integer32 
+           MAX-ACCESS accessible-for-notify 
+           STATUS current 
+           DESCRIPTION 
+                "The importance of the event (threshold violation)  
+                which resulted in the generation of this notification. 
+                The value used for this object is specified by the user 
+                in ahcfInstanceAlarmSeverity. 
+  
+                The management console can use this value to 
+                identify the importance of a particular notification." 
+        ::= { ahcfNotificationInfo 7 } 
+  
+  
+ -- ================================================================ 
+ -- Conformance information 
+ -- ================================================================ 
+  
+      ahcfCompliances     OBJECT IDENTIFIER ::= { ahcfConformance 1 } 
+      ahcfGroups          OBJECT IDENTIFIER ::= { ahcfConformance 2 } 
+      -- 
+      -- The AHCF-MIB compliance definitions follow. 
+      -- 
+  
+      ahcfCompliance MODULE-COMPLIANCE 
+      STATUS      current 
+           DESCRIPTION 
+                "The compliance statement for SNMP entities that 
+                implement the AHCF-MIB." 
+           MODULE       
+           MANDATORY-GROUPS { 
+           ahcfConfigGroup, 
+                ahcfInstanceGroup, 
+                ahcfSampleGroup, 
+                ahcfSysInfoGroup, 
+                ahcfNotificationDefsGroup, 
+                ahcfNotificationInfoGroup 
+                } 
+        ::= { ahcfCompliances 1 } 
+  
+      -- 
+      -- The AHCF-MIB group definitions follow. 
+      -- 
+  
+      ahcfConfigGroup OBJECT-GROUP 
+           OBJECTS { 
+                ahcfConfigObjectVariable, 
+                ahcfConfigObjectType, 
+                ahcfConfigObjects, 
+                ahcfConfigSampleType, 
+                ahcfConfigObjectName, 
+                ahcfConfigIdentifierVariables, 
+                ahcfConfigFilterType, 
+                ahcfConfigFilterSpec1, 
+                ahcfConfigFilterSpec2, 
+                ahcfConfigFilterSpec3, 
+                ahcfConfigOwner, 
+                ahcfConfigDefaultInterval, 
+                ahcfConfigDefaultBucketsReq, 
+                ahcfConfigStatus 
+                } 
+           STATUS      current 
+           DESCRIPTION 
+           "Objects for data-collection configuration." 
+           ::= { ahcfGroups 1 } 
+  
+      ahcfInstanceGroup OBJECT-GROUP 
+           OBJECTS { 
+                ahcfInstanceObjectVariable, 
+                ahcfInstanceInterval, 
+                ahcfInstanceName, 
+                ahcfInstanceBucketsRequested, 
+                ahcfInstanceBucketsGranted, 
+                ahcfInstanceLastSampleIndex, 
+                ahcfInstanceTrendingState, 
+                ahcfInstanceThresholdState, 
+                ahcfInstanceAlarmType, 
+                ahcfInstanceAlarmSeverity, 
+                ahcfInstanceRisingThreshold, 
+                ahcfInstanceFallingThreshold, 
+                ahcfInstanceStatus 
+           } 
+           STATUS    current 
+           DESCRIPTION 
+                "Objects for data-collection configuration of MIB  
+                instances based on the configuration in            
+                ahcfConfigTable." 
+        ::= { ahcfGroups 2 } 
+  
+      ahcfSampleGroup OBJECT-GROUP 
+           OBJECTS { 
+                ahcfSampleAbsValue, 
+                ahcfSampleValStatus, 
+                ahcfSampleTimeStamp 
+                } 
+           STATUS      current 
+           DESCRIPTION 
+                "Objects for storing the historical samples." 
+      ::= { ahcfGroups 3 } 
+  
+      ahcfSysInfoGroup OBJECT-GROUP 
+           OBJECTS { 
+                ahcfSysTime, 
+                ahcfSysTimeZone, 
+                ahcfSysDaylightSavings 
+                } 
+           STATUS      current 
+           DESCRIPTION 
+                "Objects providing the date, time and time zone  
+                of the agent machine." 
+      ::= { ahcfGroups 4 } 
+  
+      ahcfNotificationDefsGroup NOTIFICATION-GROUP 
+           NOTIFICATIONS { 
+                ahcfRisingAlarm,  
+                ahcfFallingAlarm 
+                } 
+         STATUS      current 
+         DESCRIPTION 
+                "Objects defining the notifications generated by  
+                AHCF-MIB." 
+      ::= { ahcfGroups 5 } 
+  
+      ahcfNotificationInfoGroup OBJECT-GROUP 
+           OBJECTS { 
+                ahcfProbeName,  
+                ahcfNotificationTime,  
+                ahcfRisingThreshold,                
+                ahcfFallingThreshold,  
+                ahcfInterval,  
+                ahcfInstanceId,           
+                ahcfAlarmSeverity 
+                } 
+           STATUS      current 
+           DESCRIPTION 
+                "Objects defining the notification variables for   
+                notifications generated by AHCF-MIB." 
+      ::= { ahcfGroups 6 } 
+  
+ END 
+
+--   
+--     Copyright (C) The Internet Society (2003). All Rights Reserved. 
+--     This document and translations of it may be copied and furnished to 
+--     others, and derivative works that comment on or otherwise explain 
+--     it 
+--     or assist in its implementation may be prepared, copied, published 
+--     and distributed, in whole or in part, without restriction of any 
+--     kind, provided that the above copyright notice and this paragraph 
+--     are 
+--     included on all such copies and derivative works. However, this 
+--     document itself may not be modified in any way, such as by removing 
+--     the copyright notice or references to the Internet Society or other 
+--     Internet organizations, except as needed for the  purpose of 
+--     developing Internet standards in which case the procedures for 
+--     copyrights defined in the Internet Standards process must be 
+--     followed, or as required to translate it into languages other than 
+--     English. 
+--      
+--     The limited permissions granted above are perpetual and will not be 
+--     revoked by the Internet Society or its successors or assigns. 
+--      
+--       This document and the information contained herein is provided on 
+--     an "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET 
+--     ENGINEERING TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR 
+--     IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF 
+--     THE INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED 
+--     WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. 
+--       
+--      
+--  Author's Addresses 
+--      
+--     Hemanth Kumar 
+--     49/1 & 49/3,GarvebhaviPalya 
+--     7th Mile, Hosur Road  
+--     Bangalore  
+--     India  
+--     Phone: +91-80-25731858 Ext 2246 
+--     Email: hekumar@novell.com 
+--      
+--     Hemanth Yamijala 
+--     49/1 & 49/3,GarvebhaviPalya 
+--     7th Mile, Hosur Road  
+--     Bangalore  
+--     India  
+--     Phone: +91-80-25731858 Ext 2242 
+--     Email: yhemanth@novell.com 
+--      
+--     Raja Shekar C S  
+--     49/1 & 49/3,GarvebhaviPalya 
+--     7th Mile, Hosur Road  
+--     Bangalore  
+--     India  
+--     Phone: +91-80-25731858 Ext 3072 
+--     Email: rshekar@novell.com 
+--      
+--     Shailaja Yadawad 
+--     49/1 & 49/3,GarvebhaviPalya 
+--     7th Mile, Hosur Road  
+--     Bangalore  
+--     India  
+--     Phone: +91-80-25731858 Ext 2035 
+--     Email: yshailaja@novell.com 
+

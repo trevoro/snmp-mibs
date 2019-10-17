@@ -1,0 +1,1753 @@
+--	Quantum Bridge DWS Management Information Base
+--	Version 1.0.0
+--	June 12, 1999
+--
+--	Quantum Bridge Corporation
+--	Two Tech Drive 
+--	Andover, MA 01810
+--	(978) 983-2617
+--
+--------------------------------------------------------------------------------------
+--  7/07/01 mvaysman	       Added qbTConGroup
+--
+--  7/03/01 mvaysman           Updated QbPvcConnKind to reflect to
+--			       gige and vlan connection kinds. 
+--
+--  2/05/01  mvaysman           Added new connKind to reflect 16DS1
+--				and 24Enet port connection types.
+--
+--  2/05/01  mvaysman	        Added new connKind objects
+--				qbIotPortCrossConnKind and qbIotPktIfConfConnKind 
+--
+--  1/05/01  mvaysman		Added new connections
+--
+--  10/15/00 mvaysman	        Added new objects to
+--				qbDwsIotPortCrConnTable and qbDwsOptPktConfYable
+--
+--  08/09/00 mvaysman		Added a new qbIotPortCrossConTable
+--
+--  07/28/00 bfardy		Added object to support loopback on DWS port
+--
+--  06/11/00 mvaysman		Changed enum for the enet encaps
+--
+--  06/04/00 mvaysman		Defined mandatory and optional groups	
+--
+--  05/02/00  mvaysman		Changed MIB to accomodate the latest statistics
+--
+--  04/14/00  mvaysman		Added iotRange and iotRecovery objects	
+--
+--  04/08/00  mvaysman		Major changes in the MIB  to reflect 
+--				the latest architecture and provisioning. 
+--
+--  04/04/00  mvaysman		Added objects to reflect the
+--				architecture pre-provisioning 
+--
+--  04/01/00  mvaysman		Added the qbPktIotIfConfAal5EncapsType
+--				object
+--  03/23/00  mvaysman		Added a new qbPktConfIotIfOperStatus object
+--
+--  03/18/00  mvaysman		Replaced bw in timeslots by bps
+--
+--  03/01/00  mvaysman         Added qbPktIotConfAdminStatus to the table
+--
+--  02/20/00  mvaysman         Changed QbSerialNum definition and qbIotAddrTable
+--
+--  01/06/00  mvaysman         Changed qbSysModuleSlotNum by qbSysModuleSlot		
+--
+--  11/20/99  mvaysman         Added an additional object qbPktIotIfConfPcr.
+--
+--  10/28/99  mvaysman         Fixed some problems found during MIB compilation
+--			       removed traffic type object(located in
+--			       the atmVclTable).
+--
+--  10/21/99  mvaysman         Deleted groups and objects that were
+--                             not planned for this release. Added
+--                             the qbPktIotIfConfTrafficType object.  
+--
+--  10/21/99  mvaysman         Moved WAN traps to qbsystem mib
+--                              
+--				
+--  10/18/99  mvaysman          Changed HUB by IOAS. Corrected iotIfStatsTable.
+--                              
+--  09/30/99  mvaysman          Added qbPktIotIfConfTrafficDescrIndex to the 
+--                              qbPktIotIfConfTable and
+--				qbsNetRangeIot and qbDwsNetRangeMode to qbDwsNetTable.  
+--
+--  09/23/99  mvaysman          Changed the qbPktIotIfConfTable QbBitRate by QbDwsTsNum 
+--                              and removed the broadcast configuration parameter.
+--
+--  06/24/99  mvaysman		Replaced RT with IOT and removed some
+--				incorrect trap definitions.	 
+--				
+--  04/15/99  mvaysman    	Original version
+--
+----------------------------------------------------------------------------------------
+--
+	QB-DWS-MIB DEFINITIONS ::= BEGIN
+
+	IMPORTS 
+    	NOTIFICATION-TYPE, MODULE-IDENTITY, OBJECT-TYPE, Gauge32, Counter32, Unsigned32, Integer32, TimeTicks, IpAddress
+        	FROM SNMPv2-SMI
+    	TEXTUAL-CONVENTION, TruthValue, TimeStamp, RowStatus, DisplayString
+        	FROM SNMPv2-TC
+    	MODULE-COMPLIANCE, OBJECT-GROUP
+        	FROM SNMPv2-CONF
+    	InterfaceIndex, InterfaceIndexOrZero, ifIndex
+	    	FROM IF-MIB
+    	qbMibs
+        	FROM QUANTUMBRIDGE-REG
+	qbSysModuleSlot, qbSysIotSerialNumber
+		FROM QBSYS-SYSTEM-MIB
+        AtmAddr, AtmConnKind, AtmConnCastType,
+        AtmServiceCategory, AtmTrafficDescrParamIndex,
+        AtmVpIdentifier, AtmVcIdentifier,
+        AtmVorXAdminStatus, AtmVorXLastChange,
+        AtmVorXOperStatus, atmNoClpNoScr
+            FROM ATM-TC-MIB
+    	;
+
+	qbDwsMIB MODULE-IDENTITY
+    	LAST-UPDATED "0107071255Z" -- July 7, 2001
+    	ORGANIZATION "Quantum Bridge Communications, Inc."
+    	CONTACT-INFO
+        	"support@quantumbridge.com"
+    	DESCRIPTION
+        	"This module defines additional objects for the provisioning and management of
+		DWS links in Quantum bridge devices."
+    	::= { qbMibs 3 }
+
+	--
+	-- Overview of Quantum Bridge DWS MIB
+	--
+	--
+	-- The Quantum Bridge System MIB defines the MIB objects for provisioning
+	-- and monitoring end-to-end connections between IOT devices and
+	-- the ATM cloud through the Quantum Bridge Proprietary DWS/PON network.
+	-- This provisioning includes configuration connections over the DWS and SONET
+	-- interfaces. The monitoring presents network statistics from each of the ports
+	-- that comprise the DWS network.
+	--
+	-- The proprietary passive optical network (DWS/PON) connects multiple IOTs
+	-- to the IOAS. The IOAS optical interface, hereafter referred to as 'Network
+	-- Interface', is responsible for transferring downstream and upstream traffic.
+	-- Every IOT terminal has a DWS connection/port,
+	-- hereafter referred to as 'DWS Interface', to communicate with the IOAS
+	-- via the Network Interface. An IOT originates two traffic types:
+	-- AAL1 cells and IP packets. 		
+	-- The Network Interface encapsulates multiple DWS Interfaces that are
+	-- stacked on top of the Network Interface.
+	-- Each Packet or DS1 interface is assigned to a PVC for routing interface
+	-- data to/from the ATM cloud.
+	-- This AAL5 PVC, hereafter referred to as 'AAL5 PVC', is configured at
+	-- an ATM WAN port for packet interfaces(ATM interface).
+	-- For every packet data flow (Ethernet port), a PVC is configured in the
+	-- qbPktIfConfTable. The creation of a row in this table causes a corresponding
+	-- entry in the atmVclTable of the ATM-MIB to be automatically created.
+	--
+	-- For every AAL1 PVC configured in the atmfDS1E1CESConfTable, a corresponding
+	-- PVC  entry is automatically created in the atmVclTable. The PVC is shown as
+	-- configured at a WAN interface.
+	--
+	-- Top-level organization of the MIB
+
+	qbDwsObjects	    OBJECT IDENTIFIER ::= { qbDwsMIB 1 }
+	qbDwsNotifications  OBJECT IDENTIFIER ::= { qbDwsMIB 2 }
+	qbDwsConformance    OBJECT IDENTIFIER ::= { qbDwsMIB 3 }
+
+	--
+	-- Structure of MIB
+	-- Quantum Bridge DWS Type Textual Convention
+	--   
+        QbPvcConnKind ::= TEXTUAL-CONVENTION
+	    STATUS          current
+    		DESCRIPTION
+        		"A connection type that can be provisioned."
+    		SYNTAX          INTEGER {
+					  unknown(0),
+					  atmPvcToPvc(1),
+					  atmPvpToPvp(2),
+					  iotE1ToAtm(3),
+					  iotDs1ToAtm(4),
+					  iotEnetToAtm(5),
+					  vt15ToAtm(6),
+					  vc12ToAtm(7),
+					  vt15Vt15(8),
+					  vc12ToVc12(9),
+					  iotE1ToVt15(10), -- depricated
+					  iotDs1ToVt15(11),
+					  iotE1ToVc12(12),
+					  iotDs1ToVc12(13), -- depricated
+					  iotE1ToIotE1(14),
+					  iotDs1ToIotDs1(15),
+					  iotEnetToIotEnet(16),
+					  vc11ToAtm(17),
+					  iotDs1ToVc11(18),
+					  vc11ToVc11(19),
+					  m13ToAtm(20),	
+					  iotDs1ToM13(21),	
+					  m13ToM13(22),
+					  atmToEnet(23),
+					  atmToDs1(24),
+					  atmToE1(25),
+					  ds1ToVt15(26),
+					  e1ToVc12(27),
+					  ds1ToVc11(28),
+					  ds1ToM13(29),
+					  ds1ToDs1(30),
+					  e1ToE1(31),
+					  enetToEnet(32),
+					  iotDs1ToDs1(33),
+					  iotE1ToE1(34),
+					  iotEnetToEnet(35),
+					  vlanToAtm(36),
+					  vlanToGige(37),
+					  vlanToIotEnet(38),
+					  vlanToEnet(39)
+					}	
+
+	QbBitRate ::= TEXTUAL-CONVENTION
+	    STATUS          current
+    		DESCRIPTION
+		"A data rate in bits/second."
+		SYNTAX           Gauge32
+
+	QbSerialNum ::= TEXTUAL-CONVENTION
+	    STATUS          current
+    		DESCRIPTION
+        		"The IOT serial number."
+    		SYNTAX          Unsigned32 (0..32)
+
+	QbDwsIfStatus ::= TEXTUAL-CONVENTION
+	    STATUS          current
+    		DESCRIPTION
+        		"The status of the DWS Interface"
+    		SYNTAX          INTEGER {
+					  ok(1),
+					  rxFailure(2),
+					  txFailure(3),
+					  unknown(4)
+				}
+	
+	QbDwsSrvStatus ::= TEXTUAL-CONVENTION
+		STATUS          current
+    		DESCRIPTION
+        		"The service status of the  DWS Interface"
+   		SYNTAX          INTEGER {
+					  avilable(1),	
+					  empty(2),
+					  almostFull(3),
+					  overflown(4)
+					}
+
+	QbAtmAal5EncapsType ::= TEXTUAL-CONVENTION
+		STATUS          current
+   		DESCRIPTION	"The type of data encapsulation used over the 
+				AAL5 layer."
+    		SYNTAX          INTEGER {
+					qbVcMultiplexRoutedProto(1),
+					qbBridgedProto8023EncapFcs(2),
+					qbBridgedProto8023EncapsNoFcs(3),
+					qbBridgedPropEncaps(4),
+					qbBridgedProtoLLCEncapsNoFcs(5),
+					qbRoutedEncapsNoHdrNoFcs(6)
+					}
+	QbEnableStatus 	::= TEXTUAL-CONVENTION
+		STATUS          current
+   		DESCRIPTION	"enable(1) or disable(1) operations." 
+    		SYNTAX          INTEGER {
+						enable(1),
+						disable(2)	
+					}			
+	--
+	--
+	-- The objects are arranged into the following groups:
+	--
+	-- (Quantum Bridge DWS MIB Groups)
+	--
+	--
+	-- All groups in this MIB are mandatory for Quantum Bridge devices.
+	--
+	-- The DWS Network Interface Group (qbDwsNetGroup).
+	--  
+	 	qbDwsNetGroup		OBJECT IDENTIFIER ::= { qbDwsObjects 1 }
+
+	--	This group contains statistics that are an extension of the interface table
+	--	for Network Interfaces of the Quantum Bridge Device.
+	--	It consists of the qbDwsNetTable table. All objects in 
+	--	this table are read-only.
+	--	Every Network Interface is shown as a single entry in this table.
+	--
+	-- The DWS Interface Group (qbDwsIotIfGroup).    
+	--
+		qbDwsIotIfGroup		OBJECT IDENTIFIER ::= { qbDwsObjects 2 }
+	--
+	--
+	--	This group contains statistics that are an extension of the interface table
+	--	for DWS Interfaces(IOT ports) of the Quantum Bridge Device.
+	--	It consists of the qbDwsIfConfTable and qbDwsIotIfStatsTable table.
+	--	All objects in this table are read-only.
+	--	Every IOT's DWS Interface is shown as a single entry in this table.
+	--
+	-- The Packet Interface Group (qbPktIotIfConfGroup).
+	--                                                    
+		qbIotPktIfGroup		OBJECT IDENTIFIER ::= { qbDwsObjects 3 }
+	--
+	--	This group contains PVC configuration information of IOT
+	--      Ethernet interfaces at an ATM interface. 
+	--	It consists of the qbPktIotIfConfTable that is used to
+	--      associate IOT Ethernet interfaces with corresponding AAL5 PVCs.
+        --
+	-- The IOT Address Translation Group (qbIotAddrGroup).
+	--
+		qbIotAddrGroup		OBJECT IDENTIFIER ::= { qbDwsObjects 4 }
+	--
+	-- 	The group provides a mapping between IOT addresses
+	-- 	and serial numbers. It consists of the qbIotAddrTable.
+	-- 	A row is created in this table for each IOT terminal
+	-- 	during IOAS initialization.
+	--
+	--
+		qbIotPortCrossConnGroup	OBJECT IDENTIFIER ::= { qbDwsObjects 5 }
+	--
+	-- 	The group provisions PVC connections between an IOT
+	--	port on a subtending IOT and another IOT port on
+	--      subtending IOT. A point=-to-point cross-connect is
+	--	modeled as a single entry in this table.
+	--
+	--
+		qbTContGroup		OBJECT IDENTIFIER ::= { qbDwsObjects 6 }
+	--
+	-- 	The group provisions traffic containers for IOTs. 
+	--	For R3.0 this TCONT will be set up for each IOT on the PON. 
+	--	It consists of the qbTConTable and scalars.
+	--
+	--
+	-- The Trap/Notification group (qbDwsNotifications).
+	--
+	-- 	This group defines a group of traps related to this MIB.
+	--
+	-- The Interfaces Group of MIB II defines generic managed objects for
+	-- managing interfaces. This memo contains the media-specific
+	-- extensions to the Interfaces Group for managing DWS interfaces.
+	--
+  	--
+	--  Interpretation of the Interface Table for DWS
+	--  interfaces:
+	--
+	--	OBJECT		VALUE/USE
+	--	=====		=========
+	--	ifIndex		Each DWS IOAS and IOT port is represented by an ifEntry.
+	--
+	-- 	ifDescr    	Description of the DWS interface.
+	--
+	--	ifType     	propVirtual(53)
+	--
+	--	ifSpeed    	The total bi-directional bandwidth in bits per second
+	--			for use by the DWS interface (e.g. 622 Mbipts + 155 Mbits).
+	--
+        --	ifAdminStatus   The same interpretation as RFC2233. See [4].
+	--
+	--	ifOperStatus    This object assumes the value down(2),
+        --              	if the object qbDwsNetTxStatus(IOAS interface) has
+        --              	a value ok(1). This object assumes the value down(2) 
+	--			if the object  qbDwsIotIfOperStatus has a value ok(1).
+	--			If ifAdminStatus is down(2) then ifOperStatus should be
+        --		         down(2).
+	--
+	--	ifLastChange    The same interpretation as RFC2233.  The value of sysUpTime
+	--			at the time the interface entered its current operational
+	--			state.  If the current state was entered prior to the
+	--			last re-initialization of the local network management
+	--			subsystem, then this object contains a zero value.
+	--	
+	--	ifInOctets      The number of octets received over the DWS interface.
+	--			For the IOAS DWS interface the number
+	--			DWS octets received is equal to the number of downstream octets.
+	--			For the IOT DWS interface this number is identical to 
+	--			the number of upstream octets.
+        --
+	--     ifOutOctets      The number of octets transmitted over the interface,
+	--		        For the IOAS DWS interface the number of DWS octets 
+	--			received is equal to the number of downstream octets.  
+	--			For the IOT DWS interface this number is identical to
+	--			the number of upstream octets.
+	--
+	--     ifInErrors       The total number of counted upstream errors for the IOAS DWS Interface
+	--			and downstream errors for the IOT DWS interface.
+        --	
+        --
+        --     ifInUnknownProtos Set to 0.
+	--
+	--     ifOutErrors      Set to 0.
+	--
+   	--     ifInDiscards     Number of discarded downstream time slots for the IOT DWS interface.
+	--			For the IOAS DWS interface this value is set to 0.
+        --    			(Possible reason may be input buffer overflow.)
+	--
+	--     ifOutDiscards    Number of upstream time slots for the IOT interface that are discarded.
+	--			For the IOAS DWS interface  this value is set to 0.  
+        --    			(Possible reason may be output buffer overflow.)
+   	--
+	--     ifName     	Textual name (unique to this system) of the
+        --      		interface or an octet string of zero length.
+        --
+	--     ifLinkUpDownTrapEnable  Default is enabled (1).
+	--
+	--     ifConnectorPresent      Set to true (1).
+	--
+	--     ifHighSpeed    speed of line in Mega-bits per second (622 + 155).
+	--
+	--     ifHCInOctets   The 64-bit version of ifInOctets; supported
+	--		      if required by the compliance statements in [17].
+	--
+	--     ifHCOutOctets  The 64-bit version of ifOutOctets; supported
+	--		      if required by the compliance statements in [17].
+	--		
+	--     ifAlias        The non-volatile 'alias' name for the interface
+	--		       as specified by a network manager.
+	--
+	--
+-- *****************************************************************************
+--	Extension of the Interface table that contains Network interfaces' summary
+-- 	statistics. Each Network Interface is represented by a single row of the
+--	table.
+-- *****************************************************************************
+
+   qbDwsSysRangeMode OBJECT-TYPE
+    	SYNTAX      INTEGER {
+		    ready(1),
+		    rangeAll(2)
+		    } 
+    	MAX-ACCESS  read-write
+    	STATUS      current
+    	DESCRIPTION
+               "The object that indicates a system wide range mode. When read, this
+	       object always returns the value 'ready(1)'.
+	       Setting this object to rangeAll(2) causes ranging of
+	       all  IOTs that connect to this OAS."
+    	::= {  qbDwsNetGroup 1 }
+
+    qbSysIotRecoverMode OBJECT-TYPE
+    	SYNTAX      INTEGER {
+		    enabled(1),
+		    disabled(2)
+	} 
+    	MAX-ACCESS  read-write
+    	STATUS      current
+    	DESCRIPTION
+        	"The object allows to set the IOT auto-recovery feature on the IOAS.
+		Auto-recovery is global in scope, so when it is enabled, auto-recovery is
+		attempted for all IOTs that are attached to the IOAS."
+    	::= { qbDwsNetGroup 2 }
+
+    qbDwsNetTable    OBJECT-TYPE
+    	SYNTAX      SEQUENCE OF QbDwsNetEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+            "The Quantum Bridge PON Interface Table contains extensions of
+            the standard MIB Interface Table, one entry per IOAS DWS interface.
+	    The table contains read-only objects and shows MIB objects
+	    for every Network interface"
+    	::= { qbDwsNetGroup 3 }
+
+    qbDwsNetEntry	OBJECT-TYPE
+    	SYNTAX		QbDwsNetEntry
+    	MAX-ACCESS	not-accessible
+    	STATUS      	current
+    	DESCRIPTION
+            "An entry in the Quantum Bridge DWS Interface Table that contains
+	    the Network interface's specific objects."
+	    INDEX    { qbDwsNetIfIndex }
+    	::= { qbDwsNetTable 1 }
+
+     QbDwsNetEntry ::=
+		SEQUENCE {
+			qbDwsNetIfIndex			InterfaceIndex,
+			qbDwsNetBw			QbBitRate,
+			qbDwsNetAllocatedBw		QbBitRate,
+			qbDwsNetAvailableBw		QbBitRate,
+			qbDwsNetAllocatedUbrBw		QbBitRate,
+			qbDwsNetAllocatedCbrBw		QbBitRate,
+			qbDwsNetNumCbrConn		Integer32,
+ 			qbDwsNetNumUbrConn		Integer32,
+  	    		qbDwsNetNumIot			Integer32,
+			qbDwsNetTxStatus		QbDwsIfStatus,
+			qbDwsNetTxStatusLastChange      TimeStamp,
+			qbDwsNetLosIotAddr		Integer32,
+			qbDwsNetLosIotTime              TimeStamp,
+ 			qbDwsNetEncryptStatus           TruthValue,
+			qbDwsNetRangeMode               INTEGER,
+			qbDwsNetRxTsCount	        Counter32, 
+			qbDwsNetTxTsCount		Counter32,
+			qbDwsNetRxMissingTs		Counter32,
+			qbDwsNetRxIllegalTs		Counter32,
+			qbDwsNetTxJabberTs		Counter32,
+			qbDwsNetTxOutOfFrameTs		Counter32,
+			qbDwsNetTxHdrCrcTsErrs		Counter32,
+    			qbDwsNetOamRequests 	        Counter32,
+			qbDwsNetOamResponses		Counter32,	
+			qbDwsNetOamEvents		Counter32,
+      			qbDwsNetOamBadMsgs		Counter32,
+			qbDwsNetLoopBack		INTEGER			
+	}
+
+   qbDwsNetIfIndex OBJECT-TYPE
+            SYNTAX  InterfaceIndex
+            MAX-ACCESS  read-only
+            STATUS  current
+            DESCRIPTION
+                 "The value of this object is the same as the
+                  corresponding ifIndex of the Network Interface in the ifTable."
+            ::= { qbDwsNetEntry 1 }
+
+   qbDwsNetBw OBJECT-TYPE
+	SYNTAX      QbBitRate
+	UNITS       "Bits per second"
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The object indicates the total bandwidth rate
+		that is available for reservation on this interface.
+		This object is specified in Bits per second."
+    	::= { qbDwsNetEntry 2 }
+
+   qbDwsNetAllocatedBw OBJECT-TYPE
+	SYNTAX      QbBitRate
+	UNITS       "Bits per second"
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The object indicates the total bandwidth rate 
+		that is currently subscribed. The subscribed bandwidth
+		rate consists of the bandwidth rate allocated for all
+		provisoned connections. This object is
+		specified in Bits per sec(Bps)."
+    	::= { qbDwsNetEntry 3 }
+
+    qbDwsNetAvailableBw OBJECT-TYPE
+	SYNTAX      QbBitRate
+	UNITS       "Bits per second"
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The portion of this interface's capacity in
+		bits per sec that
+		is available for data traffic. This variable is adjusted for the
+	        allocated bandwidth. The formula for calculating this
+		value is
+	 	qbDwsNetBw - qbDwsNetAllocatedBw 
+		 This object is specified in Bps."
+    	::= { qbDwsNetEntry 4 }
+
+    qbDwsNetAllocatedUbrBw OBJECT-TYPE
+	SYNTAX      QbBitRate
+	UNITS       "Bits per second"
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The object indicates the total number of bandwidth
+		that are currently allocated for packet/ubr traffic.
+		This object is specified in Bps."
+    	::= { qbDwsNetEntry 5 }
+
+    qbDwsNetAllocatedCbrBw OBJECT-TYPE
+	SYNTAX      QbBitRate
+	UNITS       "Bits per second"
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The object indicates the total number of bandwidth
+		that is currently allocated for CBR traffic.
+		This object is specified in Bps."
+    	::= { qbDwsNetEntry 6 }
+
+    qbDwsNetNumCbrConn OBJECT-TYPE
+	SYNTAX      Integer32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The object indicates the total number of inactive and 
+		in-service CBR connections
+		that are currently provisioned on this interface."
+    	::= { qbDwsNetEntry 7 }
+
+    qbDwsNetNumUbrConn OBJECT-TYPE
+	SYNTAX      Integer32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The object indicates the total number of inactive and 
+		in-serice UBR connections
+		that are currently provisioned on this interface."
+    	::= { qbDwsNetEntry 8 }
+
+    qbDwsNetNumIot    OBJECT-TYPE
+	SYNTAX      Integer32
+    	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+        	"The number of IOTs that are provisioned on the Network interface."
+    	::= { qbDwsNetEntry 9 }
+
+   qbDwsNetTxStatus OBJECT-TYPE
+    	SYNTAX      QbDwsIfStatus
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+		"This objects indicates the status of the DWS transmitter.
+		The trap is generated by the SNMP agent when the IOAS DWS 
+		transmitter problem is detected. The trap contains the
+		DWS module interface index."
+    	::= { qbDwsNetEntry 10 }
+
+    qbDwsNetTxStatusLastChange OBJECT-TYPE
+          SYNTAX  TimeStamp
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+                 "The value of MIB II's sysUpTime object at the
+                 time this DWS Interface entered its current status
+                 state." 
+          ::= { qbDwsNetEntry 11 }
+
+    qbDwsNetLosIotAddr OBJECT-TYPE
+          SYNTAX  	Integer32
+          MAX-ACCESS  	read-only
+          STATUS  	current
+          DESCRIPTION
+                 "The object contains the address of the IOT for which a Los condition
+		 is detected. This indicates that no signal was detected within the expected
+		 time slot window. Note: The Los indication at the IOAS DWS card is a signal that
+		 an IOT is non-functioning."
+          ::= { qbDwsNetEntry 12 }
+
+   qbDwsNetLosIotTime OBJECT-TYPE
+          SYNTAX  TimeStamp
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+                 "The value of MIB II's sysUpTime object at the
+                 time when the qbDwsNetIotLos condition was detected." 
+          ::= { qbDwsNetEntry 13 }
+
+    qbDwsNetEncryptStatus OBJECT-TYPE
+    	SYNTAX      TruthValue
+    	MAX-ACCESS  read-write
+    	STATUS      current
+    	DESCRIPTION
+               "The object that enables and disables encryption on this interface."
+    	::= { qbDwsNetEntry 14 }
+
+    qbDwsNetRangeMode OBJECT-TYPE
+    	SYNTAX      INTEGER {
+		    ready(1),
+		    rangeAll(2)
+		    } 
+    	MAX-ACCESS  read-write
+    	STATUS      current
+    	DESCRIPTION
+               "The object that indicates a range mode. When read, this
+	       object always returns the value 'ready(1)'.
+	       Setting this  object to rangeAll(2) causes ranging of
+	       all IOTs connected to this interface." 
+    	::= { qbDwsNetEntry 15 }
+
+     qbDwsNetRxTsCount  OBJECT-TYPE
+          SYNTAX  	Counter32
+          MAX-ACCESS  	read-only
+          STATUS  	current
+          DESCRIPTION
+                 "The total number of successfully  received time slots."
+          ::= { qbDwsNetEntry 16 }
+    
+      qbDwsNetTxTsCount  OBJECT-TYPE
+          SYNTAX  	Counter32
+          MAX-ACCESS  	read-only
+          STATUS  	current
+          DESCRIPTION
+                 "The total number of successfully transmitted time slots."
+          ::= { qbDwsNetEntry 17 }
+							
+     qbDwsNetRxMissingTs OBJECT-TYPE
+          SYNTAX  	Counter32
+          MAX-ACCESS  	read-only
+          STATUS  	current
+          DESCRIPTION
+		"The number received time slots that have been missed."
+          ::= { qbDwsNetEntry 18 }
+
+    qbDwsNetRxIllegalTs OBJECT-TYPE
+          SYNTAX  	Counter32
+          MAX-ACCESS  	read-only
+          STATUS  	current
+          DESCRIPTION
+		"The number illegal received time slots that have been detected."
+          ::= { qbDwsNetEntry 19 }
+
+    qbDwsNetTxJabberTs OBJECT-TYPE
+          SYNTAX  	Counter32
+          MAX-ACCESS  	read-only
+          STATUS  	current
+          DESCRIPTION
+		"The number jabber transmitted time slots that have been detected."   		
+          ::= { qbDwsNetEntry 20 }
+
+    qbDwsNetTxOutOfFrameTs OBJECT-TYPE
+          SYNTAX  	Counter32
+          MAX-ACCESS  	read-only
+          STATUS  	current
+          DESCRIPTION
+		"The number out of frame transmitted timeslots 
+		that have been detected." 
+          ::= { qbDwsNetEntry 21 }
+
+    qbDwsNetTxHdrCrcTsErrs OBJECT-TYPE
+          SYNTAX  	Counter32
+          MAX-ACCESS  	read-only
+          STATUS  	current
+          DESCRIPTION
+		"The number transmitted timeslots with 
+		 the header protection error that have been detected." 
+          ::= { qbDwsNetEntry 22 }
+
+     qbDwsNetOamRequests OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+               "The number of OAM requests. These OAM requests are
+		originated by the IOAS and sent to downstream IOTs."
+    	::= { qbDwsNetEntry 23 }
+
+    qbDwsNetOamResponses OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+               "The number of OAM responses. These responses are
+		generated by IOTs in response to downstream requests."
+    	::= { qbDwsNetEntry 24 }
+
+     qbDwsNetOamEvents OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+               "The number of OAM events. These events are originated
+		by IOT devices to signal abnormal conditions."
+    	::= { qbDwsNetEntry 25 }
+
+    qbDwsNetOamBadMsgs OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The total number of bad OAM  messages."
+    	::= { qbDwsNetEntry 26 }
+
+    qbDwsNetLoopBack	OBJECT-TYPE
+    	SYNTAX		INTEGER {
+		    enabled(1),
+		    disabled(2)
+		    } 
+
+    	MAX-ACCESS	read-write
+    	STATUS		current
+    	DESCRIPTION
+    		"The Loopback status of this DWS port. Writing configures the port
+    		to go into the loopback mode. When placed in loopback mode the DWS port
+    		does a 'payload' loopback."
+    	::= { qbDwsNetEntry 27 }
+
+-- ******************************************************************************
+--	The Quantum Bridge DWS IOT Interface Table
+--
+--	The qbDwsIfIotConfTable contains objects to provision IOT DWS interfaces
+--      (physical ports).
+--	The table contains DWS MIB objects that are necessary to the DWS interface
+--      of the IOT.
+-- ******************************************************************************
+
+    qbDwsIotIfConfTable OBJECT-TYPE
+    	SYNTAX      SEQUENCE OF QbDwsIotIfConfEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+		"The Quantum DWS interface table. One entry per each IOT's DWS interface."
+    	::= { qbDwsIotIfGroup 1 }
+
+    qbDwsIotIfConfEntry OBJECT-TYPE
+    	SYNTAX      QbDwsIotIfConfEntry
+	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+        	 "An entry in the Quantum Bridge DWS Interface Table. The ifIndex is a DWS
+		interface index from ifTable."
+    	INDEX    { qbDwsIotIfIndex }
+    	::= { qbDwsIotIfConfTable 1 }
+
+    QbDwsIotIfConfEntry ::=
+	SEQUENCE {
+	 	qbDwsIotIfIndex			InterfaceIndex,
+	 	qbDwsIotNetIfIndex	        InterfaceIndex,
+		qbDwsIotIfAddr			Integer32,
+		qbDwsIotIfConfPowerLevel	Integer32,
+		qbDwsIotIfConfEqDelay		TimeTicks,
+		qbDwsIotIfConfWaveLength	Integer32,
+		qbDwsIotIfUbrBw			QbBitRate,
+		qbDwsIotIfCbrBw			QbBitRate,
+		qbDwsIotIfTxStatus		QbDwsIfStatus,
+		qbDwsIotIfTxStatusLastChange	TimeStamp,
+	        qbDwsIotIfLastRangeTime	        TimeStamp
+	}
+
+    qbDwsIotIfIndex OBJECT-TYPE
+        SYNTAX      InterfaceIndex
+        MAX-ACCESS  not-accessible
+        STATUS      current
+        DESCRIPTION
+            	"The ifIndex of this interface in the ifTable."
+        ::= { qbDwsIotIfConfEntry 1 }
+
+    qbDwsIotNetIfIndex OBJECT-TYPE
+        SYNTAX      InterfaceIndex
+        MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+            	"The ifIndex of this PON interface in the ifTable."
+        ::= { qbDwsIotIfConfEntry 2 }
+
+    qbDwsIotIfAddr    OBJECT-TYPE
+    	SYNTAX      Integer32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	   "The IOT terminal address."
+    ::= { qbDwsIotIfConfEntry 3 }
+
+   qbDwsIotIfConfPowerLevel OBJECT-TYPE
+    	SYNTAX		Integer32
+    	MAX-ACCESS  	read-only
+    	STATUS      	current
+    	DESCRIPTION
+           "The DWS interface's power level."
+    ::= { qbDwsIotIfConfEntry 4 }
+
+    qbDwsIotIfConfEqDelay OBJECT-TYPE
+    	SYNTAX      TimeTicks
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+           "The equal Delay time (in hundredths of a second)."
+    ::= { qbDwsIotIfConfEntry 5 }
+
+   qbDwsIotIfConfWaveLength OBJECT-TYPE
+    	SYNTAX      Integer32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+           "The wave length value for this DWS interface."
+    	::= { qbDwsIotIfConfEntry 6 }
+
+   qbDwsIotIfUbrBw OBJECT-TYPE
+    	SYNTAX       QbBitRate
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+		"The object indicates the total UBR bandwidth rate
+		that is reserved for a given IOT interface.
+		This object is specified in Bits per second."
+    	::= { qbDwsIotIfConfEntry 7 }
+
+   qbDwsIotIfCbrBw OBJECT-TYPE
+    	SYNTAX       QbBitRate
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+		"The object indicates the total CBR bandwidth rate
+		that is reserved for a given IOT interface.
+		This object is specified in Bits per second."
+    	::= { qbDwsIotIfConfEntry 8 }
+
+   qbDwsIotIfTxStatus OBJECT-TYPE
+    	SYNTAX      QbDwsIfStatus
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+		"This objects indicates the status of the IOT DWS Port.
+                The txFailure(2) state indicates that  the laser transmitter
+		failed.
+		The rxFailure(3) state indicates that no signal was
+		detected within the expected timeslot window. It  
+		signals that there is a problem with the DWS port receiver.
+		When this object is changed, the ifOperStatus
+		and ifLastChnaged of this interface must also be changed.
+ 		Note: The trap is generated by the SNMP agent when the
+		IOT DWS status is changed. The trap contains the 		
+		IOAS DWS card interface index and IOT address."
+    	::= { qbDwsIotIfConfEntry 9 }
+
+   qbDwsIotIfTxStatusLastChange OBJECT-TYPE
+          SYNTAX  TimeStamp
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+                 "The value of MIB II's sysUpTime object at the
+                 time this DWS Interface enters its current status
+                 state." 
+          ::= { qbDwsIotIfConfEntry 10 }
+
+   qbDwsIotIfLastRangeTime OBJECT-TYPE
+          SYNTAX  TimeStamp
+          MAX-ACCESS  read-only
+          STATUS  current
+          DESCRIPTION
+                 "The value of MIB II's sysUpTime object at the
+                 last time when this IOT is ranged"
+          ::= { qbDwsIotIfConfEntry 11 }
+
+
+-- *****************************************************************************
+--	An extension of the Interface table that contains IOT DWS interfaces' summary
+-- 	statistics. Each IOT DWS Interface is represented by a single row of the
+--	table. This table provides statistiscs  above and beyond those
+--      defined in the ifTable.
+-- *****************************************************************************
+
+    qbDwsIotIfStatsTable OBJECT-TYPE
+    	SYNTAX      SEQUENCE OF QbDwsIotIfStatsEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+		"The Quantum Bridge IOT's terminal table. One entry per each RT."
+    	::= { qbDwsIotIfGroup 2 }
+
+    qbDwsIotIfStatsEntry OBJECT-TYPE
+    	SYNTAX      QbDwsIotIfStatsEntry
+	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+        	  "An entry in the Quantum DWS Interface Statistics Table."
+    	INDEX    { qbDwsIotIfIndex }
+    	::= { qbDwsIotIfStatsTable 1 }
+
+	QbDwsIotIfStatsEntry ::=
+	 SEQUENCE {
+		qbDwsIotIfStatsUtil			INTEGER,
+		qbDwsIotIfStatsOamRequests		Counter32,
+		qbDwsIotIfStatsOamResponses		Counter32,
+		qbDwsIotIfStatsOamEvents		Counter32,
+		qbDwsIotIfStatsOamBadMsgs		Counter32,
+		qbDwsIotIfStatsCrcErrs			Counter32,
+		qbDwsIotIfStatsTsHdrParityErrs		Counter32,
+		qbDwsIotIfStatsFrameLossErrs		Counter32,
+		qbDwsIotIfStatsSignalLossErrs		Counter32,		
+		qbDwsIotIfStatsRxAal1Cells	        Counter32,
+		qbDwsIotIfStatsTxAal1Cells	        Counter32		
+	}
+
+    qbDwsIotIfStatsUtil OBJECT-TYPE
+	SYNTAX      INTEGER (0..100)
+	UNITS       "percent"
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	"The object indicates the utilization of the Network  Interface
+		transmission rate capacity by the IOT DWS interface.
+		This object is specified in percents."
+    	::= { qbDwsIotIfStatsEntry 1 }
+
+    qbDwsIotIfStatsOamRequests	OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+              "The number of received downstream OAM request messages."
+        ::= { qbDwsIotIfStatsEntry 2 }
+
+   qbDwsIotIfStatsOamResponses OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+              "The number of transmitted upstream OAM response messages."
+        ::= { qbDwsIotIfStatsEntry 3 }
+
+   qbDwsIotIfStatsOamEvents OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+              "The number of OAM event messages originated by the interface."
+        ::= { qbDwsIotIfStatsEntry 4 }
+
+    qbDwsIotIfStatsOamBadMsgs	OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	   "The number of wrong OAM  messages received on this 
+		   interface."
+    	::= { qbDwsIotIfStatsEntry 5 }
+
+    qbDwsIotIfStatsCrcErrs	OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+               "The summary number of the IOT DWS CRC subframe and time slot header
+ 		CRC errors."
+        ::= { qbDwsIotIfStatsEntry 6 }
+
+    qbDwsIotIfStatsTsHdrParityErrs OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	   "The number of Time Slot header parity errors that have been detected
+		   on the interface."
+        ::= { qbDwsIotIfStatsEntry 7 }
+
+    qbDwsIotIfStatsFrameLossErrs	OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	   "The number of Loss frame errors that have been detected 
+		    on the interface."
+        ::= { qbDwsIotIfStatsEntry 8 }
+
+    qbDwsIotIfStatsSignalLossErrs	OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+        	   "The number of Loss signal errors that have been detected 
+		    on the interface."
+        ::= { qbDwsIotIfStatsEntry 9 }
+
+   qbDwsIotIfStatsRxAal1Cells	OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+              "The number of received AAL1 ATM cells."
+        ::= { qbDwsIotIfStatsEntry 10 }
+
+   qbDwsIotIfStatsTxAal1Cells	OBJECT-TYPE
+    	SYNTAX      Counter32
+    	MAX-ACCESS  read-only
+    	STATUS      current
+    	DESCRIPTION
+              "The number of transmitted ATM cells ."
+        ::= { qbDwsIotIfStatsEntry 11 }
+
+-- ******************************************************************************
+--	The Qunatum Bridge Packet Interface Table
+--
+--	The qbPktIotIfConfTable provides a cross-connection from AAL5 VCCs
+--	to IOT's packet connections. The table is used to associate
+-- 	DWS IOT's interfaces with corresponding AAL5 PVCs.
+--
+-- ******************************************************************************
+
+    qbIotPktIfConfTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF QbIotPktIfConfEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+		"The Quantum Bridge PKT configuration table contains
+		cross-connections between Ethernet interfaces and corresponding
+		PVC/AAL5 that are configured at a WAN port. An entry in the
+		table may be created, destroyed or modified.
+ 		This table lists all PVCs within the System that
+		send/receive packet traffic to/from the ATM cloud."
+    	::= { qbIotPktIfGroup 1 }
+
+    qbIotPktIfConfEntry OBJECT-TYPE
+    	SYNTAX      QbIotPktIfConfEntry
+	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+            "An entry in the Quantum Bridge IP configuration table. For
+	     every IP traffic flow, there is a corresponding row in
+	     this table 
+	     which contains a DWS interface index, and a VPI/VCI pair of PVC
+	     configured at a SONET port for a given DWS interface.
+ 	     The creation of a row in this table causes a corresponding entry
+             in the atmVclTable of the ATM-MIB to be automatically created
+             if an atmVclEntry with qbPktIotIfConfVpi and qbPktIotIfConfVci values
+	     does not exist.
+	     This corresponding entry can be removed only if the qbPktIotIfConfEntry
+ 	     is removed. The qbPktIotIfConfIndex of this table is an ifIndex of the DWS
+	     interface from the ifTable."
+    	INDEX    { qbIotPktIfConfIndex  }
+    	::= { qbIotPktIfConfTable 1 }
+
+    QbIotPktIfConfEntry ::=
+	SEQUENCE {
+		qbIotPktIfConfIndex 		InterfaceIndex,
+		qbAtmIfIndex 	 		InterfaceIndex,
+		qbIotPktIfConfVpi   		AtmVpIdentifier,
+		qbIotPktIfConfVci	 	AtmVcIdentifier,
+		qbIotPktIfConfConnName          DisplayString,
+		qbIotPktIfConfRxTrafficDescrIndex AtmTrafficDescrParamIndex,
+		qbIotPktIfConfTxTrafficDescrIndex AtmTrafficDescrParamIndex,
+		qbIotPktIfConfAdminStatus	AtmVorXAdminStatus,
+		qbIotPktIfConfOperStatus	AtmVorXOperStatus,
+		qbIotPktIfConfRowStatus 	RowStatus,
+		qbIotPktIfConfLoopback		QbEnableStatus,
+		qbIotPktIfConfConnKind	        QbPvcConnKind
+    	}
+
+    qbIotPktIfConfIndex	OBJECT-TYPE
+    	SYNTAX	    InterfaceIndex
+    	MAX-ACCESS  not-accessible
+    	STATUS	    current
+    	DESCRIPTION
+		"An interface index of the Ethernet port interface."
+	::= { qbIotPktIfConfEntry 1 }
+
+   qbAtmIfIndex	OBJECT-TYPE
+    	SYNTAX	    InterfaceIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"An interface index of the ATM interface that is
+		 stacked on top of the WAN/SONET interface."
+	::= { qbIotPktIfConfEntry 2 }
+
+    qbIotPktIfConfVpi  OBJECT-TYPE
+    	SYNTAX	    AtmVpIdentifier
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+ 		"A VPI of the AAL5 PVC that connects this
+		interface to the ATM cloud. This PVC is automatically configured
+		at the SONET port of the WAN card (atmVclTable)."
+	::= { qbIotPktIfConfEntry 3 }
+
+    qbIotPktIfConfVci  OBJECT-TYPE
+    	SYNTAX	    AtmVcIdentifier
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"A VCI of the AAL5 bi-directional PVC that connects this
+		interface to the ATM cloud. This PVC is automatically configured
+		or removed at the SONET port of the WAN card (atmVclTable)."
+	::= { qbIotPktIfConfEntry 4 }
+
+   qbIotPktIfConfConnName  OBJECT-TYPE
+    	SYNTAX	    DisplayString(SIZE(1..20))
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The textual name of the connection(PVC) as specified by
+		a user. It provides a non-volatile handle for this
+		PVC. The supplied name in the qbPktIotIfConfPvcName is associated
+                with the same PVC for as long as that PVC/conection remains."
+	::= { qbIotPktIfConfEntry 5 }
+
+   qbIotPktIfConfRxTrafficDescrIndex  OBJECT-TYPE
+    	SYNTAX	    AtmTrafficDescrParamIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		of the ATM Traffic Descriptor Table which applies
+		to the transmit direction of this VCL."
+	DEFVAL  { 3 }
+	::= { qbIotPktIfConfEntry 6 }
+
+   qbIotPktIfConfTxTrafficDescrIndex  OBJECT-TYPE
+    	SYNTAX	    AtmTrafficDescrParamIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		in the ATM Traffic Descriptor Table which
+		applies to the receive direction of this VCL."
+	DEFVAL  { 3 }
+	::= { qbIotPktIfConfEntry 7 }
+
+    qbIotPktIfConfAdminStatus	OBJECT-TYPE  
+	SYNTAX      AtmVorXAdminStatus
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+	  "The desired administrative status of the packet connection
+           The up and down states indicate that the traffic
+           flow is enabled or disabled respectively across the ATM cloud."
+   ::= { qbIotPktIfConfEntry 8 }
+
+   qbIotPktIfConfOperStatus OBJECT-TYPE
+        SYNTAX      AtmVorXOperStatus  
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		 "The current operational status of the connect."
+	::= { qbIotPktIfConfEntry 9 }   
+
+   qbIotPktIfConfRowStatus OBJECT-TYPE
+        SYNTAX      RowStatus
+        MAX-ACCESS  read-create
+        STATUS      current
+        DESCRIPTION
+            "The status column for this IOT ENET interface.
+	    This OBJECT can be set to:
+
+		createAndGo(4)
+            	destroy(6)
+
+            The following values may be read:
+            	active(1)
+
+			This object may only be set to createAndGo(4).
+
+			Setting this object to active(1) when its value
+			is already active(1) is a no-op.
+			
+			Setting this object to createAndGo(4) causes the agent
+			to attempt to create and commit the row based on
+			the contents of the objects in the row.  If all necessary
+			information is present in the row and the values are
+			acceptable to the agent, the agent will change the
+			status to active(1).  If any of the necessary objects
+			are not available, the agent will reject the creation
+			request.	
+
+			Setting this object to destroy(6) will remove the corresponding
+			entry in this table, and disable data traffic."
+        ::= { qbIotPktIfConfEntry 10 }
+
+  qbIotPktIfConfLoopback OBJECT-TYPE
+	SYNTAX      QbEnableStatus
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This object enables loopback on the IOT ENET  
+		enedpoint."
+    ::= { qbIotPktIfConfEntry   11}
+
+  qbIotPktIfConfConnKind   OBJECT-TYPE
+	SYNTAX        QbPvcConnKind 
+	MAX-ACCESS    read-create
+	STATUS        current
+	DESCRIPTION
+		 "The PVC connection type."
+    ::= {  qbIotPktIfConfEntry 12 }
+
+-- ******************************************************************************
+-- 	The qbIotTable - provides information for converting an IOT address into
+--	a serial number.
+--
+-- ******************************************************************************
+
+    qbIotAddrTable OBJECT-TYPE
+    	SYNTAX      SEQUENCE OF QbIotAddrEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+		"The Quantum Bridge IOT address table. This table contains
+		information to convert an IOT's address into an IOT's serial
+		number. This table has two indexes:
+		1. Interface index of the IOAS interface to which a terminal connects.
+		   The interface identified by a particular value of this index
+                    is the same as the interface identified by the same value of ifIndex.
+ 		2. IOT terminal address.
+		A row exists in this table for each discovered IOT terminal.
+		Whenever an IOT is discovered a row is added to the table"
+    	::= { qbIotAddrGroup 1 }
+
+    qbIotAddrEntry OBJECT-TYPE
+        SYNTAX  	QbIotAddrEntry
+        MAX-ACCESS  	not-accessible
+        STATUS  	current
+        DESCRIPTION
+               "For every IOT terminal there is a row in this
+	       table. This contains the IOT address and serial number." 
+        INDEX   { qbDwsNetIfIndex, qbIotAddr }
+        ::= { qbIotAddrTable 1 }
+
+    QbIotAddrEntry ::=
+        SEQUENCE {
+		qbIotAddr	Integer32,	
+                qbIotSerialNum	QbSerialNum
+   	}
+
+    qbIotAddr    OBJECT-TYPE
+    	SYNTAX      Integer32
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+        	   "The IOT's address."
+    ::= { qbIotAddrEntry 1 }
+
+    qbIotSerialNum OBJECT-TYPE
+	SYNTAX	    QbSerialNum
+	MAX-ACCESS  read-only
+        STATUS      current
+        DESCRIPTION
+               " The IOT's serial number."
+        ::= { qbIotAddrEntry 2 }
+
+-- ******************************************************************************
+-- 	The qbIotPortCrossConnectTable - table provides bi-directional cross-connections
+-- 	between two homogenious(DS1 to DS1, E1 to E1, Enet to Enet) IOT ports 
+--      within the OAS system.
+-- 	A row must be created in this table for each IOT to IOT cross-connected interfaces.
+--
+-- ******************************************************************************
+
+    qbIotPortCrossConnTable OBJECT-TYPE
+    	SYNTAX      SEQUENCE OF QbIotPortCrossConnEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+		"The Quantum Bridge IOT port cross-connection table. This table
+		defines all IOT port point-to-point cross-connections within 
+		a single OAS system. The connection can be set between two
+		Ethernet, two DS1 or two E1 ports on different
+		IOTs. The table has two indexes: the interface index
+		of the first end-point and the interface index of the
+		second endpoint.
+		Note: Connections that are listed in this table		
+		are not reflected in the atmVclTable. "
+    	::= { qbIotPortCrossConnGroup 1 }
+
+    qbIotPortCrossConnEntry OBJECT-TYPE
+    	SYNTAX      QbIotPortCrossConnEntry
+	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+               "An entry in the Quantum Bridge qbIotPortConnTable two
+	       contains a connection between the same port type of
+	       different IOTs."
+    	INDEX    { qbIotPortCrossConnEndpt1IfIndex, qbIotPortCrossConnEndpt2IfIndex}
+    	::= { qbIotPortCrossConnTable 1 }
+
+    QbIotPortCrossConnEntry ::=
+	SEQUENCE {
+		qbIotPortCrossConnEndpt1IfIndex		InterfaceIndex,
+		qbIotPortCrossConnEndpt2IfIndex		InterfaceIndex,
+		qbIotPortCrossConnAdminStatus		AtmVorXAdminStatus,
+		qbIotPortCrossConnOperStatus		AtmVorXOperStatus,		
+		qbIotPortCrossConnLastChange		AtmVorXLastChange,	
+		qbIotPortCrossConnRxTrafficDescrIndex	AtmTrafficDescrParamIndex,
+		qbIotPortCrossConnTxTrafficDescrIndex	AtmTrafficDescrParamIndex,
+		qbIotPortCrossConnName			DisplayString,	
+		qbIotPortCrossConnRowStatus		RowStatus,
+		qbIotPortCrossConnLoopback		QbEnableStatus,
+		qbIotPortCrossConnLoopbackEndpt		INTEGER,
+		qbIotPortCrossConnKind			QbPvcConnKind
+	}
+
+    qbIotPortCrossConnEndpt1IfIndex	OBJECT-TYPE
+    	SYNTAX	    InterfaceIndex
+    	MAX-ACCESS  not-accessible
+    	STATUS	    current
+    	DESCRIPTION
+		"The ifIndex of the first IOT port((end-point) for the configured IOT
+		cross-connect."
+	::= { qbIotPortCrossConnEntry  1 }
+
+    qbIotPortCrossConnEndpt2IfIndex  OBJECT-TYPE
+    	SYNTAX	    InterfaceIndex
+    	MAX-ACCESS  not-accessible
+    	STATUS	    current
+    	DESCRIPTION
+		"The ifIndex of the second IOT port(end-point) for the configured IOT
+		cross-connect."
+	::= { qbIotPortCrossConnEntry  2 }
+
+    qbIotPortCrossConnAdminStatus  OBJECT-TYPE
+    	SYNTAX	    AtmVorXAdminStatus
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		in the ATM Traffic Descriptor Table which
+		applies to the receive direction of this VCL."
+	::= { qbIotPortCrossConnEntry 3 }
+
+    qbIotPortCrossConnOperStatus OBJECT-TYPE
+        SYNTAX      AtmVorXOperStatus  
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		 "The current operational status of the connection."
+	::= { qbIotPortCrossConnEntry 4 }   
+
+    qbIotPortCrossConnLastChange OBJECT-TYPE
+        SYNTAX      AtmVorXLastChange  
+	MAX-ACCESS  read-only
+	STATUS      current
+	DESCRIPTION
+		 "The value of sysUpTime at the time this connection
+		  entered its current operational state."
+	::= { qbIotPortCrossConnEntry 5 }  
+
+   qbIotPortCrossConnRxTrafficDescrIndex  OBJECT-TYPE
+    	SYNTAX	    AtmTrafficDescrParamIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		of the ATM Traffic Descriptor Table which applies
+		to the transmit direction of this connection."
+	::= { qbIotPortCrossConnEntry 6 }
+
+   qbIotPortCrossConnTxTrafficDescrIndex  OBJECT-TYPE
+    	SYNTAX	    AtmTrafficDescrParamIndex
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		in the ATM Traffic Descriptor Table which
+		applies to the receive direction of this connection."
+	DEFVAL  { 3 }
+	::= { qbIotPortCrossConnEntry 7 }
+
+    qbIotPortCrossConnName  OBJECT-TYPE
+    	SYNTAX	    DisplayString (SIZE (0..20))
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The textual name of the connection as specified by
+		a user. It provides a non-volatile handle for this
+		connection. The supplied name in the qbIotPortConnName is associated
+                with the same connection for as long as that conection remains."
+	::= { qbIotPortCrossConnEntry 8 }
+ 
+    qbIotPortCrossConnRowStatus OBJECT-TYPE
+    	SYNTAX	    RowStatus
+    	MAX-ACCESS  read-create
+    	STATUS	    current
+    	DESCRIPTION
+		"The status of the port connect entry. Changing the value of this
+		 object from 'active' to 'destroy' will remove this entry from the
+		 database. It will disrupt traffic between two IOT packet interfaces."
+	::= { qbIotPortCrossConnEntry  9 }
+
+    qbIotPortCrossConnLoopback OBJECT-TYPE
+	SYNTAX      QbEnableStatus
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This object enables loopback on this IOT to IOT port  
+		enedpoint. The endpoint on which loopback is enabled
+		is defined by qbIotPortCrossConnLoopbackEndpt."
+	DEFVAL  { disable }
+    ::= { qbIotPortCrossConnEntry   10 }
+
+    qbIotPortCrossConnLoopbackEndpt OBJECT-TYPE
+	SYNTAX      INTEGER {
+		    endPt1(1),
+		    endPt2(2)
+	}
+	MAX-ACCESS  read-create
+	STATUS      current
+	DESCRIPTION
+		"This object defines loopback on the selected endpoint."
+	DEFVAL  { endPt1 }
+    ::= { qbIotPortCrossConnEntry   11 }
+
+    qbIotPortCrossConnKind   OBJECT-TYPE
+	SYNTAX        QbPvcConnKind 
+	MAX-ACCESS    read-create
+	STATUS        current
+	DESCRIPTION
+		 "The VCL connection type."
+    ::= {  qbIotPortCrossConnEntry 12 }
+
+-- ******************************************************************************
+-- 	The qbTContGroup - table provides provisioning of Traffic containers
+-- 	for IOTs
+--
+-- ******************************************************************************
+
+ qbTContNumber OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The total number of provisioned Ethernet to ATM PVCs."
+        ::= { qbTContGroup 1 }
+
+  qbNextFreeTContIndex OBJECT-TYPE
+        SYNTAX  Integer32
+        MAX-ACCESS  read-only
+        STATUS  current
+        DESCRIPTION
+		 "The next available Container index."
+        ::= { qbTContGroup 2 }
+
+   qbTContTable	    OBJECT-TYPE
+	SYNTAX	    SEQUENCE OF QbTContEntry
+    	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+		"The Quantum Bridge Traffic Container table(TCons) contains
+		traffic containers of IOTs."
+    	::= { qbTContGroup 3 }
+
+    qbTContEntry OBJECT-TYPE
+    	SYNTAX      QbTContEntry
+	MAX-ACCESS  not-accessible
+    	STATUS      current
+    	DESCRIPTION
+            "An entry in the qbTContTable. There is one entry in the
+	     table per IOT on the PON for Release 3.0.	     
+ 	     The creation of a row in the qbSysIotTable causes 
+	     a corresponding entry in this table to be automatically
+	     created. The deletion of a row in the qbSysIotTable
+	     causes a corresponding entry in this table to be
+	     automatically removed."
+    	INDEX    { qbSysIotSerialNumber, qbTContIndex  }
+    	::= { qbTContTable 1 }
+
+    QbTContEntry  ::=
+	SEQUENCE {
+		qbTContIndex		INTEGER,
+		qbTContType		INTEGER,
+		qbTContMaxBw		INTEGER,
+		qbTContFixedBw		INTEGER,
+		qbTContAssuredBw	INTEGER,
+		qbTContGrantNum		INTEGER
+    	}
+
+    qbTContIndex  OBJECT-TYPE
+    	SYNTAX	    INTEGER
+    	MAX-ACCESS  not-accessible
+    	STATUS	    current
+    	DESCRIPTION
+		"The value of this object identifies the row
+		of the Traffic Container Table. Note tht this
+		value can be set to 1 only for Release 3.0."
+	::= { qbTContEntry 1 }
+
+   qbTContType	OBJECT-TYPE
+    	SYNTAX	    INTEGER {
+		type1(1),
+		type2(2),
+		type3(3),
+		type4(4),
+		type5(5)	
+	}
+    	MAX-ACCESS  read-write
+    	STATUS	    current
+    	DESCRIPTION
+		 "The Traffic container type. 
+		  Note that this object can be set to type1 for 
+		 Release 3.0"
+	DEFVAL { type1 }	 
+	::= { qbTContEntry 2 }
+
+   qbTContMaxBw  OBJECT-TYPE
+    	SYNTAX	    INTEGER
+    	MAX-ACCESS  read-write
+    	STATUS	    current
+    	DESCRIPTION
+ 		"The maximum bandwidth to be assigned to this TCONT.
+		Note that the read-only access is supported for 
+		Release 3.0"
+	::= { qbTContEntry 3 }
+
+   qbTContFixedBw  OBJECT-TYPE
+    	SYNTAX	    INTEGER
+    	MAX-ACCESS  read-write
+    	STATUS	    current
+    	DESCRIPTION
+		"The lower limit of bandwidth for this TCONT."
+	::= { qbTContEntry 4 }
+
+   qbTContAssuredBw  OBJECT-TYPE
+    	SYNTAX	    INTEGER
+    	MAX-ACCESS  read-write
+    	STATUS	    current
+    	DESCRIPTION
+		"The guaranteed minimum bandwidth for this TCONT.
+		TCONT. Note that the read-only access is supported for 
+		Release 3.0"
+	::= { qbTContEntry  5 }
+
+  qbTContGrantNum  OBJECT-TYPE
+    	SYNTAX	    INTEGER
+    	MAX-ACCESS  read-write
+    	STATUS	    current
+    	DESCRIPTION
+		"FSAN grant number that is assigned to this TCONT.
+		Note that the read-only access is supported for 
+		Release 3.0"
+	::= { qbTContEntry  6 }
+
+-- ****************************************************************
+-- Dws Notifications - defines a group of traps for use by this MIB.
+--
+-- ****************************************************************
+
+    qbDwsNotificationPrefix OBJECT IDENTIFIER ::= { qbDwsNotifications 0 }
+
+    qbDwsIotRxLos NOTIFICATION-TYPE
+	OBJECTS       { qbDwsNetIfIndex, qbDwsIotIfAddr }
+        STATUS        current
+        DESCRIPTION
+ 		"A qbDwsIotRxLos trap indicates Loss of Signal by the
+		IOT's. This trap is generated by an IOT when Analog DS1/E1
+		Analog or Digital Los occur."
+        ::= { qbDwsNotificationPrefix 1}
+
+   qbDwsRxIoasLos NOTIFICATION-TYPE
+	OBJECTS       { qbDwsNetIfIndex, qbDwsIotIfAddr }
+        STATUS        current
+        DESCRIPTION
+ 		"A qbDwsRxIoasLos trap indicates Loss of Signal by the
+		IOAS's DWS receiver. This trap is generated by an IOAS DWS card
+		when no signal from an IOT is detected within the timeslot
+ 		window."
+        ::= { qbDwsNotificationPrefix 2 }
+
+   qbDwsIoasTxFailure NOTIFICATION-TYPE
+	OBJECTS       { qbDwsNetIfIndex }
+        STATUS        current
+        DESCRIPTION
+		"A qbDwsTxFailure trap indicates that the IOAS card transmitter does
+		not work. The trap is generated by an IOAS card when the IOAS DWS card
+		transmitter problem is detected. The trap contains the
+		DWS card interface index."
+        ::= { qbDwsNotificationPrefix 3 }
+
+   qbDwsIotRangeTimeout NOTIFICATION-TYPE
+	OBJECTS       { qbDwsNetIfIndex, qbDwsIotIfAddr }
+        STATUS        current
+        DESCRIPTION
+		"A qbDwsTxFailure trap indicates that IOT not
+		responding during the ranging process."
+        ::= { qbDwsNotificationPrefix 4 }
+
+
+-- ****************************************************************
+-- Conformance Information
+-- ****************************************************************
+
+    qbDwsCompliances OBJECT IDENTIFIER ::= { qbDwsConformance 1 }
+    qbDwsGroups      OBJECT IDENTIFIER ::= { qbDwsConformance 2 }
+
+--
+-- Compliance Statements
+--
+
+    qbDwsCompliance MODULE-COMPLIANCE
+	STATUS      current
+        DESCRIPTION
+       	 	"The compliance statement for all agents that support this
+          	MIB. A compliant agent implements all objects defined in this
+        	MIB."
+   	 MODULE  -- this module
+		MANDATORY-GROUPS {
+        	qbDwsNetGroup,
+        	qbDwsIotGroup,
+        	qbDwsPktGroup,
+        	qbDwsIotAddrGroup
+    	}
+    	::= { qbDwsCompliances 1 }
+
+--
+-- All Object Groups
+--
+    qbDwsNetGroupInfo OBJECT-GROUP
+		OBJECTS {
+			qbSysIotRecoverMode,	
+			qbDwsNetBw,
+			qbDwsNetAllocatedBw,
+			qbDwsNetAvailableBw,
+			qbDwsNetAllocatedUbrBw,
+			qbDwsNetAllocatedCbrBw,
+			qbDwsNetNumCbrConn,
+ 			qbDwsNetNumUbrConn,
+			qbDwsNetNumIot,
+			qbDwsNetTxStatus,
+			qbDwsNetTxStatusLastChange,
+			qbDwsNetLosIotAddr,
+			qbDwsNetLosIotTime,
+ 			qbDwsNetEncryptStatus,
+			qbDwsNetRangeMode,
+			qbDwsNetRxTsCount,
+			qbDwsNetTxTsCount,
+			qbDwsNetRxMissingTs,
+			qbDwsNetRxIllegalTs,
+			qbDwsNetTxJabberTs,
+			qbDwsNetTxOutOfFrameTs,
+			qbDwsNetTxHdrCrcTsErrs,
+    		qbDwsNetOamRequests,
+    		qbDwsNetOamResponses,
+    		qbDwsNetOamEvents,
+    		qbDwsNetOamBadMsgs
+ 		}
+	    STATUS      current
+    	DESCRIPTION
+        	"The set of all accessible objects in the DWS Network Group of this MIB."
+    	::= { qbDwsGroups 1 }     
+    	
+    	qbDwsIotGroupInfo OBJECT-GROUP
+		OBJECTS {
+			qbDwsIotIfAddr,
+			qbDwsIotIfConfPowerLevel,
+			qbDwsIotIfConfEqDelay,
+			qbDwsIotIfConfWaveLength,
+			qbDwsIotIfUbrBw,
+			qbDwsIotIfCbrBw,
+			qbDwsIotIfTxStatus,
+			qbDwsIotIfTxStatusLastChange,
+			qbDwsIotIfLastRangeTime,
+			qbDwsIotIfStatsUtil,
+			qbDwsIotIfStatsOamRequests,
+			qbDwsIotIfStatsOamResponses,
+			qbDwsIotIfStatsOamEvents,
+			qbDwsIotIfStatsOamBadMsgs,
+			qbDwsIotIfStatsCrcErrs,
+			qbDwsIotIfStatsTsHdrParityErrs,
+			qbDwsIotIfStatsFrameLossErrs,
+			qbDwsIotIfStatsSignalLossErrs,
+			qbDwsIotIfStatsRxAal1Cells,
+			qbDwsIotIfStatsTxAal1Cells
+ 		}
+	    STATUS      current
+    	DESCRIPTION
+        	"The set of all accessible objects in the IOT Group of this MIB."
+    	::= { qbDwsGroups 2 }
+
+	qbDwsPktGroupInfo OBJECT-GROUP
+		OBJECTS {
+			qbAtmIfIndex,
+			qbIotPktIfConfVpi,
+			qbIotPktIfConfVci,
+			qbIotPktIfConfConnName,
+			qbIotPktIfConfRowStatus
+ 		}
+	    STATUS      current
+    	DESCRIPTION
+        	"The set of all accessible objects in the Packet Group ofthis MIB."
+    	::= { qbDwsGroups 3 }
+
+qbDwsIotAddrGroupInfo OBJECT-GROUP
+		OBJECTS {
+			qbIotSerialNum 		
+		}
+	    STATUS      current
+    	DESCRIPTION
+        	"The set of all accessible objects in the IOT address group of this MIB."
+    	::= { qbDwsGroups 4 }
+
+
+END
+
+--
+--  REFERENCES
+---
+-- 1. The Interfaces Group MIB using SMIv2 (RFC2233).
+-- 2. Definitions of Managed Objects for ATM Management (RFC2515).
+-- 3. ATM Forum Enterprise CES MIB (af-vtoa-0078.000).
+-- 4. Interface Evolution (RFC2233)
+

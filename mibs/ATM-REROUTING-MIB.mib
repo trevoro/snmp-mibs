@@ -1,0 +1,1273 @@
+ATM-REROUTING-MIB DEFINITIONS ::= BEGIN
+    IMPORTS
+            MODULE-IDENTITY, OBJECT-TYPE, enterprises, 
+            Integer32, Unsigned32, Counter32
+                    FROM SNMPv2-SMI
+            MODULE-COMPLIANCE, OBJECT-GROUP
+                    FROM SNMPv2-CONF
+            TEXTUAL-CONVENTION, RowStatus
+                    FROM SNMPv2-TC
+            InterfaceIndex, ifIndex
+                    FROM IF-MIB
+            AtmAddr 
+                    FROM ATM-TC-MIB
+            atmVplVpi, atmVclVpi, atmVclVci
+                    FROM ATM-MIB;
+
+atmfreroutingMIB MODULE-IDENTITY
+    LAST-UPDATED    "200104260000Z"
+    ORGANIZATION    "The ATM Forum"
+    CONTACT-INFO
+        "The ATM Forum Worldwide Headquarters
+         1000 Executive Parkway, Suite 220,
+         St. Louis, MO 63141-6372
+         Tel:  +1 314-205-0200
+         Fax: +1 314-576-7960         
+         Email: info@atmforum.com"
+    DESCRIPTION
+        "The MIB module for managing the ATM Forum 
+         Domain-based rerouting for active point-to-point calls v1.0"
+    REVISION "200104260000Z"
+    DESCRIPTION
+      "Initial version of the MIB module for managing the ATM Forum
+       Domain-based rerouting for active point-to-point calls v1.0"
+   ::= { atmfRerouting 1 }
+
+-- The object identifier subtree for the ATM Forum domain-based 
+-- rerouting MIB
+
+atmForum                   OBJECT IDENTIFIER ::= { enterprises 353 }
+atmForumNetworkManagement  OBJECT IDENTIFIER ::= { atmForum 5 }
+atmfSignalling             OBJECT IDENTIFIER ::= { atmForumNetworkManagement 9 }
+atmfRerouting              OBJECT IDENTIFIER ::= { atmfSignalling 3 }
+
+
+--
+-- The ATM Forum REROUTING MIB contains the following groups:
+--
+-- (1) Rerouting services configuration base group
+-- (2) Rerouting services configuration table (filters)
+-- (3) Rerouting attributes per VPL
+-- (4) Rerouting attributes per VCL
+--
+-- The rerouting MIB can be used to configure and monitor rerouting
+-- services on a switching system, on an end system or on an 
+-- inter-networking device.
+--
+-- Rerouting services are only supported for point-to-point calls.
+--
+-- The reroutingFilterTable is used to configure
+-- the availability and request of rerouting services for a call on a 
+-- per filter basis. A filter can be specified to match the interface,
+-- the class of service, the type of connection (svc, spvc, svp, spvp)
+-- and the calling or called party address.
+--
+-- The reroutingVpTable and reroutingVcTable are used to monitor
+-- what rerouting services have been activated for a call, the
+-- current rerouting state of a call, and provide counters for
+-- successful and unsuccessful rerouting operations.
+--
+-- When using this MIB to configure end systems, 
+-- some objects are not available. The objects relevant
+-- for end systems can be found in the conformance statements.
+--
+-- The rerouting objects defined in this MIB are available on
+-- inter-domain interfaces.
+
+
+reroutingMIBObjects OBJECT IDENTIFIER ::= { atmfreroutingMIB 1 }
+
+-- ========================================
+-- Domain-based rerouting types definitions
+-- ========================================
+
+NetworkReroutingCapabilities ::= TEXTUAL-CONVENTION
+    STATUS        current
+    DESCRIPTION
+        "Indicates the network rerouting services available 
+         on a switching system."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    SYNTAX        BITS {
+                        dbrHardRerouting (0), 
+                        dbrAsymmetricSoftRerouting (1),
+                        dbrSymmetricSoftRerouting (2)
+                       }
+
+HardReroutingServicesClass ::= TEXTUAL-CONVENTION
+    STATUS        current
+    DESCRIPTION
+        "Indicates the service of the hard rerouting services class 
+         which is requested/activated for a call."
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    SYNTAX        INTEGER {
+                           none (1),
+                           dbrInterDomainHardRerouting (2), 
+                           dbrIntraDomainHardRerouting (3) 
+                          }
+
+SoftReroutingServicesClass ::= TEXTUAL-CONVENTION
+    STATUS        current
+    DESCRIPTION
+        "Indicates the service of the soft rerouting
+         services class which is requested/activated for 
+         a call."
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    SYNTAX        INTEGER {
+                           none (1),
+                           dbrIntraDomainAsymmetricSoftRerouting (2), 
+                           dbrIntraDomainSymmetricSoftRerouting (3) 
+                          }
+
+ReroutingNodeRole ::= TEXTUAL-CONVENTION
+    STATUS        current
+    DESCRIPTION
+        "Describes whether the node is the source node or
+         the destination node for a call."
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    SYNTAX        INTEGER {
+                           other (1),
+                           sourceNode (2), 
+                           destinationNode (3)
+                          }
+
+ReroutingState ::= TEXTUAL-CONVENTION
+    STATUS        current
+    DESCRIPTION
+        "Indicates the type of the rerouting operation in 
+         progress.
+
+         The following mapping is done between the rerouting
+         states of the FSM and the values of this object:
+
+         FSM state                  ReroutingState
+         ---------                  --------------
+         null                    -> idle 
+         reroutingIdle           -> idle
+         hardRerouteTriggered    -> hardReroute
+         hardRerouteProceeding   -> hardReroute
+         hardRerouteIndicated    -> hardReroute
+         hardRerouteInitiated    -> hardReroute
+         softRerouteTriggered    -> softReroute
+         softRerouteProceeding   -> softReroute
+         softRerouteInitiated    -> softReroute
+         awaitingSwitchover      -> softReroute
+        "
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    SYNTAX        INTEGER {
+                           idle (1),
+                           hardReroute (2),
+                           softReroute (3)
+                          }
+
+ExtendedReroutingState ::= TEXTUAL-CONVENTION
+    STATUS        current
+    DESCRIPTION
+        "Describes the different states of the rerouting
+         finite state machine. The states varies depending
+         on the rerouting services activated for a call and
+         on the role of the edge switch for the call 
+         (source vs destination node)"
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    SYNTAX        INTEGER {
+                           null (1),
+                           reroutingIdle (2),
+                           hardRerouteTriggered (3), 
+                           hardRerouteProceeding (4), 
+                           hardRerouteIndicated (5),
+                           hardRerouteInitiated (6), 
+                           softRerouteTriggered(7), 
+                           softRerouteProceeding(8), 
+                           softRerouteInitiated(9), 
+                           awaitingSwitchover(10) 
+                          }
+
+-- ========================================
+-- Domain-based rerouting capabilities
+-- ========================================
+
+reroutingBaseGroup OBJECT IDENTIFIER ::= { reroutingMIBObjects 1 }
+
+reroutingVersion OBJECT-TYPE
+    SYNTAX        INTEGER {unsupported (1), version1point0 (2)}
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The version of the ATM Forum rerouting specification 
+         that the software in this switching system is capable of 
+         executing."
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    ::= { reroutingBaseGroup 1 }
+
+reroutingCapabilitiesSupported OBJECT-TYPE
+    SYNTAX        BITS {
+                        dbrHardRerouting (0), 
+                        dbrAsymmetricSoftRerouting (1),
+                        dbrSymmetricSoftRerouting (2)
+                       }
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the rerouting mechanisms supported on 
+         this switching system"
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    ::= { reroutingBaseGroup 2 }
+
+reroutingHardReroutingTime OBJECT-TYPE
+    SYNTAX        Unsigned32
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The timeout value in milliseconds for a hard rerouting  
+         operation to be completed. The hard rerouting timer is set 
+         to this value when a hard rerouting operation is triggered.
+
+         A value of zero indicates that there is no timeout"
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    ::= { reroutingBaseGroup 3 }
+
+reroutingFilterTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF ReroutingFilterEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "The table is used to configure the rerouting services of a
+         call during the initial call establishment. The configuration
+         includes:
+           - the availability of rerouting services, 
+           - the request for inter and intra-domain rerouting services. 
+           - the applicability of the configuration to svc, spvc, svp,
+             spvp. 
+
+         The configuration of rerouting services is based on a filter. 
+         Incoming setups and outgoing setups on inter-domain interfaces 
+         (e.g. UNI, AINI, inter-domain PNNI) are matched against the    
+         filters contained in this table. The configuration of the  
+         rerouting services contained in a row of this table apply if   
+         the setup message matches the filtering criteria contained  
+         in the row.
+
+         If the setup message matches several filters of this table, 
+         the resulting configuration of the rerouting services is  
+         implementation dependent.
+
+         An entry in this table configures the rerouting services for
+         SVCs, SVPs, soft PVCs, and soft PVPs. The configuration 
+         Applies to point-to-point calls only."
+     REFERENCE
+        "Domain-based rerouting v1.0"
+    ::= { reroutingMIBObjects 2 }
+
+reroutingFilterEntry OBJECT-TYPE
+    SYNTAX        ReroutingFilterEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "Each entry in this table defines a filter to match against 
+         incoming/outgoing setups on inter-domain interfaces. Each 
+         entry also contains the configuration of the rerouting  
+         services for a call matching the filter. 
+
+         Matching is performed on incoming setup indications and  
+         Outgoing setup requests of svcs and svps when the switching  
+         system is the edge switch for the call. The matching is done  
+         on the inter-domain interface.
+
+         A setup message is matching a filter entry, if all the 
+         attributes contained in the filter match the setup message. 
+         The matching criteria is contained in the description of each
+         object. 
+
+         The entry is also used to configure the rerouting services for
+         soft pvcs or soft pvps whose terminating legs are located on 
+         an interface of this switch.
+
+         A new entry can be created by specifying an atmTraceFilterIndex
+         value that is currently not being used and also using an
+         appropriate value (createAndGo or createAndWait) for the
+         reroutingFilterRowStatus object.
+
+         The reroutingFilterIndex is used as the instance ID to  
+         Uniquely identify a filter configured on this switching 
+         system."
+    INDEX { reroutingFilterIndex}
+    ::= { reroutingFilterTable 1 }
+
+ReroutingFilterEntry ::=
+    SEQUENCE {
+      reroutingFilterIndex                           INTEGER,
+      reroutingFilterIfDirection                     INTEGER,
+      reroutingFilterInterface                       InterfaceIndex,
+      reroutingFilterConnKind                        BITS,
+      reroutingFilterServiceCategory                 BITS,
+      reroutingFilterCallingPartyPrefix              AtmAddr,
+      reroutingFilterCallingPartyLength              Integer32,
+      reroutingFilterCalledPartyPrefix               AtmAddr,
+      reroutingFilterCalledPartyLength               Integer32,
+      reroutingFilterNetworkServicesAvailable        NetworkReroutingCapabilities,
+      reroutingFilterHardReroutingServiceRequest     HardReroutingServicesClass,
+      reroutingFilterSoftReroutingServiceRequest     SoftReroutingServicesClass,
+      reroutingFilterRowStatus                       RowStatus
+             }
+
+reroutingFilterIndex OBJECT-TYPE
+    SYNTAX        INTEGER (1..65535)
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An arbitrary integer uniquely identifying a filter
+         in this table."
+    REFERENCE
+        "Domain-based rerouting 1.0"
+    ::= { reroutingFilterEntry 1}
+
+reroutingFilterIfDirection  OBJECT-TYPE
+    SYNTAX     INTEGER {
+                        none (0),
+                        in (1),
+                        out (2),
+                        both (3)
+                       }
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+        "The combination of this object and the corresponding instance
+         of reroutingFilterInterface is one selection criteria for
+         this filter entry.  If the value of this object is different 
+         from 'none', the object restricts the scope of the filter to 
+         calls which enter, exit or both enter and exit the ATM device 
+         through the port represented by reroutingFilterInterface. 
+         Calls initiated or terminated at this port (e.g. Soft PVCs) 
+         are also scoped.
+
+         When this object has the value 'none', it indicates that the 
+         scope of the filter is not restricted by the port."
+    REFERENCE
+        "Domain-based rerouting v1.0"
+    DEFVAL     { none }
+    ::= { reroutingFilterEntry 2 }
+
+reroutingFilterInterface  OBJECT-TYPE
+    SYNTAX     InterfaceIndex
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+        "The combination of this object and the corresponding instance
+         of reroutingIfDirection is one selection criteria
+         for this filter entry. This object restricts the scope of the 
+         filter to calls which enter, exit or both enter and exit the 
+         ATM device through the port represented by this object. Calls 
+         initiated or terminated at this port (e.g. Soft PVCs) are also
+         scoped.
+
+         When reroutingFilterCallDirection has the value 'none', the 
+         value contained in this object is ignored and the scope 
+         of the filter is not restricted by the port."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingFilterEntry 3 }
+
+reroutingFilterConnKind  OBJECT-TYPE
+    SYNTAX     BITS {
+                      other(0),
+                      svcAndSpvcNotInitiator(1),
+                      spvcInitiator(2),
+                      svpAndSpvpNotInitiator(3),
+                      spvpInitiator(4)
+                      }
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+       "Indicates if the configuration defined in this entry applies 
+        to:
+         - 'svcAndSpvcNotInitiator' to switched virtual channels only.
+         - 'spvcInitiator' to soft permanent virtual channels, 
+            when initiated or terminated on this switching system.
+         - 'svpAndSpvpNotInitiator' to switched virtual paths only.
+         - 'spvpInitiator' to soft permanent virtual paths, 
+            when initiated or terminated on this switching system."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingFilterEntry 4 }
+
+reroutingFilterServiceCategory OBJECT-TYPE
+    SYNTAX     BITS {
+                      cbr(0),
+                      rtVbr(1),
+                      nrtVbr(2),
+                      abr(3),
+                      ubr(4),
+                      gfr(5),
+                      other(6)
+                      }
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+        "This object restricts the scope of the filter to calls
+         belonging to service categories represented by this object."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingFilterEntry 5 }
+
+reroutingFilterCallingPartyPrefix     OBJECT-TYPE
+    SYNTAX     AtmAddr
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+        "The combination of this object and the corresponding instance
+         of reroutingFilterCallingPartyLength is one selection criteria
+         for this record.  To match this selection criteria, a
+         call setup must have a Calling Party Address which has
+         an initial part (of length reroutingFilterCalledPartyLength
+         bits) equal in value to reroutingFilterCallingParty.  When 
+         the default value for the object is retained then the call 
+         will match this filtering criteria for any calling address in 
+         the call, or if the calling party number is not present in the
+         call.  The value must be padded with zeros from
+         reroutingFilterCallingPartyLength to the full length of the
+         address (8 octets for E.164 numbers and 20 octets for AESAs)."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    DEFVAL     { "" }
+    ::= { reroutingFilterEntry 6 }
+
+reroutingFilterCallingPartyLength OBJECT-TYPE
+    SYNTAX     Integer32 (1..160)
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+        "This object specifies the number of bits in
+         reroutingFilterCallingParty that shall be used when matching
+         against the calling party of a new call setup."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    DEFVAL     { 152 }
+    ::= { reroutingFilterEntry 7 }
+
+reroutingFilterCalledPartyPrefix      OBJECT-TYPE
+    SYNTAX     AtmAddr
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+        "The combination of this object and the corresponding instance 
+         of reroutingFilterCalledPartyLength is one selection criteria 
+         for this record.  To match this selection criteria, a 
+         connection segment setup must have a called party address 
+         which has an initial part (of length 
+         reroutingFilterCalledPartyLength bits) equal in value to 
+         reroutingFilterCalledParty. When the default value for the 
+         object is retained then the call will match this  filtering 
+         criteria for any called address in the all. The value must be 
+         padded with zeros from reroutingFilterCalledPartyLength to 
+         the full length of the address (8 octets for E.164 numbers and
+         20 octets for AESAs)."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    DEFVAL     {""}
+    ::= { reroutingFilterEntry 8 }
+
+reroutingFilterCalledPartyLength  OBJECT-TYPE
+    SYNTAX     Integer32 (1..160)
+    MAX-ACCESS read-create
+    STATUS     current
+    DESCRIPTION
+        "This object specifies the number of bits in
+         reroutingFilterCalledParty that shall be used when matching
+         against the called party of a new call setup."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    DEFVAL     { 152 }
+    ::= { reroutingFilterEntry 9 }
+
+reroutingFilterNetworkServicesAvailable OBJECT-TYPE
+    SYNTAX        NetworkReroutingCapabilities
+    MAX-ACCESS    read-create
+    STATUS        current
+    DESCRIPTION
+        "Indicates what network rerouting services are 
+         locally available for a call when it matches this filter. 
+         If a rerouting service is not available, the negotiation 
+         protocol of rerouting services ensures that the service 
+         cannot be activated for the call within this rerouting domain.
+
+         This object can be used to filter and disable the services 
+         requested by a user.
+
+         The determination of the values indicated in the 
+         Rerouting Service IE is described in sections 6.2.1 and
+         6.3.2."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingFilterEntry 10}
+
+
+reroutingFilterHardReroutingServiceRequest OBJECT-TYPE 
+    SYNTAX       HardReroutingServicesClass
+    MAX-ACCESS   read-create 
+    STATUS       current 
+    DESCRIPTION 
+        "Indicates which hard rerouting service is requested by the 
+         network on behalf of the user when a setup matches this
+         address filter.
+
+         'none' means that no hard rerouting service is requested 
+         for the call.
+
+         'dbrInterDomainHardRerouting' means that the Domain-based 
+         hard rerouting service is requested end to end for
+         the call. In addition the intra-domain hard rerouting service 
+         is requested for the call. Conditions for the request the 
+         inter-domain hard rerouting service are described in sections
+         6.2.1 and 6.3.2.
+
+         'dbrIntraDomainHardRerouting' means that the Domain-based 
+         hard rerouting service is requested for the call
+         within this rerouting domain only. This value can be set if 
+         the switch is connected directly to the ATM end system, or if
+         it is connected to another switch with an inter-domain 
+         interface (e.g. AINI, UNI, inter-domain PNNI)
+
+         The service specified in this object is only requested for the
+         call if the service is available for this interface.
+         (see object reroutingFilterNetworkServicesAvailable).
+
+         The determination of the activation of the service depends on
+         the service availability at the other edge nodes. The 
+         procedures are described in sections 6.2.1 and  6.3.2."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    DEFVAL { none }
+    ::= { reroutingFilterEntry 11}
+
+reroutingFilterSoftReroutingServiceRequest OBJECT-TYPE 
+    SYNTAX       SoftReroutingServicesClass
+    MAX-ACCESS   read-create 
+    STATUS       current 
+    DESCRIPTION 
+        "Indicates which soft rerouting service is requested by the 
+         network on behalf of the user when a setup matches this
+         address filter.
+
+         'none' means that no soft rerouting service is requested 
+         for the call.
+
+         'dbrIntraDomainAsymmetricSoftRerouting' means that the  
+         Domain-based asymmetric soft rerouting service is requested
+         for the call within this rerouting domain only. This value 
+         can be set if the switch is connected directly to the ATM end  
+         system, or if it is connected to another switch with an 
+         inter-domain interface (e.g. AINI, UNI, inter-domain PNNI)
+
+         'dbrIntraDomainSymmetricSoftRerouting' means that the 
+         Domain-based symmetric soft rerouting service is requested 
+         for the call within this rerouting domain only. This value  
+         can be set if the switch is connected directly to the 
+         ATM end system, or if it is connected to another switch with 
+         an inter-domain interface (e.g. AINI, UNI, inter-domain PNNI)
+
+         The service specified in this object is only requested for the
+         call if the service is available for this interface.
+         (see object reroutingFilterInterNetworkServicesAvailable)
+
+         The determination of the activation of the service depends on
+         the service availability at the other edge nodes. The
+         procedures are described in sections 6.2.1 and 6.3.2."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    DEFVAL { none }
+    ::= { reroutingFilterEntry 12}
+
+reroutingFilterRowStatus OBJECT-TYPE
+    SYNTAX        RowStatus
+    MAX-ACCESS    read-create
+    STATUS        current
+    DESCRIPTION
+        "To create, delete, activate and de-activate a
+         filter for the configuration of the rerouting 
+         services."
+    ::= { reroutingFilterEntry 13}
+
+
+-- ========================================
+-- Vpl table for rerouting 
+-- ========================================
+
+reroutingVpTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF ReroutingVpEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "The table used to describe the rerouting
+         attributes of a Pt-to-Pt svp or spvp.
+
+         The entire reroutingVpTable is read-only reflecting
+         the fact that reroutable connections are created
+         through the ATM signalling protocol rather than configured."
+     REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingMIBObjects 3 }
+
+reroutingVpEntry OBJECT-TYPE
+    SYNTAX        ReroutingVpEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "Each entry in this table contains the rerouting 
+         attributes of a SVP or Soft PVP connection.
+
+         The content of this table reflects only the rerouting values 
+         associated with VPCs. This table is similar to the atmVclTable
+         specified in ATM-MIB (RFC 2515).
+
+         Entries are included for Vpls for which this is the source 
+         interface or the destination interface in the rerouting 
+         domain. Entries may be included for Vpls at the endpoints
+         of the connection (see the 
+         reroutingVpHardReroutingServiceActivated object).
+
+         This entry serves to identify the VPL on the interface."
+    INDEX { ifIndex, atmVplVpi }
+    ::= { reroutingVpTable 1 }
+
+ReroutingVpEntry ::=
+    SEQUENCE {
+      reroutingVpNodeRole                          ReroutingNodeRole,
+      reroutingVpRemoteNodeAddress                 AtmAddr,
+      reroutingVpHardReroutingServiceActivated     HardReroutingServicesClass,
+      reroutingVpSoftReroutingServiceActivated     SoftReroutingServicesClass,
+      reroutingVpReroutingState                    ReroutingState,
+      reroutingVpReroutingOperationSuccessCounter  Counter32,
+      reroutingVpReroutingOperationFailuresCounter Counter32,
+      reroutingVpLocalIncarnationNumber            INTEGER,
+      reroutingVpRemoteIncarnationNumber           INTEGER,
+      reroutingVpExtendedReroutingState            ExtendedReroutingState
+             }
+
+reroutingVpNodeRole OBJECT-TYPE
+    SYNTAX        ReroutingNodeRole
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates if the switch is the source node or the 
+         destination node for the call."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVpEntry 1 }
+
+reroutingVpRemoteNodeAddress OBJECT-TYPE
+    SYNTAX        AtmAddr
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Contains the ATM address of the remote edge node"
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVpEntry 2 }
+
+reroutingVpHardReroutingServiceActivated OBJECT-TYPE 
+    SYNTAX       HardReroutingServicesClass
+    MAX-ACCESS   read-only
+    STATUS       current 
+    DESCRIPTION 
+        "Indicates which hard rerouting service is activated for
+         this call.
+         'none' means that no hard rerouting service is activated 
+         for the call.
+
+         On a switch, 'dbrInterDomainHardRerouting' means that the 
+         Domain-based hard rerouting service has been requested end to 
+         end for the call, and that it is activated within this 
+         rerouting domain.
+
+         On an end system, 'dbrInterDomainHardRerouting' means
+         the hard rerouting service has been requested end to end 
+         for the call, and that at least one rerouting domain along 
+         the path has activated it. 
+
+         'dbrIntraDomainHardRerouting' means that the Domain-based 
+         hard rerouting service is activated for the call
+         within this rerouting domain only."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVpEntry 3 }
+
+reroutingVpSoftReroutingServiceActivated OBJECT-TYPE 
+    SYNTAX       SoftReroutingServicesClass
+    MAX-ACCESS   read-only 
+    STATUS       current 
+    DESCRIPTION 
+        "Indicates which soft rerouting service is activated for this
+         call.
+         'none' means that no soft rerouting service is activated 
+         for the call.
+
+         'dbrIntraDomainAsymmetricSoftRerouting' means that the 
+         Domain-based asymmetric soft rerouting service is activated 
+         for the call within this rerouting domain only. 
+
+         'dbrIntraDomainSymmetricSoftRerouting' means that the 
+         Domain-based symmetric soft rerouting service is activated 
+         for the call within this rerouting domain only."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVpEntry 4 }
+
+reroutingVpReroutingState OBJECT-TYPE
+    SYNTAX        ReroutingState
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates if a rerouting operation is in progress
+         and what type of rerouting operation is in progress.
+        
+         'idle' indicates that no rerouting operation is
+         in progress.
+ 
+         'hardRerouting' indicates that a hard rerouting operation
+         is in progress.
+
+         'softRerouting' indicates that a soft rerouting operation
+         is in progress."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVpEntry 5 }
+
+reroutingVpReroutingOperationSuccessCounter OBJECT-TYPE
+    SYNTAX        Counter32
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the number of rerouting operations
+         initiated by this node that succeeded on this call.
+
+         The establishment of the initial call is not counted"
+    ::= { reroutingVpEntry 6 }
+
+reroutingVpReroutingOperationFailuresCounter OBJECT-TYPE
+    SYNTAX        Counter32
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the number of rerouting operations 
+         initiated by this node that failed on this call."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVpEntry 7 }
+
+reroutingVpLocalIncarnationNumber OBJECT-TYPE
+    SYNTAX        INTEGER (0..65535)
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the current local incarnation number associated 
+         with the call. The value contained in this object is the 
+         incarnation number of the last reroute setup that was 
+         sent by this node for this call.
+
+         The value zero indicates that no reroute setup has been
+         sent for this call.
+
+         This object is not instantiated if this node is
+         the destination node of the call and symmetric soft 
+         rerouting is not activated for the call"
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVpEntry 8 }
+
+reroutingVpRemoteIncarnationNumber OBJECT-TYPE
+    SYNTAX        INTEGER (0..65535)
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the current remote incarnation number associated 
+         with the call. The value contained in this object is the 
+         incarnation number of the last reroute setup that was 
+         received by this node for this call.
+
+         The value zero indicates that no reroute setup has been
+         received for this call.
+
+         This object is not instantiated if this node is
+         the source node of the call and symmetric soft 
+         rerouting is not activated for the call"
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVpEntry 9 }
+
+reroutingVpExtendedReroutingState OBJECT-TYPE
+    SYNTAX        ExtendedReroutingState
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the current rerouting state of the call,
+         as defined in the rerouting Finite State Machine."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0 sections 6.2.3, 6.3.3"
+    ::= { reroutingVpEntry 10 }
+
+-- ========================================
+-- Vcl table for rerouting 
+-- ========================================
+
+reroutingVcTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF ReroutingVcEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "The table used to describe the rerouting related
+         attributes of a Pt-to-Pt svc or spvc.
+
+         The entire reroutingVcTable is read-only reflecting
+         the fact that reroutable connections are created
+         through the ATM signalling protocol rather than configured."
+     REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingMIBObjects 4 }
+
+reroutingVcEntry OBJECT-TYPE
+    SYNTAX        ReroutingVcEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "Each entry in this table contains the rerouting 
+         attributes of a SVC or Soft PVC connection.
+
+         The content of this table reflects only the rerouting values 
+         associated with VCCs. This table is similar to the atmVclTable
+         specified in ATM-MIB (RFC 2515).
+
+         Entries are included for Vcls for which this is the source 
+         interface or the destination interface in the rerouting 
+         domain. Entries may be included for Vcls at the endpoints
+         of the connection (see the 
+         reroutingVcHardReroutingServiceActivated object).
+
+         This entry serves to identify the VCL on the interface."
+    INDEX{ ifIndex, atmVclVpi, atmVclVci }
+    ::= { reroutingVcTable 1 }
+
+ReroutingVcEntry ::=
+    SEQUENCE {
+      reroutingVcNodeRole                          ReroutingNodeRole,
+      reroutingVcRemoteNodeAddress                 AtmAddr,
+      reroutingVcHardReroutingServiceActivated     HardReroutingServicesClass,
+      reroutingVcSoftReroutingServiceActivated     SoftReroutingServicesClass,
+      reroutingVcReroutingState                    ReroutingState,
+      reroutingVcReroutingOperationSuccessCounter  Counter32,
+      reroutingVcReroutingOperationFailuresCounter Counter32,
+      reroutingVcLocalIncarnationNumber            INTEGER,
+      reroutingVcRemoteIncarnationNumber           INTEGER,
+      reroutingVcExtendedReroutingState            ExtendedReroutingState
+             }
+
+reroutingVcNodeRole OBJECT-TYPE
+    SYNTAX        ReroutingNodeRole
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates if the switch is the source node or the 
+         destination node for the call."
+    ::= { reroutingVcEntry 1 }
+
+reroutingVcRemoteNodeAddress OBJECT-TYPE
+    SYNTAX        AtmAddr
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Contains the ATM address of the remote edge node"
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVcEntry 2 }
+
+reroutingVcHardReroutingServiceActivated OBJECT-TYPE 
+    SYNTAX       HardReroutingServicesClass
+    MAX-ACCESS   read-only
+    STATUS       current 
+    DESCRIPTION 
+        "Indicates which hard rerouting service is activated for
+         this call.
+
+         'none' means that no hard rerouting service is activated 
+         for the call.
+
+         On a switch, 'dbrInterDomainHardRerouting' means that the 
+         Domain-based hard rerouting service has been requested end to 
+         end for the call, and that it is activated within this 
+         rerouting domain.
+
+         On an end system, 'dbrInterDomainHardRerouting' means
+         the hard rerouting service has been requested end to end 
+         for the call, and that at least one rerouting domain along 
+         the path has activated it. 
+ 
+         'dbrIntraDomainHardRerouting' means that the Domain-based 
+         hard rerouting service is activated for the call
+         within this rerouting domain only."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVcEntry 3 }
+
+reroutingVcSoftReroutingServiceActivated OBJECT-TYPE 
+    SYNTAX       SoftReroutingServicesClass
+    MAX-ACCESS   read-only 
+    STATUS       current 
+    DESCRIPTION 
+        "Indicates which soft rerouting service is activated for this
+         call.
+
+         'none' means that no soft rerouting service is activated 
+         for the call.
+
+         'dbrIntraDomainAsymmetricSoftRerouting' means that the 
+         Domain-based asymmetric soft rerouting service is activated 
+         for the call within this rerouting domain only. 
+
+         'dbrIntraDomainSymmetricSoftRerouting' means that the 
+         Domain-based symmetric soft rerouting service is activated 
+         for the call within this rerouting domain only."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVcEntry 4 }
+
+reroutingVcReroutingState OBJECT-TYPE
+    SYNTAX        ReroutingState
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates if a rerouting operation is in progress
+         and what type of rerouting operation is in progress.
+        
+         'idle' indicates that no rerouting operation is
+         in progress.
+ 
+         'hardRerouting' indicates that a hard rerouting operation
+         is in progress.
+
+         'softRerouting' indicates that a soft rerouting operation
+         is in progress."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVcEntry 5 }
+
+reroutingVcReroutingOperationSuccessCounter OBJECT-TYPE
+    SYNTAX        Counter32
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the number of rerouting operations
+         initiated by this node that succeeded on this call.
+
+         The establishment of the initial call is not counted"
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVcEntry 6 }
+
+reroutingVcReroutingOperationFailuresCounter OBJECT-TYPE
+    SYNTAX        Counter32
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the number of rerouting operations 
+         initiated by this node that failed on this call."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVcEntry 7 }
+
+reroutingVcLocalIncarnationNumber OBJECT-TYPE
+    SYNTAX        INTEGER (0..65535)
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the current local incarnation number associated 
+         with the call. The value contained in this object is the 
+         incarnation number of the last reroute setup that was 
+         sent by this node for this call.
+
+         The value zero indicates that no reroute setup has been
+         sent for this call.
+
+         This object is not instantiated if this node is
+         the destination node of the call and symmetric soft 
+         rerouting is not activated for the call"
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVcEntry 8 }
+
+reroutingVcRemoteIncarnationNumber OBJECT-TYPE
+    SYNTAX        INTEGER (0..65535)
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the current remote incarnation number associated 
+         with the call. The value contained in this object is the 
+         incarnation number of the last reroute setup that was 
+         received by this node for this call.
+
+         The value zero indicates that no reroute setup has been
+         received for this call.
+
+         This object is not instantiated if this node is
+         the source node of the call and symmetric soft 
+         rerouting is not activated for the call"
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0"
+    ::= { reroutingVcEntry 9 }
+
+reroutingVcExtendedReroutingState OBJECT-TYPE
+    SYNTAX        ExtendedReroutingState
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "Indicates the current rerouting state of the call,
+         as defined in the rerouting Finite State Machine."
+    REFERENCE
+        "ATM Forum Domain-based rerouting 1.0 sections 6.2.3, 6.3.3"
+    ::= { reroutingVcEntry 10 }
+
+-- conformance information
+
+reroutingMIBConformance
+               OBJECT IDENTIFIER ::= { atmfreroutingMIB 2 }
+reroutingMIBCompliances
+               OBJECT IDENTIFIER ::= { reroutingMIBConformance 1 }
+reroutingMIBGroups
+               OBJECT IDENTIFIER ::= { reroutingMIBConformance 2 }
+
+
+-- compliance statements
+
+reroutingMIBCompliance MODULE-COMPLIANCE
+    STATUS        current
+    DESCRIPTION
+        "The compliance statement for entities which implement
+         the ATM rerouting MIB.
+
+         Groups of required rerouting objects for configuring and
+         monitoring the domain-based rerouting feature in a switching 
+         system are identified by the suffix SwMinGroup.
+
+         Groups of optional rerouting objects for switching systems 
+         are identified by the suffix SwOptGroup.
+
+         Groups of required rerouting objects for configuring and
+         monitoring the domain-based rerouting feature at an end system
+         are identified by the suffix EsMinGroup.
+
+         Groups of optional rerouting objects for end systems 
+         are identified by the suffix EsOptGroup."
+
+    MODULE  -- this module
+
+        GROUP reroutingBaseSwMinGroup
+        DESCRIPTION
+        "The reroutingBaseSwMinGroup is mandatory for switching
+         systems"
+
+        GROUP reroutingFilterSwMinGroup
+        DESCRIPTION
+        "The reroutingFilterSwMinGroup is mandatory for switching
+         systems"
+
+        GROUP reroutingVcSwMinGroup
+        DESCRIPTION
+        "The reroutingVcSwMinGroup is mandatory for switching
+         systems"
+
+        GROUP reroutingBaseEsMinGroup
+        DESCRIPTION
+        "The reroutingBaseEsMinGroup is mandatory for end systems"
+
+        GROUP reroutingFilterEsMinGroup
+        DESCRIPTION
+        "The reroutingFilterEsMinGroup is mandatory for end systems"
+
+        GROUP reroutingVcEsMinGroup
+        DESCRIPTION
+        "The reroutingVcEsMinGroup is mandatory for end systems"
+
+    ::= { reroutingMIBCompliances 1 }
+
+-- units of conformance for switching devices
+
+reroutingBaseSwMinGroup OBJECT-GROUP
+    OBJECTS { 
+               reroutingVersion,
+               reroutingCapabilitiesSupported
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of mandatory rerouting objects which describe
+         the rerouting services supported in a switching 
+         system."
+    ::= { reroutingMIBGroups 1 }
+
+reroutingFilterSwMinGroup OBJECT-GROUP
+    OBJECTS { 
+              reroutingFilterIfDirection,
+              reroutingFilterInterface,
+              reroutingFilterNetworkServicesAvailable,
+              reroutingFilterHardReroutingServiceRequest,
+              reroutingFilterSoftReroutingServiceRequest,
+              reroutingFilterRowStatus
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of mandatory objects used for the configuration 
+         of rerouting services in a switching system when using 
+         filters."
+    ::= { reroutingMIBGroups 2 }
+
+reroutingVcSwMinGroup OBJECT-GROUP
+    OBJECTS {
+              reroutingVcNodeRole,
+              reroutingVcRemoteNodeAddress,
+              reroutingVcHardReroutingServiceActivated,
+              reroutingVcSoftReroutingServiceActivated,
+              reroutingVcReroutingState,
+              reroutingVcReroutingOperationSuccessCounter,
+              reroutingVcReroutingOperationFailuresCounter
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of mandatory per Vc rerouting objects describing
+         the state of the rerouting services associated to a 
+         call in a switching system."
+    ::= { reroutingMIBGroups 3 }
+
+reroutingBaseSwOptionalGroup OBJECT-GROUP
+    OBJECTS { 
+               reroutingHardReroutingTime
+}
+    STATUS current
+    DESCRIPTION
+        "A collection of optional rerouting object which describe
+         the timer configuration when hard rerouting service
+         is supported in a switching system."
+    ::= { reroutingMIBGroups 4 }
+
+reroutingFilterSwOptionalGroup OBJECT-GROUP
+    OBJECTS { 
+              reroutingFilterConnKind,
+              reroutingFilterServiceCategory,
+              reroutingFilterCallingPartyPrefix,
+              reroutingFilterCallingPartyLength,
+              reroutingFilterCalledPartyPrefix,
+              reroutingFilterCalledPartyLength
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of optional objects used for the configuration 
+         of rerouting services in a switching system when using 
+         filters."
+    ::= { reroutingMIBGroups 5 }
+
+reroutingVpSwOptionalGroup OBJECT-GROUP
+    OBJECTS {
+              reroutingVpNodeRole,
+              reroutingVpRemoteNodeAddress,
+              reroutingVpHardReroutingServiceActivated,
+              reroutingVpSoftReroutingServiceActivated,
+              reroutingVpReroutingState,
+              reroutingVpReroutingOperationSuccessCounter,
+              reroutingVpReroutingOperationFailuresCounter,
+              reroutingVpLocalIncarnationNumber,
+              reroutingVpRemoteIncarnationNumber,
+              reroutingVpExtendedReroutingState
+             }
+    STATUS current
+    DESCRIPTION
+        "A collection of optional per Vp rerouting objects describing
+         the state of the rerouting services associated to a 
+         call in a switching system."
+    ::= { reroutingMIBGroups 6 }
+
+reroutingVcSwOptionalGroup OBJECT-GROUP
+    OBJECTS {
+              reroutingVcLocalIncarnationNumber,
+              reroutingVcRemoteIncarnationNumber,
+              reroutingVcExtendedReroutingState
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of optional per Vc rerouting objects describing
+         the state of the rerouting services associated to a 
+         call in a switching system."
+    ::= { reroutingMIBGroups 7 }
+
+-- units of conformance for end system devices
+
+reroutingBaseEsMinGroup OBJECT-GROUP
+    OBJECTS { 
+               reroutingVersion
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of mandatory rerouting objects which describe
+         the rerouting services supported in an end system."
+    ::= { reroutingMIBGroups 8 }
+
+reroutingFilterEsMinGroup OBJECT-GROUP
+    OBJECTS { 
+              reroutingFilterIfDirection,
+              reroutingFilterInterface,
+              reroutingFilterHardReroutingServiceRequest,
+              reroutingFilterRowStatus
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of mandatory objects used for the request
+         of rerouting services in this end system device when using 
+         filters."
+    ::= { reroutingMIBGroups 9 }
+
+reroutingVcEsMinGroup OBJECT-GROUP
+    OBJECTS {
+              reroutingVcHardReroutingServiceActivated
+
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of mandatory rerouting objects describing
+         the rerouting services associated to a call in an 
+         end system device."
+    ::= { reroutingMIBGroups 10 }
+
+reroutingFilterEsOptionalGroup OBJECT-GROUP
+    OBJECTS { 
+              reroutingFilterConnKind,
+              reroutingFilterServiceCategory,
+              reroutingFilterCallingPartyPrefix,
+              reroutingFilterCallingPartyLength,
+              reroutingFilterCalledPartyPrefix,
+              reroutingFilterCalledPartyLength
+            }
+    STATUS current
+    DESCRIPTION
+        "A collection of optional objects used for the configuration 
+         of rerouting services in this end system device when using 
+         filters."
+    ::= { reroutingMIBGroups 11 }
+
+reroutingVpEsOptionalGroup OBJECT-GROUP
+    OBJECTS {
+              reroutingVpHardReroutingServiceActivated,
+              reroutingVpSoftReroutingServiceActivated,
+              reroutingVcSoftReroutingServiceActivated
+             }
+    STATUS current
+    DESCRIPTION
+        "A collection of optional rerouting objects describing
+         the rerouting services associated to a call in an 
+         end system device."
+    ::= { reroutingMIBGroups 12 }
+
+END
+

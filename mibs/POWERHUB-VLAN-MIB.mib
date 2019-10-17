@@ -1,0 +1,372 @@
+-- @(#)ph-vlan.mib	1.17 9/10/96
+
+POWERHUB-VLAN-MIB DEFINITIONS ::= BEGIN
+
+	IMPORTS
+	    enterprises, OBJECT-TYPE, NetworkAddress, IpAddress,
+	    Counter, Gauge, TimeTicks FROM RFC1155-SMI
+
+	    DisplayString, PhysAddress FROM RFC1213-MIB;
+
+        fore                      OBJECT IDENTIFIER ::= { enterprises 326 }
+        admin                     OBJECT IDENTIFIER ::= { fore 1 }
+        preDot1qVlanMIB           OBJECT IDENTIFIER ::= { admin 8 }
+
+
+
+
+	MacAddress ::= OCTET STRING (SIZE (6))
+
+
+preDot1qVlanMIBObjects OBJECT IDENTIFIER
+        ::= { preDot1qVlanMIB 1 }
+
+--------------------------------------------------------------------------------
+-- Configuration Group
+
+preDot1qVlanConfGroup OBJECT IDENTIFIER ::= { preDot1qVlanMIBObjects 1 }
+
+preDot1qVlanConfTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PreDot1qVlanConfEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A table of VLAN names and characteristics"
+        --DEFAULT test-function f_%p_test
+        --DEFAULT next-function f_%p_next
+        ::= { preDot1qVlanConfGroup 1 }
+
+preDot1qVlanConfEntry OBJECT-TYPE
+        SYNTAX  PreDot1qVlanConfEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A table entry containing VLAN names and characteristics
+                
+                IMPORTANT:  The read-write fields of this table should be
+                modifiable, such that as VLAN characteristics change, the
+                individual parameters in the table can be modified."
+        INDEX   { preDot1qVlanName }
+        ::= { preDot1qVlanConfTable 1 }
+
+PreDot1qVlanConfEntry ::=
+        SEQUENCE {
+                preDot1qVlanName                DisplayString,
+                preDot1qVlanID                  INTEGER,
+                preDot1qVlanConfRowStatus       INTEGER,
+                preDot1qVlanCreatedBy           DisplayString,
+                preDot1qVlanType                INTEGER,
+                preDot1qVlanPortGroupInstance   INTEGER,
+                preDot1qVlanMacListInstance     INTEGER,
+                preDot1qVlanProtocolType        INTEGER,
+                preDot1qVlanProtocolSubtype     OCTET STRING,
+                preDot1qVlanIPSubnetAddress     IpAddress
+        }
+                
+preDot1qVlanName OBJECT-TYPE
+        SYNTAX DisplayString (SIZE (1..255))
+        ACCESS read-only
+        STATUS mandatory
+        DESCRIPTION
+                "The textual name of this VLAN, this is the identifier
+                that the user of a configuration utility will be using. 
+                Using a VLAN ID for the index and resolving to a name
+                would be easier for an individual switch.  However, the user
+                will not (and should not) use this ID.  The problem would
+                then be how to resolve an ID to a Name, given that network
+                manager needs to know this for all devices.  Using the name
+                as the index allows a management application to have a list
+                of names and each network device resolves that to a
+                locally significant ID.  This means however, if the user
+                configures, via a local interface, two switches with VLANs 
+                that have the same name, the network manager will assume
+                that they are the same VLAN.
+                
+                In the future, when the 802.1Q standard comes out, there
+                will be a standard way of maintaining globally unique VLAN
+                IDs because these will be used as the VLAN tag.  At that
+                time the index into this table should become the VLAN tag."
+        ::= { preDot1qVlanConfEntry 1 }
+
+preDot1qVlanID OBJECT-TYPE
+        SYNTAX INTEGER 
+        ACCESS read-only
+        STATUS mandatory
+        DESCRIPTION
+                "This is the locally significant ID that is used
+                internally by this device to reference this VLAN."
+        ::= { preDot1qVlanConfEntry 2 }
+
+preDot1qVlanConfRowStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+       active(1),
+       notInservice(2),
+       notReady(3),
+       createAndGo(4),
+       createAndWait(5),
+       destroy(6)
+    }
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION 
+                "This object is used to create a new row or to modify or delete 
+                an existing row in this table."
+        DEFVAL { active }
+        ::= { preDot1qVlanConfEntry 3 }
+
+preDot1qVlanCreatedBy OBJECT-TYPE
+        SYNTAX DisplayString
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION 
+                "This object is used to enter a string to identify the 
+                management entity that created this entry."
+        ::= { preDot1qVlanConfEntry 4 }
+
+preDot1qVlanType OBJECT-TYPE
+        SYNTAX INTEGER 
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION
+                "The type of vlan, specified as a bitmap.  The bitmap indicates
+                all the types of filters that are to be applied to the vlan.
+                The bit locations and meanings are:
+                   0x01 - port-based VLAN
+                   0x02 - MAC-based VLAN
+                   0x04 - protocol-based VLAN
+                   0x08 - IP subnet VLAN
+                for example a VLAN that will look at an incoming port and
+                then apply a MAC filter would use the value 0x03 to indicate 
+                both the port and the MAC filters."
+        DEFVAL { 1 }
+        ::= { preDot1qVlanConfEntry 5 }
+
+preDot1qVlanPortGroupInstance    OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION
+                "The index that identifies the the sub tree in the 
+                preDot1qVlanPortGroupTable that should be walked to retrieve 
+                the group of ports in this VLAN.
+                
+                IMPORTANT: This table has slightly different semantics than
+                the next three objects because in all 802 VLANs, in the end
+                they all resolve down to a group of ports.
+
+                Therefore, this object has the following semantic based on
+                its value and the value of preDot1qVlanType:
+
+                   preDot1qVlanType    preDot1qVlanPortGroupInstance    mode
+                   ------------------  -------------------------------  ----
+                   Port-based set      points to a user configured      Manual
+                                       set of ports
+                   Port-based not set  0 - There are no ports assigned  Auto
+                                       to this VLAN at this time.
+                   Port-based not set  non zero - points to a system    Auto
+                                       (agent) maintained list of ports 
+                " 
+        ::= { preDot1qVlanConfEntry 6 }
+
+preDot1qVlanMacListInstance     OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION
+                "If this is a MAC-based VLAN then this is the index that 
+                identifies the sub tree in the preDot1qVlanMacListTable 
+                that should be walked to retrieve the list of MAC address to 
+                allow into this VLAN.
+                
+                If this is not a MAC-based VLAN then the value is 0" 
+        DEFVAL { 0 }
+        ::= { preDot1qVlanConfEntry 7 }
+
+preDot1qVlanProtocolType OBJECT-TYPE
+        SYNTAX INTEGER {
+                  none(1),
+                  ethernetv2(2),
+                  ieee802dot3(3)
+               }
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION
+                "If this is a protocol-based VLAN then this is the protocol
+                type whose traffic is allowed into this VLAN.
+                
+                If this is not a protocol-based VLAN the value is 'none'."
+        DEFVAL { none }
+        ::= { preDot1qVlanConfEntry 8 }
+
+preDot1qVlanProtocolSubtype OBJECT-TYPE
+        SYNTAX OCTET STRING (SIZE (0..2))
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION
+                "If this is a protocol-based VLAN then this is the protocol
+                subtype whose traffic is allowed into this VLAN.  This value is
+                based on the protocol type (preDot1qVlanProtocolType).
+
+                If the protocol type is Ethernet V2.0 (ethernetv2) then the
+                value is the value assigned by Xerox (two octets).  For example,
+                the value 08-00 is the value for IP.
+
+                If the protocol type is IEEE 802.3 DSAP then the value is the
+                DSAP value (one octet).  For example, the value 224 (0xE0) is
+                the value for IPX.
+                
+                If this is not a protocol-based VLAN the value is a zero lenght
+                octet string."
+        DEFVAL { none }
+        ::= { preDot1qVlanConfEntry 9 }
+
+preDot1qVlanIPSubnetAddress OBJECT-TYPE
+        SYNTAX IpAddress
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION
+                "If this is a subnetBased VLAN then this is the subnet
+                whose traffic is allowed into this VLAN.
+
+                If this is not a subnetBased VLAN then the value is 0.0.0.0"
+        DEFVAL { 0 }
+        ::= { preDot1qVlanConfEntry 10 }
+
+
+
+--------------------------------------------------------------------------------
+-- Port Group Table
+ 
+preDot1qVlanPortGroupTable OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PreDot1qVlanPortGroupEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A table of port groupings.  The first index breaks down
+                the table into multiple port groups.  Then the second
+                index is the port that belongs in the group.  This way
+                walking the table, given the first index, will give the
+                list of all ports in that group.  This allows the user of
+                this MIB to create many port groupings, and then each VLAN
+                can point to the port grouping they want to associate with
+                a particular VLAN.
+ 
+                IMPORTANT: This table depends on RFC 1573 extensions to
+                the interfaces.ifTable.  This is because, entries in
+                preDot1qVlanPort can be virtual interfaces (representing
+                LEC instances)"
+                
+        ::= { preDot1qVlanConfGroup 2 }
+ 
+preDot1qVlanPortGroupEntry OBJECT-TYPE
+        SYNTAX  PreDot1qVlanPortGroupEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "A table entry containing a port number"
+        INDEX   { preDot1qVlanPortGroupIndex, preDot1qVlanPort }
+        --DEFAULT test-function f_%p_test
+        --DEFAULT next-function f_%p_next
+        ::= { preDot1qVlanPortGroupTable 1 }
+ 
+
+PreDot1qVlanPortGroupEntry ::=
+        SEQUENCE {
+                preDot1qVlanPortGroupIndex      INTEGER,
+                preDot1qVlanPort                INTEGER,
+                preDot1qVlanPortGroupRowStatus  INTEGER,
+                preDot1qVlanPortStatus          INTEGER
+        }
+ 
+preDot1qVlanPortGroupIndex OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS not-accessible
+        STATUS mandatory
+        DESCRIPTION
+                "Index used so that there can be many different
+                port groups"
+        ::= { preDot1qVlanPortGroupEntry 1 }
+ 
+preDot1qVlanPort OBJECT-TYPE
+        SYNTAX INTEGER
+        ACCESS not-accessible
+        STATUS mandatory
+        DESCRIPTION
+                "The value of the instance of the ifIndex object, defined
+                in MIB-II, for the interface corresponding to this port.
+                In the case of a non-atm port this is the physical ifIndex
+                of that port, in the case of an atm port it is the virtual
+                ifIndex that represents the LEC.
+                
+                IMPORTANT: By adding a port here, that port will now be
+                part of any VLAN(s) that this port group is associated with.
+                In addition, if the port is a virtual interface that
+                represents a LEC, the ELAN that that LEC represents will
+                also be part of the VLAN that this port group is associated
+                with. Control of the LECs (creating and assignment) is
+                handled by the ATMF Lan Emulation Client MIB, specifically
+                the lecConfigTable in Configuration Group"
+        ::= { preDot1qVlanPortGroupEntry 2 }
+ 
+
+preDot1qVlanPortGroupRowStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+       active(1),
+       notInservice(2),
+       notReady(3),
+       createAndGo(4),
+       createAndWait(5),
+       destroy(6)
+    }
+        ACCESS read-write
+        STATUS mandatory
+        DESCRIPTION
+                "This object is used to create a new row or to modify or delete
+                an existing row in this table."
+        ::= { preDot1qVlanPortGroupEntry 3 }
+ 
+preDot1qVlanPortStatus OBJECT-TYPE
+        SYNTAX INTEGER {
+                   autoActive (1),
+                   allowed (2),
+                   allowedActive (3),
+                   allowedNotAvail (4),
+                   notAssociated(5)
+                }
+        ACCESS read-only
+        STATUS mandatory
+        DESCRIPTION
+                "The status of this port relative to the VLAN that points
+                 at this port group.  The meanings of each value are:
+ 
+                 autoActive: Means that the port is part of this VLAN
+                          because the switch automatically added it.
+                 allowed: Means that the port has been configured so that
+                          if all other criteria (if any) are met, this port
+                          is allowed to be in this VLAN.
+                 allowedActive: Means the same as allowed plus the fact
+                          that there is a device attached to this port and
+                          participating in the VLAN.
+                 allowedNotAvail: This value is only needed for devices
+                          that don't allow a port to be in more than one
+                          VLAN at a time.  This value means that this port
+                          also exists in some other VLAN(s) and is active
+                          in another VLAN.  Therefore this port is not
+                          available to be used in this VLAN.
+                 notAssociated: Means that the Port Group is not currently
+                          associated with any VLAN."
+        DEFVAL { allowed }
+        ::= { preDot1qVlanPortGroupEntry 4 }
+
+preDot1qVlanPortGroupNextIndex OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The index of the next free row in the table."
+        --DEFAULT test-function f_%n_test
+        ::= { preDot1qVlanPortGroupTable 2 }
+--::= { preDot1qVlanConfGroup 3 }
+----------------------------------------------------------------------------------------
+
+END

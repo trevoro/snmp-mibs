@@ -1,0 +1,1343 @@
+
+--
+-- This MIB is for 3Com intermediate systems that support bridging
+--
+--
+-- The 3Com Enterprise Products Proprietary MIB Extensions
+--
+-- Copyright 3Com Corporation, 1993. All rights reserved.
+--
+-- changes FOR 8.0 (r2 of MIB)*****************************************
+-- 01-jun-94: kxy deprecated X25 queue size, X25 vc limit, & X25 vc timer
+--            objects.
+--
+-- changes FOR 8.2 (r3 of MIB)*****************************************
+-- 10-feb-95: ehk added HoldTime, MinAccPri, RtDisc, and GwCont objects
+-- 24-apr-95: kxy updated ACCESS of a3ComBrgSrRDPort to read-only
+-- 18-May-95: kxy updated DEFVAL for a3ComBrgSrGwContEncapMode
+--
+-- changes FOR 8.3 (r4 of MIB)*****************************************
+-- 29-Sep-95: ehk added two objects for use by SmartFiltering feature
+--            These are opaque to normal nm requests.
+--
+--
+
+
+          A3Com-Bridge-r3-MIB DEFINITIONS ::= BEGIN
+
+          IMPORTS
+                  enterprises
+                      FROM RFC1155-SMI
+                  MacAddress
+                      FROM RFC1286-MIB
+                  OBJECT-TYPE
+                          FROM RFC-1212;
+
+          --
+          -- This MIB is for 3Com systems that offer a Bridging
+          -- service
+          --
+          --
+
+          a3Com         OBJECT IDENTIFIER ::= { enterprises 43 }
+          brouterMIB    OBJECT IDENTIFIER ::= { a3Com 2 }
+          a3ComBridge   OBJECT IDENTIFIER ::= { brouterMIB 9 }
+
+          SMDSAddress ::= OCTET STRING (SIZE (8))
+          -- the 60-bit SMDS address, preceded by 4 bits with the
+          -- following values:
+          -- "1100" when representing an individual address
+          -- "1110" when representing a group address
+
+          RowStatus ::= INTEGER {
+                         -- the following two values are states
+                         -- these values can be read or written
+                         active(1),
+                         notInService(2),
+
+                         -- the following value is a state:         
+                         -- this value may be read, but not written 
+                         notReady(3),                               
+
+                         -- the following three values are actions
+                         -- these values can be written, but are never read
+                         createAndGo(4),
+                         createAndWait(5),
+                         destroy(6)
+          }
+
+          --This data type, which has the same semantics as the RowStatus
+          --textual convention used in SNMPv2, is used to add and 
+          --delete entries from a table.
+
+          --The tables in this MIB allow a subset of the functionality
+          --provided by the RowStatus textual convention.  In particular
+          --row creation is allowed using only the createAndGo method.
+
+          --That is, when adding entries to this table, this object
+          --must be set to createAndGo(4).  The instance identifier
+          --for this object will define the values of the columns 
+          --that make up the index.  
+
+          --In the same PDU, the appropriate remaining columns
+          --of that row must be set as well.  The agent
+          --will immediately set the value of this object to
+          --active(1) if the row is correct.  If not, the agent
+          --will refuse the SET request and return an
+          --error code.
+
+          --To modify an existing entry, it must be removed
+          --an another entry with the desired changes added. 
+                       
+          --To remove an entry, set the value of this object
+          --to destroy(6).
+
+--
+-- Group Definitions
+--
+          a3ComBrgGen   OBJECT IDENTIFIER ::= { a3ComBridge 1 }
+          a3ComBrgStp   OBJECT IDENTIFIER ::= { a3ComBridge 2 }
+          a3ComBrgSr    OBJECT IDENTIFIER ::= { a3ComBridge 3 }
+
+          X121Address ::= OCTET STRING (SIZE(0..17))
+
+-- 0 to 17 bytes in length containing the ASCII
+-- characters [0-9], each octet contains one digit of
+-- the address
+
+
+--
+--  This first group, a3ComBrgGen, contains objects that control
+--  parameters relating to the general operation of the bridge.
+--
+
+          a3ComBrgCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                        bridging   (1),
+                        noBridging (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object determines whether bridging is performed
+                  by this system.  If this is set to noBridging (2),
+                  all functions associated with bridging are disabled,
+                  including Spanning Tree, Learning, and Source Routing."
+              REFERENCE 
+                  "NETBuilder Ref. Guide, Bridge Service parameter: Control"
+              DEFVAL { noBridging }
+              ::= { a3ComBrgGen 1 }
+
+          a3ComBrgAgeCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                        aging   (1),
+                        noAging (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object determines whether nodes that have not
+                  transmitted packets for a specified amount of time
+                  are deleted from the forwarding table.  If this
+                  object is set to aging (1), entries in the forwarding
+                  table are removed after dot1dTpAgingTime seconds.
+                  This is useful in environments where nodes may be
+                  moved from one network to another.  Setting this object 
+                  to noAging (2), however, improves performance."
+              REFERENCE 
+                  "NETBuilder Ref. Guide, Bridge Service parameter: CONTrol"
+              DEFVAL { aging }
+              ::= { a3ComBrgGen 2 }
+
+          a3ComBrgFwallCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                        firewall   (1),
+                        noFirewall (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object is important when the system is performing
+                  both bridging and routing.  When this is set to
+                  firewall (1), the bridge discards unicast packets
+                  of a protocol that is being routed (other than the
+                  unicast packets addressed to the bridge itself).
+                  If this is set to noFirewall, the bridge forwards 
+                  those packets."
+              REFERENCE 
+                  "NETBuilder Ref. Guide, Bridge Service parameter: Control"
+              DEFVAL { firewall }
+              ::= { a3ComBrgGen 3 }
+
+          a3ComBrgLearnCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                        learn   (1),
+                        noLearn (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object determines whether the bridge creates
+                  and updates entries in its forwarding tables."
+              REFERENCE 
+                  "NETBuilder Ref. Guide, Bridge Service parameter: Control"
+              DEFVAL { learn }
+              ::= { a3ComBrgGen 4 }
+
+          a3ComBrgForwardCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                        forward   (1),
+                        noForward (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object determines whether the bridge forwards
+                  packets.  This has no effect on other bridging
+                  related functions, such as Spanning Tree, Learning, 
+                  and Source Routing.  Setting this object to
+                  noForward (2), allows isolation of the attached
+                  networks for diagnostic purposes."
+              REFERENCE 
+                  "NETBuilder Ref. Guide, Bridge Service parameter: Control"
+              DEFVAL { forward }
+              ::= { a3ComBrgGen 5 }
+
+          a3ComBrgAppleCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                        enable  (1),
+                        disable (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object enables the bridge to forward
+                  AppleTalk packets between Ethernet, FDDI, and
+                  token ring networks.  The AppleTalk packets
+                  require encapsulation over FDDI networks.
+                  If AppleTalk packets are to be translated
+                  the same way as other Ethernet packets are
+                  translated, this parameter must be disabled (2).
+
+                  If this object is enabled, the original format
+                  of both AT-1 (Ethernet) and AT-2 (SNAP) packets
+                  are preserved when bridging between Ethernets 
+                  over an FDDI backbone.  If this is disabled,
+                  AT-2 packets are converted to Ethernet format
+                  before going across the FDDI backbone."
+              REFERENCE 
+                  "NETBuilder Ref. Guide, Bridge Service parameter: AppleTalk"
+              DEFVAL { enable }
+              ::= { a3ComBrgGen 6 }
+            
+          a3ComBrgFwTblCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                        other        (1),
+                        dynToStatic  (2),
+                        delStatic    (3),
+                        delDyn       (4)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object is used to trigger actions taken on the
+                  static forwarding table.  When this object is set to
+                  dynToStatic (2), all dynamically learned entries
+                  in the forwarding table are marked static.  When
+                  this object is set to delStatic (3), all statically
+                  learned entries are deleted.  When this object is set to
+                  delDyn (4), all dynamically learned entries are deleted.
+                  When a GET request is received for this object, the 
+                  value other (1) is returned." 
+              REFERENCE
+                  "NETBuilder Ref. Guide, ADD -BRidge ROUte All,
+                   DEL -Bridge ROUte All, FLush -BRidge AllRoutes."
+              ::= { a3ComBrgGen 7 }
+
+          a3ComBrgFwTblSize  OBJECT-TYPE
+              SYNTAX  INTEGER (1..64)
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object returns the size of the bridge
+                  forwarding table in units of 2^(9+n) where
+                  n is the value of this object.  Thus, if this
+                  object has the value 2, then the bridge 
+                  forwarding table has 2048 entries.
+
+                  If this value is changed, via a set, the 
+                  new value will take affect only after the
+                  bridging service is disabled and re-enabled."
+              ::= { a3ComBrgGen 8 }
+
+          a3ComBrgBLimitTimer  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                          disabled         (1),
+                          timer400ms      (2),
+                          timer600ms      (3),
+                          timer800ms      (4),
+                          timer1000ms     (5)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object is used to select the broadcast limit
+                  feature sample interval.  That is, this object 
+                  contains the value of the time interval over which
+                  the number of broadcast packets per second are calculated.  
+                  If that number exceeds the value of a3ComBrgBroadCastLimit
+                  for a particular port, the bridge will stop forwarding
+                  all broadcast packets on that port for the rest of
+                  the time interval."
+              REFERENCE 
+                  "NETBuilder Reference Guide, Bridge Service Parameter:
+                  BLimitTimer"
+              DEFVAL { disabled }
+              ::= { a3ComBrgGen 9 }
+--
+-- The following tables contain bridge forwarding information
+--
+
+          a3ComBrgStExtTable  OBJECT-TYPE
+              SYNTAX  SEQUENCE OF A3ComBrgStExtEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "This table is an extension of the dot1dStaticTable
+                  from the Bridge MIB, rfc1286.  One additional
+                  column has been defined to identify the proper wide 
+                  area address when bridging over a wide area port."
+              REFERENCE
+                  "Bridge MIB, RFC1286, page 33"
+              ::= { a3ComBrgGen 10 }
+   
+          a3ComBrgStExtEntry  OBJECT-TYPE
+              SYNTAX  A3ComBrgStExtEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "An extension to the dot1dStaticTable from rfc1286."
+              INDEX  { a3ComBrgStExtAdd, a3ComBrgStExtRcvPort }
+              ::= { a3ComBrgStExtTable 1 }
+
+          A3ComBrgStExtEntry ::=
+              SEQUENCE {
+                  a3ComBrgStExtAdd            MacAddress,
+                  a3ComBrgStExtRcvPort        INTEGER, 
+                  a3ComBrgStExtWaAddress      OCTET STRING
+              }
+               
+          a3ComBrgStExtAdd  OBJECT-TYPE
+              SYNTAX  MacAddress
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "A unicast MAC address for which the bridge has
+                  forwarding and/or filtering information."
+              REFERENCE
+                  "dot1dStaticAddress, Bridge MIB, RFC1286, page 33"
+              ::= { a3ComBrgStExtEntry 1 }
+
+          a3ComBrgStExtRcvPort  OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "Either the value '0' or the port number of the
+                  port from which a frame must be received in order
+                  for this entry's filtering information to apply.
+                  A value of zero indicates that this entry applies
+                  on all ports of the bridge for which there is no
+                  other applicable entry."
+              REFERENCE
+                  "dot1dStaticReceivePort, Bridge MIB, RFC1286, page 34"
+              ::= { a3ComBrgStExtEntry 2 } 
+
+          a3ComBrgStExtWaAddress  OBJECT-TYPE
+              SYNTAX  OCTET STRING
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "When the destination port to which this table entry 
+                  applies is a wide area port, this object is used to
+                  identify the wide area address to use when forwarding
+                  packets to this destination.  The type of address can
+                  be determined by the ifType value corresponding to
+                  the port identified by dot1dStaticAllowedToGoTo or
+                  dot1dTpFdbPort.  If the port is not a wide area port, 
+                  this object will contain a zero length string.
+
+                  The representation of the addresses will follow the
+                  convention used in standard MIBs.  For example,
+                  Frame Relay DLCI's will be encoded as binary numbers
+                  and placed in the OCTET STRING.  X.25 addresses, on
+                  the other hand will be encoded as ASCII characters
+                  [0..9], with each octet of the OCTET STRING containing
+                  the ASCII representation of one digit."
+              REFERENCE
+                  "NETBuilder Ref. Guide, ADD -BRidge ROUte DLCI WanID"
+              ::= { a3ComBrgStExtEntry 3 } 
+
+
+
+
+          a3ComBrgFdbExtTable  OBJECT-TYPE
+              SYNTAX  SEQUENCE OF A3ComBrgFdbExtEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "This table is an extension of the dot1dTpFdbTable
+                  from the Bridge MIB, rfc1286.  One additional
+                  column has been defined to identify the proper wide 
+                  area address when bridging over a wide area port."
+              REFERENCE
+                  "Bridge MIB, RFC1286, page 29"
+              ::= { a3ComBrgGen 11 }
+   
+          a3ComBrgFdbExtEntry  OBJECT-TYPE
+              SYNTAX  A3ComBrgFdbExtEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "An extension to the dot1dTpFdbTable from rfc1286."
+              INDEX  { a3ComBrgFdbExtAdd }
+              ::= { a3ComBrgFdbExtTable 1 }
+
+          A3ComBrgFdbExtEntry ::=
+              SEQUENCE {
+                  a3ComBrgFdbExtAdd            MacAddress,
+                  a3ComBrgFdbExtWaAddress      OCTET STRING
+              }
+               
+          a3ComBrgFdbExtAdd  OBJECT-TYPE
+              SYNTAX  MacAddress
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "A unicast MAC address for which the bridge has
+                  forwarding and/or filtering information."
+              REFERENCE
+                  "dot1dTpFdbAddress, Bridge MIB, RFC1286, page 30"
+              ::= { a3ComBrgFdbExtEntry 1 }
+
+          a3ComBrgFdbExtWaAddress  OBJECT-TYPE
+              SYNTAX  OCTET STRING
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "When the port to which this table entry applies
+                  is a wide area port, this object is used to
+                  identify the wide area address to use when forwarding
+                  packets to this destination.  The type of address can
+                  be determined by the ifType value corresponding to
+                  the port identified by dot1dTpFdbPort.  If the port
+                  is not a wide area port, this object will contain
+                  a zero length string."
+              REFERENCE
+                  "NETBuilder Ref. Guide, ADD -BRidge ROUte DLCI WanID"
+              ::= { a3ComBrgFdbExtEntry 2 } 
+
+
+--
+-- The following table contains generic port information and
+-- controls
+--
+
+          a3ComBrgPortTable  OBJECT-TYPE
+              SYNTAX  SEQUENCE OF A3ComBrgPortEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "This table is an extension of the dot1dBasePortTable
+                  from the Bridge MIB defined in RFC1286.  This table
+                  contains generic information and control facilities
+                  for every port that is associated with the bridge.
+                  Transparent, source-route, and srt ports are included."
+              ::= { a3ComBrgGen 12 }
+
+          a3ComBrgPortEntry  OBJECT-TYPE
+              SYNTAX  A3ComBrgPortEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "Each entry in this table contains information and
+                  controls for a specific bridge port."
+              REFERENCE
+                  "dot1dBasePortTable, Bridge MIB, RFC1286, page 11"
+              INDEX  { a3ComBrgPortIndex }
+              ::= { a3ComBrgPortTable 1 }
+
+          A3ComBrgPortEntry ::= 
+              SEQUENCE {
+                  a3ComBrgPortIndex      INTEGER,
+                  a3ComBrgPortCtl        INTEGER,
+                  a3ComBrgDstSecCtl      INTEGER,
+                  a3ComBrgSrcSecCtl      INTEGER,
+                  a3ComBrgX25Pid         INTEGER,
+                  a3ComBrgX25Qsize       INTEGER,
+                  a3ComBrgX25VcLimit     INTEGER,
+                  a3ComBrgX25VcTimer     INTEGER,
+                  a3ComBrgBroadCastLimit INTEGER,
+                  a3ComBrgSmdsGroupAddr  SMDSAddress,
+                  a3ComBrgX25ProfId      INTEGER
+              }
+
+          a3ComBrgPortIndex  OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "The port number of the port for which this
+                  entry contains bridge management information."
+              REFERENCE
+                  "dot1dBasePortTable, Bridge MIB, RFC1286, page 11"
+              ::= { a3ComBrgPortEntry 1 }
+   
+          a3ComBrgPortCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         transparent   (1),  -- bridge only tr packets
+                         sourceRoute   (2),  -- bridge only sr packets
+                         srtEnabled    (3),  -- bridge both
+                         noBridging    (4)   -- no bridging
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object controls which type(s) of packets
+                  are bridged.  This has no affect on whether the
+                  bridge participates in either the Spanning Tree
+                  or Source Route Protocols."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SETDefault !port -BRidge
+                  BRidgeFunction = Enable, SETDefault !port -SRT
+                  CONTrol = (SrcRouting|NoSrcRouting, Transparent|
+                  NoTransparent)"
+              DEFVAL { noBridging }
+              ::= { a3ComBrgPortEntry 2 }
+
+          a3ComBrgDstSecCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         none    (1),
+                         forward (2),
+                         block   (3)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object is a security feature that allows the
+                  control of packets sent to specific destinations.
+                  If this object is set to forward (2), only those
+                  packets for destination addresses listed in the static
+                  forwarding table can be forwarded by this port.  If 
+                  this object is set to block (3), any packet destined 
+                  for an address listed in the static forwarding table is
+                  blocked by this port.  Note, these actions are taken
+                  by this port after it receives a packet from the network.
+                  This does not apply to packets it forwards to the 
+                  network."
+              REFERENCE
+                  "NETBuilder Ref. Guide, Bridge Service parameter: 
+                  DStSecurity"
+              DEFVAL { none }
+              ::= { a3ComBrgPortEntry 3 }
+                  
+          a3ComBrgSrcSecCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         none    (1),
+                         forward (2),
+                         block   (3)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object is a security feature that allows the
+                  control of packets sent from specific source addresses.
+                  If this object is set to forward (2), this port will
+                  forward only those packets sent from addresses listed
+                  in the static forwarding table for this port.  If this
+                  object is set to block, this port will block every
+                  packet sent by a station whose address is listed
+                  in the static forwarding table for this port.  Note, 
+                  these actions are taken by this port after it receives 
+                  a packet from the network.  This does not apply to 
+                  packets it forwards to the network."
+              REFERENCE
+                  "NETBuilder Ref. Guide, Bridge Service parameter: 
+                  SRcSecurity"
+              DEFVAL { none }
+              ::= { a3ComBrgPortEntry 4 }
+
+          a3ComBrgX25Pid  OBJECT-TYPE
+              SYNTAX  INTEGER (1..255)
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object applies to transparent bridging
+                  over an X25 network.  It specifies the protocol
+                  ID to be used in an outgoing X25 call."
+              REFERENCE
+                  "NETBuilder Ref. Guide, Bridge Service parameter: X25ProtID"
+              DEFVAL { 221 }
+              ::= { a3ComBrgPortEntry 5 }
+
+          a3ComBrgX25Qsize  OBJECT-TYPE
+              SYNTAX  INTEGER (1..128)
+              ACCESS  read-write
+              STATUS  deprecated
+              DESCRIPTION
+                  "This object applies to transparent bridging
+                  over an X25 network.  It allows the specification
+                  of the maximum number of packets that can be 
+                  queued on any single virtual circuit to a 
+                  specific DTE neighbor when the virtual circuit
+                  on the X25 port is congested.
+
+                  NOTE: this object is no longer supported by NETBuilders
+                  running sw version 8.0 and greater."
+              REFERENCE
+                  "NETBuilder Ref. Guide, Bridge Service parameter: 
+                  X25QueueSize"
+              DEFVAL { 4 }
+              ::= { a3ComBrgPortEntry 6 }
+
+          a3ComBrgX25VcLimit  OBJECT-TYPE
+              SYNTAX  INTEGER (0..15)
+              ACCESS  read-write
+              STATUS  deprecated
+              DESCRIPTION
+                  "This object allows the specification of the 
+                  maximum number of virtual circuits to a 
+                  specific DTE that can be established concurrently
+                  for transparent bridging over an x25 network.
+
+                  NOTE: this object is no longer supported by NETBuilders
+                  running sw version 8.0 and greater."
+              REFERENCE
+                  "NETBuilder Ref. Guide, Bridge Service parameter: 
+                  X25VCLimit"
+              DEFVAL { 1 }
+              ::= { a3ComBrgPortEntry 7 }
+
+          a3ComBrgX25VcTimer  OBJECT-TYPE
+              SYNTAX  INTEGER (1..512)
+              ACCESS  read-write
+              STATUS  deprecated
+              DESCRIPTION
+                  "This object specifies the maximum amount of
+                  time, in minutes, that can elapse when there
+                  is no activity on the x25 virtual circuit to a DTE
+                  before it is cleared.
+
+                  NOTE: this object is no longer supported by NETBuilders
+                  running sw version 8.0 and greater."
+              REFERENCE
+                  "NETBuilder Ref. Guide, Bridge Service parameter: 
+                  X25VCTimer"
+              DEFVAL { 20 }
+              ::= { a3ComBrgPortEntry 8 }
+
+          a3ComBrgBroadCastLimit  OBJECT-TYPE
+              SYNTAX  INTEGER (0..100000)
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object specifies the maximum rate, in
+                  packets per second, at which broadcast and
+                  multicast packets are forwarded through this 
+                  port.  If the number of these packets during
+                  a single time interval (specified by 
+                  a3ComBrgBLimitTimer) exceeds the number
+                  allowed during that interval, as calculated
+                  from the value of this object, all further
+                  broadcast and multicast packets will be
+                  discarded for the rest of the time interval.
+
+                  If this object is set to zero, this feature
+                  is disabled for this port.
+
+                  Note, any changes to this object will only
+                  take affect after the system is rebooted."
+              REFERENCE
+                  "NETBuilder Reference Guide, Bridge Service Parameter:
+                  BroadCastLimit"
+              DEFVAL { 0 }
+              ::= { a3ComBrgPortEntry 9 }
+
+          a3ComBrgSmdsGroupAddr  OBJECT-TYPE
+              SYNTAX  SMDSAddress
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This identifies the SMDS Group Address that
+                  is used by the bridge to transmit packets to
+                  all the other bridges identified by this SMDS
+                  Group Address.  This address is used as the SMDS
+                  destination address when transmitting spanning tree
+                  BPDU packets, all bridged broadcast and multicast
+                  packets, and bridged packets containing a destination
+                  address that has not yet been learned.
+
+                  If the address is less than 8 Octets, the remaining
+                  octets are padded with 0xFF's.
+
+                  If there is no SMDS Group Address assigned, this object
+                  will return all zeroes.
+
+                  Note, bridging must be enabled for any sets made to this
+                  object to be affected."
+              REFERENCE
+                  "NETBuilder Reference Guide, Bridge Service Parameter:
+                  SMDSGroupAddress"
+              ::= { a3ComBrgPortEntry 10 }
+
+          a3ComBrgX25ProfId  OBJECT-TYPE
+              SYNTAX  INTEGER(0..255)
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+		 "This object specifies the X25 User ProfileID to be used for
+		selecting a Virtual Circuit to send Bridged Packets. Range
+		is 0..255. If the value specified is 0 then use the DTE Profile
+		ID"
+              DEFVAL { 0 }	 
+              ::= { a3ComBrgPortEntry 14 }
+
+--
+-- This table stores a list of neighboring DTEs that support
+-- transparent bridging over an X25 network
+--
+
+          a3ComBrgX25NbrTable  OBJECT-TYPE
+              SYNTAX  SEQUENCE OF A3ComBrgX25NbrEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "This table specifies the DTE address of each
+                  X25 neighbor that supports transparent bridging.
+                  The bridge will forward to the neighbors defined in 
+                  this table all broadcast packets and unknown 
+                  unicast packets."
+              REFERENCE
+                  "NETBuilder Ref. Guilde, Bridge Service parameter: 
+                  X25Neighbor"
+              ::= { a3ComBrgGen 13 }
+
+          a3ComBrgX25NbrEntry  OBJECT-TYPE
+              SYNTAX  A3ComBrgX25NbrEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "Each entry contains the DTE address of an X25 neighbor."
+              INDEX { a3ComBrgX25NbrPort, a3ComBrgX25NbrDTE }
+              ::= { a3ComBrgX25NbrTable 1 }
+
+          A3ComBrgX25NbrEntry ::= 
+              SEQUENCE {
+                  a3ComBrgX25NbrPort     INTEGER,
+                  a3ComBrgX25NbrDTE      X121Address,
+                  a3ComBrgX25NbrStatus   RowStatus
+              }
+
+          a3ComBrgX25NbrPort  OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "The bridge port to which this entry applies."
+              ::= { a3ComBrgX25NbrEntry 1 }
+
+          a3ComBrgX25NbrDTE  OBJECT-TYPE
+              SYNTAX  X121Address
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "The X121 address of the neighbor DTE."
+              ::= { a3ComBrgX25NbrEntry 2 }
+
+          a3ComBrgX25NbrStatus  OBJECT-TYPE
+              SYNTAX  RowStatus
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                   "This object is used to add and delete entries
+                   in this table.  See the notes describing
+                   RowStatus at the beginning of this MIB."
+              ::= { a3ComBrgX25NbrEntry 3 }
+
+--
+-- Spanning Tree parameter group
+--
+
+          a3ComBrgStpMultAdd  OBJECT-TYPE
+              SYNTAX  MacAddress
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "This is the multicast MAC address used by bridges
+                  running the Spanning Tree Protocol."
+              REFERENCE
+                  "NETBuilder Ref. Guide, STP Service parameter: ADDRess"
+              ::= { a3ComBrgStp 1 }
+
+          a3ComBrgStpCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         enabled   (1),
+                         disabled  (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object is used to enable/disable the Spanning
+                  Tree Protocol for the bridge as a whole."
+              REFERENCE
+                  "NETBuilder Ref. Guide, STP Service parameter: CONTrol"
+              DEFVAL { enabled }
+              ::= { a3ComBrgStp 2 }
+              
+          a3ComBrgStpHopCtl  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         hopReduce   (1),
+                         noHopReduce (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object determines whether the bridge  
+                  considers the number of hops needed to forward
+                  a packet to the root bridge when it selects
+                  a root port.  If hopReduce is selected, the
+                  bridge increases its root path cost by 1.  If
+                  noHopReduce is selected and two ports have the
+                  same root path cost, the port that offers the least
+                  number of hops might not be chosen as the root port."
+              REFERENCE
+                  "NETBuilder Ref. Guide, STP Service parameter: CONTrol"
+              DEFVAL { noHopReduce }
+              ::= { a3ComBrgStp 3 }
+
+--
+-- Source Routing parameter group
+--
+--    These parameters define how the bridge will behave
+--    when bridging source routed packets.
+--
+
+          a3ComBrgSrMode  OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         ieee            (1),
+                         passiveBridging (2)
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This object defines the mode of source routing
+                  in use on the bridge.  If ieee (1) is selected,
+                  explorer frames are modified and the forwarding
+                  path of the specifically routed frames is
+                  determined from the routing information (RI) field.
+                  If passiveBridging (2) is selected, the source
+                  routed frames are bridged across the spanning
+                  tree as if they were transparent frames without 
+                  examining or updating the RI field.  When in 
+                  passiveBridging mode, the same ring number should 
+                  be assinged to all active ports of the bridge."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SRT Service parameter: Mode"
+              DEFVAL { ieee }
+              ::= { a3ComBrgSr 1 } 
+
+
+
+         a3ComBrgSrPortTable OBJECT-TYPE
+              SYNTAX  SEQUENCE OF A3ComBrgSrPortEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "This table contains port specific source routing
+                  information."
+              ::= { a3ComBrgSr 2 }
+
+         a3ComBrgSrPortEntry OBJECT-TYPE
+              SYNTAX  A3ComBrgSrPortEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "Each entry contains a set of information applied
+                  to a specific bridge port."
+              INDEX { a3ComBrgSrPort }
+              ::= { a3ComBrgSrPortTable 1 }
+
+         A3ComBrgSrPortEntry ::=
+              SEQUENCE {
+                  a3ComBrgSrPort               INTEGER,
+                  a3ComBrgSrPortSTEHopCount    INTEGER,
+                  a3ComBrgSrPortAREHopCount    INTEGER,
+                  a3ComBrgSrPortHoldTime       INTEGER,
+                  a3ComBrgSrPortMinAccessPrior INTEGER
+              }
+
+         a3ComBrgSrPort OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "This identifies the bridge port to which
+                  the other objects in this entry apply."
+              ::= { a3ComBrgSrPortEntry 1 }
+
+         a3ComBrgSrPortSTEHopCount OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION 
+                  "This object contains the maximum number of
+                  routing descriptors (ie, hop count) for Spanning
+                  Tree Explorer frames."
+              ::= { a3ComBrgSrPortEntry 2 }
+
+         a3ComBrgSrPortAREHopCount OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION 
+                  "This object contains the maximum number of
+                  routing descriptors (ie, hop count) for All
+                  Routes Explorer frames."
+              ::= { a3ComBrgSrPortEntry 3 }
+
+         a3ComBrgSrPortHoldTime OBJECT-TYPE
+              SYNTAX  INTEGER (1..1440)
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION 
+                  "This parameter specifies the time interval,
+                  in minutes, that an inactive route entry can
+                  reside in the source routing table."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: HoldTime"
+              DEFVAL { 15 }
+              ::= { a3ComBrgSrPortEntry 4 }
+
+         a3ComBrgSrPortMinAccessPrior OBJECT-TYPE
+              SYNTAX  INTEGER (0..6)
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION 
+                  "This parameter determines the minimum access
+                  priority used for outoing frames on this port.
+                  End systems usually have a low access priority
+                  while bridges have a medium priority.  This
+                  allows bridge, which typically handle larger
+                  volumes of data, to get the token faster than
+                  end systems.  If the user priority of the frame
+                  is greateer than the minumum access priority, the 
+                  user priority is used as the access priority.  The
+                  user priority of the frame is determined by the
+                  access priority of the incoming frame."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: MinAccessPrior"
+              DEFVAL { 4 }
+              ::= { a3ComBrgSrPortEntry 5 }
+
+
+
+
+
+         a3ComBrgSrWanAddrTable OBJECT-TYPE
+              SYNTAX  SEQUENCE OF A3ComBrgSrWanAddrEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "A table containing mappings between Ring Number,
+                  Bridge Number, and Wide Area Addresses.  This
+                  information is learned from Explorer Frames sent
+                  by end stations."
+              ::= { a3ComBrgSr 3 }
+
+         a3ComBrgSrWanAddrEntry OBJECT-TYPE
+              SYNTAX  A3ComBrgSrWanAddrEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "Each entry contains a single Ring Number, Bridge
+                  Number, Wide Area Address mapping."
+              INDEX { a3ComBrgSrWAportIndex, a3ComBrgSrWAringNum, a3ComBrgSrWAbrgNum }
+              ::= { a3ComBrgSrWanAddrTable 1 }
+
+         A3ComBrgSrWanAddrEntry ::=
+              SEQUENCE {
+                  a3ComBrgSrWAportIndex    INTEGER,
+                  a3ComBrgSrWAringNum      INTEGER,
+                  a3ComBrgSrWAbrgNum       INTEGER,
+                  a3ComBrgSrWAddress       OCTET STRING
+              }
+
+         a3ComBrgSrWAportIndex OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "This identifies the bridge port that is connected
+                  to the ring identified by a3ComBrgSrWAringNum."
+              ::= { a3ComBrgSrWanAddrEntry 1 } 
+
+         a3ComBrgSrWAringNum OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "This identifies a specific wide area network.  When
+                  a source route frame is bridged to this ring number,
+                  and to the bridge identified by a3ComBrgSrWAbrgNum,
+                  the Wide Area Address identified by the corresponding
+                  instance of a3ComBrgSrWAddress is used to forward the
+                  frame to the proper bridge."
+              ::= { a3ComBrgSrWanAddrEntry 2 }
+
+         a3ComBrgSrWAbrgNum OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "This identifies the bridge associated with the
+                  Wide Area Address identified by a3ComBrgSrWAddress."
+              ::= { a3ComBrgSrWanAddrEntry 3 }
+
+         a3ComBrgSrWAddress OBJECT-TYPE
+              SYNTAX  OCTET STRING
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "This identifies the Wide Area Address associated
+                  with a specific ring number and bridge number.  These
+                  are identified by the corresponding instances of
+                  a3ComBrgSrWAringNum and a3ComBrgSrWAbrgNum."
+              ::= { a3ComBrgSrWanAddrEntry 4 }
+
+
+
+          a3ComBrgSrGwVirRing  OBJECT-TYPE
+              SYNTAX  INTEGER (0..4095)
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This parameter is used whenever SRTG is bridging packets
+                  between TB and SR domains.  Before forwarding packets from
+                  a TB domain, SRTG specifically adds this 'virtual' ring
+                  number and its own bridge number to the source route
+                  information of the destination station retrieved from the 
+                  SRDB.  Thus from a source routing station's point of
+                  view, the entire transparent bridge LAN appears as a single
+                  source routed ring.  If this parameter has the value 0,
+                  no virtual ring number is added."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: GatewayVRing"
+              DEFVAL { 0 }
+              ::= { a3ComBrgSr 4 } 
+
+
+
+
+         a3ComBrgSrGwContTable OBJECT-TYPE
+              SYNTAX  SEQUENCE OF A3ComBrgSrGwContEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  ""
+              ::= { a3ComBrgSr 5 }
+
+         a3ComBrgSrGwContEntry OBJECT-TYPE
+              SYNTAX  A3ComBrgSrGwContEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "Each entry in this table control the behavior of
+                  the SRT Gateway feature for a specific port."
+              INDEX { a3ComBrgSrGwContPort }
+              ::= { a3ComBrgSrGwContTable 1 }
+
+         A3ComBrgSrGwContEntry ::=
+              SEQUENCE {
+                  a3ComBrgSrGwContPort      INTEGER,
+                  a3ComBrgSrGwCont          INTEGER,
+                  a3ComBrgSrGwContEncapMode INTEGER,
+                  a3ComBrgSrGwContAutoMode  INTEGER
+              }
+
+         a3ComBrgSrGwContPort OBJECT-TYPE
+              SYNTAX  INTEGER
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "This identifies the bridge port to which the
+                  other objects in this entry apply."
+              ::= { a3ComBrgSrGwContEntry 1 }
+
+         a3ComBrgSrGwCont OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         enable  (1),
+                         disable (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This parameter is used to enable or disable
+                  the SRT Gateway feature for this port."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: GatewayControl"
+              DEFVAL { disable }
+              ::= { a3ComBrgSrGwContEntry 2 }
+
+
+         a3ComBrgSrGwContEncapMode OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         ieeeMode  (1),
+                         etherMode (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This parameter is used to control how packets using 
+                  Token Ring LLC-based protocols are converted when 
+                  bridged to Ethernet LANs.  If this object has the
+                  value 'ieeeMode', those packets will be translated 
+                  into IEEE 802.2 frames.  Otherwise, they will be
+                  converted into Ethernet Version II format.  Note,
+                  if the type of frame used by the destination is
+                  known (ie, if autoMode is selected and the station
+                  is known), this parameter is ignored and the previously
+                  seen frame type is used."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: GatewayControl"
+              DEFVAL { ieeeMode }
+              ::= { a3ComBrgSrGwContEntry 3 }
+
+         a3ComBrgSrGwContAutoMode OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         autoMode   (1),
+                         noAutoMode (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This parameter specifies whether or not the encapsulation
+                  format of each end stations is stored."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: GatewayControl"
+              DEFVAL { autoMode }
+              ::= { a3ComBrgSrGwContEntry 4 }
+
+
+         a3ComBrgSrRDTable OBJECT-TYPE
+              SYNTAX  SEQUENCE OF A3ComBrgSrRDEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "This table specifies whether end system source routing
+                  is enabled on for each port on the system.  There are
+                  separate controls for each protocol that may use source
+                  routing."
+              ::= { a3ComBrgSr 6 }
+
+         a3ComBrgSrRDEntry OBJECT-TYPE
+              SYNTAX  A3ComBrgSrRDEntry
+              ACCESS  not-accessible
+              STATUS  mandatory
+              DESCRIPTION
+                  "Each entry applies to a specific port."
+              INDEX { a3ComBrgSrRDPort }
+              ::= { a3ComBrgSrRDTable 1 }
+
+         A3ComBrgSrRDEntry ::=
+              SEQUENCE {
+                  a3ComBrgSrRDPort      INTEGER,
+                  a3ComBrgSrRDAppleTalk INTEGER,
+                  a3ComBrgSrRDClnp      INTEGER,
+                  a3ComBrgSrRDDecNet    INTEGER,
+                  a3ComBrgSrRDDlTest    INTEGER,
+                  a3ComBrgSrRDIp        INTEGER,
+                  a3ComBrgSrRDIpx       INTEGER,
+                  a3ComBrgSrRDLlc2      INTEGER,
+                  a3ComBrgSrRDVines     INTEGER
+              }
+
+         a3ComBrgSrRDPort OBJECT-TYPE
+              SYNTAX  INTEGER 
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                  "This identifies the bridge port to which the
+                  other objects in this entry apply."
+              ::= { a3ComBrgSrRDEntry 1 }
+
+         a3ComBrgSrRDAppleTalk OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         appleTalk    (1),
+                         noAppleTalk  (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This specifies whether route discovery is initiated
+                  for AppleTalke end system packets.  This discovery
+                  process occurs when a route to the end system does
+                  not exist in the local source routing table.  If this
+                  is set to noAppleTalk, all AppleTalk end system
+                  packets are sent as transparent frames."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: RouteDiscovery"
+              DEFVAL { noAppleTalk }
+              ::= { a3ComBrgSrRDEntry 2 }
+
+         a3ComBrgSrRDClnp OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         clnp   (1),
+                         noClnp (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This specifies whether route discovery is initiated
+                  for CLNP end system packets.  This discovery
+                  process occurs when a route to the end system does
+                  not exist in the local source routing table.  If this
+                  is set to noClnp, all CLNP end system packets are 
+                  sent as transparent frames."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: RouteDiscovery"
+              DEFVAL { noClnp }
+              ::= { a3ComBrgSrRDEntry 3 }
+
+         a3ComBrgSrRDDecNet OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         decNet   (1),
+                         noDecNet (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This specifies whether route discovery is initiated
+                  for DECNET end system packets.  This discovery
+                  process occurs when a route to the end system does
+                  not exist in the local source routing table.  If this
+                  is set to noDecNet, all DECNET end system
+                  packets are sent as transparent frames."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: RouteDiscovery"
+              DEFVAL { noDecNet }
+              ::= { a3ComBrgSrRDEntry 4 }
+
+         a3ComBrgSrRDDlTest OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         dlTest   (1),
+                         noDlTest (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This specifies whether route discovery is initiated
+                  for DlTest end system packets.  This discovery
+                  process occurs when a route to the end system does
+                  not exist in the local source routing table.  If this
+                  is set to noDlTest, all DlTest end system
+                  packets are sent as transparent frames."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: RouteDiscovery"
+              DEFVAL { noDlTest }
+              ::= { a3ComBrgSrRDEntry 5 }
+
+         a3ComBrgSrRDIp OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         ip   (1),
+                         noIp (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This specifies whether route discovery is initiated
+                  for IP end system packets.  This discovery
+                  process occurs when a route to the end system does
+                  not exist in the local source routing table.  If this
+                  is set to noIp, all IP end system packets are sent 
+                  as transparent frames."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: RouteDiscovery"
+              DEFVAL { noIp }
+              ::= { a3ComBrgSrRDEntry 6 }
+
+         a3ComBrgSrRDIpx OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         ipx   (1),
+                         noIpx (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This specifies whether route discovery is initiated
+                  for IPX end system packets.  This discovery
+                  process occurs when a route to the end system does
+                  not exist in the local source routing table.  If this
+                  is set to noIpx, all IPX end system packets are sent 
+                  as transparent frames."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: RouteDiscovery"
+              DEFVAL { noIpx }
+              ::= { a3ComBrgSrRDEntry 7 }
+
+         a3ComBrgSrRDLlc2 OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         llc2   (1),
+                         noLlc2 (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This specifies whether route discovery is initiated
+                  for LLC2 end system packets.  This discovery
+                  process occurs when a route to the end system does
+                  not exist in the local source routing table.  If this
+                  is set to noLlc2, all LLC2 end system packets are sent 
+                   as transparent frames."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: RouteDiscovery"
+              DEFVAL { noLlc2 }
+              ::= { a3ComBrgSrRDEntry 8 }
+
+         a3ComBrgSrRDVines OBJECT-TYPE
+              SYNTAX  INTEGER {
+                         vines   (1),
+                         noVines (2) 
+              }
+              ACCESS  read-write
+              STATUS  mandatory
+              DESCRIPTION
+                  "This specifies whether route discovery is initiated
+                  for Vines end system packets.  This discovery
+                  process occurs when a route to the end system does
+                  not exist in the local source routing table.  If this
+                  is set to noVines, all Vines end system
+                  packets are sent as transparent frames."
+              REFERENCE
+                  "NETBuilder Ref. Guide, SR Service parameter: RouteDiscovery"
+              DEFVAL { noVines }
+              ::= { a3ComBrgSrRDEntry 9 }
+
+
+
+
+	a3ComBrgSrTunVRing OBJECT-TYPE
+	      SYNTAX INTEGER
+	      ACCESS read-only
+	      STATUS deprecated
+	      DESCRIPTION
+		  "This object is used only by the Smart Filtering feature."
+              ::= { a3ComBrgSr 7 }
+
+	a3ComBrgSrCNodeAddr OBJECT-TYPE
+	      SYNTAX OCTET STRING
+	      ACCESS read-only
+	      STATUS deprecated
+	      DESCRIPTION
+		  "This object is used only by the Smart Filtering feature."
+              ::= { a3ComBrgSr 8 }
+END

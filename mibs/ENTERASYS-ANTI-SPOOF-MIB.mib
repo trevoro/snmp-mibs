@@ -1,0 +1,1196 @@
+ENTERASYS-ANTI-SPOOF-MIB DEFINITIONS ::= BEGIN
+
+--  enterasys-anti-spoof-mib.txt
+--
+--  Part Number:
+--
+--
+
+--  This module provides authoritative definitions for Enterasys 
+--  Networks' Anti-Spoof functionality.
+
+--  Enterasys Networks reserves the right to make changes in this
+--  specification and other information contained in this document
+--  without prior notice.  The reader should consult Enterasys Networks
+--  to determine whether any such changes have been made.
+--
+--  In no event shall Enterasys Networks be liable for any incidental,
+--  indirect, special, or consequential damages whatsoever (including
+--  but not limited to lost profits) arising out of or related to this
+--  document or the information contained in it, even if Enterasys
+--  Networks has been advised of, known, or should have known, the
+--  possibility of such damages.
+--
+--  Enterasys Networks grants vendors, end-users, and other interested
+--  parties a non-exclusive license to use this Specification in 
+--  connection with the management of Enterasys Networks products.
+
+--  Copyright January 2013 Enterasys Networks, Inc.
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE
+        FROM SNMPv2-SMI
+    Unsigned32, Counter32, Integer32
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION, TruthValue, MacAddress
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+        FROM SNMPv2-CONF
+   SnmpAdminString
+        FROM SNMP-FRAMEWORK-MIB
+    ifIndex, InterfaceIndexOrZero, InterfaceIndex
+        FROM IF-MIB
+    InetAddress, InetAddressType
+        FROM INET-ADDRESS-MIB
+    EnabledStatus
+        FROM P-BRIDGE-MIB
+    etsysModules
+        FROM ENTERASYS-MIB-NAMES;
+
+etsysAntiSpoofMIB MODULE-IDENTITY
+    LAST-UPDATED "201301151631Z"  -- Tue Jan 15 16:31 UTC 2013
+    ORGANIZATION "Enterasys Networks, Inc."
+    CONTACT-INFO
+        "Postal:  Enterasys Networks
+                  50 Minuteman Rd.
+                  Andover, MA 01810-1008
+                  USA
+         Phone:   +1 978 684 1000
+         E-mail:  support@enterasys.com
+         WWW:     http://www.enterasys.com"
+   
+    DESCRIPTION
+        "This MIB module defines a portion of the SNMP MIB under
+         the Enterasys Networks enterprise OID pertaining to 
+         configuration of the anti-spoofing feature."
+    
+    REVISION    "201301151631Z"  -- Tue Jan 15 16:31 UTC 2013
+    DESCRIPTION "Updated informational front and back text sections."
+
+    REVISION    "201210311355Z"  -- Wed Oct 31 1:55 UTC 2012
+    DESCRIPTION "Initial version of this MIB module."
+    ::= { etsysModules 96 } 
+
+-- -------------------------------------------------------------
+-- Textual Conventions
+-- -------------------------------------------------------------
+AntiSpoofPortAction ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+        "The possible actions that the anti-spoofing feature can
+         take when a user exceeds the associated threshold limits.
+
+         generateSyslog(0)
+             Generate the appropriate logging message.
+
+         generateNotification(1)
+             Generate the respective SNMP notification.
+
+         quarantineUser(2)
+             Assign user traffic to the quarantine profile
+             as determined by the respective profile-index."
+    SYNTAX BITS {
+        generateSyslog(0),
+        generateNotification(1),
+        quarantineUser(2)
+    }
+
+AntiSpoofInspectionType ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+        "The possible type of inspection to use on incoming traffic
+         on a given port.
+   
+         enabled(1)
+             Allows dynamic inspection to occur and will create bindings
+             in the binding database based on the inspection.
+
+         disabled(2)
+             Disable both dynamic inspection and the creation of bindings.
+
+         inspectionOnly(3)
+             Allows dynamic inspection of packets to occur but will not
+             create any bindings in the binding database."
+
+    SYNTAX INTEGER {
+        enabled(1),
+        disabled(2),
+        inspectionOnly(3)
+    }
+
+AntiSpoofThresholdType ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+        "The mode the threshold entry will operate in.
+        
+         ipv4Change(1)
+             The threshold action will occur when a user's IPv4 address 
+             changes a number of times equal to the threshold value.
+         
+         ipv6Change(2)
+             The threshold action will occur when a user's IPv6 address 
+             changes a number of times equal to the threshold value.
+             
+         portChange(3)
+             The threshold action will occur when the port that a user 
+             resides on changes a number of times equal to the threshold 
+             value."
+    SYNTAX INTEGER {
+        ipv4Change(1),
+        ipv6Change(2),
+        portChange(3)
+    }
+        
+AntiSpoofPortType ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+        "The port type mode determines how DHCP traffic is handled.
+        
+         trusted(1)
+             When a port is set to trusted mode DHCP server traffic 
+             is accepted and used to create bindings for the client, 
+             with no binding verification for connected clients. 
+
+         bypass(2)
+             When a port is set to bypass mode DHCP server traffic
+             is allowed to pass without any snooping.
+        
+         untrusted(3)
+             When a port is set to untrusted mode client bindings
+             will be verified for all traffic, depending on 
+             feature configuration."        
+   SYNTAX INTEGER {
+        trusted(1),
+        bypass(2),
+        untrusted(3)
+   }
+
+AntiSpoofBindingType ::= TEXTUAL-CONVENTION
+    STATUS current
+    DESCRIPTION
+        "The method by which a given client binding was created.
+        
+         dhcp(1)
+             This indicates that a binding was created by DHCP MAC
+             verification.
+        
+         arp(2)
+             This indicates that a binding was created by dynamic
+             ARP inspection.
+        
+         ip(3)
+             This indicates that the binding was created by dynamic
+             IP inspection."
+    SYNTAX INTEGER {
+        dhcp(1),
+        arp(2),
+        ip(3)
+    }
+
+EtsysInstanceOID ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+        "A partial OBJECT IDENTIFIER suitable for use as instancing
+         for other MIB objects.  The definition of an OBJECT IDENTIFIER 
+         requires that all OIDs start with zero or one, consequently, the
+         first two sub-ids of a EtsysInstanceOID will always be {0,0}."
+    SYNTAX OBJECT IDENTIFIER
+        
+-- -------------------------------------------------------------
+-- Branches of the Enterasys Anti Spoofing MIB
+-- -------------------------------------------------------------
+
+etsysAntiSpoofObjects
+        OBJECT IDENTIFIER ::= { etsysAntiSpoofMIB 1 }
+
+etsysAntiSpoofSystemBranch
+        OBJECT IDENTIFIER ::= { etsysAntiSpoofObjects 1 }
+
+etsysAntiSpoofClassBranch
+        OBJECT IDENTIFIER ::= { etsysAntiSpoofObjects 2 }
+
+etsysAntiSpoofPortBranch
+        OBJECT IDENTIFIER ::= { etsysAntiSpoofObjects 3 }
+
+etsysAntiSpoofBindingBranch
+        OBJECT IDENTIFIER ::= { etsysAntiSpoofObjects 4 }
+
+etsysAntiSpoofNotificationBranch
+        OBJECT IDENTIFIER ::= { etsysAntiSpoofObjects 0 }
+
+
+-- -------------------------------------------------------------
+-- Anti Spoofing System Branch
+-- -------------------------------------------------------------
+etsysAntiSpoofSystemState  OBJECT-TYPE
+    SYNTAX        EnabledStatus
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When enabled(1), all objects in this MIB are fully active.
+         When disabled(2), this object overrides all other object
+         settings in this MIB without affecting their values.  Maintaining
+         the value of this object across agent reboots is REQUIRED."
+    DEFVAL { disabled }
+    ::= { etsysAntiSpoofSystemBranch 1 }
+
+etsysAntiSpoofMaxClassIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of class indexes available in the system."
+    ::= { etsysAntiSpoofSystemBranch 2 }
+
+etsysAntiSpoofMaxClassThresholdIndex OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of threshold indexes able to be associated 
+         with a particular class."
+    ::= { etsysAntiSpoofSystemBranch 3 }
+
+
+etsysAntiSpoofSystemSnmpNotifications  OBJECT-TYPE
+    SYNTAX        EnabledStatus
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The current state of the SNMP Notification functionality in
+         the Anti Spoofing feature.
+
+         enabled  (1) - Anti-Spoofing will generate SNMP Notifications
+                        for user IP address or port changes that exceed 
+                        the configured limits. The Anti-Spoofing feature
+                        MUST be enabled for SNMP Notifications to be
+                        generated.
+
+         disabled (2) - Anti-Spoofing will not generate SNMP
+                        Notifications under any conditions.
+
+         A notification is generated when a value is first detected
+         above its respective configured limit. That notification
+         SHOULD NOT be generated again until the configured notification
+         timeout period has elapsed.
+
+         Agents are not required to generate SNMP Notifications for
+         conditions that exist when this object is set to enabled.
+         SNMP Notifications MAY only be generated after additional
+         IP address changes are detected that exceed the configured 
+         limits for the user.          
+
+         Maintaining the value of this object across agent reboots is
+         REQUIRED."
+    DEFVAL { enabled }
+    ::= { etsysAntiSpoofSystemBranch 4 }
+
+etsysAntiSpoofSystemNotificationInterval  OBJECT-TYPE
+    SYNTAX        Unsigned32 (0..86400)
+    UNITS         "seconds"
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The number of seconds to wait before generating another
+         notification of the same type for the same user.
+         This allows notification generation to be throttled in
+         the case of a user who continually changes IP addresses.  
+         A value of zero indicates that the entity SHOULD NOT suppress 
+         any notifications related to the Anti-Spoofing feature.
+         Maintaining the value of this object across agent reboots
+         is REQUIRED."
+    DEFVAL { 60 }
+    ::= { etsysAntiSpoofSystemBranch 5 }
+
+etsysAntiSpoofDuplicateIpControl  OBJECT-TYPE
+    SYNTAX        EnabledStatus
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When this is set to enabled(1) any IP changes will be checked
+        across the system to ensure that the newly configured IP 
+        address is not already present. If the IP is present in the system
+        then a syslog and or trap will be issued.
+        When set to disabled(2) this check will not occur."
+    DEFVAL { disabled } 
+    ::= { etsysAntiSpoofSystemBranch 6 }
+
+etsysAntiSpoofSupportedActionTypes OBJECT-TYPE
+    SYNTAX       AntiSpoofPortAction
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "This object specifies that anti-spoofing action types that the
+         device supports.  A bit will be set for each corresponding 
+         type that is supported."
+    ::= { etsysAntiSpoofSystemBranch 7 }
+
+etsysAntiSpoofSupportedThresholdTypes OBJECT-TYPE
+    SYNTAX       BITS {
+                   ipv4Change(0),
+                   ipv6Change(1),
+                   portChange(2)
+                 }
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "This object specifies that anti-spoofing threshold types that 
+         the device supports.  A bit will be set for each corresponding
+         type that is supported."
+    ::= { etsysAntiSpoofSystemBranch 8 }
+
+etsysAntiSpoofSupportedBindingTypes OBJECT-TYPE
+    SYNTAX       BITS {
+                   dhcp(0),
+                   arp(1),
+                   ip(2)
+                 }
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "This object specifies that anti-spoofing binding types that 
+         the device supports.  A bit will be set for each corresponding
+         type that is supported."
+    ::= { etsysAntiSpoofSystemBranch 9 }
+
+-- -------------------------------------------------------------
+-- Anti-Spoofing Class Configuration Branch
+-- -------------------------------------------------------------
+etsysAntiSpoofClassTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF EtsysAntiSpoofClassEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "Provides for the configuring of each of the classes present in 
+         Anti-Spoofing. 
+
+         Maintaining the value of the objects in this table across
+         agent reboots is REQUIRED."
+    ::= { etsysAntiSpoofClassBranch 1 }
+
+etsysAntiSpoofClassEntry OBJECT-TYPE
+    SYNTAX        EtsysAntiSpoofClassEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An entry containing per class properties."
+    INDEX { etsysAntiSpoofClassIndex }
+    ::= { etsysAntiSpoofClassTable 1 }
+
+EtsysAntiSpoofClassEntry ::=
+    SEQUENCE {
+        etsysAntiSpoofClassIndex                  
+            Unsigned32,
+        etsysAntiSpoofClassName                   
+            SnmpAdminString,
+        etsysAntiSpoofClassTimeout
+            Unsigned32 
+    }
+etsysAntiSpoofClassIndex  OBJECT-TYPE
+    SYNTAX        Unsigned32
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "The index of class that this row represents. This
+         index has a value between one(1) and 
+         etsysAntiSpoofMaxClassIndex."
+    ::= { etsysAntiSpoofClassEntry 1 }
+
+etsysAntiSpoofClassName  OBJECT-TYPE
+    SYNTAX        SnmpAdminString (SIZE(0..32))
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "Administratively assigned textual description of this class."
+    ::= { etsysAntiSpoofClassEntry 2 }
+
+etsysAntiSpoofClassTimeout  OBJECT-TYPE
+    SYNTAX        Unsigned32 
+    UNITS         "seconds"
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The number of seconds to wait before administratively 
+         resetting the counters of the bindings which are based on this
+         class associated with this class. A value of zero indicates 
+         that the counters will not be reset automatically."
+    DEFVAL { 600 }
+    ::= { etsysAntiSpoofClassEntry 3 }
+
+etsysAntiSpoofThresholdTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF EtsysAntiSpoofThresholdEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "Provides for the configuration of the Anti-Spoofing feature's
+         various thresholds.
+
+         Maintaining the value of the objects in this table across
+         agent reboots is REQUIRED."
+    ::= { etsysAntiSpoofClassBranch 2 }
+
+etsysAntiSpoofThresholdEntry OBJECT-TYPE
+    SYNTAX        EtsysAntiSpoofThresholdEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An entry providing per class, per threshold configuration."
+    INDEX { etsysAntiSpoofClassIndex, etsysAntiSpoofThresholdIndex }
+    ::= { etsysAntiSpoofThresholdTable 1 }
+
+EtsysAntiSpoofThresholdEntry ::=
+    SEQUENCE {
+        etsysAntiSpoofThresholdIndex              
+            Unsigned32,
+        etsysAntiSpoofThresholdValue         
+            Unsigned32,
+        etsysAntiSpoofThresholdActionMask             
+            AntiSpoofPortAction,
+        etsysAntiSpoofThresholdActionQuarantineValue  
+            Integer32,
+        etsysAntiSpoofThresholdType                   
+            AntiSpoofThresholdType
+    }
+
+etsysAntiSpoofThresholdIndex  OBJECT-TYPE
+    SYNTAX        Unsigned32
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "The index of the threshold that this row represents.  This 
+         index has a value between one(1) and 
+         etsysAntiSpoofMaxClassThresholdIndex."
+    ::= { etsysAntiSpoofThresholdEntry 1 }
+
+etsysAntiSpoofThresholdValue  OBJECT-TYPE
+    SYNTAX        Unsigned32
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The threshold at which the action defined by the class is
+         taken. A value of zero(0) indicates that the threshold
+         actions will never take place."
+    ::= { etsysAntiSpoofThresholdEntry 2 }
+        
+etsysAntiSpoofThresholdActionMask  OBJECT-TYPE
+    SYNTAX        AntiSpoofPortAction
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The action(s) that will be taken when the threshold in the class
+         represented by this row is reached."
+    ::= { etsysAntiSpoofThresholdEntry 3 }
+
+etsysAntiSpoofThresholdActionQuarantineValue  OBJECT-TYPE
+    SYNTAX        Integer32
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "A value that delineates the policy quarantine index to which the 
+         user will be assigned. This value is only used if the 
+         quarantineUser(2) bit is set in the 
+         etsysAntiSpoofThresholdActionMask."
+    ::= { etsysAntiSpoofThresholdEntry 4 }
+
+etsysAntiSpoofThresholdType  OBJECT-TYPE
+    SYNTAX        AntiSpoofThresholdType
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "The class type associated with this entry."
+    ::= { etsysAntiSpoofThresholdEntry 5 }
+
+
+-- -------------------------------------------------------------
+-- Anti-Spoofing Port Branch
+-- -------------------------------------------------------------
+etsysAntiSpoofPortConfigTable  OBJECT-TYPE
+    SYNTAX        SEQUENCE OF EtsysAntiSpoofPortConfigEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "A table of per port information and configuration for 
+         Anti-Spoofing."
+    ::= { etsysAntiSpoofPortBranch 1 }
+
+etsysAntiSpoofPortConfigEntry OBJECT-TYPE
+    SYNTAX        EtsysAntiSpoofPortConfigEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An entry containing per port Anti-Spoofing data."
+    INDEX { ifIndex } 
+    ::= { etsysAntiSpoofPortConfigTable 1 }
+
+EtsysAntiSpoofPortConfigEntry ::= 
+    SEQUENCE {
+        etsysAntiSpoofDHCPMode
+            EnabledStatus, 
+        etsysAntiSpoofDHCPMacVerify
+            EnabledStatus, 
+        etsysAntiSpoofArpInspection
+            AntiSpoofInspectionType,
+        etsysAntiSpoofIpInspection
+            AntiSpoofInspectionType,
+        etsysAntiSpoofPortClassIndex
+            Unsigned32,
+        etsysAntiSpoofUntrustedTrafficPacketCounter
+            Counter32
+    }
+
+etsysAntiSpoofDHCPMode  OBJECT-TYPE
+    SYNTAX        EnabledStatus
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "This object allows for the enabling or disabling of DHCP 
+         Snooping functionality on a per-port basis."
+    DEFVAL { disabled }
+    ::= { etsysAntiSpoofPortConfigEntry 1 }
+
+etsysAntiSpoofDHCPMacVerify OBJECT-TYPE
+    SYNTAX        EnabledStatus
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "This object allows for the enabling or disabling of 
+         DHCP-Snooping to verify the source address MAC with chaddr in 
+         DHCP packets on incoming client messages."
+    DEFVAL { disabled }
+    ::= { etsysAntiSpoofPortConfigEntry 2 }
+
+etsysAntiSpoofArpInspection OBJECT-TYPE
+    SYNTAX        AntiSpoofInspectionType
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When set to enabled(1), dynamic ARP inspection is allowed on this 
+         port.
+         When set to disabled(2), dynamic ARP inspection is not allowed on 
+         this port.
+         When set to inspectionOnly(3), dynamic ARP inspection will occur
+         but will not be used to create bindings."
+    DEFVAL { disabled }
+    ::= { etsysAntiSpoofPortConfigEntry 3 }
+
+etsysAntiSpoofIpInspection OBJECT-TYPE
+    SYNTAX        AntiSpoofInspectionType
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When set to enabled(1), dynamic IP inspection is allowed on this 
+         port.
+         When set to disabled(2), dynamic IP inspection is not allowed on 
+         this port.
+         When set to inspectionOnly(3), dynamic IP inspection will occur
+         but will not be used to create bindings."
+    DEFVAL { disabled }
+    ::= { etsysAntiSpoofPortConfigEntry 4 }
+
+etsysAntiSpoofPortClassIndex OBJECT-TYPE
+    SYNTAX        Unsigned32
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "This value represents the class index to be used for the given 
+         port.  The special case value of zero(0) indicates that no class
+         index will be used for this port."
+    DEFVAL { 0 } 
+    ::= { etsysAntiSpoofPortConfigEntry 5 }
+        
+etsysAntiSpoofUntrustedTrafficPacketCounter OBJECT-TYPE
+    SYNTAX        Counter32
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "This counter is used to measure the number of DHCP server 
+         packets received on this port. This counter will only
+         increment when the etsysAntiSpoofPortType is set to 
+         untrusted(3)."
+    ::= { etsysAntiSpoofPortConfigEntry 6 }
+
+etsysAntiSpoofPortTypeTable  OBJECT-TYPE
+    SYNTAX        SEQUENCE OF EtsysAntiSpoofPortTypeEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "A table containing port type information for each
+         port in the system that supports anti-spoofing."
+    ::= { etsysAntiSpoofPortBranch 2 }
+
+etsysAntiSpoofPortTypeEntry OBJECT-TYPE
+    SYNTAX        EtsysAntiSpoofPortTypeEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An entry containing per port anti-spoofing configuration data."
+    INDEX { ifIndex } 
+    ::= { etsysAntiSpoofPortTypeTable 1 }
+
+EtsysAntiSpoofPortTypeEntry ::= 
+    SEQUENCE {
+        etsysAntiSpoofPortType
+            AntiSpoofPortType
+    }
+
+etsysAntiSpoofPortType  OBJECT-TYPE
+    SYNTAX        AntiSpoofPortType
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "This object specifies the port type to be used for this port.
+         The port type indicates how DHCP traffic is handled."
+    DEFVAL { untrusted }
+    ::= { etsysAntiSpoofPortTypeEntry 1 } 
+
+-- -------------------------------------------------------------
+-- Anti Spoofing Binding Branch
+-- -------------------------------------------------------------
+etsysAntiSpoofStationBindingTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF EtsysAntiSpoofStationBindingEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+      "A table containing information pertaining to the current active
+       bindings set up through Anti-Spoofing."
+    ::= { etsysAntiSpoofBindingBranch 1 }
+
+etsysAntiSpoofStationBindingEntry OBJECT-TYPE
+    SYNTAX        EtsysAntiSpoofStationBindingEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An entry containing per binding data."
+    INDEX { etsysAntiSpoofStationBindingEntryIndex }
+    ::= { etsysAntiSpoofStationBindingTable 1 }
+
+EtsysAntiSpoofStationBindingEntry ::= 
+    SEQUENCE {
+        etsysAntiSpoofStationBindingEntryIndex
+            EtsysInstanceOID,
+        etsysAntiSpoofStationBindingEntryMacAddr
+            MacAddress,
+        etsysAntiSpoofStationBindingEntryInetAddrType
+            InetAddressType,
+        etsysAntiSpoofStationBindingEntryInetAddr
+            InetAddress,
+        etsysAntiSpoofStationBindingEntryIfIndex
+            InterfaceIndex,
+        etsysAntiSpoofStationBindingEntryInetCounter
+            Counter32,
+        etsysAntiSpoofStationBindingEntryClearInetCounter
+            TruthValue,
+        etsysAntiSpoofStationBindingEntryPortCounter
+            Counter32,
+        etsysAntiSpoofStationBindingEntryClearPortCounter
+            TruthValue,
+        etsysAntiSpoofStationBindingEntryClearBinding
+            TruthValue,
+        etsysAntiSpoofStationBindingEntryBindingType
+            AntiSpoofBindingType,
+        etsysAntiSpoofStationBindingEntryDurationTime
+            Unsigned32,
+        etsysAntiSpoofStationBindingEntryExpirationTime
+            Unsigned32
+    }
+
+etsysAntiSpoofStationBindingEntryIndex OBJECT-TYPE
+    SYNTAX        EtsysInstanceOID
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION 
+        "The unique index for this columnar row."
+    ::= { etsysAntiSpoofStationBindingEntry 1 }
+
+etsysAntiSpoofStationBindingEntryMacAddr OBJECT-TYPE
+    SYNTAX        MacAddress
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The MAC address of the binding."
+    ::= { etsysAntiSpoofStationBindingEntry 2 }
+
+etsysAntiSpoofStationBindingEntryInetAddrType OBJECT-TYPE
+    SYNTAX        InetAddressType
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The IP address type of the binding."
+    ::= { etsysAntiSpoofStationBindingEntry 3 }
+
+etsysAntiSpoofStationBindingEntryInetAddr OBJECT-TYPE
+    SYNTAX        InetAddress
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The IP address of the binding." 
+    ::= { etsysAntiSpoofStationBindingEntry 4 }
+
+etsysAntiSpoofStationBindingEntryIfIndex OBJECT-TYPE
+    SYNTAX        InterfaceIndex
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The port that this binding currently resides on."
+    ::= { etsysAntiSpoofStationBindingEntry 5 }
+
+etsysAntiSpoofStationBindingEntryInetCounter OBJECT-TYPE
+    SYNTAX        Counter32
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The number of times the IP address has changed for this binding."
+    ::= { etsysAntiSpoofStationBindingEntry 6 }
+
+etsysAntiSpoofStationBindingEntryClearInetCounter OBJECT-TYPE
+    SYNTAX        TruthValue 
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When set to true(1), this object will clear the IP counter
+         associated with this binding.
+         Setting this object to a value of false(2) has no effect.  This
+         object MUST always return a value of false(2)."
+    ::= { etsysAntiSpoofStationBindingEntry 7 }
+
+etsysAntiSpoofStationBindingEntryPortCounter OBJECT-TYPE
+    SYNTAX        Counter32
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The number of times the port has changed for this 
+         binding."
+    ::= { etsysAntiSpoofStationBindingEntry 8 }
+
+etsysAntiSpoofStationBindingEntryClearPortCounter OBJECT-TYPE
+    SYNTAX        TruthValue 
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When set to true(1), this object will clear the port counter
+         associated with this binding.
+         Setting this object to a value of false(2) has no effect.  This
+         object MUST always return a value of false(2)."
+    ::= { etsysAntiSpoofStationBindingEntry 9 }
+
+etsysAntiSpoofStationBindingEntryClearBinding OBJECT-TYPE
+    SYNTAX        TruthValue 
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When set to true(1), this object will clear the current binding.
+         Allowing a new binding to be created with the same MAC/IP 
+         address and clearing all counter information.
+         Setting this object to a value of false(2) has no effect.  This
+         object MUST always return a value of false(2)."
+    ::= { etsysAntiSpoofStationBindingEntry 10 }
+
+etsysAntiSpoofStationBindingEntryBindingType OBJECT-TYPE
+    SYNTAX        AntiSpoofBindingType 
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "This indicates which binding type (DHCP, ARP, or IP inspection) 
+         was used to create the entry."
+    ::= { etsysAntiSpoofStationBindingEntry 11 }
+
+etsysAntiSpoofStationBindingEntryDurationTime OBJECT-TYPE
+    SYNTAX        Unsigned32
+    UNITS         "seconds"
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The amount of time, in seconds, that this binding has been
+         operational for."
+    ::= { etsysAntiSpoofStationBindingEntry 12 }
+
+etsysAntiSpoofStationBindingEntryExpirationTime OBJECT-TYPE
+    SYNTAX        Unsigned32
+    UNITS         "seconds"
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "The amount of time, in seconds, from its creation, that
+         this binding will be operational for before being destroyed.
+         A value of zero(0) indicates that this binding will
+         not expire."
+    ::= { etsysAntiSpoofStationBindingEntry 13 }
+
+
+etsysAntiSpoofMacBindingTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF EtsysAntiSpoofMacBindingEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "A table indicating whether a given binding is accessible.
+         This table is indexed first by MAC, then by IP, and finally 
+         by port. In this way a user may quickly determine which
+         bindings are active for a given station address and look up
+         those entries in the etsysAntiSpoofStationBindingTable."
+    ::= { etsysAntiSpoofBindingBranch 2 }
+
+etsysAntiSpoofMacBindingEntry OBJECT-TYPE
+    SYNTAX        EtsysAntiSpoofMacBindingEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An entry containing per binding data."
+    INDEX { etsysAntiSpoofStationBindingEntryMacAddr,
+            etsysAntiSpoofStationBindingEntryInetAddrType,
+            etsysAntiSpoofStationBindingEntryInetAddr,
+            etsysAntiSpoofStationBindingInterface
+          }
+    ::= { etsysAntiSpoofMacBindingTable 1 }
+
+EtsysAntiSpoofMacBindingEntry ::= 
+    SEQUENCE {
+        etsysAntiSpoofStationBindingInterface
+            InterfaceIndexOrZero,
+        etsysAntiSpoofMacStationBindingIndex
+            EtsysInstanceOID,
+        etsysAntiSpoofMacBindingClearBinding
+            TruthValue
+    }
+
+etsysAntiSpoofStationBindingInterface OBJECT-TYPE
+    SYNTAX        InterfaceIndexOrZero
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "The current interface index that the IP/MAC binding resides on."
+    ::= { etsysAntiSpoofMacBindingEntry 1 }
+
+etsysAntiSpoofMacStationBindingIndex OBJECT-TYPE
+    SYNTAX        EtsysInstanceOID
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "A unique identifier for this entry to be used as indexing
+         in the etsysAntiSpoofStationBindingTable."
+    ::= { etsysAntiSpoofMacBindingEntry 2 }
+
+etsysAntiSpoofMacBindingClearBinding OBJECT-TYPE
+    SYNTAX        TruthValue
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When set to true(1), this object will clear the current binding,
+         allowing a new binding to be created with the same MAC/IP 
+         address and clearing all counter information.  If the 
+         etsysAntiSpoofStationBindingInterface index specified in the 
+         SET operation is zero (0) it will remove the MAC/IP
+         binding regardless of the current port it is associated with.
+         Specifying an etsysAntiSpoofStationBindingInterface index value
+         between 1..2147483647 will only remove the binding if it
+         currently resides on that specific interface.
+
+         Setting this object to a value of false(2) has no effect.  This
+         object MUST always return a value of false(2)."
+    ::= { etsysAntiSpoofMacBindingEntry 3 }
+
+etsysAntiSpoofIpBindingTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF EtsysAntiSpoofIpBindingEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "A table indicating whether a given binding is accessible.
+         This table is indexed first by IP, then by MAC, and finally 
+         by port. In this way a user may quickly determine which
+         bindings are active for a given station address and look up
+         those entries in the etsysAntiSpoofStationBindingTable."
+    ::= { etsysAntiSpoofBindingBranch 3 }
+
+etsysAntiSpoofIpBindingEntry OBJECT-TYPE
+    SYNTAX        EtsysAntiSpoofIpBindingEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An entry containing per binding data."
+    INDEX { etsysAntiSpoofStationBindingEntryInetAddrType,
+            etsysAntiSpoofStationBindingEntryInetAddr,
+            etsysAntiSpoofStationBindingEntryMacAddr,
+            etsysAntiSpoofStationBindingInterface
+          }
+    ::= { etsysAntiSpoofIpBindingTable 1 }
+
+EtsysAntiSpoofIpBindingEntry ::= 
+    SEQUENCE {
+        etsysAntiSpoofIpStationBindingIndex
+            EtsysInstanceOID,
+        etsysAntiSpoofIpBindingClearBinding
+            TruthValue
+    }
+
+etsysAntiSpoofIpStationBindingIndex OBJECT-TYPE
+    SYNTAX        EtsysInstanceOID
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "A unique identifier for this entry to be used as indexing
+         in the etsysAntiSpoofStationBindingTable."
+    ::= { etsysAntiSpoofIpBindingEntry 1 }
+
+etsysAntiSpoofIpBindingClearBinding OBJECT-TYPE
+    SYNTAX        TruthValue
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When set to true(1), this object will clear the current binding,
+         allowing a new binding to be created with the same MAC/IP
+         address and clearing all counter information.  If the
+         etsysAntiSpoofStationBindingInterface index specified in the 
+         SET operation is zero (0) it will remove the MAC/IP
+         binding regardless of the current port it is associated with.
+         Specifying an etsysAntiSpoofStationBindingInterface index value
+         between 1..2147483647 will only remove the binding if it
+         currently resides on that specific interface.
+
+         Setting this object to a value of false(2) has no effect.  This
+         object MUST always return a value of false(2)."
+   ::= { etsysAntiSpoofIpBindingEntry 2 }
+
+etsysAntiSpoofPortBindingTable OBJECT-TYPE
+    SYNTAX        SEQUENCE OF EtsysAntiSpoofPortBindingEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "A table indicating whether a given binding is accessible.
+         This table is indexed first by port, then by MAC, and finally 
+         by IP. In this way a user may quickly determine which
+         bindings are active for a given station address and look up
+         those entries in the etsysAntiSpoofStationBindingTable."
+    ::= { etsysAntiSpoofBindingBranch 4 }
+
+etsysAntiSpoofPortBindingEntry OBJECT-TYPE
+    SYNTAX        EtsysAntiSpoofPortBindingEntry
+    MAX-ACCESS    not-accessible
+    STATUS        current
+    DESCRIPTION
+        "An entry containing per binding data."
+    INDEX { etsysAntiSpoofStationBindingInterface,
+            etsysAntiSpoofStationBindingEntryMacAddr,
+            etsysAntiSpoofStationBindingEntryInetAddrType,
+            etsysAntiSpoofStationBindingEntryInetAddr
+          }
+    ::= { etsysAntiSpoofPortBindingTable 1 }
+
+EtsysAntiSpoofPortBindingEntry ::= 
+    SEQUENCE {
+        etsysAntiSpoofPortStationBindingIndex
+            EtsysInstanceOID,
+        etsysAntiSpoofPortBindingClearBinding
+            TruthValue
+    }
+
+etsysAntiSpoofPortStationBindingIndex OBJECT-TYPE
+    SYNTAX        EtsysInstanceOID
+    MAX-ACCESS    read-only
+    STATUS        current
+    DESCRIPTION
+        "A unique identifier for this entry to be used as indexing
+         in the etsysAntiSpoofStationBindingTable."
+    ::= { etsysAntiSpoofPortBindingEntry 1 }
+
+etsysAntiSpoofPortBindingClearBinding OBJECT-TYPE
+    SYNTAX        TruthValue
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+        "When set to true(1), this object will clear the current binding,
+         allowing a new binding to be created with the same MAC/IP
+         address and clearing all counter information.  If the
+         etsysAntiSpoofStationBindingInterface index specified in the 
+         SET operation is zero (0) it will remove the MAC/IP
+         binding regardless of the current port it is associated with.
+         Specifying an etsysAntiSpoofStationBindingInterface index value
+         between 1..2147483647 will only remove the binding if it
+         currently resides on that specific interface.
+
+         Setting this object to a value of false(2) has no effect.  This
+         object MUST always return a value of false(2)."
+    ::= { etsysAntiSpoofPortBindingEntry 2 }
+
+-- -------------------------------------------------------------
+-- Anti Spoofing Notification Branch
+-- -------------------------------------------------------------
+etsysAntiSpoofClassNotification NOTIFICATION-TYPE
+    OBJECTS { etsysAntiSpoofThresholdValue,
+              etsysAntiSpoofStationBindingEntryMacAddr,
+              etsysAntiSpoofStationBindingEntryInetAddrType,
+              etsysAntiSpoofStationBindingEntryInetAddr,
+              etsysAntiSpoofStationBindingEntryIfIndex }
+    STATUS  current
+    DESCRIPTION
+        "This notification indicates that a Anti Spoof class has reached a 
+         threshold limit."
+    ::= { etsysAntiSpoofNotificationBranch 1 } 
+
+etsysAntiSpoofDuplicateIpNotification NOTIFICATION-TYPE
+    OBJECTS { etsysAntiSpoofStationBindingEntryMacAddr,
+              etsysAntiSpoofStationBindingEntryIfIndex,
+              etsysAntiSpoofStationBindingEntryInetAddrType,
+              etsysAntiSpoofStationBindingEntryInetAddr }
+    STATUS  current
+    DESCRIPTION
+        "This notification indicates that a duplicate IP condition has 
+         occurred."
+    ::= { etsysAntiSpoofNotificationBranch 2 } 
+
+
+-- -------------------------------------------------------------
+-- Conformance Information
+-- -------------------------------------------------------------
+
+etsysAntiSpoofConformance OBJECT IDENTIFIER ::= { etsysAntiSpoofMIB 2 }
+
+etsysAntiSpoofGroups      OBJECT IDENTIFIER ::= { etsysAntiSpoofConformance 1 }
+etsysAntiSpoofCompliances OBJECT IDENTIFIER ::= { etsysAntiSpoofConformance 2 }
+
+-- -------------------------------------------------------------
+-- Units of conformance
+-- -------------------------------------------------------------
+
+etsysAntiSpoofSystemGroup OBJECT-GROUP
+    OBJECTS {
+        etsysAntiSpoofSystemState,
+        etsysAntiSpoofMaxClassIndex,
+        etsysAntiSpoofMaxClassThresholdIndex,
+        etsysAntiSpoofSystemSnmpNotifications,
+        etsysAntiSpoofSystemNotificationInterval,
+        etsysAntiSpoofDuplicateIpControl,
+        etsysAntiSpoofSupportedActionTypes,
+        etsysAntiSpoofSupportedThresholdTypes,
+        etsysAntiSpoofSupportedBindingTypes
+    }
+    STATUS     current
+    DESCRIPTION
+        "The scalar group for all devices supporting Anti-Spoofing."
+    ::= { etsysAntiSpoofGroups 1 }
+
+etsysAntiSpoofClassGroup OBJECT-GROUP
+    OBJECTS {
+        etsysAntiSpoofClassName,
+        etsysAntiSpoofClassTimeout
+    }
+    STATUS    current
+    DESCRIPTION
+        "The base level class group for all devices supporting
+         Anti-Spoofing."
+    ::= { etsysAntiSpoofGroups 2 }
+
+etsysAntiSpoofThresholdGroup OBJECT-GROUP
+    OBJECTS {
+        etsysAntiSpoofThresholdValue,
+        etsysAntiSpoofThresholdActionMask,        
+        etsysAntiSpoofThresholdActionQuarantineValue,
+        etsysAntiSpoofThresholdType
+    }
+    STATUS     current
+    DESCRIPTION
+        "The base level threshold group for all devices supporting
+         Anti-Spoofing."
+    ::= { etsysAntiSpoofGroups 3 }
+
+etsysAntiSpoofPortGroup OBJECT-GROUP
+    OBJECTS { 
+        etsysAntiSpoofDHCPMode,
+        etsysAntiSpoofDHCPMacVerify,
+        etsysAntiSpoofArpInspection,
+        etsysAntiSpoofIpInspection,
+        etsysAntiSpoofPortClassIndex,
+        etsysAntiSpoofUntrustedTrafficPacketCounter,
+        etsysAntiSpoofPortType
+    }
+    STATUS     current
+    DESCRIPTION
+        "This group of objects for all devices supporting per interface 
+         Anti-Spoofing settings."
+    ::= { etsysAntiSpoofGroups 4 }
+
+etsysAntiSpoofStationBindingGroup OBJECT-GROUP
+    OBJECTS {
+        etsysAntiSpoofStationBindingEntryMacAddr,
+        etsysAntiSpoofStationBindingEntryInetAddrType,
+        etsysAntiSpoofStationBindingEntryInetAddr,
+        etsysAntiSpoofStationBindingEntryInetCounter,
+        etsysAntiSpoofStationBindingEntryClearInetCounter,
+        etsysAntiSpoofStationBindingEntryIfIndex,
+        etsysAntiSpoofStationBindingEntryPortCounter,
+        etsysAntiSpoofStationBindingEntryClearPortCounter,
+        etsysAntiSpoofStationBindingEntryClearBinding,
+        etsysAntiSpoofStationBindingEntryBindingType,
+        etsysAntiSpoofStationBindingEntryDurationTime,
+        etsysAntiSpoofStationBindingEntryExpirationTime
+    }
+    STATUS     current
+    DESCRIPTION
+        "The group for all devices which support bindings
+         for Anti-Spoofing."
+    ::= { etsysAntiSpoofGroups 5 }
+
+etsysAntiSpoofMacBindingGroup OBJECT-GROUP
+    OBJECTS {
+        etsysAntiSpoofMacStationBindingIndex,
+        etsysAntiSpoofMacBindingClearBinding
+    }
+    STATUS     current
+    DESCRIPTION
+        "The group for all devices which support MAC bindings
+         for Anti-Spoofing."
+    ::= { etsysAntiSpoofGroups 6 }
+
+
+etsysAntiSpoofIpBindingGroup OBJECT-GROUP
+    OBJECTS {
+        etsysAntiSpoofIpStationBindingIndex,
+        etsysAntiSpoofIpBindingClearBinding
+    }
+    STATUS     current
+    DESCRIPTION
+        "The group for all devices which support IP bindings
+         for Anti-Spoofing."
+    ::= { etsysAntiSpoofGroups 7 }
+
+etsysAntiSpoofPortBindingGroup OBJECT-GROUP
+    OBJECTS {
+        etsysAntiSpoofPortStationBindingIndex,
+        etsysAntiSpoofPortBindingClearBinding
+    }
+    STATUS     current
+    DESCRIPTION
+        "The group for all devices which support IP bindings
+         for Anti-Spoofing."
+    ::= { etsysAntiSpoofGroups 8 }
+
+etsysAntiSpoofNotificationGroup NOTIFICATION-GROUP
+    NOTIFICATIONS {
+        etsysAntiSpoofClassNotification,
+        etsysAntiSpoofDuplicateIpNotification
+    }
+    STATUS  current
+    DESCRIPTION
+        "The group of class notifications for Anti-Spoof."
+    ::= { etsysAntiSpoofGroups 9 }
+
+-- -------------------------------------------------------------
+-- Compliance statements
+-- -------------------------------------------------------------
+etsysAntiSpoofCompliance MODULE-COMPLIANCE
+    STATUS     current
+    DESCRIPTION
+        "The compliance statement for devices that support Anti-Spoof."
+    MODULE
+        MANDATORY-GROUPS { 
+          etsysAntiSpoofSystemGroup,
+          etsysAntiSpoofClassGroup,
+          etsysAntiSpoofThresholdGroup,
+          etsysAntiSpoofPortGroup,
+          etsysAntiSpoofStationBindingGroup, 
+          etsysAntiSpoofMacBindingGroup, 
+          etsysAntiSpoofPortBindingGroup, 
+          etsysAntiSpoofIpBindingGroup, 
+          etsysAntiSpoofNotificationGroup 
+        }
+
+    ::= { etsysAntiSpoofCompliances 1 }
+END

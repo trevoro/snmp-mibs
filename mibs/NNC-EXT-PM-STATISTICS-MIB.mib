@@ -1,0 +1,1252 @@
+-------------------------------------------------------------------------------
+-- file: PMStatistics.mib 
+--
+-- description:
+--  This file contains the SNMP definitions for the PMStatistics area.
+--
+-- history:
+--
+-- $Log: 1.PMStatistics.mib,v $
+-- Revision 1.1.1.2  1999/12/21 16:59:49  rickt
+-- 4.2 merge cr->ctl
+--
+--
+--
+--  31A1227 / 1998.10.02 / R. To / Creation from V1.0 of MIBTemplate.mib
+--  31A1227 / 1999.09.02 / R. To / Renamed 
+--                                 nncExtPm24HrCurrentAbsoluteCurrentNumber to
+--                                 nncExtPm24HrCurrentAbsoluteIntervalNumber
+--  31A1227 / 1999.12.10 / R. To / Renamed
+--                                 nncExtPm24HrCurrentAbsoluteCurrentNumber
+--                                 missing from last time.
+--
+-- Copyright 1998-1999 Newbridge Networks Corporation.  All Rights Reserved
+-------------------------------------------------------------------------------
+NNC-EXT-PM-STATISTICS-MIB DEFINITIONS ::= BEGIN
+
+  IMPORTS
+
+    MODULE-IDENTITY, OBJECT-TYPE
+      FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION
+      FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+      FROM SNMPv2-CONF
+    ifIndex
+      FROM IF-MIB
+    nncExtensions, NncExtCounter64
+      FROM NNCGNI0001-SMI
+    atmVplVpi, atmVclVci
+      FROM ATM-MIB
+    NncExtIntvlStateType, NncExtAbsIntvlNumberType, NncExtRelIntvlNumberType
+      FROM NNC-INTERVAL-STATISTICS-TC-MIB;
+      
+  nncExtPmStatistics MODULE-IDENTITY
+    LAST-UPDATED     "9810021415Z"
+    ORGANIZATION     "Newbridge Networks Corporation"
+    CONTACT-INFO
+                     "Newbridge Networks Corporation
+                      Postal: 600 March Road
+                              Kanata, Ontario
+                              Canada K2K 2E6
+
+                      Phone:  +1 613 591 3600
+                      Fax:    +1 613 591 3680"
+    
+    DESCRIPTION      "
+      This module contains the definitions for statistics collected for
+      OAM Performance Monitoring.  The definition and requirement for
+      these statistics are found in GR-1248-CORE. In addition, Cell
+      Loss Ratio has been added as part of the Newbridge extension.
+
+      This MIB module contains the following tables:
+        OAM PM 15 Minute Current Table
+        OAM PM 15 Minute Interval Table
+        OAM PM 24 Hour Current Table
+        OAM PM 24 Hour Interval Table
+
+      These tables are heavily influenced by the definition of VPL/VCL
+      described in rfc1695. The number of intervals supported is dependent upon
+      resource availibility on any given product, but should nominally be 32 
+      for 15 Minute intervals and 2 for 24 Hour intervals. To avoid building 
+      in massive amounts of storage, some products may adopt a bulk 
+      collection scheme.
+
+      Intervals:
+        Statistics on the performance of VPL/VCLs are collected over a
+        historical stratum of up to a maximum of M intervals. The value of M
+        is a function of a product's storage capability. For example, on the
+        36170 product, M = 32 for 15 Minute interval.
+
+        The 15 Minute intervals are aligned to the quarter of one hour of a 
+        wall clock. The current interval spans back to the last 15 minute 
+        tick on the wall clock. Continuing along the timeline from that point 
+        is the most recently completed interval and has an index of 1. The 
+        previous interval has an index of 2 and so on. Note that the oldest 
+        interval may be incomplete since the statistic collection may have 
+        been enabled offset to the quarter or one hour tick.
+
+                   t
+                   0          -1i         -2i         -3i
+        ===========|===========|===========|===========|===========
+          current      N = 1       N = 2       N = 3       N = 4    ... N = M
+          interval
+
+      Performance Monitoring Demarcation Values:
+      As defined in GR-1248-CORE, three demarcation values are defined to
+      evaluate the condition of a PM cell block. These are M errored, M lost
+      and M misinserted. These values are configurable on a system-wide basis.
+      Where applicable, the definition of a statistics object in this module
+      will refer to one or more of these values.
+      "
+  
+  ::= { nncExtensions 65 }
+
+
+  nncExtPmStatisticsObjects     OBJECT IDENTIFIER ::=  { nncExtPmStatistics 1 }
+  nncExtPmStatisticsTraps       OBJECT IDENTIFIER ::=  { nncExtPmStatistics 2 }
+  nncExtPmStatisticsGroups      OBJECT IDENTIFIER ::=  { nncExtPmStatistics 3 }
+  nncExtPmStatisticsCompliances OBJECT IDENTIFIER ::=  { nncExtPmStatistics 4 }
+
+--------------------------------------------------------------------------------
+-- Type Definitions
+--------------------------------------------------------------------------------
+
+  NncExtPmCellFlowDirType     ::= TEXTUAL-CONVENTION
+    STATUS                    current
+    DESCRIPTION               "This is used to indicate the direction of cell
+                              flow.  Link describes cells which are traveling
+                              to or from an endpoint via the physical
+                              interface. Matrix describes cells which are
+                              traveling to or from an endpoint via the
+                              switching fabric."
+    SYNTAX                    INTEGER { link (1), matrix (2) }
+
+  NncExtPmTestType            ::= TEXTUAL-CONVENTION
+    STATUS                    current
+    DESCRIPTION               "This is used to indicate the type of PM test
+                              being performed: Segment or End-to-end."
+    SYNTAX                    INTEGER { segment (1), end2end (2) }
+
+--------------------------------------------------------------------------------
+-- Object Definitions
+--
+-- This MIB module contains the following tables:
+--   nncExtPm15MinCurrentTable
+--   nncExtPm15MinIntervalTable
+--   nncExtPm24HrCurrentTable
+--   nncExtPm24HrIntervalTable
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- OAM PM 15 Minute Current Statistics Table
+--------------------------------------------------------------------------------
+
+  nncExtPm15MinCurrentTable   OBJECT-TYPE
+    SYNTAX                    SEQUENCE OF NncExtPm15MinCurrentEntry
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "This table contains objects for OAM Performance
+                              Monitoring of an endpoint (VP or VC) during the 
+                              current 15 minute interval."
+  ::= { nncExtPmStatisticsObjects 1 }
+
+  nncExtPm15MinCurrentEntry   OBJECT-TYPE
+    SYNTAX                    NncExtPm15MinCurrentEntry
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "An entry in the 15 minute current statistics
+                              table. Each row contains current statistics for
+                              an endpoint collecting PM statistics. Note that
+                              for a VP endpoint, the VCI value is 0."
+    INDEX                     { ifIndex, atmVplVpi, atmVclVci,
+                                nncExtPm15MinCurrentCellFlow,
+                                nncExtPm15MinCurrentTest }
+  ::= { nncExtPm15MinCurrentTable 1 }
+
+  NncExtPm15MinCurrentEntry ::=
+    SEQUENCE {
+      nncExtPm15MinCurrentCellFlow                NncExtPmCellFlowDirType,
+      nncExtPm15MinCurrentTest                    NncExtPmTestType,
+      nncExtPm15MinCurrentState                   NncExtIntvlStateType,
+      nncExtPm15MinCurrentAbsoluteIntervalNumber  NncExtAbsIntvlNumberType,
+      nncExtPm15MinCurrentSECBs                   NncExtCounter64,
+      nncExtPm15MinCurrentLostCellsClp0And1       NncExtCounter64,
+      nncExtPm15MinCurrentLostCellsClp0           NncExtCounter64,
+      nncExtPm15MinCurrentMisinsertedCells        NncExtCounter64,
+      nncExtPm15MinCurrentCellsClp0And1           NncExtCounter64,
+      nncExtPm15MinCurrentCellsClp0               NncExtCounter64,
+      nncExtPm15MinCurrentImpairedBlocks          NncExtCounter64,
+      nncExtPm15MinCurrentTotalLostCellsClp0And1  NncExtCounter64,
+      nncExtPm15MinCurrentTotalLostCellsClp0      NncExtCounter64,
+      nncExtPm15MinCurrentIBWithCellLossMisinsert NncExtCounter64,
+      nncExtPm15MinCurrentCellLossRatioClp0And1   NncExtCounter64,
+      nncExtPm15MinCurrentCellLossRatioClp0       NncExtCounter64
+    }
+
+  nncExtPm15MinCurrentCellFlow   OBJECT-TYPE
+    SYNTAX                    NncExtPmCellFlowDirType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "Link or matrix cell flow"
+  ::= { nncExtPm15MinCurrentEntry 1 }
+
+  nncExtPm15MinCurrentTest    OBJECT-TYPE
+    SYNTAX                    NncExtPmTestType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "Segment or end-to-end test"
+  ::= { nncExtPm15MinCurrentEntry 2 }
+
+  nncExtPm15MinCurrentState   OBJECT-TYPE
+    SYNTAX                    NncExtIntvlStateType
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "The state of the current interval. The object
+                              provides a status for those entries which have
+                              been reset by the user, or have been subject 
+                              to a wall clock time change."
+  ::= { nncExtPm15MinCurrentEntry 3 }
+
+  nncExtPm15MinCurrentAbsoluteIntervalNumber   OBJECT-TYPE
+    SYNTAX                    NncExtAbsIntvlNumberType
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "The absolute interval number of this interval."
+  ::= { nncExtPm15MinCurrentEntry 4 }
+
+  nncExtPm15MinCurrentSECBs   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Severely Errored Cell Blocks. This counter is
+                              incremented by one for each PM cell block when 
+                              M errored, M lost or M misinserted is exceeded."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 5 }
+
+  nncExtPm15MinCurrentLostCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Lost 0+1 User Information Cells. For each PM 
+                              cell block, if the number of Lost 0+1 User
+                              Information Cells does not exceed M lost,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 6 }
+
+  nncExtPm15MinCurrentLostCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Lost 0 User Information Cells. For each PM 
+                              cell block, if the inferred number of Lost 0 
+                              User Information Cells (the smaller value of
+                              Lost 0 or 0+1 cells) does not exceed M lost,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 7 }
+
+  nncExtPm15MinCurrentMisinsertedCells   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Misinserted User Information Cells. For each 
+                              PM cell block, if the number of excess User 
+                              Information Cells does not exceed M misinserted,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 8 }
+
+  nncExtPm15MinCurrentCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Transmitted 0+1 User Information 
+                              Cells. For each PM cell block, the number of 
+                              0+1 User Information Cells is added to this 
+                              counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 9 }
+
+  nncExtPm15MinCurrentCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Transmitted 0 User Information 
+                              Cells. For each PM cell block, the number of 
+                              0 User Information Cells is added to this 
+                              counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 10 }
+
+  nncExtPm15MinCurrentImpairedBlocks   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Impaired Blocks. This counter is incremented
+                              by one when a PM cell block has at least one
+                              impairment of any type."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 11 }
+
+  nncExtPm15MinCurrentTotalLostCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Total Lost 0+1 User Information Cells. For 
+                              each PM cell block, the number of Lost 0+1 User
+                              Information Cells is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 12 }
+
+  nncExtPm15MinCurrentTotalLostCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Total Lost 0 User Information Cells. For 
+                              each PM cell block, the inferred number of Lost
+                              0 User Information Cells (the smaller value of
+                              Lost 0 or 0+1 cells) is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 13 }
+
+  nncExtPm15MinCurrentIBWithCellLossMisinsert   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Impaired Blocks with Cell Loss/
+                              Misinsertion. For each PM cell block, the 
+                              number of lost or misinserted cells is added
+                              to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinCurrentEntry 14 }
+
+  nncExtPm15MinCurrentCellLossRatioClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Cell Loss Ratio 0+1. Ratio of cell loss
+                              calculated by ((Total Lost 0+1 User Information
+                              Cells) / (Number of Transmitted 0+1 User
+                              Information Cells)) * 1000000000. No 
+                              consideration is made for cells discarded or 
+                              tagged by UPC."
+    REFERENCE                 "31FS0051"
+  ::= { nncExtPm15MinCurrentEntry 15 }
+
+  nncExtPm15MinCurrentCellLossRatioClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Cell Loss Ratio 0. Ratio of cell loss
+                              calculated by ((Total Lost 0 User Information
+                              Cells) / (Number of Transmitted 0 User 
+                              Information Cells)) * 1000000000. No 
+                              consideration is made for cells discarded or 
+                              tagged by UPC."
+    REFERENCE                 "31FS0051"
+  ::= { nncExtPm15MinCurrentEntry 16 }
+
+
+--------------------------------------------------------------------------------
+-- OAM PM 15 Minute Interval Statistics Table
+--------------------------------------------------------------------------------
+
+  nncExtPm15MinIntervalTable  OBJECT-TYPE
+    SYNTAX                    SEQUENCE OF NncExtPm15MinIntervalEntry
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "This table contains objects for OAM Performance
+                              Monitoring of an endpoint (VP or VC) over a 
+                              historical stratum of M 15 minute intervals."
+  ::= { nncExtPmStatisticsObjects 2 }
+
+  nncExtPm15MinIntervalEntry  OBJECT-TYPE
+    SYNTAX                    NncExtPm15MinIntervalEntry
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "An entry in the 15 minute interval statistics
+                              table. Each row contains interval statistics for
+                              an endpoint collecting PM statistics. Note that
+                              for a VP endpoint, the VCI value is 0."
+    INDEX                     { ifIndex, atmVplVpi, atmVclVci,
+                                nncExtPm15MinIntervalCellFlow,
+                                nncExtPm15MinIntervalTest,
+                                nncExtPm15MinIntervalNumber }
+  ::= { nncExtPm15MinIntervalTable 1 }
+
+  NncExtPm15MinIntervalEntry ::=
+    SEQUENCE {
+      nncExtPm15MinIntervalCellFlow                NncExtPmCellFlowDirType,
+      nncExtPm15MinIntervalTest                    NncExtPmTestType,
+      nncExtPm15MinIntervalNumber                  NncExtRelIntvlNumberType,
+      nncExtPm15MinIntervalState                   NncExtIntvlStateType,
+      nncExtPm15MinIntervalAbsoluteIntervalNumber  NncExtAbsIntvlNumberType,
+      nncExtPm15MinIntervalSECBs                   NncExtCounter64,
+      nncExtPm15MinIntervalLostCellsClp0And1       NncExtCounter64,
+      nncExtPm15MinIntervalLostCellsClp0           NncExtCounter64,
+      nncExtPm15MinIntervalMisinsertedCells        NncExtCounter64,
+      nncExtPm15MinIntervalCellsClp0And1           NncExtCounter64,
+      nncExtPm15MinIntervalCellsClp0               NncExtCounter64,
+      nncExtPm15MinIntervalImpairedBlocks          NncExtCounter64,
+      nncExtPm15MinIntervalTotalLostCellsClp0And1  NncExtCounter64,
+      nncExtPm15MinIntervalTotalLostCellsClp0      NncExtCounter64,
+      nncExtPm15MinIntervalIBWithCellLossMisinsert NncExtCounter64,
+      nncExtPm15MinIntervalCellLossRatioClp0And1   NncExtCounter64,
+      nncExtPm15MinIntervalCellLossRatioClp0       NncExtCounter64
+    }
+
+  nncExtPm15MinIntervalCellFlow   OBJECT-TYPE
+    SYNTAX                    NncExtPmCellFlowDirType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "Link or matrix cell flow"
+  ::= { nncExtPm15MinIntervalEntry 1 }
+
+  nncExtPm15MinIntervalTest   OBJECT-TYPE
+    SYNTAX                    NncExtPmTestType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "Segment or end-to-end test"
+  ::= { nncExtPm15MinIntervalEntry 2 }
+
+  nncExtPm15MinIntervalNumber OBJECT-TYPE
+    SYNTAX                    NncExtRelIntvlNumberType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "The interval number (N) of the statistics in
+                              this row."
+  ::= { nncExtPm15MinIntervalEntry 3 }
+
+  nncExtPm15MinIntervalState  OBJECT-TYPE
+    SYNTAX                    NncExtIntvlStateType
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "The state of the interval represented by this
+                              row. The object provides a status for those 
+                              entries which have been reset by the user, or 
+                              have been subject to a wall clock time change."
+  ::= { nncExtPm15MinIntervalEntry 4 }
+
+  nncExtPm15MinIntervalAbsoluteIntervalNumber   OBJECT-TYPE
+    SYNTAX                    NncExtAbsIntvlNumberType
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "The absolute interval number of this interval."
+  ::= { nncExtPm15MinIntervalEntry 5 }
+
+  nncExtPm15MinIntervalSECBs  OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Severely Errored Cell Blocks. This counter is
+                              incremented by one for each PM cell block when 
+                              M errored, M lost or M misinserted is exceeded."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 6 }
+
+  nncExtPm15MinIntervalLostCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Lost 0+1 User Information Cells. For each PM 
+                              cell block, if the number of Lost 0+1 User
+                              Information Cells does not exceed M lost,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 7 }
+
+  nncExtPm15MinIntervalLostCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Lost 0 User Information Cells. For each PM 
+                              cell block, if the inferred number of Lost 0 
+                              User Information Cells (the smaller value of
+                              Lost 0 or 0+1 cells) does not exceed M lost,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 8 }
+
+  nncExtPm15MinIntervalMisinsertedCells   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Misinserted User Information Cells. For each 
+                              PM cell block, if the number of excess User 
+                              Information Cells does not exceed M misinserted,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 9 }
+
+  nncExtPm15MinIntervalCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Transmitted 0+1 User Information 
+                              Cells. For each PM cell block, the number of 
+                              0+1 User Information Cells is added to this 
+                              counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 10 }
+
+  nncExtPm15MinIntervalCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Transmitted 0 User Information 
+                              Cells. For each PM cell block, the number of 
+                              0 User Information Cells is added to this 
+                              counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 11 }
+
+  nncExtPm15MinIntervalImpairedBlocks   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Impaired Blocks. This counter is incremented
+                              by one when a PM cell block has at least one
+                              impairment of any type."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 12 }
+
+  nncExtPm15MinIntervalTotalLostCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Total Lost 0+1 User Information Cells. For 
+                              each PM cell block, the number of Lost 0+1 User
+                              Information Cells is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 13 }
+
+  nncExtPm15MinIntervalTotalLostCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Total Lost 0 User Information Cells. For 
+                              each PM cell block, the inferred number of Lost
+                              0 User Information Cells (the smaller value of
+                              Lost 0 or 0+1 cells) is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 14 }
+
+  nncExtPm15MinIntervalIBWithCellLossMisinsert   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Impaired Blocks with Cell Loss/
+                              Misinsertion. For each PM cell block, the 
+                              number of lost or misinserted cells is added
+                              to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm15MinIntervalEntry 15 }
+
+  nncExtPm15MinIntervalCellLossRatioClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Cell Loss Ratio 0+1. Ratio of cell loss
+                              calculated by ((Total Lost 0+1 User Information
+                              Cells) / (Number of Transmitted 0+1 User
+                              Information Cells)) * 1000000000. No 
+                              consideration is made for cells discarded or 
+                              tagged by UPC."
+    REFERENCE                 "31FS0051"
+  ::= { nncExtPm15MinIntervalEntry 16 }
+
+  nncExtPm15MinIntervalCellLossRatioClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Cell Loss Ratio 0. Ratio of cell loss
+                              calculated by ((Total Lost 0 User Information
+                              Cells) / (Number of Transmitted 0 User 
+                              Information Cells)) * 1000000000. No 
+                              consideration is made for cells discarded or 
+                              tagged by UPC."
+    REFERENCE                 "31FS0051"
+  ::= { nncExtPm15MinIntervalEntry 17 }
+
+
+--------------------------------------------------------------------------------
+-- OAM PM 24 Hour Current Statistics Table
+--------------------------------------------------------------------------------
+
+  nncExtPm24HrCurrentTable    OBJECT-TYPE
+    SYNTAX                    SEQUENCE OF NncExtPm24HrCurrentEntry
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "This table contains objects for OAM Performance
+                              Monitoring of an endpoint (VP or VC) during the 
+                              current 24 hour interval."
+  ::= { nncExtPmStatisticsObjects 3 }
+
+  nncExtPm24HrCurrentEntry    OBJECT-TYPE
+    SYNTAX                    NncExtPm24HrCurrentEntry
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "An entry in the 24 hour current statistics
+                              table. Each row contains current statistics for
+                              an endpoint collecting PM statistics. Note that
+                              for a VP endpoint, the VCI value is 0."
+    INDEX                     { ifIndex, atmVplVpi, atmVclVci,
+                                nncExtPm24HrCurrentCellFlow,
+                                nncExtPm24HrCurrentTest }
+  ::= { nncExtPm24HrCurrentTable 1 }
+
+  NncExtPm24HrCurrentEntry ::=
+    SEQUENCE {
+      nncExtPm24HrCurrentCellFlow                NncExtPmCellFlowDirType,
+      nncExtPm24HrCurrentTest                    NncExtPmTestType,
+      nncExtPm24HrCurrentState                   NncExtIntvlStateType,
+      nncExtPm24HrCurrentAbsoluteIntervalNumber  NncExtAbsIntvlNumberType,
+      nncExtPm24HrCurrentSECBs                   NncExtCounter64,
+      nncExtPm24HrCurrentErroredCells            NncExtCounter64,
+      nncExtPm24HrCurrentLostCellsClp0And1       NncExtCounter64,
+      nncExtPm24HrCurrentLostCellsClp0           NncExtCounter64,
+      nncExtPm24HrCurrentMisinsertedCells        NncExtCounter64,
+      nncExtPm24HrCurrentCellsClp0And1           NncExtCounter64,
+      nncExtPm24HrCurrentCellsClp0               NncExtCounter64,
+      nncExtPm24HrCurrentImpairedBlocks          NncExtCounter64,
+      nncExtPm24HrCurrentTotalLostCellsClp0And1  NncExtCounter64,
+      nncExtPm24HrCurrentTotalLostCellsClp0      NncExtCounter64,
+      nncExtPm24HrCurrentSECBErrored             NncExtCounter64,
+      nncExtPm24HrCurrentSECBMisinserted         NncExtCounter64,
+      nncExtPm24HrCurrentIBWithCellLossMisinsert NncExtCounter64,
+      nncExtPm24HrCurrentCellLossRatioClp0And1   NncExtCounter64,
+      nncExtPm24HrCurrentCellLossRatioClp0       NncExtCounter64
+    }
+
+  nncExtPm24HrCurrentCellFlow OBJECT-TYPE
+    SYNTAX                    NncExtPmCellFlowDirType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "Link or matrix cell flow"
+  ::= { nncExtPm24HrCurrentEntry 1 }
+
+  nncExtPm24HrCurrentTest     OBJECT-TYPE
+    SYNTAX                    NncExtPmTestType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "Segment or end-to-end test"
+  ::= { nncExtPm24HrCurrentEntry 2 }
+
+  nncExtPm24HrCurrentState    OBJECT-TYPE
+    SYNTAX                    NncExtIntvlStateType
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "The state of the current interval. The object
+                              provides a status for those entries which have
+                              been reset by the user, or have been subject 
+                              to a wall clock time change."
+  ::= { nncExtPm24HrCurrentEntry 3 }
+
+  nncExtPm24HrCurrentAbsoluteIntervalNumber   OBJECT-TYPE
+    SYNTAX                    NncExtAbsIntvlNumberType
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "The absolute interval number of this interval."
+  ::= { nncExtPm24HrCurrentEntry 4 }
+
+  nncExtPm24HrCurrentSECBs    OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Severely Errored Cell Blocks. This counter is
+                              incremented by one for each PM cell block when 
+                              M errored, M lost or M misinserted is exceeded."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 5 }
+
+  nncExtPm24HrCurrentErroredCells   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Errored Cells. For each PM cell block, if the
+                              number of errored cells does not exceed M
+                              errored, then this number is added to this
+                              counter."
+   REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 6 }
+
+  nncExtPm24HrCurrentLostCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Lost 0+1 User Information Cells. For each PM 
+                              cell block, if the number of Lost 0+1 User
+                              Information Cells does not exceed M lost,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 7 }
+
+  nncExtPm24HrCurrentLostCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Lost 0 User Information Cells. For each PM 
+                              cell block, if the inferred number of Lost 0 
+                              User Information Cells (the smaller value of
+                              Lost 0 or 0+1 cells) does not exceed M lost,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 8 }
+
+  nncExtPm24HrCurrentMisinsertedCells   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Misinserted User Information Cells. For each 
+                              PM cell block, if the number of excess User 
+                              Information Cells does not exceed M misinserted,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 9 }
+
+  nncExtPm24HrCurrentCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Transmitted 0+1 User Information 
+                              Cells. For each PM cell block, the number of 
+                              0+1 User Information Cells is added to this 
+                              counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 10 }
+
+  nncExtPm24HrCurrentCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Transmitted 0 User Information 
+                              Cells. For each PM cell block, the number of 
+                              0 User Information Cells is added to this 
+                              counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 11 }
+
+  nncExtPm24HrCurrentImpairedBlocks   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Impaired Blocks. This counter is incremented
+                              by one when a PM cell block has at least one
+                              impairment of any type."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 12 }
+
+  nncExtPm24HrCurrentTotalLostCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Total Lost 0+1 User Information Cells. For 
+                              each PM cell block, the number of Lost 0+1 User
+                              Information Cells is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 13 }
+
+  nncExtPm24HrCurrentTotalLostCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Total Lost 0 User Information Cells. For 
+                              each PM cell block, the inferred number of Lost
+                              0 User Information Cells (the smaller value of
+                              Lost 0 or 0+1 cells) is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 14 }
+
+  nncExtPm24HrCurrentSECBErrored   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "SECB Errored (i.e. SECB due to bit errors).
+                              This counter is incremented by one for each
+                              PM cell block when M errored is exceeded."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 15 }
+
+  nncExtPm24HrCurrentSECBMisinserted   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "SECB Misinserted (i.e. SECB due to misinserted
+                              cells).  This counter is incremented by one for 
+                              each PM cell block when M misinserted is 
+                              exceeded."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 16 }
+
+  nncExtPm24HrCurrentIBWithCellLossMisinsert   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Impaired Blocks with Cell Loss/
+                              Misinsertion. For each PM cell block, the 
+                              number of lost or misinserted cells is added
+                              to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrCurrentEntry 17 }
+
+  nncExtPm24HrCurrentCellLossRatioClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Cell Loss Ratio 0+1. Ratio of cell loss
+                              calculated by ((Total Lost 0+1 User Information
+                              Cells) / (Number of Transmitted 0+1 User
+                              Information Cells)) * 1000000000. No 
+                              consideration is made for cells discarded or 
+                              tagged by UPC."
+    REFERENCE                 "31FS0051"
+  ::= { nncExtPm24HrCurrentEntry 18 }
+
+  nncExtPm24HrCurrentCellLossRatioClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Cell Loss Ratio 0. Ratio of cell loss
+                              calculated by ((Total Lost 0 User Information
+                              Cells) / (Number of Transmitted 0 User 
+                              Information Cells)) * 1000000000. No 
+                              consideration is made for cells discarded or 
+                              tagged by UPC."
+    REFERENCE                 "31FS0051"
+  ::= { nncExtPm24HrCurrentEntry 19 }
+
+ 
+--------------------------------------------------------------------------------
+-- OAM PM 24 Hour Interval Statistics Table
+--------------------------------------------------------------------------------
+
+  nncExtPm24HrIntervalTable   OBJECT-TYPE
+    SYNTAX                    SEQUENCE OF NncExtPm24HrIntervalEntry
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "This table contains objects for OAM Performance
+                              Monitoring of an endpoint (VP or VC) over a 
+                              historical stratum of N 24 hour intervals."
+  ::= { nncExtPmStatisticsObjects 4 }
+
+  nncExtPm24HrIntervalEntry   OBJECT-TYPE
+    SYNTAX                    NncExtPm24HrIntervalEntry
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "An entry in the 24 hour interval statistics
+                              table. Each row contains interval statistics for
+                              an endpoint collecting PM statistics. Note that
+                              for a VP endpoint, the VCI value is 0."
+    INDEX                     { ifIndex, atmVplVpi, atmVclVci,
+                                nncExtPm24HrIntervalCellFlow,
+                                nncExtPm24HrIntervalTest,
+                                nncExtPm24HrIntervalNumber }
+  ::= { nncExtPm24HrIntervalTable 1 }
+
+  NncExtPm24HrIntervalEntry ::=
+    SEQUENCE {
+      nncExtPm24HrIntervalCellFlow                NncExtPmCellFlowDirType,
+      nncExtPm24HrIntervalTest                    NncExtPmTestType,
+      nncExtPm24HrIntervalNumber                  NncExtRelIntvlNumberType,
+      nncExtPm24HrIntervalState                   NncExtIntvlStateType,
+      nncExtPm24HrIntervalAbsoluteIntervalNumber  NncExtAbsIntvlNumberType,
+      nncExtPm24HrIntervalSECBs                   NncExtCounter64,
+      nncExtPm24HrIntervalErroredCells            NncExtCounter64,
+      nncExtPm24HrIntervalLostCellsClp0And1       NncExtCounter64,
+      nncExtPm24HrIntervalLostCellsClp0           NncExtCounter64,
+      nncExtPm24HrIntervalMisinsertedCells        NncExtCounter64,
+      nncExtPm24HrIntervalCellsClp0And1           NncExtCounter64,
+      nncExtPm24HrIntervalCellsClp0               NncExtCounter64,
+      nncExtPm24HrIntervalImpairedBlocks          NncExtCounter64,
+      nncExtPm24HrIntervalTotalLostCellsClp0And1  NncExtCounter64,
+      nncExtPm24HrIntervalTotalLostCellsClp0      NncExtCounter64,
+      nncExtPm24HrIntervalSECBErrored             NncExtCounter64,
+      nncExtPm24HrIntervalSECBMisinserted         NncExtCounter64,
+      nncExtPm24HrIntervalIBWithCellLossMisinsert NncExtCounter64,
+      nncExtPm24HrIntervalCellLossRatioClp0And1   NncExtCounter64,
+      nncExtPm24HrIntervalCellLossRatioClp0       NncExtCounter64
+    }
+
+  nncExtPm24HrIntervalCellFlow   OBJECT-TYPE
+    SYNTAX                    NncExtPmCellFlowDirType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "Link or matrix cell flow"
+  ::= { nncExtPm24HrIntervalEntry 1 }
+
+  nncExtPm24HrIntervalTest    OBJECT-TYPE
+    SYNTAX                    NncExtPmTestType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "Segment or end-to-end test"
+  ::= { nncExtPm24HrIntervalEntry 2 }
+
+  nncExtPm24HrIntervalNumber  OBJECT-TYPE
+    SYNTAX                    NncExtRelIntvlNumberType
+    MAX-ACCESS                not-accessible
+    STATUS                    current
+    DESCRIPTION               "The interval number (N) of the statistics in
+                              this row."
+  ::= { nncExtPm24HrIntervalEntry 3 }
+
+  nncExtPm24HrIntervalState   OBJECT-TYPE
+    SYNTAX                    NncExtIntvlStateType
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "The state of the interval represented by this
+                              row. The object provides a status for those 
+                              entries which have been reset by the user, or 
+                              have been subject to a wall clock time change."
+  ::= { nncExtPm24HrIntervalEntry 4 }
+
+  nncExtPm24HrIntervalAbsoluteIntervalNumber   OBJECT-TYPE
+    SYNTAX                    NncExtAbsIntvlNumberType
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "The absolute interval number of this interval."
+  ::= { nncExtPm24HrIntervalEntry 5 }
+
+  nncExtPm24HrIntervalSECBs   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Severely Errored Cell Blocks. This counter is
+                              incremented by one for each PM cell block when 
+                              M errored, M lost or M misinserted is exceeded."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 6 }
+
+  nncExtPm24HrIntervalErroredCells   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Errored Cells. For each PM cell block, if the
+                              number of errored cells does not exceed M
+                              errored, then this number is added to this
+                              counter."
+   REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 7 }
+
+  nncExtPm24HrIntervalLostCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Lost 0+1 User Information Cells. For each PM 
+                              cell block, if the number of Lost 0+1 User
+                              Information Cells does not exceed M lost,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 8 }
+
+  nncExtPm24HrIntervalLostCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Lost 0 User Information Cells. For each PM 
+                              cell block, if the inferred number of Lost 0 
+                              User Information Cells (the smaller value of
+                              Lost 0 or 0+1 cells) does not exceed M lost,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 9 }
+
+  nncExtPm24HrIntervalMisinsertedCells   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Misinserted User Information Cells. For each 
+                              PM cell block, if the number of excess User 
+                              Information Cells does not exceed M misinserted,
+                              then this number is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 10 }
+
+  nncExtPm24HrIntervalCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Transmitted 0+1 User Information 
+                              Cells. For each PM cell block, the number of 
+                              0+1 User Information Cells is added to this 
+                              counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 11 }
+
+  nncExtPm24HrIntervalCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Transmitted 0 User Information 
+                              Cells. For each PM cell block, the number of 
+                              0 User Information Cells is added to this 
+                              counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 12 }
+
+  nncExtPm24HrIntervalImpairedBlocks   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Impaired Blocks. This counter is incremented
+                              by one when a PM cell block has at least one
+                              impairment of any type."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 13 }
+
+  nncExtPm24HrIntervalTotalLostCellsClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Total Lost 0+1 User Information Cells. For 
+                              each PM cell block, the number of Lost 0+1 User
+                              Information Cells is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 14 }
+
+  nncExtPm24HrIntervalTotalLostCellsClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Total Lost 0 User Information Cells. For 
+                              each PM cell block, the inferred number of Lost
+                              0 User Information Cells (the smaller value of
+                              Lost 0 or 0+1 cells) is added to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 15 }
+
+  nncExtPm24HrIntervalSECBErrored   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "SECB Errored (i.e. SECB due to bit errors).
+                              This counter is incremented by one for each
+                              PM cell block when M errored is exceeded."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 16 }
+
+  nncExtPm24HrIntervalSECBMisinserted   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "SECB Misinserted (i.e. SECB due to misinserted
+                              cells).  This counter is incremented by one for 
+                              each PM cell block when M misinserted is 
+                              exceeded."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 17 }
+
+  nncExtPm24HrIntervalIBWithCellLossMisinsert   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Number of Impaired Blocks with Cell Loss/
+                              Misinsertion. For each PM cell block, the 
+                              number of lost or misinserted cells is added
+                              to this counter."
+    REFERENCE                 "31FS0051, GR-1248-CORE"
+  ::= { nncExtPm24HrIntervalEntry 18 }
+
+  nncExtPm24HrIntervalCellLossRatioClp0And1   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Cell Loss Ratio 0+1. Ratio of cell loss
+                              calculated by ((Total Lost 0+1 User Information
+                              Cells) / (Number of Transmitted 0+1 User
+                              Information Cells)) * 1000000000. No 
+                              consideration is made for cells discarded or 
+                              tagged by UPC."
+    REFERENCE                 "31FS0051"
+  ::= { nncExtPm24HrIntervalEntry 19 }
+
+  nncExtPm24HrIntervalCellLossRatioClp0   OBJECT-TYPE
+    SYNTAX                    NncExtCounter64
+    MAX-ACCESS                read-only
+    STATUS                    current
+    DESCRIPTION               "Cell Loss Ratio 0. Ratio of cell loss
+                              calculated by ((Total Lost 0 User Information
+                              Cells) / (Number of Transmitted 0 User 
+                              Information Cells)) * 1000000000. No 
+                              consideration is made for cells discarded or 
+                              tagged by UPC."
+    REFERENCE                 "31FS0051"
+  ::= { nncExtPm24HrIntervalEntry 20 }
+
+
+--------------------------------------------------------------------------------
+-- Trap Definitions
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+-- Conformance Group Definitions
+--------------------------------------------------------------------------------
+
+  nncExtPm15MinCurrentGroup   OBJECT-GROUP
+    OBJECTS {
+      nncExtPm15MinCurrentCellFlow,
+      nncExtPm15MinCurrentTest,
+      nncExtPm15MinCurrentState,
+      nncExtPm15MinCurrentAbsoluteIntervalNumber,
+      nncExtPm15MinCurrentSECBs,
+      nncExtPm15MinCurrentLostCellsClp0And1,
+      nncExtPm15MinCurrentLostCellsClp0,
+      nncExtPm15MinCurrentMisinsertedCells,
+      nncExtPm15MinCurrentCellsClp0And1,
+      nncExtPm15MinCurrentCellsClp0,
+      nncExtPm15MinCurrentImpairedBlocks,
+      nncExtPm15MinCurrentTotalLostCellsClp0And1,
+      nncExtPm15MinCurrentTotalLostCellsClp0,
+      nncExtPm15MinCurrentIBWithCellLossMisinsert,
+      nncExtPm15MinCurrentCellLossRatioClp0And1,
+      nncExtPm15MinCurrentCellLossRatioClp0
+    }
+    STATUS                    current
+    DESCRIPTION               "A collection of objects providing current
+                              15 min PM statistics for a PM sink point."
+  ::= { nncExtPmStatisticsGroups 1 }
+
+  nncExtPm15MinIntervalGroup  OBJECT-GROUP
+    OBJECTS {
+      nncExtPm15MinIntervalCellFlow,
+      nncExtPm15MinIntervalTest,
+      nncExtPm15MinIntervalNumber,
+      nncExtPm15MinIntervalState,
+      nncExtPm15MinIntervalAbsoluteIntervalNumber,
+      nncExtPm15MinIntervalSECBs,
+      nncExtPm15MinIntervalLostCellsClp0And1,
+      nncExtPm15MinIntervalLostCellsClp0,
+      nncExtPm15MinIntervalMisinsertedCells,
+      nncExtPm15MinIntervalCellsClp0And1,
+      nncExtPm15MinIntervalCellsClp0,
+      nncExtPm15MinIntervalImpairedBlocks,
+      nncExtPm15MinIntervalTotalLostCellsClp0And1,
+      nncExtPm15MinIntervalTotalLostCellsClp0,
+      nncExtPm15MinIntervalIBWithCellLossMisinsert,
+      nncExtPm15MinIntervalCellLossRatioClp0And1,
+      nncExtPm15MinIntervalCellLossRatioClp0
+    }
+    STATUS                    current
+    DESCRIPTION               "A collection of objects providing interval
+                              15 min PM statistics for a PM sink point."
+  ::= { nncExtPmStatisticsGroups 2 }
+
+
+  nncExtPm24HrCurrentGroup    OBJECT-GROUP
+    OBJECTS {
+      nncExtPm24HrCurrentCellFlow,
+      nncExtPm24HrCurrentTest,
+      nncExtPm24HrCurrentState,
+      nncExtPm24HrCurrentAbsoluteIntervalNumber,
+      nncExtPm24HrCurrentSECBs,
+      nncExtPm24HrCurrentErroredCells,
+      nncExtPm24HrCurrentLostCellsClp0And1,
+      nncExtPm24HrCurrentLostCellsClp0,
+      nncExtPm24HrCurrentMisinsertedCells,
+      nncExtPm24HrCurrentCellsClp0And1,
+      nncExtPm24HrCurrentCellsClp0,
+      nncExtPm24HrCurrentImpairedBlocks,
+      nncExtPm24HrCurrentTotalLostCellsClp0And1,
+      nncExtPm24HrCurrentTotalLostCellsClp0,
+      nncExtPm24HrCurrentSECBErrored,
+      nncExtPm24HrCurrentSECBMisinserted,
+      nncExtPm24HrCurrentIBWithCellLossMisinsert,
+      nncExtPm24HrCurrentCellLossRatioClp0And1,
+      nncExtPm24HrCurrentCellLossRatioClp0
+    }
+    STATUS                    current
+    DESCRIPTION               "A collection of objects providing current 
+                              24 hour PM statistics for a PM sink point."
+  ::= { nncExtPmStatisticsGroups 3 }
+
+  nncExtPm24HrIntervalGroup   OBJECT-GROUP
+    OBJECTS {
+      nncExtPm24HrIntervalCellFlow,
+      nncExtPm24HrIntervalTest,
+      nncExtPm24HrIntervalNumber,
+      nncExtPm24HrIntervalState,
+      nncExtPm24HrIntervalAbsoluteIntervalNumber,
+      nncExtPm24HrIntervalSECBs,
+      nncExtPm24HrIntervalErroredCells,
+      nncExtPm24HrIntervalLostCellsClp0And1,
+      nncExtPm24HrIntervalLostCellsClp0,
+      nncExtPm24HrIntervalMisinsertedCells,
+      nncExtPm24HrIntervalCellsClp0And1,
+      nncExtPm24HrIntervalCellsClp0,
+      nncExtPm24HrIntervalImpairedBlocks,
+      nncExtPm24HrIntervalTotalLostCellsClp0And1,
+      nncExtPm24HrIntervalTotalLostCellsClp0,
+      nncExtPm24HrIntervalSECBErrored,
+      nncExtPm24HrIntervalSECBMisinserted,
+      nncExtPm24HrIntervalIBWithCellLossMisinsert,
+      nncExtPm24HrIntervalCellLossRatioClp0And1,
+      nncExtPm24HrIntervalCellLossRatioClp0
+    }
+    STATUS                    current
+    DESCRIPTION               "A collection of objects providing interval
+                              24 hour PM statistics for a PM sink point."
+  ::= { nncExtPmStatisticsGroups 4 }
+
+
+--------------------------------------------------------------------------------
+-- Compliance Statements (mandatory)
+--------------------------------------------------------------------------------
+
+  nncExtPmStatisticsCompliance   MODULE-COMPLIANCE
+    STATUS                    current
+    DESCRIPTION               "The compliance statement for Newbridge OAM
+                              Performance Monitoring extension."
+    MODULE 
+      MANDATORY-GROUPS  {
+        nncExtPm15MinCurrentGroup,
+        nncExtPm15MinIntervalGroup,
+        nncExtPm24HrCurrentGroup,
+        nncExtPm24HrIntervalGroup
+      }
+  ::= { nncExtPmStatisticsCompliances 1 } 
+
+
+-------------------------------------------------------------------------------
+--  Review Minutes 
+-------------------------------------------------------------------------------
+--  MINUTES-BEGIN
+--    REVIEW-DATE  "1998.09.28"
+--    BODY  "
+--
+--  
+--  TO:  Ron Jeffery*, Steve Fleury, Sue Callow, Kevin Dixon*, Scott Ball,
+--    Manish Kamra*, Satvinder Bawa*, Madlien Abou-Shaban*, Jeff Furry*
+--  CC:  Fernando Bello, Numbers Admin, SQA Rep, Customer Doc Rep
+--  FROM:  Rick To*
+--
+--  A meeting was held on 1998.09.28 to review PMStatistics.mib, the area 
+--  interface definition for the ATMStatistics area in the circuit region.
+--  Attendees are marked with * in the TO and CC lists above.
+--
+--  Outcome
+--
+--  It was the consensus of the review team that this file is 
+--  acceptable with the indicated modifications.
+--
+--  Actions:
+--  A1 -   Rick To to update the file as indicated in D1 below.  
+--  To be completed by 1998.09.30
+--    Response:                          Status: CLOSED
+--
+--  Decisions:
+--  D1 -   PMStatistics.mib shall be updated as follows:
+--    a)  MODULE-IDENTITY - remove (wrong) reference to rfc2233,
+--    b)  For all tables, add an index for segment/end-to-end test type.
+--
+--  "
+--
+--  END-MINUTES
+-------------------------------------------------------------------------------
+
+
+END -- DEFINITION OF NNC-EXT-PM-STATISTICS-MIB
+
+

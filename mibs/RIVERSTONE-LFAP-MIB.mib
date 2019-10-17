@@ -1,0 +1,1013 @@
+-- #condInclude "rs.inc"
+-- #condInclude "rfc2581.inc"
+
+RIVERSTONE-LFAP-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, Integer32, 
+    TimeTicks, Counter32, Counter64, Gauge32
+        FROM SNMPv2-SMI
+    MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+	FROM SNMPv2-CONF
+    InetAddressType, InetAddress
+        FROM INET-ADDRESS-MIB
+    TEXTUAL-CONVENTION, RowStatus, TruthValue
+        FROM SNMPv2-TC
+    SnmpAdminString
+        FROM SNMP-FRAMEWORK-MIB
+    riverstoneMibs
+        FROM RIVERSTONE-SMI-MIB;
+
+rsLfapMIB MODULE-IDENTITY   
+    LAST-UPDATED "200106150000Z"
+    ORGANIZATION "Riverstone Networks, Inc"
+    CONTACT-INFO
+            "Riverstone Networks, Inc
+             5200 Great America Parkway
+             Santa Clara CA USA 95054
+             PHONE:+1 408.878.6500
+             EMAIL: nms-eng@riverstonenet.com
+             WEB: http://www.riverstonenet.com"
+
+    DESCRIPTION
+	"This MIB module defines the enterprise protocol Lightweight
+	Flow Accounting Protocol. It provides the following capabilities:
+	1. Report general LFAP connection state on the equipment,
+	   which would be called Connection Control Entity (CCE).
+	2. Report and configure LFAP agent.
+	3. Report and configure an external server, which would be called 
+	   Flow Accounting Service (FAS).
+	4. Provide LFAP statistics per FAS.
+	Copyright (C) Riverstone Networks, Inc 2001"
+    
+    REVISION     "200106150000Z"
+    DESCRIPTION
+	"Indicate rsLfapServerStaticLastChanged, rsLfapStatsSessionChangedAt 
+	and rsLfapStatsLostAt are not supported in LFAPv4 in 
+	rsLfapAgentCompliance."
+
+    REVISION     "200106080000Z"
+    DESCRIPTION
+	"Add these objects MsgsUnknownTx, DropsInTxQueueWhenUp,
+	MsgsInRxQueue, InvalidMsgsRx, MsgsUnknownRx into the StatsTable.
+	Rename QueueDrops to DropsInTxQueue, LostPackets to TxLostPackets,
+	LostOctets to TxLostOctets, QueuePeak to InTxQueuePeak. Changed
+	the descriptions of the textual conventions and many of the
+	objects. Rename ServerStatsTable to StatsTable."
+
+    REVISION     "200105070000Z"
+    DESCRIPTION
+	"Receive comments from Mike MacFaden and Sethu Rao.
+	Change the object identity of the traps to be v1 compliant.
+	Change the previous revision comments. Make 
+	rsLfapActiveServer a scalar. Rename rsLfapStaticServerTable
+	to rsLfapServerStaticTable. The objects in that table have
+	also been renamed appropriately."
+    
+    REVISION     "200105010000Z"
+    DESCRIPTION
+	"MOve the scalars under rsLfapPerMon to a new table.
+	rsLfapStatsTable. Add comformance. Reorganize tree. Rename
+	some object identifiers."
+
+    REVISION     "200103030000Z"
+    DESCRIPTION
+	"Second round of edits from Paul Calato, Chiou-Hao Hsu.
+	add both send and receive counters, add new counter for any
+	unknown message types, clarify what lost timestamp counters 
+	and make MIB module support both implementation at CCE and FAS"
+
+    REVISION     "200102120000Z"
+    DESCRIPTION
+	"First round of edits from Paul Calato."
+
+    REVISION     "200102110000Z"
+    DESCRIPTION
+	"Initial version of of Riverstone Flow Accounting MIB module 
+	for LFAPv4."
+    ::= { riverstoneMibs 19 }  
+
+rsLfapMIBObjects	OBJECT IDENTIFIER ::= { rsLfapMIB 1 }
+
+rsLfapAgentState	OBJECT IDENTIFIER ::= { rsLfapMIBObjects 1 }
+rsLfapAgentCfg		OBJECT IDENTIFIER ::= { rsLfapMIBObjects 2 }
+rsLfapServerCfg		OBJECT IDENTIFIER ::= { rsLfapMIBObjects 3 }
+rsLfapStats		OBJECT IDENTIFIER ::= { rsLfapMIBObjects 4 }
+rsLfapDiag		OBJECT IDENTIFIER ::= { rsLfapMIBObjects 5 }
+
+--
+-- Textual conventions
+--
+
+RSLfapErrorCode ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+	"This represents the error states that can be detected 
+	by the LFAP agent on the the equipment or the CCE."
+    SYNTAX INTEGER {
+       unknown(1),
+       errorInConfig(2),
+       resourceExhausted(3),
+       errorNoServer(4)
+    }
+
+RsLfapServerInst ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+	"This number represents an external LFAP server (FAS) in the
+	list of LFAP servers configured on the CCE. If the value is 0, 
+	then no FAS is indicated."
+    SYNTAX Integer32 (1..32 | 0)
+
+RsTaskPriority  ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+	"This represents the relative priority of the LFAP agent
+	to other tasks which shares CPU resources with the LFAP agent
+	on the CCE."
+    SYNTAX INTEGER {
+       high(1),
+       medium(2),
+       low(3)
+    }
+
+RSOperState ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION
+	"This represents the operational state of the LFAP agent 
+	running on the CCE."
+    SYNTAX INTEGER {
+       unknown(1),
+       lfapNormal(2),
+       lfapTest(3),
+       lfapDegraded(4),
+       lfapError(5)
+    }
+
+--
+-- LFAP Agent Diag
+--
+rsLfapCapabilities OBJECT-TYPE
+    SYNTAX      BITS {
+       rsLfapV4(0),
+       rsLfapV5(1)
+    }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The capabilities of the LFAP agent on the equipment (CCE). The
+	 LFAP agent is a LFAP client."
+    ::= { rsLfapAgentState 1 }
+
+rsLfapAdminState OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+	"The administrative status of LFAP agent on the CCE. The 
+	value true would start the LFAP agent. And false would stop 
+	the LFAP agent."
+    ::= { rsLfapAgentState 2 }
+
+rsLfapOperState OBJECT-TYPE
+    SYNTAX       RSOperState
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"The operational state of the LFAP agent on the CCE."
+    ::= { rsLfapAgentState 3 }
+
+rsLfapLastError OBJECT-TYPE
+    SYNTAX       RSLfapErrorCode
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"Current error status detected by the LFAP agent on the CCE."
+    ::= { rsLfapAgentState 4 }
+
+rsLfapLastErrorReason OBJECT-TYPE
+    SYNTAX       SnmpAdminString
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"Current error reason detected by the LFAP agent on the CCE. 
+	This string is suitable for display to an operator."
+    ::= { rsLfapAgentState 5 }
+
+rsLfapActiveServer  OBJECT-TYPE
+    SYNTAX       RsLfapServerInst
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This indicates which FAS is connected to the LFAP agent on 
+	the CCE."
+    ::= { rsLfapAgentState 6 }
+
+-- 
+-- LFAP Agent Configuration
+--
+rsLfapPollInterval OBJECT-TYPE
+    SYNTAX       Integer32 (1..1440)
+    UNITS        "minutes"
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+	"The rate to send accounting information to the FAS by the
+	LFAP agent."
+    DEFVAL { 15 }
+    ::= { rsLfapAgentCfg 1 }
+
+rsLfapBatchSize OBJECT-TYPE
+    SYNTAX       Integer32 (1..2000)
+    UNITS        "records"
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+	"The number of records sent per batch to the FAS."
+    DEFVAL { 32 }
+    ::= { rsLfapAgentCfg 2 }
+
+rsLfapBatchInterval OBJECT-TYPE
+    SYNTAX	     Integer32 (1..2000)
+    UNITS	     "seconds"
+    MAX-ACCESS    read-write
+    STATUS	     current
+    DESCRIPTION
+	"The time in seconds to send flow-create and flow-delete 
+	information to the FAS server."
+    DEFVAL { 1 }
+    ::= { rsLfapAgentCfg 3 }
+
+rsLfapLostContactInterval OBJECT-TYPE
+    SYNTAX       Integer32 (20..2000)
+    UNITS        "seconds"
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+	"Amount of time to wait before considering the TCP
+	connection lost."
+    DEFVAL { 60 }
+    ::= { rsLfapAgentCfg 4 }
+
+rsLfapServerRetryInterval OBJECT-TYPE
+    SYNTAX       Integer32 (1..2000)
+    UNITS        "seconds"
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+	"The rate at which to retry a connection to a FAS."
+    DEFVAL { 60 }
+    ::= { rsLfapAgentCfg 5 }
+
+rsLfapMaxTxQueueSize OBJECT-TYPE
+    SYNTAX       Integer32 (100..2000000)
+    UNITS        "message count"
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+	"Number of messages that can be queued for transmit before 
+	messages are dropped."
+    DEFVAL { 50000 }
+    ::= { rsLfapAgentCfg 6 }
+
+rsLfapTaskPriority OBJECT-TYPE
+    SYNTAX       RsTaskPriority
+    UNITS        "seconds"
+    MAX-ACCESS   read-write
+    STATUS       current
+    DESCRIPTION
+	"This helps a task scheduler on the CCE in scheduling the
+	LFAP agent relative to other tasks on the CCE."
+    ::= { rsLfapAgentCfg 7 }
+
+--
+-- LFAP Static Server Cfg
+--
+
+rsLfapServerStaticLastChanged  OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+	"The value of sysUpTime at the time of the last change
+	to any field or row in the rsLfapServerStaticTable."
+    ::= { rsLfapServerCfg 2 }
+
+rsLfapServerStaticTable  OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsLfapServerStaticEntry 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+	"This table is used to configure FAS server(s) on the 
+	CCE."
+    ::= { rsLfapServerCfg 3 }
+
+rsLfapServerStaticEntry OBJECT-TYPE
+    SYNTAX      RsLfapServerStaticEntry 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+	"Each entry would represent the configuration of an
+	external FAS on the CCE. Rows added to this table 
+	persist across system restarts."
+    INDEX   { rsLfapServerStaticIndex }
+
+    ::= { rsLfapServerStaticTable 1 }
+
+RsLfapServerStaticEntry  ::= SEQUENCE {
+    rsLfapServerStaticIndex		RsLfapServerInst,
+    rsLfapServerStaticAddressType	InetAddressType,
+    rsLfapServerStaticAddress		InetAddress,
+    rsLfapServerStaticStatus		RowStatus
+}
+
+rsLfapServerStaticIndex  OBJECT-TYPE
+    SYNTAX      RsLfapServerInst
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+	"A unique value to index each LFAP server instance defined
+	in this table."
+    ::= { rsLfapServerStaticEntry 1 }
+
+rsLfapServerStaticAddressType  OBJECT-TYPE
+    SYNTAX      InetAddressType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+	"The type of address found in rsLfapServerStaticAddress"
+    ::= { rsLfapServerStaticEntry 2 }
+
+rsLfapServerStaticAddress  OBJECT-TYPE
+    SYNTAX      InetAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+	"The IP address of a system acting as a FAS"
+    ::= { rsLfapServerStaticEntry 3 }
+
+rsLfapServerStaticStatus  OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+	"Install and delete rows in this table using this object."
+    ::= { rsLfapServerStaticEntry 4 }
+
+--
+-- Accounting Status
+--
+-- LFAP Statistics Table
+--
+
+rsLfapStatsTable  OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsLfapStatsEntry 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+	"This table contains one row per FAS server."
+    ::= { rsLfapStats 1 }
+
+rsLfapStatsEntry OBJECT-TYPE
+    SYNTAX      RsLfapStatsEntry 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+	"On the CCE, each entry contains LFAP statistics collected 
+	by the LFAP agent relating to a FAS. Each entry is indexed
+	by the FAS server index (rsLfapServerStaticIndex)."
+    INDEX   { rsLfapServerStaticIndex }
+
+    ::= { rsLfapStatsTable 1 }
+
+RsLfapStatsEntry  ::= SEQUENCE {
+    --
+    -- Connection statistics
+    --
+    rsLfapStatsSessionUp       		TruthValue,
+    rsLfapStatsSessionChangedAt		TimeTicks,
+    rsLfapStatsTcpConnects		Counter32,
+    rsLfapStatsTcpConnectFails		Counter32,
+
+    --
+    -- Protocol Statistics
+    --
+    rsLfapStatsTxVRs			Counter32,
+    rsLfapStatsTxVRAs			Counter32,
+    rsLfapStatsTxFARs			Counter32,
+    rsLfapStatsTxFUNs			Counter32,
+    rsLfapStatsTxARAs			Counter32,
+    rsLfapStatsTxARs			Counter32,
+
+    rsLfapStatsMsgsInTxQueue		Integer32,
+    rsLfapStatsDropsInTxQueue		Counter32,
+    rsLfapStatsDropsInTxQueueWhenUp	Counter32,
+
+    rsLfapStatsRxVRs			Counter32,
+    rsLfapStatsRxVRAs			Counter32,
+    rsLfapStatsRxFARs			Counter32,
+    rsLfapStatsRxFUNs   		Counter32,
+    rsLfapStatsRxARs			Counter32,
+    rsLfapStatsRxARAs			Counter32,
+
+    rsLfapStatsMsgsInRxQueue		Integer32,
+    rsLfapStatsInvalidMsgsRx		Counter32,
+    rsLfapStatsMsgsUnknownRx		Counter32,
+
+    --
+    -- Lost Accounting Information
+    --
+    rsLfapStatsTxLostPackets		Counter64,
+    rsLfapStatsTxLostOctets		Counter64,
+ 
+    rsLfapStatsLostAt			TimeTicks,
+
+    -- 
+    -- Micro Flow Statistics
+    --
+    rsLfapStatsActiveFlows		Counter32,
+    rsLfapStatsFlowRate			Gauge32,
+
+    --
+    -- Peak
+    --
+    rsLfapStatsActiveFlowsPeak		Gauge32,
+    rsLfapStatsMsgsInTxQueuePeak       	Gauge32,
+    rsLfapStatsFlowsPeakTime		TimeTicks
+}
+
+--
+-- Connection statistics
+--
+rsLfapStatsSessionUp  OBJECT-TYPE
+    SYNTAX       TruthValue
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"The current state of the TCP connection between the 
+	LFAP agent on the CCE and an external server (FAS) 
+	identified by rsLfapServerStaticIndex. If a connection 
+	from the CCE is established with the FAS, then its value
+	would be true. Otherwise it would be false."
+    ::= { rsLfapStatsEntry 1 }
+
+rsLfapStatsSessionChangedAt  OBJECT-TYPE
+    SYNTAX       TimeTicks
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"The value of sysUpTime when rsLfapStatsSessionUp 
+	last changed state."
+    ::= { rsLfapStatsEntry 2 }
+
+rsLfapStatsTcpConnects  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This is the number of successul TCP connections the LFAP
+	agent made to a FAS."
+    ::= { rsLfapStatsEntry 3 }
+
+rsLfapStatsTcpConnectFails  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This is the number of FAILED TCP connections the LFAP agent
+	made to connect to a FAS."
+    ::= { rsLfapStatsEntry 4 }
+
+--
+-- Protocol Statistics
+--
+
+rsLfapStatsTxVRs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of Version Request(VR) 
+	sent by the CCE to a FAS."
+    ::= { rsLfapStatsEntry 5 }
+
+rsLfapStatsTxVRAs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of Version Request 
+	Acknowledge (VRA) sent."
+    ::= { rsLfapStatsEntry 6 }
+
+rsLfapStatsTxFARs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of Flow Activation Records
+	(FAR) sent. TBD: specify ref clause."
+    ::= { rsLfapStatsEntry 7 }
+
+rsLfapStatsTxFUNs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of Flow Update Notification
+	(FUN) sent."
+    ::= { rsLfapStatsEntry 8 }
+
+rsLfapStatsTxARs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of Administrative 
+	Request(AR) sent."
+    ::= { rsLfapStatsEntry 9 }
+
+rsLfapStatsTxARAs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of Administrative Request
+	Acknowledge (ARA) sent."
+    ::= { rsLfapStatsEntry 10 }
+
+rsLfapStatsMsgsInTxQueue  OBJECT-TYPE
+    SYNTAX	Integer32
+    MAX-ACCESS	read-only
+    STATUS	current
+    DESCRIPTION
+	"This object contains the number of messages currently in 
+	the send queue."
+    ::= { rsLfapStatsEntry 11 }
+
+rsLfapStatsDropsInTxQueue  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object represents the number of messages dropped by the
+	LFAP agent in the transmitting queue for this FAS."
+    ::= { rsLfapStatsEntry 12 }
+
+rsLfapStatsDropsInTxQueueWhenUp  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object represents the number of messages dropped by the
+	LFAP agent in the send queue for this FAS while the connection
+	between the CCE and the FAS is up."
+    ::= { rsLfapStatsEntry 13 }
+
+rsLfapStatsRxVRs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of VRs received."
+    ::= { rsLfapStatsEntry 14 }
+
+rsLfapStatsRxVRAs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of VRAs received."
+    ::= { rsLfapStatsEntry 15 }
+
+rsLfapStatsRxFARs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of FARs received."
+    ::= { rsLfapStatsEntry 16 }
+
+
+rsLfapStatsRxFUNs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of FUNs received."
+    ::= { rsLfapStatsEntry 17 }
+
+rsLfapStatsRxARs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of ARs received by the CCE
+	from a FAS."
+    ::= { rsLfapStatsEntry 18 }
+
+rsLfapStatsRxARAs  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of ARAs received."
+    ::= { rsLfapStatsEntry 19 }
+
+rsLfapStatsMsgsInRxQueue  OBJECT-TYPE
+    SYNTAX	Integer32
+    MAX-ACCESS	read-only
+    STATUS	current
+    DESCRIPTION
+	"This object contains the number of messages currently in 
+	the receive queue."
+    ::= { rsLfapStatsEntry 20 }
+
+rsLfapStatsInvalidMsgsRx  OBJECT-TYPE
+    SYNTAX	Counter32
+    MAX-ACCESS	read-only
+    STATUS	current
+    DESCRIPTION
+	"This object is the sum of corrupt and erroneous messages
+	received."
+    ::= { rsLfapStatsEntry 21 }
+
+rsLfapStatsMsgsUnknownRx  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"This object contains the number of unknown LFAP message types
+	received."
+    ::= { rsLfapStatsEntry 22 }
+
+--
+-- Lost Accounting Information
+--
+
+rsLfapStatsTxLostPackets  OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The count of packets not accounted for and thus not
+	recorded by the LFAP server."
+    ::= { rsLfapStatsEntry 23 }
+
+rsLfapStatsTxLostOctets  OBJECT-TYPE
+    SYNTAX       Counter64
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+        "The count of octets not accounted for and thus not
+	recorded by the LFAP server."
+    ::= { rsLfapStatsEntry 24 }
+
+rsLfapStatsLostAt  OBJECT-TYPE
+    SYNTAX       TimeTicks
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"On the CCE, the sysUpTime when the LFAP agent last lost 
+	trasmitted FAR/FUN messages. On the FAS, it would be the last 
+	time when the server lost received FAR/FUN messages."
+    ::= { rsLfapStatsEntry 25 }
+
+-- 
+-- Micro Flow Statistics
+--
+rsLfapStatsActiveFlows  OBJECT-TYPE
+    SYNTAX       Counter32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"Number of active flows being tracked per FAS."
+    ::= { rsLfapStatsEntry 26 }
+
+rsLfapStatsFlowRate  OBJECT-TYPE
+    SYNTAX       Gauge32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"Number of flows being setup per second. This value is
+	calculated as an exponentially decaying average over 
+	30 second intervals"
+    ::= { rsLfapStatsEntry 27 }
+
+rsLfapStatsActiveFlowsPeak  OBJECT-TYPE
+    SYNTAX       Gauge32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"High water mark for number of active flows being tracked by LFAP."
+    ::= { rsLfapStatsEntry 28 }
+
+rsLfapStatsMsgsInTxQueuePeak  OBJECT-TYPE
+    SYNTAX       Gauge32
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"High water mark for queue depth."
+    ::= { rsLfapStatsEntry 29 }
+
+rsLfapStatsFlowsPeakTime  OBJECT-TYPE
+    SYNTAX       TimeTicks
+    MAX-ACCESS   read-only
+    STATUS       current
+    DESCRIPTION
+	"The value of sysUpTime when max number of flows being reported
+	on was reached."
+    ::= { rsLfapStatsEntry 30 }
+
+--
+-- Diagnostics
+--
+
+rsRunLfapSelfTest  OBJECT-TYPE
+    SYNTAX        TruthValue
+    MAX-ACCESS    read-write
+    STATUS        current
+    DESCRIPTION
+	"When set to true, CCE performs self diagsnostic of accounting 
+	subsystem. Requires rsLfapAdminState to be set to false. Upon 
+	completion,  rsLfapLastError will indicate test results."
+    ::= { rsLfapDiag 1 }
+
+--
+-- Events 
+--
+rsLfapMIBEvents		OBJECT IDENTIFIER ::= { rsLfapMIB 2 }
+rsLfapMIBEventsPrefix	OBJECT IDENTIFIER ::= { rsLfapMIBEvents 0 }
+
+rsLfapNoServer NOTIFICATION-TYPE
+    OBJECTS { 
+        rsLfapStatsSessionChangedAt, 
+	rsLfapStatsTcpConnectFails 
+    }
+    STATUS  current
+    DESCRIPTION
+	"The LFAP agent or a LFAP client has tried to connect to all
+	servers in rsLfapStatsServerStaticTable and has failed. "
+    ::= { rsLfapMIBEventsPrefix 1 }
+
+rsLfapLostMessage NOTIFICATION-TYPE
+    OBJECTS { 
+        rsLfapStatsSessionChangedAt, 
+	rsLfapStatsLostAt, 
+	rsLfapStatsSessionUp 
+    }
+    STATUS  current
+    DESCRIPTION
+	"When a LFAP client first drops messages due to no connected 
+	server, send this event. No additional events are sent until 
+	the value of rsLfapStatsSessionChangedAt value has
+	changed."
+    ::= { rsLfapMIBEventsPrefix 2 }
+
+rsLfapQueueFull NOTIFICATION-TYPE
+    OBJECTS { 
+        rsLfapStatsDropsInTxQueue, 
+	rsLfapMaxTxQueueSize, 
+	rsLfapStatsSessionUp 
+    }
+    STATUS  current
+    DESCRIPTION
+	"Accounting data may be lost when the CCE queue reaches
+	capacity. rsLfapStatsSessionUp indicates the 
+	typical case where there the connection to a FAS is lost. 
+	A second case is where the rate of inserts into the 
+	queue exceeds the rate at which the FAS is processing 
+	them. This can be caused by flow control of the underlying 
+	TCP session. Send only one rsLfapStatsQueueFull 
+	notification per 1000 messages."
+    ::= { rsLfapMIBEventsPrefix 3 }
+
+-- Conformance Information
+rsLfapConformance	OBJECT IDENTIFIER ::= { rsLfapMIB 3 }
+rsLfapCompliances	OBJECT IDENTIFIER ::= { rsLfapConformance 1 }
+rsLfapGroups		OBJECT IDENTIFIER ::= { rsLfapConformance 2 }
+
+-- Compliance Statements
+rsLfapAgentCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+	"This compliance statement for implementing this MIB on
+	the CCE. Some objects also do not need to be implemeted
+	if the LFAP agent is v4."
+
+    MODULE  -- this module
+     MANDATORY-GROUPS {
+      rsLfapAgentStateGroup,
+      rsLfapAgentCfgGroup,
+
+      rsLfapServerStaticGroup,
+      rsLfapStatsGroup
+     }
+
+     GROUP rsLfapDiagGroup
+     DESCRIPTION
+	 "The diag object in this group is new. Implementation of this
+	  group for version 4 is not necessary."
+
+     GROUP rsLfapNotificationGroup
+     DESCRIPTION
+	 "These notifications are new. Implementation of this group for 
+	  version 4 is not necessary."
+
+     OBJECT rsLfapStatsTxVRAs
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported by the LFAP agent on the CCE. 
+	 The CCE would not send a Version Request Acknoledge(VRA) message 
+	 to a FAS."
+
+     OBJECT rsLfapStatsRxVRs
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported by the LFAP agent on the CCE. 
+	 A FAS does not send Version Request(VR) messages to the CCE."
+
+     OBJECT rsLfapStatsRxFARs
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported by the LFAP agent on the CCE. A FAS
+	 does not send FAR messages to the CCE."
+
+     OBJECT rsLfapStatsRxFUNs
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported by LFAP agent on the CCE. The FAS
+	 does not send FUN messages to the CCE."
+
+     OBJECT rsLfapServerStaticLastChanged
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported in LFAP v4."
+
+     OBJECT rsLfapStatsSessionChangedAt
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported in LFAP v4."
+
+     OBJECT rsLfapStatsLostAt
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported in LFAP v4."
+
+     OBJECT rsLfapStatsFlowsPeakTime
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported in LFAP v4."
+
+     OBJECT rsLfapStatsFlowRate
+     MIN-ACCESS   not-accessible
+     DESCRIPTION
+	 "This object is not supported in LFAP v4."
+
+    ::= { rsLfapCompliances 1 }
+
+rsLfapServerCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+	"This compliance statement for implementing this MIB on
+	a FAS. Some objects in rsLfapStatsGroup would not apply 
+	to the FAS. TBD."
+    MODULE  -- this module
+     MANDATORY-GROUPS {
+      rsLfapStatsGroup
+     }
+
+    ::= { rsLfapCompliances 2 }
+
+-- MIB groupings
+rsLfapAgentStateGroup OBJECT-GROUP
+    OBJECTS {
+       rsLfapCapabilities,
+       rsLfapAdminState,
+       rsLfapOperState,
+       rsLfapLastError,
+       rsLfapLastErrorReason,
+       rsLfapActiveServer
+    }
+    STATUS  current
+    DESCRIPTION
+	"The collection of objects used to represent the desired and
+	 actual state of the LFAP agent."
+    ::= { rsLfapGroups 1 }
+
+rsLfapAgentCfgGroup OBJECT-GROUP
+    OBJECTS {
+       rsLfapPollInterval,
+       rsLfapBatchSize,
+       rsLfapBatchInterval,
+       rsLfapLostContactInterval,
+       rsLfapServerRetryInterval,
+       rsLfapMaxTxQueueSize,
+       rsLfapTaskPriority
+    }
+    STATUS  current
+    DESCRIPTION
+	"The collection of objects used to represent the configuration
+	 of the LFAP agent."
+    ::= { rsLfapGroups 2 }
+
+rsLfapServerStaticGroup OBJECT-GROUP
+    OBJECTS {
+       rsLfapServerStaticLastChanged,
+       rsLfapServerStaticAddressType,
+       rsLfapServerStaticAddress,
+       rsLfapServerStaticStatus
+    }
+
+    STATUS  current
+    DESCRIPTION
+	"The collection of objects used to represent the configuration of 
+	 a LFAP server."
+    ::= { rsLfapGroups 3 }
+
+rsLfapStatsGroup OBJECT-GROUP
+    OBJECTS {
+       rsLfapStatsSessionUp,
+       rsLfapStatsSessionChangedAt,
+       rsLfapStatsTcpConnects,
+       rsLfapStatsTcpConnectFails,
+
+       rsLfapStatsTxVRs,
+       rsLfapStatsTxVRAs,
+       rsLfapStatsTxFARs,
+       rsLfapStatsTxFUNs,
+       rsLfapStatsTxARs,
+       rsLfapStatsTxARAs,
+
+--       rsLfapStatsTotalBytesTx,
+--       rsLfapStatsSuccessfulMsgsTx,
+       rsLfapStatsMsgsInTxQueue,
+       rsLfapStatsDropsInTxQueue,
+       rsLfapStatsDropsInTxQueueWhenUp,
+
+--       rsLfapStatsTxARsDropped,
+--       rsLfapStatsTxVRsDropped,
+--       rsLfapStatsTxARAsDropped,
+--       rsLfapStatsTxFARsDropped,
+--       rsLfapStatsTxFUN-IsDropped,
+--       rsLfapStatsTxFUNsDropped,
+
+       rsLfapStatsRxVRs,
+       rsLfapStatsRxVRAs,
+       rsLfapStatsRxFARs,
+       rsLfapStatsRxFUNs,
+       rsLfapStatsRxARs,
+       rsLfapStatsRxARAs,
+
+--       rsLfapStatsTotalBytesRx,
+--       rsLfapStatsSuccessfulMsgsRx,
+       rsLfapStatsMsgsInRxQueue,
+       rsLfapStatsInvalidMsgsRx,
+       rsLfapStatsMsgsUnknownRx,
+--       rsLfapStatsDropsInRxQueue,
+
+       rsLfapStatsTxLostPackets,
+       rsLfapStatsTxLostOctets,
+-- -       rsLfapStatsRxLostPackets,
+-- -       rsLfapStatsRxLostOctets,
+       rsLfapStatsLostAt,
+
+--       rsLfapStatsFlowSetups,
+--       rsLfapStatsFlowTeardowns,
+       rsLfapStatsActiveFlows,
+       rsLfapStatsFlowRate,
+
+       rsLfapStatsActiveFlowsPeak,
+       rsLfapStatsMsgsInTxQueuePeak,
+       rsLfapStatsFlowsPeakTime
+    }
+
+    STATUS  current
+    DESCRIPTION
+	"The collection of objects used to represent the statistics of
+	 a LFAP server."
+    ::= { rsLfapGroups 4 }
+
+rsLfapDiagGroup OBJECT-GROUP
+    OBJECTS {
+       rsRunLfapSelfTest
+    }
+
+    STATUS  current
+    DESCRIPTION
+	"The collection of objects used to represent LFAP diagnostics."
+    ::= { rsLfapGroups 5 }
+
+rsLfapNotificationGroup	NOTIFICATION-GROUP
+    NOTIFICATIONS {
+       rsLfapNoServer,
+       rsLfapLostMessage,
+       rsLfapQueueFull
+    }
+
+    STATUS  current
+    DESCRIPTION
+	"The collection of notifications for RS LFAP MIB."
+    ::= { rsLfapGroups 6 }
+
+END

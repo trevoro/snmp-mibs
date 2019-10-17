@@ -1,0 +1,3068 @@
+--
+-- Copyright (c) 1995 International Business Machines Corp.
+-- All Rights Reserved.
+--
+
+-- ====================================================================
+-- Version: 1.1 - 07/07/95
+-- + agents OID for different products
+-- + administrative OID for test types
+-- + interface new administrative state wrap-reply
+-- + interface new operational states for wrap & failing
+-- + interface clocking, scrambling, subslot
+-- + interface available and reserved bandwidth
+-- + swap microcode
+-- + switch statistics
+-- ====================================================================
+
+ATM-SWITCHING-NODE-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+        Counter, Gauge, IpAddress, DisplayString, enterprises,
+               TimeTicks
+            FROM RFC1155-SMI
+        DisplayString
+            FROM SNMPv2-TC
+			OBJECT-TYPE
+            FROM RFC-1212;
+
+
+ibm                           OBJECT IDENTIFIER ::= { enterprises 2 }
+
+ibmProd                       OBJECT IDENTIFIER ::= { ibm 6 }
+
+atmSw                         OBJECT IDENTIFIER ::= { ibmProd 33 }
+                              -- Contact JB. Schmitt (SCHMITT at LGEPROFS)
+
+-- TEXTUAL CONVENTIONS =====================================================
+
+DateAndTime ::= OCTET STRING (SIZE(8))
+
+            -- A date and time specification, from SNMPv2 RFC 1443
+            --
+            -- Octets Contents        Range
+            -- ====== ========        =====
+            --  1-2   year            0..65535
+            --  3     month           1..12
+            --  4     day             1..31
+            --  5     hour            0..23
+            --  6     minutes         0..59
+            --  7     seconds         0..60  (use 60 for leap-second)
+            --  8     deci-seconds    0..9
+
+RowStatus ::= INTEGER {
+                       active(1),
+                       notInService(2),
+                       notReady(3),
+                       createAndGo(4),
+                       createAndWait(5),
+                       destroy(6)
+                      }
+
+            -- A way of creating/deleting rows in tables,
+            -- from RMON RFC 1271 and SNMPv2 RFC 1443
+            --
+            -- active: row available for use by the managed device
+            -- notInService: row exists but is unavailable for use
+            -- notReady: row exists but some information is missing
+            -- createAndGo: create and use row
+            -- createAndWait: create row but do not use it now
+            -- destroy: remove row
+
+IfIndex ::= INTEGER (0..65535)
+
+        -- Interface identifier
+        --
+        -- The value of this object identifies an interface.
+        -- This object has the same value as the MIB-II ifIndex object for
+        -- the same interface
+
+NetPrefix ::= OCTET STRING (SIZE(0..13))
+
+           -- A network prefix part, as defined in the UNI V3.0 specification
+
+AtmAddress ::= OCTET STRING (SIZE(0..20))
+
+           -- An ATM Address, as defined in the UNI V3.0 specification
+           -- It consists of a network prefix part and an End-User part
+           --
+           -- Three types of format exist for the network prefix part:
+           --  a = DCC Format
+           --  b = ICD Format
+           --  c = E.164 Format
+           --
+           -- The End-User part consists of an ESI and a SEL area.
+           --
+           --    01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20
+           --
+           -- a=AFI!.DCC.!DFI!..AA...!RSRVD!.RD..!AREA.!.....ESI........!SEL
+           -- b=AFI!.ICD.!DFI!..AA...!RSRVD!.RD..!AREA.!.....ESI........!SEL
+           -- c=AFI!....E.164..............!.RD..!AREA.!.....ESI........!SEL
+
+
+-- IBM-8260 ATM MIB ========================================================
+
+-- ATM sub-system: ATM switch + ATM modules
+
+node OBJECT IDENTIFIER ::= { atmSw 1 }
+
+-- Agent Identification
+
+agents OBJECT IDENTIFIER ::= { atmSw 2 }
+
+ibm8260 OBJECT IDENTIFIER ::= { agents 1 }
+gatwick OBJECT IDENTIFIER ::= { agents 2 }
+
+-- Administrative Objects
+
+admin OBJECT IDENTIFIER ::= { atmSw 3 }
+
+testType OBJECT IDENTIFIER ::= { admin 1 }
+internalLoopback OBJECT IDENTIFIER ::= { testType 1 }
+externalLoopback OBJECT IDENTIFIER ::= { testType 2 }
+
+-- Node Objects
+
+base OBJECT IDENTIFIER ::= { node 1 }
+
+dateTime OBJECT-TYPE
+        SYNTAX  DateAndTime
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The local date and time in the ATM agent."
+        ::= { base 1 }
+
+lastChange OBJECT-TYPE
+        SYNTAX  DateAndTime
+        ACCESS  read-only
+        STATUS  deprecated
+        DESCRIPTION
+                "The date and time of the last major change detected:
+                 - date and time reset
+                 - agent IP address(es), subnet mask(s), default gateway changed
+                 - LAN Emulation or IP ARP server address(es) changed
+                 - system parameters (name, contact, location) changed
+                 - module Changed
+                   -- module added/removed
+                   -- administrative State changed (isolate/attached)
+                 - interface changed:
+                   -- administrative State changed (enabled/disabled)
+                   -- operational state changed
+
+                 This variable is updated in relation with the following traps:
+                 - hello trap
+                 - change trap
+                 - linkUp/linkDown traps."
+        ::= { base 2 }
+
+lock OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         secured (1),
+                         unlock (2),
+                         disabled (3)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The purpose of this variable is to protect the path between
+                 the hub and the network management station.
+
+                 When set to secure (1), it is not possible to:
+                 - disable a port:
+                   -- if the SNMP request was received on this port
+                   -- if a LAN Emulation or an IP ARP server is on this port
+                 - isolate a module:
+                   -- if the SNMP request was received on this port
+                   -- if a LAN Emulation or an IP ARP server is on this port
+
+                 When set to unlock (2), the parameters referenced
+                 above can be modified for a limited time (30 seconds).
+
+                 When set to disabled (3), no protection is provided.
+
+                 Trying to modify one of these parameters results in a
+                 genErr error code in the Get-Response and a trap is
+                 returned to the agent."
+        ::= { base 3 }
+
+ipArpServerAtmAddress OBJECT-TYPE
+        SYNTAX  AtmAddress
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The ATM address of the ARP server used when communicating
+                 with the switch agent using Classical IP over ATM (RFC 1577)."
+        ::= { base 4 }
+
+-- base.5 intentionnally left unused
+
+systemState OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         reset (1),
+                         switch-a (2),
+                         switch-b (3)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The state of the ATM subsystem.
+                 Setting this  variable to reset, causes a reset of all the
+                 ATM modules.
+                 When the active switch is in slots 9/10, switch-a is returned.
+                 When the active switch is in slots 11/12, switch-b is returned."
+        ::= { base 6 }
+
+
+-- Traps Control
+
+traps OBJECT IDENTIFIER ::= { node 2 }
+
+hello OBJECT-TYPE
+        SYNTAX  INTEGER  {
+                          enabled (1),
+                          disabled (2)
+                         }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "When disabled, the hello trap is neither sent.
+                 When enabled, the hello trap can be sent by the agent when the
+                 appropriate trap condition is detected."
+        ::= { traps 1 }
+
+-- Physical Description
+
+physical OBJECT IDENTIFIER ::= { node 3 }
+
+-- Switch Control
+
+switchTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF SwitchEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table controls slot attachement to the ATM switch.
+                 An ATM module is operational only when inserted in a slot which
+                 is defined as attached to the switch."
+        ::= { physical 1}
+
+switchEntry OBJECT-TYPE
+        SYNTAX  SwitchEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of switchTable. Each entry corresponds to a slot that
+                 is physically wired to the switch. These slots may be attached
+                 to or isolated from the ATM switch."
+        INDEX { switchSlotIndex }
+        ::= { switchTable 1 }
+
+SwitchEntry ::= SEQUENCE {
+        switchSlotIndex
+                INTEGER,
+        switchAdminState
+                INTEGER,
+        switchOperState
+                INTEGER
+       }
+
+switchSlotIndex OBJECT-TYPE
+        SYNTAX  INTEGER (1..64)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A slot number controlled by the switch."
+        ::= { switchEntry 1 }
+
+switchAdminState OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         isolate (1),
+                         attach (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The desired state of the slot connection to the switch.
+
+                 When a slot is isolated from the switch, the switch traffic
+                 from this slot to the switch is disabled. As a result, if
+                 an ATM module is plugged in this slot, it will not be
+                 operational.
+
+                 When a slot is attached to the switch, the switch is ready
+                 to receive ATM traffic from this slot. As a result, if an
+                 ATM module is plugged in this slot, it can be used for
+                 ATM traffic."
+        ::= { switchEntry 2 }
+
+switchOperState  OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         isolated (1),
+                         attached (2)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The actual state of the slot connection to the switch.
+
+                When the administrative state is set to ISOLATE, the
+                operational state becomes ISOLATED.
+
+                When the operational state is set to ATTACH, the operational
+                state may become either ATTACHED or ISOLATED depending on
+                the hardware current status of the slot."
+        ::= { switchEntry 3 }
+
+-- ATM modules
+
+moduleTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF ModuleEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table provides the list of ATM modules in the hub."
+        ::= { physical 2}
+
+moduleEntry OBJECT-TYPE
+         SYNTAX  ModuleEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of moduleTable."
+        INDEX { moduleSlotIndex }
+        ::= { moduleTable 1 }
+
+ModuleEntry ::= SEQUENCE {
+        moduleSlotIndex
+                INTEGER,
+        moduleType
+                INTEGER,
+        moduleDescription
+                DisplayString,
+        moduleSerialNumber
+                DisplayString,
+        moduleSoftwareVersion
+                INTEGER,
+        moduleHardwareVersion
+                INTEGER,
+        moduleAdminState
+                INTEGER,
+        moduleOperState
+                INTEGER,
+        moduleErrors
+                Counter,
+        moduleMaxVpc
+                INTEGER,
+        moduleUsedVpc
+                INTEGER,
+        moduleMaxVcc
+                INTEGER,
+        moduleUsedVcc
+                INTEGER
+        }
+
+moduleSlotIndex OBJECT-TYPE
+        SYNTAX  INTEGER (1..64)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The slot number for this module."
+        ::= { moduleEntry 1 }
+
+moduleType OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         unknown (1),
+                         switch (2),
+                         atm-100-Mbps (3),
+                         atm-155-Mbps-2-ports-LAN (4)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The type of module attached to the ATM switch in this
+                 slot.
+                 The 'unknown' value is used when the ATM agent
+                 is unable to get information for this module (the
+                 module is isolated from the switch or is not operational)."
+        ::= { moduleEntry 2 }
+
+moduleDescription OBJECT-TYPE
+        SYNTAX  DisplayString (SIZE (0..255))
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A textual description of this module.
+                 This description is blank when no description is available."
+        ::= { moduleEntry 3 }
+
+moduleSerialNumber OBJECT-TYPE
+        SYNTAX  DisplayString (SIZE (0..13))
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The serial number for this module."
+        ::= { moduleEntry 4 }
+
+moduleSoftwareVersion OBJECT-TYPE
+        SYNTAX  DisplayString
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The version and release number for this module
+                 firmware (microcode)."
+        ::= { moduleEntry 5 }
+
+moduleHardwareVersion OBJECT-TYPE
+        SYNTAX  DisplayString
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Part Number (P/N) and Engineering Change (EC) level
+                 for this module and Plant Location."
+        ::= { moduleEntry 6 }
+
+moduleAdminState OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         ready (1),
+                         reset (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The administrative state of this module."
+        ::= { moduleEntry 7 }
+
+moduleOperState OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         unknown (1),
+                         operational (2),
+                         not-operational (3)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The operational test of this module."
+        ::= { moduleEntry 8 }
+
+moduleErrors    OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of errors detected by this module on the traffic
+                 from the switch to this module."
+        ::= { moduleEntry 9 }
+
+moduleMaxVpc OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The maximum number of VPC supported by this module.
+                 The current number of VPC that can be used is the difference
+                 between moduleMaxVpc and moduleUsedVpc."
+        ::= { moduleEntry 10 }
+
+moduleUsedVpc OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of VPCs currently in use for this module.
+                 The current number of VPCs that can be used is the difference
+                 between moduleMaxVpc and moduleUsedVpc."
+        ::= { moduleEntry 11 }
+
+moduleMaxVcc OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The maximum number of VCCs supported by this module.
+                 The current number of VCCs that can be used is the difference
+                 between moduleMaxVcc and moduleUsedVcc."
+        ::= { moduleEntry 12  }
+
+moduleUsedVcc OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of VCC currently in use for this module.
+                 The current number of VCC that can be used is the difference
+                 between moduleMaxVcc and moduleUsedVcc."
+        ::= { moduleEntry 13  }
+
+-- ATM ports
+
+portTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF PortEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table provides the list of ports attached to
+                 the ATM switch (ATM ports). These ports belong to ATM modules
+                 inserted in slots that are attached to the ATM switch."
+        ::= { physical 3}
+
+portEntry OBJECT-TYPE
+        SYNTAX  PortEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of portTable. Each entry corresponds to a port that
+                 belongs to an ATM module. This module must be inserted in a
+                 slot that is attached to the ATM switch."
+        INDEX { portSlotIndex,
+                portIndex }
+        ::= { portTable 1 }
+
+PortEntry ::= SEQUENCE {
+        portSlotIndex
+              INTEGER,
+        portIndex
+              INTEGER,
+        portInterface
+              IfIndex
+        }
+
+portSlotIndex OBJECT-TYPE
+        SYNTAX  INTEGER (1..64)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The slot number of this port's module."
+        ::= { portEntry 1 }
+
+portIndex OBJECT-TYPE
+        SYNTAX  INTEGER (1..64)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The port number for this module."
+        ::= { portEntry 2 }
+
+portInterface OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The interface number of this port."
+        ::= { portEntry 3 }
+
+-- ATM interfaces
+
+interfaceTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF InterfaceEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "For each ATM port, this table maps the MIB-II interface index for
+                 this port with its physical slot and port numbers."
+        ::= { physical 4}
+
+interfaceEntry OBJECT-TYPE
+        SYNTAX  InterfaceEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of the interfaceTable.
+                 Each entry corresponds to a port that belongs to an ATM module.
+                 This module must be inserted in a slot
+                 that is attached to the ATM switch."
+        INDEX { interfaceIndex }
+        ::= { interfaceTable 1 }
+
+InterfaceEntry ::= SEQUENCE {
+        interfaceIndex
+              IfIndex,
+        interfaceSlot
+              INTEGER,
+        interfacePort
+              INTEGER,
+        interfaceConnector
+              INTEGER,
+        interfaceAdminState
+              INTEGER,
+        interfaceOperState
+              INTEGER,
+        interfaceAtmAccess
+              INTEGER,
+        interfaceMediaType
+               INTEGER,
+        interfaceMediaSpeed
+              INTEGER,
+        interfaceMediaErrors
+              Counter,
+        interfaceSubSlot
+              INTEGER,
+        interfaceClocking
+              INTEGER,
+        interfaceScrambling
+              INTEGER,
+        interfaceAvailableBandwidth
+              INTEGER,
+        interfaceAllocatedBandwidth
+              INTEGER
+        }
+
+interfaceIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The interface number of the port represented by this entry.
+                 This is the same number as the index used to represent this
+                 interface in the MIB-II interface table."
+        ::= { interfaceEntry 1 }
+
+interfaceSlot OBJECT-TYPE
+        SYNTAX  INTEGER (1..64)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The slot number of this ATM port's module."
+        ::= { interfaceEntry 2 }
+
+interfacePort OBJECT-TYPE
+        SYNTAX  INTEGER (1..64)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The port number of this ATM port."
+        ::= { interfaceEntry 3 }
+
+interfaceConnector OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        unknown (1),
+                        internal (2),
+                        mic   (3),
+                        sc-Duplex (4),
+                        monomode (5),
+                        db-9 (6),
+                        rj45 (7)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Whether this port is an internal port (on the backplane)
+                 or an external connector."
+        ::= { interfaceEntry 4 }
+
+interfaceAdminState OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        enabled (1),
+                        disabled (2),
+                        wrap-reply (3)
+                        }
+         ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The administrative state for this port.
+                 When set to disabled, no ATM traffic can pass on this
+                 port; all connections (SVC and PVC) are cleared.
+                 When set to wrap-reply, this interface is wrapped so that
+                 all the traffic received from the attached line is sent
+                 back on this line. If the interface state is not changed,
+                 it will automatically go back to the disabled state after
+                 one minute."
+        ::= { interfaceEntry 5 }
+
+interfaceOperState OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        unknown (1),
+                        disabled-nosignal (2),
+                        disabled-idle (3),
+                        no-signal (4),
+                        idle (5),
+                        in-service (6),
+                        pvcOnly (7),
+                        failing-internal (8),
+                        misConfigured (9),
+                        wrongNetworkPrefix (10),
+                        wrongNodeNumber (11),
+                        disabled-failing (12),
+                        failing-line (13),
+                        wrap-no-signal (14),
+                        wrap-idle (15),
+                        wrap-failing-internal (16),
+                        wrap-failing-line (17)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The operational state for this port:
+                 - unknown: the status of this port is unknown (this can
+                            be the result of a module in error)
+                 - disabled-nosignal: no activity is detected at the physical
+                                      layer while the port is enabled
+                 - disabled-idle:: activity from the remote device
+                                   attached to this port has been
+                                   detected by the physical layer.
+                                   The port is disabled.
+                 - failing: an internal hard error has been detected on
+                            this port while the port is enabled
+                 - no signal: no activity is detected at the physical
+                              layer while the port is enabled
+                 - idle: activity from the remote device attached to this
+                         port has been detected by the physical layer.
+                         The port is enabled.
+                 - in-service: the remote device successfully acknowledges
+                               ILMI polling requests and SVC registration
+                 - pvcOnly: the remote device succesfully acknowledges
+                            ILMI polling requests but it rejects the ATM
+                            prefix registration. Only PVCs are supported.
+                 - misConfigured: an SSI to UNI or an SSI to NNI configuration
+                                  has been detected
+                 - wrongNetworkPrefix: the switches on each end of an SSI link
+                                       have incompatible network prefixes (the
+                                       12 first bytes have different values)
+                 - wrongNodeNumber: the switches on each end of an SSI link
+                                    have the same ATM node Numbers.
+                 - failing-line: the port is enabled and a invalid
+                                 signal is detected on the line
+                 - disabled-failing: the port is disabled and an
+                                     anomaly is detected, either internal
+                                     or external.
+                 - wrap-no-signal: the port is internally wrapped so that
+                               all the traffic received on the attached line is
+                               returned unchanged on the line.
+                               No activity is detected at the physical
+                               layer.
+                 - wrap-idle: the port is internally wrapped so that
+                              all the traffic received on the attached line is
+                              returned unchanged on the line and
+                              a valid signal is detected on the line.
+                 - wrap-failing-internal: an internal failure has been
+                                          detected when the port has been
+                                          turned into the wrap-reply state.
+                                          The actual state of the port is
+                                          undefined.
+                 - wrap-failing-line: the port is internally wrapped so that
+                                      all the traffic received on the attached
+                                      line is returned unchanged on the line
+                                      and an invalid signal is detected
+                                      on the line.
+
+                 When disabled, the port may be in only one of the following
+                 states:
+                 - unknown, disabled-failing, disabled-nosignal or
+                   disabled-idle."
+        ::= { interfaceEntry 6 }
+
+interfaceAtmAccess OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        unknown (1),
+                        uni (2),
+                        ssi (3),
+                        nni (4)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The type of ATM access offered on this port:
+                 - UNI: User Network Interface
+                 - SSI: Switch-to-Switch interface
+                 - NNI: Network-to-Network interface"
+        ::= { interfaceEntry 7 }
+
+interfaceMediaType OBJECT-TYPE
+        SYNTAX  INTEGER {
+                        unknown (1),
+                        monomode-fiber (2),
+                        multimode-fiber (3),
+                        twistedPair (4),
+                        utp (5),
+                        stp (6)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The type of cable attached to this port."
+        ::= { interfaceEntry 8 }
+
+interfaceMediaSpeed OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The speed of this interface, in bits per second."
+         ::= { interfaceEntry 9 }
+
+interfaceMediaErrors OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of physical layer errors detected on this media
+                such as violation errors and length errors."
+        ::= { interfaceEntry 10}
+
+interfaceSubSlot OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "When set to 0, this interface (and its physical connector)
+                is directly located on the module identified by the slot
+                number.
+                When set to a non-zero value, this number identifies a
+                feature card of the module that is used by this interface."
+        ::= { interfaceEntry 11}
+
+interfaceClocking OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         internal (1),
+                         external (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The source of the bit clock used for data transmission.
+                When set to external, the source is the clock received
+                from the line."
+        ::= { interfaceEntry 12}
+
+interfaceScrambling OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         off (1),
+                         cell (2),
+                         frame (3),
+                         cell-and-frame (4)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "Whether data scrambling is used when transmitting on this
+                line. Scrambling may be applied at the cell level,
+                at the frame level or at cell and frame level."
+        ::= { interfaceEntry 13}
+
+interfaceAvailableBandwidth OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "For a UNI or a NNI port: the current bandwidth available
+                 for the reserved bandwidth connections on this port.
+                 For a SSI port: the current bandwidth available
+                 on this port.
+                 It is in bits per second."
+        ::= { interfaceEntry 14}
+
+interfaceAllocatedBandwidth OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "For a UNI or a NNI port: the bandwidth, in bits per second,
+                 currently used by the reserved bandwidth connections
+                 on this port.
+                 For a SSI port: the bandwidth, in bits per second,
+                 currently reserved on this port."
+        ::= { interfaceEntry 15}
+
+-- switch statistics
+
+switchStats  OBJECT IDENTIFIER ::= { physical 5 }
+
+switchMonitoring OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         on (1),
+                         off (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+              "When on, the switch throughput is monitored.
+               When off, the switch thoughput is not monitored.
+               Note that the monitoring decreases the system
+               overall performances."
+        ::= { switchStats 1 }
+
+switchAggregateOutCells OBJECT-TYPE
+              SYNTAX  Counter
+              ACCESS  read-only
+              STATUS  mandatory
+              DESCRIPTION
+                      "The total number of cells transmitted from the
+                      switch.
+                      Note that this value is the aggregate throughput
+                      of all the ports on several minutes."
+              ::= { switchStats 2 }
+
+receiveTopList OBJECT-TYPE
+        SYNTAX  DisplayString
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifindexes of the five most receiving interfaces.
+                 The first ifindex given is the one corresponding to
+                 the interface which has received the more cells
+                 during the last polling interval.
+                 All ifIndexes are separated by a blank character.
+                 If there are less than 5 interfaces receiving data,
+                 there are less than 5 ifindexes listed."
+        ::= { switchStats 3 }
+
+transmitTopList OBJECT-TYPE
+        SYNTAX  DisplayString
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifindexes of the five most transmitting interfaces.
+                 The first ifindex given is the one corresponding to
+                 the interface which has sent the more cells
+                 during the last polling interval.
+                 All ifIndexes are separated by a blank character.
+                 If there are less than 5 interfaces transmitting data,
+                 there are less than 5 ifindexes listed."
+        ::= { switchStats 4 }
+
+
+-- Cross-Connect Table
+
+connections  OBJECT IDENTIFIER ::= { node 4 }
+
+-- VCL Cross Connect Table
+
+vcXConnectTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF VcXConnectEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains the cross-connections set-up in
+                 the switch for all existing VCL-based PVCs and SVCs."
+        ::= { connections 1}
+
+vcXConnectEntry OBJECT-TYPE
+        SYNTAX  VcXConnectEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of vcXConnectTable."
+        INDEX { vcXInIndex ,
+                vcXInVpi,
+                vcXInVci,
+                vcXOutIndex,
+                vcXOutVpi,
+                vcXOutVci }
+        ::= { vcXConnectTable 1 }
+
+VcXConnectEntry ::= SEQUENCE {
+        vcXInIndex
+                   IfIndex,
+        vcXInVpi
+                   INTEGER,
+        vcXInVci
+                   INTEGER,
+        vcXOutIndex
+                   IfIndex,
+        vcXOutVpi
+                   INTEGER,
+        vcXOutVci
+                   INTEGER,
+        vcXType
+                   INTEGER,
+        vcXDirection
+                   INTEGER
+        }
+
+vcXInIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The interface number for this ATM port."
+        ::= { vcXConnectEntry 1 }
+
+vcXInVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The VPI value for this connection."
+        ::= { vcXConnectEntry 2 }
+
+vcXInVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The VCI value for this connection."
+        ::= { vcXConnectEntry 3 }
+
+vcXOutIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The interface number for this ATM port."
+        ::= { vcXConnectEntry 4 }
+
+vcXOutVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The VPI value for this connection."
+        ::= { vcXConnectEntry 5 }
+
+vcXOutVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The VCI value for this connection."
+        ::= { vcXConnectEntry 6 }
+
+vcXType   OBJECT-TYPE
+        SYNTAX  INTEGER { unicast (1),
+                          multicast (2)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Whether this cross-connection is part of a unicast or a
+                 multicast connection."
+        ::= { vcXConnectEntry 7 }
+
+vcXDirection OBJECT-TYPE
+        SYNTAX  INTEGER { upstream (1),
+                          downstream (2)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Whether this entry identifies this cross-connection in
+                 the upstream or downstream flow, as seen from the root.
+
+                 Downstream means that the connection was set up from the
+                 in parameters (interface, VPI, VCI) to the out parameters
+                 (interface, VPI, VCI).
+
+                 In particular, for a multicast SVC, this means that the
+                 call initiator (the root in this case) is on the interface
+                 side labeled vcXInIndex.
+
+                 Upstream means that the connection was set up from the
+                 out parameters (interface, VPI, VCI) to the in parameters
+                 (interface, VPI, VCI).
+
+                 As a result, any cross-connection is modeled in this table
+                 as two entries, depending on whether it is seen in the
+                 up or down stream."
+        ::= { vcXConnectEntry 8 }
+
+
+-- VPL Cross-Connect Table
+
+vpXConnectTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF VpXConnectEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains the cross-connections set-up in
+                 the switch for all existing VPL-based PVCs and SVCs."
+        ::= { connections 2}
+
+vpXConnectEntry OBJECT-TYPE
+        SYNTAX  VpXConnectEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of vpXConnectTable."
+        INDEX { vpXInIndex ,
+                vpXInVpi,
+                vpXOutIndex,
+                vpXOutVpi}
+        ::= { vpXConnectTable 1 }
+
+VpXConnectEntry ::= SEQUENCE {
+        vpXInIndex
+                   IfIndex,
+        vpXInVpi
+                   INTEGER,
+        vpXOutIndex
+                   IfIndex,
+        vpXOutVpi
+                   INTEGER,
+        vpXType
+                   INTEGER,
+        vpXDirection
+                   INTEGER
+        }
+
+vpXInIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The interface number for this ATM port."
+        ::= { vpXConnectEntry 1 }
+
+vpXInVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The VPI value for this connection."
+        ::= { vpXConnectEntry 2 }
+
+vpXOutIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The interface number for this ATM port."
+        ::= { vpXConnectEntry 3 }
+
+vpXOutVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The VPI value for this connection."
+        ::= { vpXConnectEntry 4 }
+
+vpXType   OBJECT-TYPE
+        SYNTAX  INTEGER { unicast (1),
+                          multicast (2)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Whether this cross-connection is part of a unicast or a
+                 multicast connection."
+        ::= { vpXConnectEntry 5 }
+
+vpXDirection OBJECT-TYPE
+        SYNTAX  INTEGER { upstream (1),
+                          downstream (2)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Whether this entry identifies this cross-connection in
+                 the upstream or downstream flow, as seen from the root.
+
+                 Downstream means that the connection was set up from the
+                 in parameters (interface, VPI) to the out parameters
+                 (interface, VPI).
+
+                 Upstream means that the connection was set up from the
+                 out parameters (interface, VPI) to the in parameters
+                 (interface, VPI).
+
+                 As a result, any cross-connection is modeled in this table
+                 as two entries, depending on whether it is seen in the
+                 up or down stream."
+        ::= { vpXConnectEntry 6 }
+
+
+-- Neighbor Devices
+
+neighbor OBJECT IDENTIFIER ::= { node 5 }
+
+nbrTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF NbrEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains basic characteristics on adjacent
+                 ATM devices attached to this switch."
+        ::= { neighbor 1}
+
+nbrEntry OBJECT-TYPE
+        SYNTAX  NbrEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of neighborTable. Each entry corresponds to a port that
+                 belongs to an ATM module. This module must be inserted in a slot
+                 that is attached to the ATM switch."
+        INDEX { nbrIndex }
+        ::= { nbrTable 1 }
+
+NbrEntry ::= SEQUENCE {
+        localIndex
+              IfIndex,
+        nbrIpAddress1
+              IpAddress,
+        nbrIpAddress2
+              IpAddress,
+        nbrAtmAddress
+              AtmAddress,
+        nbrIndex
+              IfIndex,
+        nbrDescriptor
+              DisplayString,
+        nbrOid
+              OBJECT IDENTIFIER,
+        nbrName
+              DisplayString,
+        nbrLocation
+              DisplayString,
+        trunkId
+              INTEGER }
+
+localIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The interface number for the port represented by this
+                 entry."
+        ::= { nbrEntry 1 }
+
+nbrIpAddress1 OBJECT-TYPE
+        SYNTAX  IpAddress
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "One of the IP addresses of the ATM SNMP agent of the node
+                 attached to the port/slot defined by this entry.
+                 When not available, 0.0.0.0 is returned."
+        ::= { nbrEntry 2 }
+
+nbrIpAddress2 OBJECT-TYPE
+        SYNTAX  IpAddress
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "One of the IP addresses of the ATM SNMP agent of the node
+                 attached to the port/slot defined by this entry.
+                 When not available, 0.0.0.0 is returned."
+        ::= { nbrEntry 3 }
+
+nbrAtmAddress OBJECT-TYPE
+        SYNTAX  AtmAddress
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ATM identification of the node attached to the
+                 port/slot defined by this entry.
+                 When not available, a null string is returned."
+        ::= { nbrEntry 4 }
+
+nbrIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The interface number of the adjacent node to which the
+                 connection defined by this entry is attending.
+                 When not available, 0 is returned."
+        ::= { nbrEntry 5 }
+
+nbrDescriptor OBJECT-TYPE
+        SYNTAX  DisplayString (SIZE (0..255))
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The value of the MIB-II sysDescr as reported by the
+                 device attached to this port.
+                 When not available, a null string is returned."
+        ::= { nbrEntry 6 }
+
+nbrOid OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The value of the MIB-II sysOID as reported by the
+                 device attached to this port.
+                 When not available, a null string is returned."
+        ::= { nbrEntry 7 }
+
+nbrName OBJECT-TYPE
+        SYNTAX  DisplayString (SIZE (0..255))
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The value of the MIB-II sysName as reported by the
+                 device attached to this port.
+                 When not available, a null string is returned."
+        ::= { nbrEntry 8 }
+
+nbrLocation OBJECT-TYPE
+        SYNTAX  DisplayString (SIZE (0..255))
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The value of the MIB-II sysLocation as reported by the
+                 device attached to this port.
+                 When not available, a null string is returned."
+        ::= { nbrEntry 9 }
+
+trunkId OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The internal identifier for this trunk.
+                 Set to 0 if not a trunk."
+        ::= { nbrEntry 10 }
+
+
+-- TFTP
+
+tftp OBJECT IDENTIFIER ::= { node 6 }
+
+transferControl OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         ready (1),
+                         download (2),
+                         upload (3)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "A file transfer is initiated through a start command."
+        ::= { tftp 1 }
+
+transferDate OBJECT-TYPE
+        SYNTAX  DateAndTime
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The date and time of the last transfer."
+        ::= { tftp 2 }
+
+serverIpAddress OBJECT-TYPE
+        SYNTAX  IpAddress
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The IP address of the server used for file transfer."
+        ::= { tftp 3 }
+
+fileName OBJECT-TYPE
+        SYNTAX  DisplayString (SIZE(0..128))
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The name of the file to transfer."
+        ::= { tftp 4 }
+
+fileType OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         unknown (1),
+                         bootCode (2),
+                         operationalCode (3),
+                         errorLog (4),
+                         systemTrace (5),
+                         trsTrace (6),
+-- (7) intentionnally left unused
+                         trsDump (8)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The type of file to transfer.
+                 Boot and operational codes can only be dowlnoaded.
+                 Logs, traces and dumps can only be uploaded. "
+        ::= { tftp 5 }
+
+fileTarget OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The module target to which the transfer applies.
+                 When set to 0, the transfer applies to the agent itself."
+        ::= { tftp 6 }
+
+transferResult OBJECT-TYPE
+        SYNTAX  INTEGER { not-initialized (1),
+                          transfer-successful (2),
+                          upload-in-progress (3),
+                          download-in-progress (4),
+                          generic-error (5),
+                          no-response-from-host (6),
+                          connection-lost (7),
+                          file-not-found (8),
+                          file-empty (9),
+                          file-too-big (10),
+                          access-rights-violation (11),
+                          invalid-file-header (12),
+                          checksum-error (13),
+                          transfer-error (14),
+                          hardware-error (15) }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The result of the latest file transfer.
+                 When one of the TFTP variables is modified, this
+                 variable is reset to not-initialized. "
+        ::= { tftp 7 }
+
+-- Service
+
+service OBJECT IDENTIFIER ::= { node 7 }
+
+-- Traces
+
+traces OBJECT IDENTIFIER ::= { service 1 }
+
+sysTrace OBJECT-TYPE
+        SYNTAX  INTEGER { on (1),
+                          off (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "When on, the hub general trace facility is started.
+                 Messages are stored in the hub in a file that can be
+                 retrieved through TFTP.
+                 When off, the general trace facility is stopped and
+                 messages are no longer logged."
+                 ::= { traces 1 }
+
+trsTrace  OBJECT-TYPE
+        SYNTAX  INTEGER { on (1),
+                          off (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "When on, the Topology and Routing Selection trace is
+                 started.
+                 Messages are stored in the hub in a file that can be
+                 retrieved through TFTP.
+                 When off, the control point trace facility is stopped and
+                 messages are no longer logged."
+        ::= { traces 2 }
+
+-- Dumps
+
+dumps OBJECT IDENTIFIER ::= { service 2 }
+
+-- dumps.1 intentionnally left unused
+
+trsDump  OBJECT-TYPE
+        SYNTAX  INTEGER { ready (1),
+                          start (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "When start is selected, a dump of the Topology and Route
+                 Services component is taken.
+                 The dump is stored in the hub in a file that can be
+                 retrieved through TFTP."
+        ::= { dumps 2 }
+
+-- Microcode swap
+
+swap OBJECT IDENTIFIER ::= { service 3 }
+
+swapControl OBJECT-TYPE
+        SYNTAX  INTEGER { ready (1),
+                          swap (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "When swap is selected, the backup microcode image is
+                 checked and, if valid, activated.
+                 The previously active microcode image becomes
+                 the backup image.
+                 The atm subsystem is reset."
+        ::= { swap 1 }
+
+
+swapResult OBJECT-TYPE
+        SYNTAX  INTEGER { not-initialized (1),
+                          swap-successful (2),
+                          swap-in-progress (3),
+                          checksum-error (4) }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The result of the latest microcode swap.
+                 When an operational code image is downloaded or
+                 when the system is reset, swapControl becomes
+                 not-initialized."
+        ::= { swap 2 }
+
+
+
+-- This MIB defines ATM signalling support, i.e. Q2931 and SAAL support
+-- for SVCs.
+
+atmSvc OBJECT IDENTIFIER ::= { node 9 }
+
+-- This group defines support for the Q2931 protocol
+
+atmQ2931 OBJECT IDENTIFIER ::= { atmSvc 1 }
+
+-- This table defines the Q2931 configuration and status.
+
+atmQ2931ConfTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF AtmQ2931ConfEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains basic information on the Q2931 protocol
+                 for each signalling link defined per port.
+                 Usually, there is only one signalling channel per interface
+                 and thus one Q2931 protocol definition entry per interface."
+        ::= { atmQ2931 1}
+
+atmQ2931ConfEntry OBJECT-TYPE
+        SYNTAX  AtmQ2931ConfEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of atmQ2931ConfTable. Each entry corresponds to a pair
+                 of ATM interface, signalling channel.
+                 A signalling channel is uniquely defined on each interface
+                 by the VPI and VCI values allocated to it."
+        INDEX { atmQ2931ConfIndex,
+                atmQ2931SiVpi,
+                atmQ2931SiVci }
+        ::= { atmQ2931ConfTable 1 }
+
+AtmQ2931ConfEntry ::= SEQUENCE {
+        atmQ2931ConfIndex
+                IfIndex,
+        atmQ2931SiVpi
+                INTEGER,
+        atmQ2931SiVci
+                INTEGER,
+        atmQ2931T303
+                INTEGER,
+        atmQ2931T308
+                INTEGER,
+        atmQ2931T309
+                INTEGER,
+        atmQ2931T310
+                INTEGER,
+        atmQ2931T316
+                INTEGER,
+        atmQ2931T317
+                INTEGER,
+        atmQ2931T322
+                INTEGER,
+        atmQ2931T398
+                INTEGER,
+        atmQ2931T399
+                INTEGER,
+        atmQ2931SetupRetry
+                INTEGER,
+        atmQ2931ReleaseRetry
+                INTEGER,
+        atmQ2931RestartRetry
+                INTEGER,
+        atmQ2931StatusRetry
+                INTEGER }
+
+atmQ2931ConfIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifIndex value of the ATM interface which, with the
+                 signalling channel defined by its Vpi/Vci values,
+                 uniquely identifies this entry."
+        ::= { atmQ2931ConfEntry 1 }
+
+atmQ2931SiVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vpi value which, with the Vci value specified in
+                 atmQ2931SiVci, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmQ2931ConfEntry 2 }
+
+atmQ2931SiVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vci value which, with the Vpi value specified in
+                 atmQ2931SiVpi, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmQ2931ConfEntry 3 }
+
+atmQ2931T303 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T303 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 4 }
+
+atmQ2931T308 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T308 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 5 }
+
+atmQ2931T309 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T309 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 6 }
+
+atmQ2931T310 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T310 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 7 }
+
+atmQ2931T316 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T316 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 8 }
+
+atmQ2931T317 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T317 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 9 }
+
+atmQ2931T322 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T322 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 10}
+
+atmQ2931T398 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T398 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 11 }
+
+atmQ2931T399 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "T399 timer as defined in the ATM UNI Specification."
+        ::= { atmQ2931ConfEntry 12 }
+
+atmQ2931SetupRetry OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Number of set-up retries as defined in the ATM UNI
+                Specification."
+        ::= { atmQ2931ConfEntry 13 }
+
+atmQ2931ReleaseRetry OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Number of release retries as defined in the ATM UNI
+                Specification."
+        ::= { atmQ2931ConfEntry 14 }
+
+atmQ2931RestartRetry OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Number of restart retries as defined in the ATM UNI
+                Specification."
+        ::= { atmQ2931ConfEntry 15 }
+
+atmQ2931StatusRetry OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Number of status retries as defined in the ATM UNI
+                Specification."
+        ::= { atmQ2931ConfEntry 16 }
+
+-- This table defines the Q2931 statistics.
+
+atmQ2931StatsTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF AtmQ2931StatsEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains statistics for the Q2931 protocol."
+        ::= { atmQ2931 2 }
+
+atmQ2931StatsEntry OBJECT-TYPE
+        SYNTAX  AtmQ2931StatsEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of atmQ2931ConfTable. Each entry corresponds to a pair
+                 of ATM interface, signalling channel.
+                 A signalling channel is uniquely defined on each interface
+                 by the VPI and VCI values allocated to it."
+        INDEX { atmQ2931StatsIndex,
+                atmQ2931StatsVpi,
+                atmQ2931StatsVci }
+        ::= { atmQ2931StatsTable 1 }
+
+AtmQ2931StatsEntry ::= SEQUENCE {
+        atmQ2931StatsIndex
+                IfIndex,
+        atmQ2931StatsVpi
+                INTEGER,
+        atmQ2931StatsVci
+                INTEGER,
+        atmQ2931OutCallAttempts
+                Counter,
+        atmQ2931OutCallInProgress
+                Gauge,
+        atmQ2931OutCallFailures
+                Counter,
+        atmQ2931InCallAttempts
+                Counter,
+        atmQ2931InCallInProgess
+                Gauge,
+        atmQ2931InCallFailures
+                Counter }
+
+atmQ2931StatsIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifIndex value of the ATM interface which, with the
+                 signalling channel defined by its Vpi/Vci values,
+                 uniquely identifies this entry."
+        ::= { atmQ2931StatsEntry 1 }
+
+atmQ2931StatsVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vpi value which, with the Vci value specified in
+                 atmQ2931StatsVci, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmQ2931StatsEntry 2 }
+
+atmQ2931StatsVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vci value which, with the Vpi value specified in
+                 atmQ2931StatsVpi, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmQ2931StatsEntry 3 }
+
+atmQ2931OutCallAttempts OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This is the number of outgoing call attempts on this
+                 interface, including accepted as well as rejected calls."
+        ::= { atmQ2931StatsEntry 4 }
+
+atmQ2931OutCallInProgess OBJECT-TYPE
+        SYNTAX  Gauge
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This is the current number of outgoing calls in progress
+                 on this interface."
+        ::= { atmQ2931StatsEntry 5 }
+
+atmQ2931OutCallFailures OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This is the number of outgoing calls that were cleared
+                 for a reason other than a DTE or operator initiated action."
+        ::= { atmQ2931StatsEntry 6 }
+
+atmQ2931InCallAttempts  OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This is the number of incoming call attempts on this
+                 interface, including accepted as well as rejected calls."
+        ::= { atmQ2931StatsEntry 7 }
+
+atmQ2931InCallInProgress OBJECT-TYPE
+        SYNTAX  Gauge
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This is the current number of incoming calls in progress
+                 on this interface."
+        ::= { atmQ2931StatsEntry 8 }
+
+atmQ2931InCallFailures   OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "This is the number of calls that were rejected by the
+                 receiver."
+        ::= { atmQ2931StatsEntry 9 }
+
+-- This table contains basic information about calls in progress.
+-- It allows the network operater to force clear an SVC.
+-- Its implementation is optional.
+
+atmSvcTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF AtmSvcEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains basic information for each active
+                 Switched Virtual Connection (SVC)."
+        ::= { atmQ2931 3 }
+
+atmSvcEntry OBJECT-TYPE
+        SYNTAX  AtmSvcEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of atmSvcTable. Each entry uniquely
+                 defines two end-points of an SVC. In the case of a
+                 multicast SVC, each entry is defined by the
+                 association of the root and one party."
+        INDEX { atmSvcInterfaceIndex,
+                atmSvcSiVpi,
+                atmSvcSiVci,
+                atmSvcCallReference,
+                atmSvcEndPointReference }
+        ::= { atmSvcTable 1 }
+
+AtmSvcEntry ::= SEQUENCE {
+        atmSvcInterfaceIndex
+                IfIndex,
+        atmSvcSiVpi
+                INTEGER,
+        atmSvcSiVci
+                INTEGER,
+        atmSvcCallReference
+                INTEGER,
+        atmSvcEndPointReference
+                INTEGER,
+        atmSvcCallingNumber
+                AtmAddress,
+        atmSvcCalledNumber
+                AtmAddress,
+        atmSvcClear
+                INTEGER,
+        atmSvcCreationTime
+                DateAndTime,
+        atmSvcVpi
+                INTEGER,
+         atmSvcVci
+                INTEGER }
+
+atmSvcInterfaceIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifIndex value of the ATM interface used by this
+                 SVC."
+        ::= { atmSvcEntry 1 }
+
+atmSvcSiVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vpi value which, with the Vci value specified in
+                 atmQ2931SiVci, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmSvcEntry 2 }
+
+atmSvcSiVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vci value which, with the Vpi value specified in
+                 atmQ2931SiVpi, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmSvcEntry 3 }
+
+atmSvcCallReference OBJECT-TYPE
+        SYNTAX  INTEGER (0..8388607)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Q2931 call reference value used for this SVC."
+        ::= { atmSvcEntry 4 }
+
+atmSvcEndPointReference OBJECT-TYPE
+        SYNTAX  INTEGER (0..16383)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "One of the Q2931 end point reference values used by this
+                 SVC.
+                 In a unicast SVC, there is only one entry for this SVC in
+                 the table.
+                 In a multicast SVC, there is one entry per party."
+
+        ::= { atmSvcEntry 5 }
+
+atmSvcCallingNumber OBJECT-TYPE
+        SYNTAX  AtmAddress
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The calling number carried in the calling party number
+                 information element of the call set-up message."
+        ::= { atmSvcEntry 6 }
+
+atmSvcCalledNumber OBJECT-TYPE
+        SYNTAX  AtmAddress
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The called number carried in the called party number
+                 information element of the call set-up message."
+        ::= { atmSvcEntry 7 }
+
+
+atmSvcClear OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         active (1),
+                         clear (2)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "This variable allows a network manager to clear this
+                 SVC.
+                 When this SVC is cleared (either by the manager using
+                 this variable or by one of the parties), the entry is
+                 deleted from this table and another entry is created
+                 in the atmSvcClearTable."
+        ::= { atmSvcEntry 8}
+
+atmSvcCreationTime OBJECT-TYPE
+        SYNTAX  DateAndTime
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The date and time this call was placed."
+        ::= { atmSvcEntry 9 }
+
+atmSvcVpi   OBJECT-TYPE
+        SYNTAX  INTEGER (0..255)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The VPI value used by this SVC for this interface."
+        ::= { atmSvcEntry 10}
+
+atmSvcVci   OBJECT-TYPE
+        SYNTAX  INTEGER (0..65535)
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The VCI value used by this SVC for this interface."
+        ::= { atmSvcEntry 11}
+
+-- This table keeps track of all SVCs that have been cleared.
+-- It allows to build traffic mattrix and provide more in-depth.
+-- statistics level on the use of the network.
+-- It is optional.
+
+atmSvcLogSize OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The maximum number of entries supported by this local
+                 SNMP agent.
+                 When this value is exceeded, the entries are wrapped."
+        ::= { atmQ2931 4 }
+
+atmSvcLogLevel OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The maximum number of entries that can be written in the
+                 atmSvcLogTable before a trap is generated.
+                 When this number is reached, an svcLogOverflow trap is
+                 generated.
+                 When set to 0, no trap is generated."
+        ::= { atmQ2931 5 }
+
+atmSvcLogTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF AtmSvcLogEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains a list of the latest Switched
+                 Virtual Connection (SVC) that were completed on this
+                 ATM node.
+                 An SVC is completed when it has been torn down at the
+                 originator's request (normal completion) or by the
+                 network operator (forced tear down), or when it has
+                 been rejected or cleared by the network (exceptional
+                 condition)."
+        ::= { atmQ2931 6 }
+
+atmSvcLogEntry OBJECT-TYPE
+        SYNTAX  AtmSvcLogEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of atmSvcLogTable."
+        INDEX { atmSvcLogIndex }
+        ::= { atmSvcLogTable 1 }
+
+AtmSvcLogEntry ::= SEQUENCE {
+        atmSvcLogIndex
+                INTEGER,
+        atmSvcLogInterfaceIndex
+                IfIndex,
+        atmSvcLogCallingNumber
+                AtmAddress,
+        atmSvcLogCalledNumber
+                AtmAddress,
+        atmSvcLogCreationTime
+                DateAndTime,
+        atmSvcLogTime
+                DateAndTime,
+        atmSvcLogClearCause
+                INTEGER,
+        atmSvcLogForwardQOS
+                INTEGER,
+        atmSvcLogBackwardQOS
+                INTEGER,
+        atmSvcLogForwardBW
+                INTEGER,
+        atmSvcLogBackwardBW
+                INTEGER }
+
+atmSvcLogIndex OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "An identification value for this entry, assigned by the
+                 local SNMP agent.
+                 This value is assigned for each new SVC call or
+                 add-party request.
+                 This index is allocated in a decreasing order, so that
+                 a get-next request on the table allows to retrieve the
+                 latest calls first."
+        ::= { atmSvcLogEntry 1 }
+
+atmSvcLogInterfaceIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifIndex value of the ATM interface used by this
+                 SVC."
+        ::= { atmSvcLogEntry 2 }
+
+atmSvcLogCallingNumber OBJECT-TYPE
+        SYNTAX  AtmAddress
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The calling number carried in the calling party number
+                 information element of the call set-up message."
+        ::= { atmSvcLogEntry 3 }
+
+atmSvcLogCalledNumber OBJECT-TYPE
+        SYNTAX  AtmAddress
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The called number carried in the called party number
+                 information element of the call set-up message."
+        ::= { atmSvcLogEntry 4 }
+
+atmSvcLogCreationTime OBJECT-TYPE
+        SYNTAX  DateAndTime
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The date and time this call was placed."
+        ::= { atmSvcLogEntry 5 }
+
+atmSvcLogTime OBJECT-TYPE
+        SYNTAX  DateAndTime
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The date and time this call was cleared."
+        ::= { atmSvcLogEntry 6 }
+
+atmSvcLogClearCause OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The cause of the clearing of this SVC."
+        REFERENCE
+                "ATM Forum/93-265R5 Signalling Specification Draft -
+                 Apr. 14, 93."
+        ::= { atmSvcLogEntry 7}
+
+atmSvcLogForwardQOS   OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         unspecified (0),
+                         class-A (1),
+                         class-B (2),
+                         class-C (3),
+                         class-D (4)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The forward Quality Of Service requested for this
+                  call."
+        ::= { atmSvcLogEntry 8}
+
+atmSvcLogBackwardQOS   OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         unspecified (0),
+                         class-A (1),
+                         class-B (2),
+                         class-C (3),
+                         class-D (4)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The backward Quality Of Service requested for this
+                 call."
+        ::= { atmSvcLogEntry 9}
+
+atmSvcLogForwardBW   OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The forward bandwidth requested for this
+                  call."
+        ::= { atmSvcLogEntry 10}
+
+atmSvcLogBackwardBW   OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The backward bandwidth requested for this
+                 call."
+        ::= { atmSvcLogEntry 11}
+
+-- SAAL Group
+-- This group defines support for the SAAL protocol.
+
+atmSaal OBJECT IDENTIFIER ::= { atmSvc 2 }
+
+-- This table defines the SAAL configuration and status.
+
+atmSaalConfTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF AtmSaalConfEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains basic information on the SAAL protocol
+                 for each signalling link defined per port.
+                 Usually, there is only one signalling channel per interface
+                 and thus one SAAL protocol definition entry per interface."
+        ::= { atmSaal 1 }
+
+atmSaalConfEntry OBJECT-TYPE
+        SYNTAX  AtmSaalConfEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of atmSaalConfTable. Each entry corresponds to a pair
+                 of ATM interface, signalling channel.
+                 A signalling channel is uniquely defined on each interface
+                 by the VPI and VCI values allocated to it."
+        INDEX { atmSaalConfIndex,
+                atmSaalConfSiVpi,
+                atmSaalConfSiVci }
+        ::= { atmSaalConfTable 1 }
+
+AtmSaalConfEntry ::= SEQUENCE {
+        atmSaalConfIndex
+                IfIndex,
+        atmSaalConfSiVpi
+                INTEGER,
+        atmSaalConfSiVci
+                INTEGER,
+        atmSaalState
+                INTEGER,
+        atmSaalTimerPoll
+                INTEGER,
+        atmSaalTimerKeepAlive
+                INTEGER,
+        atmSaalTimerNoResponse
+                INTEGER,
+        atmSaalTimerCC
+                INTEGER,
+        atmSaalTimerIdle
+                INTEGER,
+        atmSaalMaxCC
+                INTEGER,
+        atmSaalMaxPD
+                INTEGER,
+        atmSaalMaxStat
+                INTEGER }
+
+atmSaalConfIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifIndex value of the ATM interface which, with the
+                 signalling channel defined by its Vpi/Vci values,
+                 uniquely identifies this entry."
+        ::= { atmSaalConfEntry 1 }
+
+atmSaalConfSiVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vpi value which, with the Vci value specified in
+                 atmSaalConfSiVci, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmSaalConfEntry 2 }
+
+atmSaalConfSiVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vci value which, with the Vpi value specified in
+                 atmSaalConfSiVpi, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmSaalConfEntry 3 }
+
+atmSaalState OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The state of the SAAL for this interface as defined in
+                 the Q.2110 Specification, Chapter 7.3."
+        ::= { atmSaalConfEntry 4 }
+
+atmSaalTimerPoll OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Timer_POLL as defined in the Q.2110 Specification.
+                 This timer is running in the active phase to assure that
+                 the peer receiver is polled often enough to return
+                 its status."
+        ::= { atmSaalConfEntry 5 }
+
+atmSaalTimerKeepAlive OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Timer_KEEP-ALIVE as defined in the Q.2110 Specification.
+                 This timer is started when entering the transient phase."
+        ::= { atmSaalConfEntry 6 }
+
+atmSaalTimerNoResponse OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Timer_NO-RESPONSE as defined in the Q.2110 Specification.
+                 This timer indicates the maximum time interval during
+                 which at least one STAT PDU needs to be received."
+        ::= { atmSaalConfEntry 7 }
+
+atmSaalTimerCC  OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Timer_CC as defined in the Q.2110 Specification.
+                 Transmission of PDUs is protected by this timer during
+                 establishment and release of a connection and during
+                 resynchronization or recovery."
+        ::= { atmSaalConfEntry 8 }
+
+atmSaalTimerIdle OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "Timer_IDLE as defined in the Q.2110 Specification.
+                 This timer is started upon receipt of a STAT PDU
+                 when entering the idle phase (no POLL PDUs sent)."
+        ::= { atmSaalConfEntry 9 }
+
+atmSaalMaxCC    OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "MaxCC as defined in the Q.2110 Specification.
+                 This is the maximum value for the state variable
+                 VT(CC), corresponding to the maximum number of
+                 transmissions of a BGN, END, ER or RS PDU."
+        ::= { atmSaalConfEntry 10 }
+
+atmSaalMaxPD    OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "MaxPD as defined in the Q.2110 Specification.
+                This is the maximum iacceptable value for the state
+                variable VT(PD) before sending a POLL PDU and
+                resetting VT(PD) to zero.
+                This parameter is an upper limit for counter VT(PD)
+                that sends a POLL PDU after every (MaxPD) SD PDUs."
+        ::= { atmSaalConfEntry 11}
+
+atmSaalMaxStat  OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "MaxSTAT as defined in the Q.2110 Specification.
+                This is the maximum number of list elements
+                placed in a STAT PDU."
+        ::= { atmSaalConfEntry 12}
+
+-- This table defines the SAAL statistics.
+
+atmSaalStatsTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF AtmSaalStatsEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table contains statistics for the SAAL protocol,
+                 for outgoing calls only."
+        ::= { atmSaal 2 }
+
+atmSaalStatsEntry OBJECT-TYPE
+        SYNTAX  AtmSaalStatsEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of atmSaalConfTable. Each entry corresponds to a pair
+                 of ATM interface, signalling channel.
+                 A signalling channel is uniquely defined on each interface
+                 by the VPI and VCI values allocated to it."
+        INDEX { atmSaalStatsIndex,
+                atmSaalStatsSiVpi,
+                atmSaalStatsSiVci }
+        ::= { atmSaalStatsTable 1 }
+
+AtmSaalStatsEntry ::= SEQUENCE {
+        atmSaalStatsIndex
+                IfIndex,
+        atmSaalStatsSiVpi
+                INTEGER,
+        atmSaalStatsSiVci
+                INTEGER,
+        atmSaalUnexpectPdus
+                Counter,
+        atmSaalUnsuccessPdus
+                Counter,
+        atmSaalFailedEstablishment
+                Counter,
+        atmSaalSequenceGap
+                Counter,
+        atmSaalGapNumbers
+                Counter,
+        atmSaalOtherListErrors
+                Counter,
+        atmSaalLackOfCredit
+                Counter,
+        atmSaalCreditObtained
+                Counter }
+
+atmSaalStatsIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifIndex value of the ATM interface which, with the
+                 signalling channel defined by its Vpi/Vci values,
+                 uniquely identifies this entry."
+        ::= { atmSaalStatsEntry 1 }
+
+atmSaalStatsSiVpi OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vpi value which, with the Vci value specified in
+                 atmSaalStatsSiVci, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmSaalStatsEntry 2 }
+
+atmSaalStatsSiVci OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The Vci value which, with the Vpi value specified in
+                 atmSaalStatsSiVpi, defines the signalling channel for this
+                 entry.
+                 Usually, there is one signalling channel per interface
+                 defined by Vpi=0,Vci=5."
+        ::= { atmSaalStatsEntry 3 }
+
+atmSaalUnexpectPdus OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                    "Error conditions A to M, as defined in the Q.2110
+                     Specification.
+                     This is the number of received unsolicited or
+                     or inappropriate PDUs."
+        ::= { atmSaalStatsEntry 4 }
+
+atmSaalUnsuccessPdus OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                    "Error condition O as defined in the Q.2110
+                     Specification.
+                     This is the number of failing retries."
+        ::= { atmSaalStatsEntry 5 }
+
+atmSaalFailedEstablishment OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                    "Error condition P as defined in the Q.2110
+                     Specification.
+                     This is the number of failing polls."
+        ::= { atmSaalStatsEntry 6 }
+
+atmSaalSequenceGap OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                    "The number of times sequence gaps were
+                     detected by the peer entity. "
+        ::= { atmSaalStatsEntry 7 }
+
+atmSaalGapNumbers OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                    "The number of times frames were
+                     re-transmitted due to sequence gaps
+                     detected by the peer entity."
+        ::= { atmSaalStatsEntry 8 }
+
+atmSaalOtherListErrors OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                    "Error conditions Q to V as defined in the
+                     Q.2110 Specification."
+        ::= { atmSaalStatsEntry 9 }
+
+atmSaalLackOfCredit OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                    "Error condition W as defined in the Q.2110
+                     Specification.
+                     This is the number of times that transmission
+                     was not permitted by the peer entity due to
+                     a lack of credit."
+        ::= { atmSaalStatsEntry 10 }
+
+atmSaalCreditObtained OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                    "Error condition X as defined in the Q.2110
+                     Specification.
+                     This is the number of times that credit was
+                     obtained from the peer entity to allow
+                     transmission."
+        ::= { atmSaalStatsEntry 11 }
+
+
+-- This MIB defines ATM support for Permanent Virtual Circuits.
+
+atmPvc OBJECT IDENTIFIER ::= { node 10 }
+
+-- Global PVC Parameter
+
+atmPvcHandler OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         ready (1),
+                         out-of-memory (2)
+                        }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The status of the PVC handler in the switch.
+                 When no more memory is available, the creation of new PVCs
+                 is rejected with a generic Error sense code."
+        ::= { atmPvc 1 }
+
+
+-- PVC Table
+
+atmPvcTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF AtmPvcEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "This table lists all PVCs defined per interface.
+                 There is only one entry in this table per PVC
+                 (point-to-point or point-to-multipoint PVC)."
+        ::= { atmPvc 2 }
+
+atmPvcEntry OBJECT-TYPE
+        SYNTAX  AtmPvcEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of atmPvcTable.
+                 Policing parameters are those requested when
+                 creating the PVC. The actual values used by the
+                 network to satisfy these requirements may slightly
+                 differ. These values are attached to virtual links
+                 and are available in virtual link tables, such as
+                 the RFC-1695 VPL/VCL tables."
+        INDEX { atmPvcIndex,
+                atmPvcIdentifier }
+        ::= { atmPvcTable 1 }
+
+AtmPvcEntry ::= SEQUENCE {
+        atmPvcIndex
+                IfIndex,
+        atmPvcIdentifier
+                INTEGER,
+        atmPvcRowStatus
+                RowStatus,
+        atmPvcType
+                INTEGER,
+        atmPvcEndPoint
+                INTEGER,
+        atmPvcVpi
+                INTEGER,
+        atmPvcVci
+                INTEGER,
+        atmPvcBackwardQos
+                INTEGER,
+        atmPvcForwardQos
+                INTEGER,
+        atmPvcBackwardType
+                INTEGER,
+        atmPvcForwardType
+                INTEGER,
+        atmPvcBackwardParm1
+                INTEGER,
+        atmPvcForwardParm1
+                INTEGER }
+
+atmPvcIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifIndex value of the ATM interface used by this PVC."
+        ::= { atmPvcEntry 1 }
+
+atmPvcIdentifier OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A value used to uniquely identify this PVC on this
+                 interface.
+
+                 To create a new PVC on a given interface, an unused PVC
+                 identifier must be found."
+        ::= { atmPvcEntry 2 }
+
+atmPvcRowStatus OBJECT-TYPE
+        SYNTAX  INTEGER { active (1),
+                          notInService (2),
+                          notReady (3),
+                          createAndWait (5),
+                          destroy (6) }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "States values:
+                 active: the PVC is operational
+                 notInService: the PVC is failing
+                 notReady: values are missing to be able to activate this PVC
+
+                 Actions:
+                 active: this requests to re-start a failing PVC (which status
+                         was notInService)
+                 destroy: this requests to delete a PVC
+                 createAndWait: this requests to create a PVC
+
+                 To create a new PVC, this variable must be set to
+                 createAndWait with an index where:
+                 - atmPvcIndex is the number of the interface from where the
+                               PVC is created
+                 - atmPvcIdentifier is an unused PVC identifier for this
+                                    interface
+
+                 To activate a PVC, this variable must be set to active.
+
+                 Default values are provided for all attributes except for the
+                 atmPvcEpRemIndex. If this attribute is not set, the PVC will
+                 remain in the notReady state.
+
+                 To delete a point-to-point PVC, this variable must be set to
+                 destroy."
+        ::= { atmPvcEntry  3 }
+
+atmPvcType OBJECT-TYPE
+        SYNTAX  INTEGER  { point2pointVP (1),
+                           point2pointVC (2) }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "A unicast PVC is defined between two endpoints, using
+                 either a VP or a VC connection."
+        DEFVAL { point2pointVC }
+        ::= { atmPvcEntry 4 }
+
+atmPvcEndPoint OBJECT-TYPE
+        SYNTAX  INTEGER  { primaryRoot (1),
+                           secondaryLeaf (2) }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The end-point where the PVC is created is identified as the
+                 primary or root end-point.
+                 the other end-point is the identified as the secondary or
+                 leaf end-point."
+        DEFVAL { primaryRoot }
+        ::= { atmPvcEntry 5 }
+
+atmPvcVpi OBJECT-TYPE
+        SYNTAX  INTEGER (0..65536)
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The VPI value assigned to this PVC at the origin.
+                 A value of 65536 means that no value has been specified by
+                 the operator.
+                 If no value has been specified, the VPI value is then
+                 automatically allocated by the agent when activating the PVC."
+        DEFVAL { 65536 }
+        ::= { atmPvcEntry 6 }
+
+atmPvcVci OBJECT-TYPE
+        SYNTAX  INTEGER (0..65536)
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The VCI value assigned to this PVC at the origin.
+                 For VP-type PVC, this value is not applicable and is
+                 set to 0.
+                 A value of 65536 means that no value has been specified by
+                 the operator.
+                 If no value has been specified, the VCI value is then
+                 automatically allocated by the agent when activating the PVC."
+        DEFVAL { 65536 }
+        ::= { atmPvcEntry 7 }
+
+atmPvcBackwardQos OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         unspecified (0),
+                         class-A (1)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The QOS requested for this PVC to the originator."
+        DEFVAL { unspecified }
+        ::= { atmPvcEntry 8 }
+
+atmPvcForwardQos OBJECT-TYPE
+        SYNTAX  INTEGER {
+                         unspecified (0),
+                         class-A (1)
+                        }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The QOS requested for this PVC from the originator."
+        DEFVAL { unspecified }
+        ::= { atmPvcEntry 9 }
+
+atmPvcBackwardType OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The first parameter used to define the
+                policy requested for this PVC."
+        ::= { atmPvcEntry 10 }
+
+atmPvcForwardType OBJECT-TYPE
+        SYNTAX  OBJECT IDENTIFIER
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The type of policy requested for this PVC."
+        ::= { atmPvcEntry 11 }
+
+atmPvcBackwardParm1 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The fourth parameter used to define the
+                policy requested for this PVC."
+        DEFVAL { 0 }
+        ::= { atmPvcEntry 12 }
+
+atmPvcForwardParm1 OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The third parameter used to define the
+                policy requested for this PVC."
+        DEFVAL { 0 }
+        ::= { atmPvcEntry 13 }
+
+-- A list of all the End-Points for each PVC defined.
+
+atmPvcEpTable  OBJECT-TYPE
+        SYNTAX  SEQUENCE OF AtmPvcEpEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                 "This table lists the characteristics of the remote
+                  end-points of defined PVCs.
+                  There is one entry for each PVC defined in the atmPvcTable."
+        ::= { atmPvc 3 }
+
+atmPvcEpEntry OBJECT-TYPE
+        SYNTAX  AtmPvcEpEntry
+        ACCESS  not-accessible
+        STATUS  mandatory
+        DESCRIPTION
+                "Entries of atmPvcEpTable.
+                 One entry is automatically created by the agent when a
+                 PVC is created in the PVC Table.
+                 No additional entry can be created in this table if the
+                 PVC is defined as point-to-point in the PVC table."
+        INDEX { atmPvcEpIndex,
+                atmPvcEpIdentifier,
+                atmPvcEpParty }
+        ::= { atmPvcEpTable 1 }
+
+AtmPvcEpEntry ::= SEQUENCE {
+        atmPvcEpIndex
+                IfIndex,
+        atmPvcEpIdentifier
+                INTEGER,
+        atmPvcEpParty
+                INTEGER,
+        atmPvcEpRowStatus
+                RowStatus,
+        atmPvcEpStatusCause
+                INTEGER,
+        atmPvcEpRemAddress
+                NetPrefix,
+        atmPvcEpRemIndex
+                IfIndex,
+        atmPvcEpRemVpi
+                INTEGER,
+        atmPvcEpRemVci
+                INTEGER,
+        atmPvcEpLastActive
+                DateAndTime,
+        atmPvcEpQ2931Cause
+                INTEGER,
+        atmPvcEpFailures
+                Counter }
+
+atmPvcEpIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifIndex value of the ATM interface used by this PVC."
+        ::= { atmPvcEpEntry 1 }
+
+atmPvcEpIdentifier OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A value used to uniquely identify this PVC on this
+                 interface.
+
+                 This is the same identifier as the one used in the atmPvcTable
+                 to identify the PVC that this end-point belongs to."
+        ::= { atmPvcEpEntry 2 }
+
+atmPvcEpParty OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A value used to uniquely identify a remote end-point of a PVC,
+                 when associated with an interface index and a PVC identifier.
+
+                 For a point-to-point PVC, this value is always set to 0."
+        ::= { atmPvcEpEntry 3 }
+
+atmPvcEpRowStatus OBJECT-TYPE
+        SYNTAX  INTEGER { active (1),
+                          notInService (2),
+                          notReady (3),
+                          destroy (6) }
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "States values:
+                 active: the PVC is operational
+                 notInService: the PVC is failing
+                 notReady: values are missing to be able to activate this PVC
+
+                 Actions:
+                 active: this requests to re-start a failing unicast PVC
+                         (status was notInService)
+                 destroy: this requests to delete a unicast PVC."
+        ::= { atmPvcEpEntry  4 }
+
+atmPvcEpStatusCause OBJECT-TYPE
+        SYNTAX  INTEGER { noCause (1),
+                          underModification (2),
+                          missingParameters (3),
+                          invalidParameters (4),
+                          uncompatibleParameters (5),
+                          internalFailure (6),
+                          pvcFailure (7),
+                          unavailableResource (8),
+                          remoteBusy (9),
+                          retrying (10)
+                          }
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "A detailed cause for the current PVC status."
+        ::= { atmPvcEpEntry 5 }
+
+atmPvcEpRemAddress OBJECT-TYPE
+        SYNTAX  NetPrefix
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The ATM address of the remote ATM switch where the PVC
+                 ends.
+                 If none is specified, the ATM address of the target
+                 switch (local) is used and the PVC is confined to the
+                 target switch (local switch)."
+        ::= { atmPvcEpEntry 6 }
+
+atmPvcEpRemIndex OBJECT-TYPE
+        SYNTAX  IfIndex
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The ifindex value used at the remote end to identify the
+                 interface where the PVC ends.
+                 This entry will remain in the notReady state until this
+                 attribute is set (and the atmPvcRowStatus is set to active)."
+        ::= { atmPvcEpEntry 7 }
+
+atmPvcEpRemVpi OBJECT-TYPE
+        SYNTAX  INTEGER (0..65536)
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The VPI value assigned to this PVC at the destination
+                 (remote end).
+                 If left at 65536  (default value), one value is
+                 automatically allocated by the agent."
+        DEFVAL { 65536 }
+        ::= { atmPvcEpEntry 8 }
+
+atmPvcEpRemVci OBJECT-TYPE
+        SYNTAX  INTEGER (0..65536)
+        ACCESS  read-write
+        STATUS  mandatory
+        DESCRIPTION
+                "The VCI value assigned to this PVC at the destination.
+                 For VP-type PVC, this value is not applicable and is
+                 set to 0.
+                 If left at 65536 (default value), one value is
+                 automatically allocated by the agent (for VC only)."
+        DEFVAL { 65536 }
+        ::= { atmPvcEpEntry  9 }
+
+atmPvcEpLastActive OBJECT-TYPE
+        SYNTAX  DateAndTime
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The date and time of the latest PVC activation."
+        ::= { atmPvcEpEntry  10}
+
+atmPvcEpQ2931Cause OBJECT-TYPE
+        SYNTAX  INTEGER
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The cause of the failure as defined by Q2931."
+        ::= { atmPvcEpEntry  11}
+
+atmPvcEpFailures OBJECT-TYPE
+        SYNTAX  Counter
+        ACCESS  read-only
+        STATUS  mandatory
+        DESCRIPTION
+                "The number of times this PVC failed."
+        ::= { atmPvcEpEntry 12 }
+
+
+-- ====================================================================
+-- Traps
+-- ====================================================================
+
+hello TRAP-TYPE
+      ENTERPRISE node
+      VARIABLES { sysObjectID, ifPhysAddress }
+      DESCRIPTION
+      " A hello trap is sent:
+        - when the system re-initializes: it is sent every minutes until
+          an SNMP request is received or until 255 minutes have passed.
+        - when one of the following parameters is changed:
+          -- agent IP address(es)
+          -- agent subnet mask(s)
+          -- ATM address of the IP ARP server
+          -- IP address of the default gateway
+        The value of ifPhysAddress is the ATM address of the hub.
+        The hello trap may be disabled."
+      ::= 1
+
+lock TRAP-TYPE
+     ENTERPRISE node
+     VARIABLES { moduleSlotIndex }
+     DESCRIPTION
+     " A lock trap is sent when a set request is rejected because it is
+       suspected that this may cause to break the link between the agent
+       and the manager. This may occur when:
+       - isolating a slot
+       - disabling a port
+       if the request is received through this specific port/module/slot."
+     ::= 2
+
+change TRAP-TYPE
+       ENTERPRISE node
+       VARIABLES { moduleSlotIndex, ifIndex }
+       DESCRIPTION
+       " A change trap is sent when one of the following MIB variables or
+         group of variables is changed:
+         - Date and Time reset
+         - System Parameters (name, contact, location) changed
+         - Interface changed:
+           -- Administrative State (enabled/disabled)
+         - Module changed:
+           -- Administrative State (isolate/attach)
+         When one of this variable is changed, the lastChange MIB object is
+         also updated with the current date and time.
+         When the Date and Time or the System Parameters changed,
+         the interface number of the hub virtual interface is returned.
+         This trap may be disabled."
+       ::= 3
+
+pvcFailure TRAP-TYPE
+           ENTERPRISE node
+           VARIABLES { atmPvcIndex, atmPvcIdentifier, atmPvcEpQ2931Cause }
+           DESCRIPTION
+           " A PVC failure trap is sent when a PVC becomes inoperational."
+           ::= 4
+
+-- node.5 intentionnally left unused
+
+callLoggingOverflow TRAP-TYPE
+          ENTERPRISE node
+          DESCRIPTION
+          " A callLoggingOverflow trap is sent when the call logging table
+           is about to wrap."
+          ::= 6
+
+moduleInstalled TRAP-TYPE
+          ENTERPRISE node
+          VARIABLES { moduleSlotIndex }
+          DESCRIPTION
+          " An ATM module has been detected in the hub."
+          ::= 7
+
+moduleRemoved TRAP-TYPE
+            ENTERPRISE node
+            VARIABLES { moduleSlotIndex }
+            DESCRIPTION
+            " An ATM module is no longer detected in the hub."
+            ::= 8
+
+
+END

@@ -1,0 +1,857 @@
+-- extracted from draft-ietf-eos-snmp-bulkdata-01.txt
+-- at Fri Mar  8 06:08:29 2002
+
+   BULK-DATA-MIB DEFINITIONS ::= BEGIN
+
+   IMPORTS
+       OBJECT-TYPE, MODULE-IDENTITY, NOTIFICATION-TYPE,
+       experimental, Unsigned32                    FROM SNMPv2-SMI
+       RowStatus, TimeStamp, DisplayString         FROM SNMPv2-TC
+       InetAddressType, InetAddress                FROM INET-ADDRESS-MIB
+       MODULE-COMPLIANCE, OBJECT-GROUP,
+       NOTIFICATION-GROUP                          FROM SNMPv2-CONF;
+
+   bulkDataMIB MODULE-IDENTITY
+       LAST-UPDATED         "200228021100Z"
+       ORGANIZATION         "EOS (Evolution of SNMP)"
+       CONTACT-INFO         "Bryan Levin, Allegro Networks
+                            Postal: 6399 San Ignacio
+                            San Jose, CA 95119-1206
+                            Tel: +1 408 281-5500
+                            E-mail: snmp@allegronetworks.com
+
+                            David Battle, Cisco Systems
+                            Postal:
+                            Tel: +1
+                            E-mail: dbattle@cisco.com"
+       DESCRIPTION
+           "The MIB module for defining Bulk Data objects along with
+           the Bulk Data file format, Upload Fileserver and Data Slice."
+       ::= { experimental 999 }
+
+
+   bulkDataAgentCapabilities    OBJECT IDENTIFIER ::= { bulkDataMIB 1 }
+
+   bulkDataObjects              OBJECT IDENTIFIER ::= { bulkDataMIB 2 }
+
+   bulkDataTraps                OBJECT IDENTIFIER ::= { bulkDataMIB 3 }
+   -- Agent Capabilities
+
+   acFileEncoding OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      ascii(1),
+                      xml(2)
+                   }
+
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "This describes the agent's capability in term of which
+           file encoding styles it supports."
+       ::= { bulkDataAgentCapabilities 1 }
+
+   acFileCompression OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      noCompression(1),
+                      bzip(2),
+                      gzip(3)
+                   }
+
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "This describes the agent's capability in term of which
+           file compression styles it supports."
+       ::= { bulkDataAgentCapabilities 2 }
+
+   acXferProtocol OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      cp(1),
+                      ftp(2),
+                      scp(3)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "This describes the agent's capability in term of which
+           file transfer protocols it supports."
+       ::= { bulkDataAgentCapabilities 3 }
+
+
+
+
+   -- Data Slicing Control (creating virtual mib tables)
+
+   sliceTable OBJECT-TYPE
+       SYNTAX      SEQUENCE OF SliceEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table describes a bulk data slice that is a user-
+           defined subset of the current running agent's MIB data.
+
+           Virtual tables are built by specifying a sequence of
+           columnar Object Identifiers from real mib tables."
+       ::= { bulkDataObjects 1 }
+
+   sliceEntry OBJECT-TYPE
+       SYNTAX      SliceEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+            "The data slice entry."
+       INDEX { sliceIndex, sliceSubId }
+       ::= { sliceTable 1 }
+
+   SliceEntry ::= SEQUENCE {
+       sliceIndex              Unsigned32,
+       sliceSubId              Unsigned32,
+       sliceColumnOID          OBJECT IDENTIFIER,
+       sliceSnmpContext        DisplayString,
+       sliceColumnDisplayHint  DisplayString,
+       sliceAdminString        DisplayString,
+       sliceEntryStatus        RowStatus }
+
+   sliceIndex OBJECT-TYPE
+       SYNTAX      Unsigned32 (1..4294967295)
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An arbitrary integer to uniquely identify this entry.  To
+           create an entry a management application should pick a
+           random number."
+       ::= { sliceEntry 1 }
+
+   sliceSubId OBJECT-TYPE
+       SYNTAX      Unsigned32 (1..4294967295)
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "A sequential sub-index to identify a component of a slice
+           entry."
+       ::= { sliceEntry 2 }
+
+   sliceColumnOID OBJECT-TYPE
+       SYNTAX      OBJECT IDENTIFIER
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "An Object Identifier, which must refer to a column of a
+            conceptual table.  A slice is defined to be a series of
+            columns OIDs that exist in various tables which are
+            accessible via the local agent."
+       ::= { sliceEntry 3 }
+
+   sliceSnmpContext OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "In mib groups that are not inherently instancable, an snmp
+           manager context is used to multiply access the separate
+           instances (eg, the bridge mib)."
+       ::= { sliceEntry 4 }
+
+   sliceColumnDisplayHint OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "This defines how the data file will render this OID's value
+           in the snapshot data file.
+
+           The following subset of the C printf-style formatting
+           macros is supported:
+
+             %s - ascii string field
+             %d - numeric field"
+       ::= { sliceEntry 5 }
+
+   sliceAdminString OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "Used for administrative purposes.  Usually meaningful only
+           to the controlling NMS."
+       DEFVAL      { ''H }  -- the empty string
+       ::= { sliceEntry 6 }
+
+   sliceEntryStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The control variable that allows creation, modification,
+           and deletion of entries in this table."
+       ::= { sliceEntry 7 }
+
+
+
+
+   -- Fileserver/host Transfer Table
+
+   xferTable OBJECT-TYPE
+       SYNTAX      SEQUENCE OF XferEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table describes a bulk data slice file transfer
+           information.  It is referenced when a snapshot is being
+           requested."
+       ::= { bulkDataObjects 2 }
+
+   xferEntry OBJECT-TYPE
+       SYNTAX      XferEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "The snapshot file transfer request table entry."
+       INDEX { xferIndex, xferSubId }
+       ::= { xferTable 1 }
+
+   XferEntry ::= SEQUENCE {
+       xferIndex             Unsigned32,
+       xferSubId             Unsigned32,
+       xferHostIpType        InetAddressType,
+       xferHostIpAddr        InetAddress,
+       xferProtocol          INTEGER,
+       xferWriteControl      INTEGER,
+       xferFilePath          DisplayString,
+       xferAuthUsername      DisplayString,
+       xferAuthPassword      DisplayString,
+       xferAdminString       DisplayString,
+       xferEntryStatus       RowStatus }
+
+   xferIndex OBJECT-TYPE
+       SYNTAX      Unsigned32 (1..4294967295)
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An integer to uniquely identify a transfer destination set."
+       ::= { xferEntry 1 }
+
+   xferSubId OBJECT-TYPE
+       SYNTAX      Unsigned32
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "Sub index that allows several transfer entries to be
+           grouped together to form a transfer set."
+       ::= { xferEntry 2 }
+
+   xferHostIpType OBJECT-TYPE
+       SYNTAX      InetAddressType
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "Used along with xferHostIpAddr to define the IP address
+           version."
+       DEFVAL { ipv4 }
+       ::= { xferEntry 3 }
+
+   xferHostIpAddr OBJECT-TYPE
+       SYNTAX      InetAddress
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The IP address of the fileserver where the snapshot is to
+           be transferred."
+       ::= { xferEntry 4 }
+
+   xferProtocol OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      cp(1),
+                      ftp(2),
+                      scp(3)
+                   }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "This defines the standard protocol that is used to upload
+           the snapshot to the fileserver.  The agent is the client in
+           this transaction; ie, it initiates the upload to the
+           fileserver.
+
+           When the snapshot is being kept on the local system, cp(1)
+           is to be specified.  For remote file transfers, ftp(2) or
+           scp(3) should be specified."
+       DEFVAL      { ftp }
+       ::= { xferEntry 5 }
+
+   xferWriteControl OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      failIfExists(1),
+                      overwrite(2)
+                   }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "This defines the action to take when uploading bulk
+           data to a fileserver.  If set to failIfExists(1) and
+           a file already exists on the fileserver, the upload will
+           fail and the existing file on the server will not be
+           overwritten.  If set to overwrite(2), a file will be
+           uploaded and saved under the specified path and name
+           even if one by that composite name already exists;
+           if none exists by that composite name, a new file
+           will be created."
+       DEFVAL      { failIfExists }
+       ::= { xferEntry 6 }
+
+   xferFilePath OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The remote directory path where the file is to be saved on
+           the fileserver."
+       ::= { xferEntry 7 }
+
+   xferAuthUsername OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The user name to use when authenticating with the remote
+           fileserver."
+       ::= { xferEntry 8 }
+
+   xferAuthPassword OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The password to use when authenticating with the remote
+           fileserver."
+       ::= { xferEntry 9 }
+
+   xferAdminString OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "Used for administrative purposes.  Usually meaningful only
+           to the controlling NMS."
+       DEFVAL      { ''H }  -- the empty string
+       ::= { xferEntry 10 }
+
+   xferEntryStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The control that allows creation, modification, and deletion
+           of entries.
+
+           Setting this variable to createAndGo(4) or active(1) will
+           case a row creation to be performed in this table.  Note
+           that no actual file transfer occurs until a snapshot table
+           entry is created.
+
+           Setting this variable to delete will delete this row entry."
+       ::= { xferEntry 11 }
+
+
+
+
+   -- Snapshot Control Table
+
+   snapshotTable OBJECT-TYPE
+       SYNTAX      SEQUENCE OF SnapshotEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table describes a bulk data slice snapshot request.
+           The agent is expected to capture the values of the slice
+           (atomically, if possible) and save them in a file on the
+           local system when a row in this table is created and set to
+           createAndGo(4) or active(1)."
+       ::= { bulkDataObjects 3 }
+
+   snapshotEntry OBJECT-TYPE
+       SYNTAX      SnapshotEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "The snapshot request table entry."
+       INDEX { snapshotIndex, snapshotSliceIndex, snapshotXferId }
+       ::= { snapshotTable 1 }
+
+   SnapshotEntry ::= SEQUENCE {
+       snapshotIndex                 Unsigned32,
+       snapshotSliceIndex            Unsigned32,
+       snapshotXferId                Unsigned32,
+       snapshotSnapFileName          DisplayString,
+       snapshotFileEncoding          INTEGER,
+       snapshotFileCompression       INTEGER,
+       snapshotStartTime             TimeStamp,
+       snapshotCompletionTime        TimeStamp,
+       snapshotFileSize              Unsigned32,
+       snapshotState                 INTEGER,
+       snapshotAdminString           DisplayString,
+       snapshotEntryStatus           RowStatus }
+
+   snapshotIndex OBJECT-TYPE
+       SYNTAX      Unsigned32 (1..4294967295)
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An integer to uniquely identify the data slice that is to
+            be transferred to the fileserver.  This refers to an entry
+            in the SliceTable."
+       ::= { snapshotEntry 1 }
+
+   snapshotSliceIndex OBJECT-TYPE
+       SYNTAX      Unsigned32
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An integer to uniquely identify the data slice to saved on
+           the local system."
+       ::= { snapshotEntry 2 }
+
+   snapshotXferId OBJECT-TYPE
+       SYNTAX      Unsigned32
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An instance in the xfer table that describes where and how
+           to copy the bulk data snapshot to a fileserver."
+       ::= { snapshotEntry 3 }
+
+   snapshotSnapFileName OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The bulk data snapshot is saved under this filename."
+       ::= { snapshotEntry 4 }
+
+   snapshotFileEncoding OBJECT-TYPE
+      SYNTAX       INTEGER {
+                      ascii(1),
+                      xml(2)
+                   }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "If set to ascii(1), the format is human-readable ascii with
+           a lines in the form:
+
+           # timestampStart timestampCompletion col-1 col-2 ... col-n
+           instance-1 value-1 value-2 ...
+           instance-2 value-3 value-4 ...
+           ...
+
+           where:
+
+             timestampStart and timestampCompletion are the values of
+             sysUptime on the agent when the snapshot of the data slice
+             was initiated and completed (with or without errors).
+
+             column-1 thru column-n are the human-readable MIB module
+             column names that are included in this data slice.
+
+             instance-1 (etc) are human-readable MIB module instance
+             names in usual dotted notation.
+
+             value-1 (etc) are human-readable ascii representations
+             of the actual values of the data cells.  This is in
+             DisplayString format regardless of the native data type of
+             the column.
+             It is implementation-specific if the column name is stored
+             in dotted-OID format (.1.3.6...) or in symbolic format
+             (ifInOctets).
+
+             For example, an ifTable data slice file fragment might be:
+
+              # 28711187 28711190 ifDescr ifType ifInOctets ifOutOctets
+              1 lo0 softwareLoopback 54550782 54552115
+              2 eth0 ethernet-csmacd 372380346 2746062289
+              3 eth0.0 ethernet-csmacd 4002949 126167
+
+           If set to xml(2), the data will be saved in XML tagged
+           format."
+       DEFVAL      { ascii }
+       ::= { snapshotEntry 5 }
+
+   snapshotFileCompression OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      noCompression(1),
+                      bzip(2),
+                      gzip(3)
+                   }
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "If set to noCompression(1), no file compression will be
+           applied before the data slice is transferred to the
+           fileserver.
+
+           If set to bzip(2), the standard bzip compression algorithm
+           will be applied to the data slice before the file is
+           uploaded to the fileserver.
+
+           If set to gzip(3), the standard GNU gzip compression
+           algorithm will be applied to the data slice before the file
+           is uploaded to the fileserver."
+       DEFVAL      { noCompression }
+       ::= { snapshotEntry 6 }
+
+   snapshotStartTime OBJECT-TYPE
+       SYNTAX      TimeStamp
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUptime on the agent when the snapshot was
+           initiated."
+       ::= { snapshotEntry 7 }
+
+   snapshotCompletionTime OBJECT-TYPE
+       SYNTAX      TimeStamp
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUptime on the agent when the snapshot was
+           completed (with or without an error)."
+       ::= { snapshotEntry 8 }
+
+   snapshotFileSize OBJECT-TYPE
+       SYNTAX      Unsigned32
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The actual size of the file (after optional file
+           compression was applied) at the completion of the snapshot.
+           The size is measured in bytes.  This variable is only valid
+           upon the successful completion of a slice snapshot."
+       ::= { snapshotEntry 9 }
+
+   snapshotState OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      running(1),
+                      ready(2),
+                      noSpace(3),
+                      badName(4),
+                      writeErr(5),
+                      noMem(6),
+                      aborted(7)
+                   }
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The file state:
+
+           running    data is being written to the file
+           ready      the file is ready to be sent or retrieved
+           noSpace    no data due to insufficient file space
+           badName    no data due to a name or path problem
+           writeErr   no data due to fatal file write error
+           noMem      no data due to insufficient dynamic memory
+           aborted    terminated by operator command
+
+           Only the 'ready' state implies that snapshot has successfully
+           completed."
+       ::= { snapshotEntry 10 }
+
+   snapshotAdminString OBJECT-TYPE
+       SYNTAX      DisplayString
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "Used for administrative purposes.  Usually meaningful only
+           to the controlling NMS."
+       DEFVAL      { ''H }  -- the empty string
+       ::= { snapshotEntry 11 }
+
+   snapshotEntryStatus OBJECT-TYPE
+       SYNTAX      RowStatus
+       MAX-ACCESS  read-create
+       STATUS      current
+       DESCRIPTION
+           "The control that allows creation, modification, and deletion
+           of entries.
+
+           Setting this variable to createAndGo(4) or active(1) will
+           initiate a snapshot of a slice entry to the local system
+           and optionally initiate a remote file copy.
+
+           Setting this variable to delete() will delete this row entry
+           and delete the corresponding data file on the local system.
+
+           Note that in practice, this variable could be set by an
+           operator via the agent's craft interface, remotely via an
+           NMS using SNMP or locally within the agent via automatic
+           means, such as described in the DISMAN-SCHEDULE-MIB."
+       ::= { snapshotEntry 12 }
+
+
+
+
+   -- Snapshot File Transfer Control Table
+
+   xferCtlTable OBJECT-TYPE
+       SYNTAX      SEQUENCE OF XferCtlEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "This table contains individual (fileserver host) transfer
+           requests. There will be an entry in this table For each
+           filserver that is to receive a snapshot slice.  The current
+           transfer status can be monitored as well as controlled
+           (aborted, retried)."
+       ::= { bulkDataObjects 4 }
+
+   xferCtlEntry OBJECT-TYPE
+       SYNTAX      XferCtlEntry
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "The snapshot file transfer request table entry."
+       INDEX { xferCtlIndex, sliceIndex, xferIndex, xferSubId }
+       ::= { xferCtlTable 1 }
+
+   XferCtlEntry ::= SEQUENCE {
+       xferCtlIndex             Unsigned32,
+       xferCtlStartTime         TimeStamp,
+       xferCtlCompletionTime    TimeStamp,
+       xferCtlPercentXferred    Unsigned32,
+       xferCtlStatus            INTEGER }
+
+   xferCtlIndex OBJECT-TYPE
+       SYNTAX      Unsigned32 (1..4294967295)
+       MAX-ACCESS  not-accessible
+       STATUS      current
+       DESCRIPTION
+           "An integer to uniquely identify a transfer destination set."
+       ::= { xferCtlEntry 1 }
+
+   xferCtlStartTime OBJECT-TYPE
+       SYNTAX      TimeStamp
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUptime on the agent when the file transfer
+           was initiated."
+       ::= { xferCtlEntry 2 }
+
+   xferCtlCompletionTime OBJECT-TYPE
+       SYNTAX      TimeStamp
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The value of sysUptime on the agent when the file transfer
+           was completed (with or without an error)."
+       ::= { xferCtlEntry 3 }
+
+   xferCtlPercentXferred OBJECT-TYPE
+       SYNTAX      Unsigned32 (0..100)
+       MAX-ACCESS  read-only
+       STATUS      current
+       DESCRIPTION
+           "The amount of the snapshot file that has been transferred
+           to the fileserver, in percent of completion (0..100)."
+       ::= { xferCtlEntry 4 }
+
+   xferCtlStatus OBJECT-TYPE
+       SYNTAX      INTEGER {
+                      inProgress(1),
+                      complete(2),
+                      noSpace(3),
+                      badName(4),
+                      writeErr(5),
+                      badLogin(6),
+                      abortXfer(7),
+                      retryXfer(8),
+                      deleteRow(9)
+                   }
+       MAX-ACCESS  read-write
+       STATUS      current
+       DESCRIPTION
+           "This allows individual file transfer requests to be
+           controlled.
+
+           inProgress(1) is returned if a file transfer is currently
+           being performed by the local system.  This is a read-only
+           value.
+
+           complete(2) is returned upon successful file transfer.
+           This is a read-only value.
+
+           noSpace(3), badName(4), writeErr(5), badLogin(6) are error
+           status values that describe the error conditions of
+           insufficient fileserver space to create the file, invalid
+           filename, misc write error or authentication error on the
+           fileserver.  These values are readable but not writable.
+
+           abortXfer(7), retryXfer(8) are writable values and allow
+           remote control of currently pending file transfer requests.
+
+           deleteRow(9) is a writable value that causes a row deletion
+           from this table.  In addition, any pending operations on
+           this row are aborted."
+       ::= { xferCtlEntry 5 }
+
+
+
+
+   -- Traps
+
+   bulkDataXfer NOTIFICATION-TYPE
+      OBJECTS         {
+                         -- xferCtlIndex,
+                         -- xferIndex,
+                         -- xferSubId,
+                         xferCtlStatus
+                      }
+      STATUS          current
+      DESCRIPTION
+           "Asynchronous events that are sent when a file transfer
+           request changes state."
+       ::= { bulkDataTraps 1 }
+
+
+
+
+   -- Conformance
+
+   bulkMIBConformance OBJECT IDENTIFIER ::= { bulkDataMIB 4 }
+
+   bulkMIBCompliances OBJECT IDENTIFIER ::= { bulkMIBConformance 1 }
+   bulkMIBGroups      OBJECT IDENTIFIER ::= { bulkMIBConformance 2 }
+
+
+
+
+   -- Compliance
+
+   bulkMIBCompliance MODULE-COMPLIANCE
+           STATUS current
+           DESCRIPTION
+               "The compliance statement for entities which implement
+               the Bulk Data MIB.  Implementation of this MIB
+               is based on individual product needs."
+           MODULE  -- this module
+               MANDATORY-GROUPS {
+                   bulkCapabilitiesGroup,
+                   bulkSliceGroup,
+                   bulkFileTransferGroup,
+                   bulkSnapshotGroup,
+                   bulkXferCtlGroup,
+                   bulkTrapGroup
+               }
+           ::= { bulkMIBCompliances 1 }
+
+
+
+
+   -- Units of Conformance
+
+   bulkCapabilitiesGroup OBJECT-GROUP
+           OBJECTS {
+               acFileEncoding,
+               acFileCompression,
+               acXferProtocol
+           }
+           STATUS current
+           DESCRIPTION
+               "Bulk Data agent capabilities management."
+           ::= { bulkMIBGroups 1 }
+
+   bulkSliceGroup OBJECT-GROUP
+           OBJECTS {
+               sliceColumnOID,
+               sliceSnmpContext,
+               sliceColumnDisplayHint,
+               sliceAdminString,
+               sliceEntryStatus
+           }
+           STATUS current
+           DESCRIPTION
+               "Bulk Data slice management."
+           ::= { bulkMIBGroups 2 }
+
+   bulkFileTransferGroup OBJECT-GROUP
+           OBJECTS {
+               xferHostIpType,
+               xferHostIpAddr,
+               xferProtocol,
+               xferWriteControl,
+               xferFilePath,
+               xferAuthUsername,
+               xferAuthPassword,
+               xferAdminString,
+               xferEntryStatus
+           }
+           STATUS current
+           DESCRIPTION
+               "Bulk File transfer management."
+           ::= { bulkMIBGroups 3 }
+
+   bulkSnapshotGroup OBJECT-GROUP
+           OBJECTS {
+               snapshotSnapFileName,
+               snapshotFileEncoding,
+               snapshotFileCompression,
+               snapshotStartTime,
+               snapshotCompletionTime,
+               snapshotFileSize,
+               snapshotState,
+               snapshotAdminString,
+               snapshotEntryStatus
+           }
+           STATUS current
+           DESCRIPTION
+               "Bulk data snapshot management."
+           ::= { bulkMIBGroups 4 }
+
+   bulkXferCtlGroup OBJECT-GROUP
+           OBJECTS {
+               xferCtlStartTime,
+               xferCtlCompletionTime,
+               xferCtlPercentXferred,
+               xferCtlStatus
+           }
+           STATUS current
+           DESCRIPTION
+               "Bulk Data transfer control management."
+           ::= { bulkMIBGroups 5 }
+
+   bulkTrapGroup NOTIFICATION-GROUP
+           NOTIFICATIONS { bulkDataXfer }
+           STATUS current
+           DESCRIPTION
+               "Bulk Data trap management."
+           ::= { bulkMIBGroups 6 }
+
+   END
+
+-- 
+--    Copyright (C) The Internet Society (2002).  All Rights Reserved.
+-- 
+--    This document and translations of it may be copied and furnished to
+--    others, and derivative works that comment on or otherwise explain it
+--    or assist in its implementation may be prepared, copied, published
+--    and distributed, in whole or in part, without restriction of any
+--    kind, provided that the above copyright notice and this paragraph are
+--    included on all such copies and derivative works.  However, this
+--    document itself may not be modified in any way, such as by removing
+--    the copyright notice or references to the Internet Society or other
+--    Internet organizations, except as needed for the purpose of
+--    developing Internet standards in which case the procedures for
+--    copyrights defined in the Internet Standards process must be
+--    followed, or as required to translate it into languages other than
+--    English.
+-- 
+--    The limited permissions granted above are perpetual and will not be
+--    revoked by the Internet Society or its successors or assigns.
+-- 
+--    This document and the information contained herein is provided on an
+--    "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING
+--    TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+--    BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION
+--    HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF
+--    MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+-- 
+

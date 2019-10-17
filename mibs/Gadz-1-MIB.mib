@@ -1,0 +1,2033 @@
+    Gadz-1-MIB
+
+    DEFINITIONS ::= BEGIN
+
+       IMPORTS
+           
+           OBJECT-TYPE
+           FROM RFC-1212
+           DisplayString
+           FROM RFC1213-MIB
+           TRAP-TYPE
+           FROM RFC-1215
+
+           enterprises, IpAddress, Counter, TimeTicks
+           FROM RFC1155-SMI;
+
+       -- 
+       -- gad-1 MODULE-IDENTITY
+       --      LAST-UPDATED "200009080000Z"
+       --      ORGANIZATION "Gadzoox Networks, Inc."
+       --      CONTACT-INFO
+       --              "       (Authors)
+       --                      Kim Banker
+       --                      Dave Beahm
+	   --			    	   Chris Del Signore
+	   --
+       --              Postal: Gadzoox Networks, Inc.
+       --                      5850 Hellyer Ave.
+       --                      San Jose, California
+       --                      95138:w
+       --
+       --              Tel:    +1 408 360 4950
+       --              Fax:    +1 408 360 4951
+       -- 
+       --              E-mail: banker@gadzoox.com
+       --                      dbeahm@gadzoox.com
+	   --                      cdelsignore@gadzoox.com
+       --      DESCRIPTION
+       --              "This MIB module describes devices in the Gadzoox 
+       --              Fibre-Channel Interconnection product line."
+       --     
+
+       gadzoox               OBJECT IDENTIFIER ::= { enterprises 1754 }
+        netMgmt              OBJECT IDENTIFIER ::= { gadzoox 1 }
+         common              OBJECT IDENTIFIER ::= { netMgmt 1 }
+          system             OBJECT IDENTIFIER ::= { common 1 }
+           zoning            OBJECT IDENTIFIER ::= { system 3 }
+--          serviceInterface   OBJECT IDENTIFIER ::= { common 2 }
+          download           OBJECT IDENTIFIER ::= { common 3 }
+          security           OBJECT IDENTIFIER ::= { common 4 }
+          discovery          OBJECT IDENTIFIER ::= { common 5 }
+          monitor            OBJECT IDENTIFIER ::= { common 6 }
+          proxy              OBJECT IDENTIFIER ::= { common 7 }
+           policy            OBJECT IDENTIFIER ::= { proxy 11 }
+          gbic               OBJECT IDENTIFIER ::= { common 8 }
+         hub                 OBJECT IDENTIFIER ::= { netMgmt 2 }
+--          m3                 OBJECT IDENTIFIER ::= { hub 1 }
+--          m5                 OBJECT IDENTIFIER ::= { hub 2 }
+         areaSwitch          OBJECT IDENTIFIER ::= { netMgmt 3 }
+         channelAgent        OBJECT IDENTIFIER ::= { netMgmt 4 }
+         traps               OBJECT IDENTIFIER ::= { netMgmt 5 }
+         switch              OBJECT IDENTIFIER ::= { netMgmt 6 }
+          capChas             OBJECT IDENTIFIER ::= { switch 1 }
+          capPim              OBJECT IDENTIFIER ::= { switch 2 }
+
+--
+-- gadzoox group
+--
+--
+-- netMgmt group
+--
+--
+-- common group
+--
+--
+-- system group
+--
+       sysReset OBJECT-TYPE
+           SYNTAX    INTEGER {
+                         warm(1),
+                         cold(2)
+                     }
+           ACCESS    write-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Setting this object results in the reset of the device.  
+               The context of warm vs cold is a function of the device's 
+               abilities."
+           ::= { system 1 }
+
+       sysDiagnostic OBJECT-TYPE
+           SYNTAX    INTEGER (0..65535)
+           ACCESS    read-write 
+           STATUS    mandatory
+           DESCRIPTION
+               "When the sysDiagnostic object is written, it causes 
+               a diagnostic function to be executed. When read, it
+               returns 0 for a successful completion of the test,
+               1 for test in process, and greater than 1 for an error 
+               indication of the test.  Refer to device documentation for
+               the exact definition of the error codes for the device"
+           ::= { system 2 }
+
+--
+-- zoning group
+--
+
+-- Zone Control Objects
+
+       nlZoningPolicyControlOwner OBJECT-TYPE
+           SYNTAX    IpAddress
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "The entity that last configured, or is currently 
+               configuring the zoning policy."
+       ::= { zoning 1}
+
+       nlZoningPolicyTimeout OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "The timeout value to be used in configuring the zoning agent.
+               The default value is 30 seconds."
+       ::= { zoning 2}
+
+       nlZoningPolicyStatus OBJECT-TYPE
+           SYNTAX    INTEGER {
+                         no-current-owner(0),
+                         request-valid(1),
+                         request-invalid(2),
+                         request-in-progress(3)
+                     }
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The status of the current zoning policy configuration."
+       ::= { zoning 3}
+
+
+       nlZoningPolicyControl OBJECT-TYPE
+           SYNTAX    INTEGER {
+                         clear-owner(0),
+                         create-table(1),
+                         clear-zoning-configuration(2),
+						 default-zoning-configuration(3)
+                     }
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "The control of the current zoning policy configuration.
+                The procedure for zoning policy configuration is as follows:
+                - user reads nlActiveZoneTable AND/OR nlActiveZoneMemberTable
+                  to determine current zone configuration and makes any 
+                  local edits.
+                - user continually reads back nlZoningPolicyStatus 
+                  until 'no_current_owner' is received.  
+                - user writes its address to nlZoningPolicyControlOwner
+                  in order to lock zoning control and then continually reads
+                  back nlZoningPolicyStatus until 'request_valid' is received.
+                - user can validate that it has successfully 
+                  locked zone policy control by reading back its own
+                  address from nlZoningPolicyControlOwner. 
+                - user (optionally) writes timeout value to	
+                  nlZoningPolicyTimeout, and then continually reads
+                  back nlZoningPolicyStatus until 'request_valid' is received.
+                - user writes 'clear-zoning-configuration' to 
+                  nlZoningPolicyControl to clear existing ta
+                  nlZoningPolicyControl to clear existing table and then
+                  continually reads back nlZoningPolicyStatus until 
+                  'request_valid' is received.
+                - user continually adds zone OR zone member entries by 
+                  writing to the appropriate objects using index 0 of the table,
+                  and then continually reads
+                  back nlZoningPolicyStatus until 'request_valid' is received.
+                - after the last entry is made, user writes 'create_table' to
+                  nlZoningPolicyControl, and then continually reads
+                  back nlZoningPolicyStatus until 'request_valid' is received.
+                - OR the user writes 'default-zoning-configuration' to load
+                  the default zoning configuration and then continually reads
+                  back nlZoningPolicyStatus until 'request_valid' is received.
+                - user writes 'clear_owner' to nlZoningPolicyControl (or waits
+                  for the zoning timeout to occur) to release ownership of
+                  zoning policy configuration.
+               "
+       ::= { zoning 4}
+
+
+       nlZoningPolicyLastError OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The last error condition string returned from the zoning agent."
+       ::= { zoning 5}
+
+
+-- Pending Zone Table
+
+       nlPendingZoneCount OBJECT-TYPE
+           SYNTAX    INTEGER 
+           ACCESS    read-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "Number of Pending configured zones for this proxied domain"
+       ::= { zoning 6 }
+
+       nlPendingZoneTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF NlPendingZoneEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "The Pending Zone Table. - this is the zone table the 
+               NMS is building up in the proxy domain, before activating it."
+       ::= { zoning 7 }
+
+       nlPendingZoneEntry OBJECT-TYPE
+           SYNTAX    NlPendingZoneEntry
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "nlPendingZone table entry"
+           INDEX     { nlPendingZoneIndex }
+       ::= { nlPendingZoneTable 1 }
+         
+       NlPendingZoneEntry ::= 
+           SEQUENCE {
+               nlPendingZoneIndex      INTEGER,
+               nlPendingZoneName       OCTET STRING,
+               nlPendingZoneType       INTEGER,
+               nlPendingZoneMembers    OCTET STRING,
+               nlPendingZoneLipToZonePolicy INTEGER
+           }
+
+       nlPendingZoneIndex OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies a zone in the
+               nlPendingZoneTable" 
+           ::= { nlPendingZoneEntry 1 }
+       
+       nlPendingZoneName OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the name of the zone.  This name is also unique in
+               the Pending Zone Table"
+           ::= { nlPendingZoneEntry 2 }
+
+       nlPendingZoneType OBJECT-TYPE
+           SYNTAX INTEGER {
+                      edgeDevice(1)
+                  }
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the type of the zone"
+           ::= { nlPendingZoneEntry 3 }
+
+       nlPendingZoneMembers OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies A sequence of zone member indicies for this zone.
+			   Write to this object to add a set of zone members to a zone."
+           ::= { nlPendingZoneEntry 4 }
+
+
+       nlPendingZoneLipToZonePolicy OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies state of lip propagation policy
+                0: No lips should propagate into the zone
+                1: Only SCSI targets are allowed to propagate lips
+				   into the zone.
+				2: Lips are allowed to propagate into the zone from
+				   all devices. "
+           ::= { nlPendingZoneEntry 5 }
+
+-- Pending Zone Member Table
+
+       nlPendingZoneMemberCount OBJECT-TYPE
+           SYNTAX    INTEGER 
+           ACCESS    read-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "Number of pending zone members for this proxied domain"
+           ::= { zoning 8 }
+
+       nlPendingZoneMemberTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF NlPendingZoneMemberEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "Pending Zone Member Table. This table keeps track of the
+			    pending zone members that the current snmp zone configuration
+				session has written to the device.  If nothing has been 
+				written to this table since the start of the current
+				session, then this table will have no entries.  Members are 
+				added to this table by writing a zone member name to the 
+				nlPendingZoneMemberName at an index of 0."
+           ::= { zoning 9 }
+
+       nlPendingZoneMemberEntry OBJECT-TYPE
+           SYNTAX    NlPendingZoneMemberEntry
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "nlPendingZoneMember table entry"
+           INDEX     { nlPendingZoneMemberIndex}
+           ::= { nlPendingZoneMemberTable 1 }
+       
+       NlPendingZoneMemberEntry ::= 
+           SEQUENCE {
+               nlPendingZoneMemberIndex    INTEGER,
+               nlPendingZoneMemberName     OCTET STRING,
+               nlPendingZoneMemberType     INTEGER,
+               nlPendingZoneMemberID       OCTET STRING
+           }
+
+       nlPendingZoneMemberIndex OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies a zone member."
+           ::= { nlPendingZoneMemberEntry 1 }
+       
+       nlPendingZoneMemberName OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    write-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the name of the zone member.
+                To add an entry to the list of zone member names, a write
+                should be done to index 0."
+           ::= { nlPendingZoneMemberEntry 2 }
+
+       nlPendingZoneMemberType OBJECT-TYPE
+           SYNTAX    INTEGER {
+						 typeNotYetAssigned(0),
+						 portZoneMember(1),
+                         hardAssignedALPAZoneMember(2),
+                         wwnZoneMember(3)
+                     }
+           ACCESS    write-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the type of this zone member.  The type of the
+                zone member dicates the structure of the PendingZoneMemberID.
+                To add an entry to the list of zone member type, a write
+                should be done to index 0. Note that a type of zero is only valid on 
+				a get operation.  Currently, wwnZoneMember is not supported"
+           ::= { nlPendingZoneMemberEntry 3 }
+ 
+       nlPendingZoneMemberID OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    write-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the intrinsic ID of this zone member.
+                To add an entry to the list of zone member names, a write
+                should be done to index 0.
+                If the ZoneMemberType is PortZoneMember, the structure is:
+                   BYTE 0: The Proxy Management ID of the InterConnect device
+                           that this port belongs to.  If 0, then this is a 
+						   'phantom' zone member, in that it does not have a
+						   corresponding device ID.  Essentially, a phantom zone
+						   member is a zone member that has been created, but
+						   not yet bound to a proxied device.  Use bytes 2 and 3 to
+						   correctly determine the ID of this zone member.
+                   BYTE 1: The Port Number on the InterConnect Device.
+				   BYTE 2: The device ID of the chassis that contains the slot that
+				           contains this port. (only valid if byte 0 equals 0)
+				   BYTE 3: The slot number of the slot that contains this port. (only
+						   valid if byte 0 is 0)
+						   
+                If the ZoneMemberType is HardAssignedALPAZoneMember, then
+                the structure is:
+                   BYTE 0: The Proxy Management ID of the InterConnect device
+                           that this port belongs to.  If 0, then this is a 
+						   'phantom' zone member, in that it does not have a
+						   corresponding device ID.  Essentially, a phantom zone
+						   member is a zone member that has been created, but
+						   not yet bound to a proxied device.  Use bytes 3 and 4 to
+						   correctly determine the ID of this zone member.
+                   BYTE 1: The Port Number on the InterConnect Device.
+                   BYTE 2: The hard-assigned AL_PA of the NL_Node.
+				   BYTE 3: The device ID of the chassis that contains the slot that
+				           contains this port. (only valid if byte 0 equals 0)
+				   BYTE 4: The slot number of the slot that contains this port. (only
+						   valid if byte 0 is 0)
+
+                If the ZoneMemberType is WWNZoneMember, the structure is:
+                   BYTE 0 -> size of string : The WWN of the zone member." 
+            ::= { nlPendingZoneMemberEntry 4 } 
+ 
+
+       nlActiveZoneCount OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "Number of active configured zones for this proxied domain.
+
+               When this object is read the 'Zoning Configuration Event' bit in 
+               the devEventStatus object will be reset to zero.
+
+               "
+           ::= { zoning 10 }
+
+       nlActiveZoneTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF NlActiveZoneEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "Active Zone Table."
+           ::= { zoning 11 }
+
+       nlActiveZoneEntry OBJECT-TYPE
+           SYNTAX    NlActiveZoneEntry
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "nlActiveZone table entry"
+           INDEX     { nlActiveZoneIndex}
+           ::= { nlActiveZoneTable 1 }
+       
+       NlActiveZoneEntry ::= 
+           SEQUENCE {
+               nlActiveZoneIndex             INTEGER,
+               nlActiveZoneName              OCTET STRING,
+               nlActiveZoneType              INTEGER,
+               nlActiveZoneAddressSpace      INTEGER,
+               nlActiveZoneMembers           OCTET STRING,
+               nlActiveZoneLipToZonePolicy   INTEGER
+           }
+
+       nlActiveZoneIndex OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies a zone."
+           ::= { nlActiveZoneEntry 1 }
+       
+       nlActiveZoneName OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the name of the zone"
+           ::= { nlActiveZoneEntry 2 }
+
+       nlActiveZoneType OBJECT-TYPE
+           SYNTAX INTEGER{
+                          edgeDevice(1)
+                         }
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the type of the zone"
+           ::= { nlActiveZoneEntry 3 }
+
+       nlActiveZoneAddressSpace OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the address space this zone is in. An address space
+                defines a set of Zones whose members share the same FC-AL
+                address range."
+           ::= { nlActiveZoneEntry 4 }
+
+       nlActiveZoneMembers OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies A sequence of zone member indexes for this zone.
+                List is terminated by a value of zero."
+           ::= { nlActiveZoneEntry 5 }
+
+       nlActiveZoneLipToZonePolicy OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies state of lip propagation policy
+                0: No lips should propagate into the zone
+                1: Only SCSI targets are allowed to propagate lips
+				   into the zone.
+				2: Lips are allowed to propagate into the zone from
+				   all devices. "
+           ::= { nlActiveZoneEntry 6 }
+
+-- Active Zone Member Table
+
+       nlActiveZoneMemberCount OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "Number of configured zone members for this proxied domain"
+           ::= { zoning 12 }
+
+       nlActiveZoneMemberTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF NlZoneMemberEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "Active Zone Member Table."
+           ::= { zoning 13 }
+
+       nlActiveZoneMemberEntry OBJECT-TYPE
+           SYNTAX    NlZoneMemberEntry
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "nlActiveZoneMember table entry"
+           INDEX     { nlActiveZoneMemberIndex }
+           ::= { nlActiveZoneMemberTable 1 }
+       
+       NlZoneMemberEntry ::= 
+           SEQUENCE {
+               nlActiveZoneMemberIndex            INTEGER,
+               nlActiveZoneMemberName             OCTET STRING,
+               nlActiveZoneMemberType             INTEGER,
+               nlActiveZoneMemberID               OCTET STRING
+           }
+
+       nlActiveZoneMemberIndex OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies a zone member."
+           ::= { nlActiveZoneMemberEntry 1 }
+       
+       nlActiveZoneMemberName OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the name of the zone member"
+           ::= { nlActiveZoneMemberEntry 2 }
+
+       nlActiveZoneMemberType OBJECT-TYPE
+           SYNTAX    INTEGER {
+                         portZoneMember(1),
+                         hardAssignedALPAZoneMember(2),
+                         wwnZoneMember(3)
+                     }
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the type of this zone member.  The type of the
+                zone member dictates the structure of the ActiveZoneMemberID"
+           ::= { nlActiveZoneMemberEntry 3 }
+ 
+       nlActiveZoneMemberID OBJECT-TYPE
+           SYNTAX    OCTET STRING
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Specifies the intrinsic ID of this zone member. The structure 
+                definition is identical to that of nlPendingZoneMemberID."  
+            ::= { nlActiveZoneMemberEntry 4 } 
+
+--
+-- serviceInterface group
+--
+--
+-- download group
+--
+       downloadFile  OBJECT-TYPE
+           SYNTAX     DisplayString (SIZE(0..63))
+           ACCESS read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "The file name to be downloaded from the TFTP server when a
+               download is next requested via this MIB.  This value is set to
+               the zero length string when no file name has been specified."
+           ::= { download 1 }
+
+       downloadBootFile  OBJECT-TYPE
+           SYNTAX     DisplayString (SIZE(0..31))
+           ACCESS read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "The file name of the switch operational code to be executed
+               on power up. This value is set to the zero length string when
+               no file name has been specified."
+           ::= { download 2 }
+
+       downloadTFTPServer  OBJECT-TYPE
+           SYNTAX     IpAddress
+           ACCESS read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "The IP address of the TFTP server that contains the boot
+               image to load when a download is next requested via this MIB.
+               This value is set to `0.0.0.0' when no IP address has been
+               specified."
+           ::= { download 3 }
+
+       downloadTargetID OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "The IntraCom ID of the device to download to.  A value
+                of 0 specifies the IntraCom master (i.e., the proxy
+                agent).  Values greater than 0 specify proxied devices."
+           ::= { download 4 }
+
+       downloadAction  OBJECT-TYPE
+           SYNTAX     INTEGER {
+                          notDownloading(1),
+                          downloadToPROM(2)
+                      }
+           ACCESS read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "When this object is set to downloadToPROM(2), 
+               the device will discontinue its normal
+               operation and begin download of the image
+               specified by downloadFile to the specified
+               IntraCom target from the server specified by
+               downloadTFTPServer using the TFTP protocol. The
+               new image is written to the flash EPROM memory after
+               its checksum has been verified to be correct.  When the download
+               process is completed, the device will warm boot to restart the
+               newly loaded firmware.  When the device is not downloading, this
+               object will have a value of notDownloading(1).  For some Gadzoox
+			   devices, there is a window of opportunity to cancel a download.  
+               Setting this object to the value 'notDownloading' during 
+               the TFTP file transfer from the downloadTFTPServer will cancel the current download for
+			   Gadzoox hub products."
+           ::= { download 5 }
+
+       downloadStatus  OBJECT-TYPE
+           SYNTAX     INTEGER {
+                          downloadSuccess(1),
+                          downloadStatusUnknown(2),
+                          downloadGeneralError(3),
+                          downloadNoResponseFromServer(4),
+                          downloadChecksumError(5),
+                          downloadIncompatibleImage(6),
+                          downloadTftpFileNotFound(7),
+                          downloadTftpAccessViolation(8),
+                          downloadAlreadyInProgress(9),
+                          downloadCancelled(10)
+                      }
+           ACCESS     read-only
+           STATUS     mandatory
+           DESCRIPTION
+               "The status of the last download procedure, if any.  This
+               object will have a value of downloadStatusUnknown(2) if no
+               download process has been performed."
+           ::= { download 6 }
+
+       downloadRetry  OBJECT-TYPE
+           SYNTAX     INTEGER 
+           ACCESS     read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "Number of retries for each download attempt."
+           ::= { download 7 }
+
+       downloadTimeOut  OBJECT-TYPE
+           SYNTAX     INTEGER 
+           ACCESS     read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "Timeout value (in seconds) for each download retry."
+           ::= { download 8 }
+
+       downloadCfgFileFileName  OBJECT-TYPE
+           SYNTAX     DisplayString (SIZE(0..29))
+           ACCESS     read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "The file name of the backup configuration files.  The switches 
+               current configuration is saved in the backup configuration file.
+               The switches configuration is also restored from the configuration
+               file."
+           ::= { download 9 }
+
+       downloadCfgFileServerIp  OBJECT-TYPE
+           SYNTAX     IpAddress
+           ACCESS     read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "The IP address of the TFTP server that the backup configuration
+               file will be saved to and restored from.
+               This value is set to `0.0.0.0' when no IP address has been
+               specified."
+           ::= { download 10 }
+
+       downloadCfgFileAction  OBJECT-TYPE
+           SYNTAX     INTEGER {
+                          noAction(1),
+                          backupConfig(2),
+                          restoreConfig(3)
+                      }
+           ACCESS     read-write
+           STATUS     mandatory
+           DESCRIPTION
+               "When this object is set to backupConfig(1), 
+               the device will write it's current configuration
+               files as downloadCfgFileFileName.* to the server
+               specified by downloadCfgFileServerIp.
+               When this object is set to restoreConfig(2), 
+               the device will be reconfigured based on the
+               downloadCfgFileFileName.* files located on the server
+               specified by downloadCfgFileServerIp."
+           ::= { download 11 }
+
+       downloadCfgFileBkupStatus  OBJECT-TYPE
+           SYNTAX     INTEGER {
+                          backUpRestoreSuccess(1),
+                          backUpRestoreStatusUnknown(2),
+                          backUpRestoreIncomplete(3),
+                          backUpRestoreGeneralError(4),
+                          backUpRestoreNoFileNameSpecified(5),
+                          backUpRestoreNoIpAddressSpecified(6),
+                          backUpRestoreTftpDriverError(7),
+                          backUpRestoreNoResponseFromServer(8),
+                          backUpRestoreFileNotFound(9),
+                          backUpRestoreCouldNotWriteFile(10)
+                      }
+           ACCESS     read-only
+           STATUS     mandatory
+           DESCRIPTION
+               "The status of the last know backup/restore procedure, if any.
+               This object will have a value of BackUpRestoreStatusUnknown(2) if no
+               backup/restore process has been performed."
+           ::= { download 12 }
+
+--
+-- security group    [reservered for future use]
+--
+-- discovery group  
+--
+
+
+--
+-- monitor group     [reservered for future use]
+--
+-- proxy group
+--
+       proxyMaxMembers OBJECT-TYPE 
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The maximum number of 'Proxy Managed Interconnect Devices'
+                that can be supported from this agent."
+           ::= { proxy 1 }
+       
+       proxyCurMembers OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The number of 'Proxy Managed Interconnect Devices'
+                currently connected to this agent."
+           ::= { proxy 2 }
+              
+       proxyChanges OBJECT-TYPE
+           SYNTAX    Counter
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "A count of the number of times 'Proxy Managed Interconnect 
+                Devices' have been added to or removed from this agent."
+           ::= { proxy 3 }
+       
+       proxyBoardID OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (0..255))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An Element Identifier to identify the physical IC board that
+               contains the proxy agent.  It's format is only relevant to 
+               Gadzoox service personnel."
+          ::= { proxy 4 }
+
+       proxyFirmwareVersion OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (0..15))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An 'Element Identifier' to identify the firmware version of 
+               this SNMP proxy.  The format of this identifier is as follows:
+               MM.mm = majorVersion.minorVersion 
+               02.04   as an example."
+           ::= { proxy 5 }
+
+       proxyTopologyCRC OBJECT-TYPE
+           SYNTAX    INTEGER (0..65535)
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "CRC conducted on the Topology Table.
+               Read: A change in this value indicates a change to the
+               proxy domain ('Proxy Managed Interconnect Device' addition,
+               deletion, or move).
+               Write: A write will return OK if the value written equals the
+               current Topology Table CRC and an ERROR if the value written does
+               not equal the current Topology Table CRC."
+           ::= { proxy 6 }
+ 
+       proxyEventStatus OBJECT-TYPE
+           SYNTAX    INTEGER (0..255)
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Register for Proxy Agent events.  Events are 'Proxy Managed 
+               Interconnect Device'
+               specific representing alarm-type events such as temperature/fan 
+               fault or change in port status"
+           ::= { proxy 7 }
+
+       proxyDeviceEventInd OBJECT-TYPE
+           SYNTAX    INTEGER (0..255)
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION  
+               "Sequential Device ID indication of any 'Proxy Managed 
+               Interconnect Device' events.  Each successive read of this 
+               object will cycle to the next ID in the list that has 
+               outstanding events"
+           ::= { proxy 8  }
+
+       proxyControl OBJECT-TYPE
+           SYNTAX    INTEGER (0..255)
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "This bit-mapped register declares this SNMP Proxy Agent
+               as the one and only 'active' proxy agent from a possible set of 
+               potential SNMP Proxy Agents.  Other potential SNMP Proxy Agents 
+               must have this value set to 'Disable'.  Currently, it is the 
+               responsibility of the SNMP manager application to administer 
+               this object.
+             Register Definition:
+             BYTE 1
+               Bit  1: Proxy Control & Status
+                       Enable/Disable this device as the SNMP Proxy Agent.  Note that
+                       this value is always read as 1 from a device that can only act
+                       as a proxy master.  Setting this object on a device that can only
+                       act as proxy master has no effect"
+           ::= { proxy 10  }
+
+--
+-- deviceTable 
+--
+       deviceTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF DeviceEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "A table of devices currently connected to the same 
+               Proxy Domain as this agent."
+           ::= { proxy 9 }
+
+       deviceEntry OBJECT-TYPE
+           SYNTAX    DeviceEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "Proxy Device Entry"
+           INDEX     { devDeviceID }
+           ::= { deviceTable 1 }
+       
+       DeviceEntry ::= 
+           SEQUENCE {
+               devDeviceID           INTEGER,
+               devOID                OBJECT IDENTIFIER,
+               devProductID          OCTET STRING,
+               devBoardID            OCTET STRING,
+               devFirmwareVersion    OCTET STRING,
+               devEventStatus        INTEGER,
+               devReset              INTEGER,
+               devDiagnostic         INTEGER,
+               devSysUpTimestamp     TimeTicks,
+               devCumulativeUpTime   Counter,
+               devContact            OCTET STRING,
+               devLocation           OCTET STRING,
+               devTopologyLink       OCTET STRING,
+               devBeaconOnTime       INTEGER,
+               devBeaconOffTime      INTEGER,
+               devFaultLedState      INTEGER,
+               devNumPorts           INTEGER,
+               devType               OCTET STRING,
+               devDescriptor         OCTET STRING
+         }
+
+       
+       devDeviceID OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An integer, ranging consecutively from 1 to proxyCurMembers,
+               which uniquely identifies a particular proxied device.
+               It is not guaranteed, nor should it be assumed, that this 
+               identifier will remain constant for any given proxied device."
+           ::= { deviceEntry 1 }
+       
+       devOID OBJECT-TYPE
+           SYNTAX    OBJECT IDENTIFIER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The authoritative identification of the box which
+               provides an easy and unambiguous means for 
+               determining the type of box."
+           ::= { deviceEntry 2 }
+
+       devProductID OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (0..100))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+               "An' Element Identifier' to identify the product type and serial 
+               number of this device."
+           ::= { deviceEntry 3 }
+
+       devBoardID OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (0..100))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+           "An 'Element Identifier' to identify the primary IC board for 
+           the proxied device. " 
+           ::= { deviceEntry 4 }
+
+       devFirmwareVersion OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (0..20))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+           "An 'Element Identifier' to identify the firmware version of 
+           this proxied device.  "
+           ::= { deviceEntry 5 }
+
+       devEventStatus OBJECT-TYPE
+           SYNTAX    INTEGER (0..255)
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+           "This bit-mapped register defines event indicators for the 
+           proxied device.  Each bit in this register represents a single 
+           event defined as follows.
+           Register Definition:
+             BYTE 0
+               Bit  0: Port Event
+               		   to clear bit access capPimPortStatus
+               Bit  1: Chassis Event (Fan/Blower, Power, Temperature)
+               		   to clear bit access capChasEventStatus
+               Bit  2: Configuration Event
+               		   to clear bit access capChasModuleStatus
+               Bit  3: PIM Event
+               		   to clear bit access capPimEventStatus
+               Bit  4: Zoning Configuration Event
+               		   to clear bit access nlActiveZoneCount
+           "
+           ::= { deviceEntry 6 }
+ 
+       devReset OBJECT-TYPE
+           SYNTAX    INTEGER { 
+                         warm(1),
+                         cold(2)
+                     }
+           ACCESS    write-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "Resets the proxied device.  'Cold' reset will initialize 
+               the device to the power-on state and execute a full self-test 
+               diagnostic.  'Warm' reset does the same but does not perform 
+               a destructive memory test.  Note that some devices don't
+			   support a distinction between warm and cold reset (all resets
+			   are cold resets"
+           ::= { deviceEntry 7 }
+
+       devDiagnostic OBJECT-TYPE
+           SYNTAX    INTEGER (0..65535)
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "When the this object is written, it causes 
+               a diagnostic function to be executed. When read, it
+               returns 0 for a successful completion of the test,
+               1 for test in process, and greater than 1 for an error 
+               indication of the test.  Refer to device documentation for
+               the exact definition of the error codes for the device.
+
+               For the Capellix switch the bit-mapped constant codes are 
+               defined as:
+                 PostInitialRamError = 0x2,
+                 PostRamError = 0x4,
+                 PostInitClockError = 0x8,
+                 PostSeepError = 0x10,
+                 PostValidFfsError = 0x20,
+                 PostInitializeFfsError = 0x40,
+                 PostDownloadError = 0x80,
+                 all other bits are reserved.
+               "
+           ::= { deviceEntry 8 }
+
+       devSysUpTimestamp OBJECT-TYPE
+           SYNTAX    TimeTicks
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The value of the device's sysUpTime at the time this 
+               object was last initialized.  If the object has not been
+               initialized since the last reinitialization of the
+               proxy agent, then this object has a zero value."
+           ::= { deviceEntry 9 }
+          
+       devCumulativeUpTime OBJECT-TYPE
+           SYNTAX    Counter
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Total number of hours that the device has be on.  This
+               is a persistent value that survives power cycle. "
+           ::= { deviceEntry 10 }
+          
+       devContact OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (0..63))
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "User definable ASCII string to indication contact name for
+               the device.  This is a persistent value that survives 
+               power cycles."
+           ::= { deviceEntry 11 }
+
+       devLocation OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (0..63))
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "User definable ASCII string to indication location for
+               the device.  This is a persistent value that survives 
+               power cycles."
+           ::= { deviceEntry 12 }
+
+       devTopologyLink OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (3))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Toplogy Link.  A unique octet triplet that associates a
+               proxied device to the overall topology of the proxy domain.
+               Register Definition:
+               BYTE 1 : Parent IntraCom ID.  This is the ID of the device 
+                 that provides the next link up to the proxy device
+                 in the IntraCom management hierarchy.  For the proxy
+                 agent, this value is zero.
+               BYTE 2 : Parent Port.  This is the port on the parent device that
+                 is connected to this device.
+               BYTE 3 : Uplink Port.  This is the port on this device that is 
+                 connected to the parent device."
+           ::= { deviceEntry 13 }
+
+       devBeaconOnTime OBJECT-TYPE
+           SYNTAX    INTEGER (0..25)
+           ACCESS    read-write 
+           STATUS    mandatory
+           DESCRIPTION
+               "Time (in 100ths of seconds) that Beacon LED is on.  A value 
+               of zero (with devBeaconOffTime non-zero) will turn the LED 
+               permanently off.  This object is not supported in this version 
+               of the MIB" 
+           ::= { deviceEntry 14 }
+
+       devBeaconOffTime OBJECT-TYPE
+           SYNTAX    INTEGER (0..25)
+           ACCESS    read-write 
+           STATUS    mandatory
+           DESCRIPTION
+               "Time (in 100ths of seconds) that Beacon LED is off.  A value 
+               of zero (with devBeaconOnTime non-zero) will turn the LED 
+               permanently on.B"   
+           ::= { deviceEntry 15 }
+
+       devFaultLedState OBJECT-TYPE
+           SYNTAX    INTEGER (0..1)
+           ACCESS    read-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "State of Fault LED, 0=OFF, 1=ON." 
+           ::= { deviceEntry 16 }
+
+       devNumPorts OBJECT-TYPE
+           SYNTAX    INTEGER (0..64)
+           ACCESS    read-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "Number of configured ports 
+               for this proxied device.  In the case of a chassis 
+			   based device, this object represents the number of slots
+			   in the box"
+           ::= { deviceEntry 17 }
+
+       devType OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (4))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+                "Description data for this proxied device:
+                Byte 3: OEM
+                  1  Gadzoox (open market)
+                  2  Hewlett Packard
+                  3  Compaq
+                  4  3Com
+                  5  Sun
+                Byte 2: masterType:  
+                  0  this is a slave hub
+                  1  this is a permanent master hub, 
+                  2  this is a removable master hub, 
+                Byte 1: mediaConfig: 
+                  1  MEDIA_CONFIG_TYPE_10CO (m3)  
+                  2  MEDIA_CONFIG_TYPE_10SW_0LW (m4)
+                  3  MEDIA_CONFIG_TYPE_8SW_2LW (m4) 
+                  4  MEDIA_CONFIG_TYPE_12GBIC (m5)
+                  5  MEDIA_CONFIG_TYPE_12GBIC_FIB_COP (m5)
+                  6  MEDIA_CONFIG_TYPE_6GBIC_FIB (m5)
+                  7  MEDIA_CONFIG_TYPE_6GBIC_FIB_COP (m5)
+                  10 MEDIA_CONFIG_TYPE_AS_3GBIC (as2)
+                  17 MEDIA_CONFIG_TYPE_SWITCH_1U_8HSSDC (cap jr) 
+                  18 MEDIA_CONFIG_TYPE_SWITCH_1U_8SW (cap jr) 
+                  19 MEDIA_CONFIG_TYPE_SWITCH_1U_8GBIC (cap jr) 
+                  20 MEDIA_CONFIG_TYPE_CHASSIS_2U_3SLOT (cap) 
+                  21 MEDIA_CONFIG_TYPE_CHASSIS_3U_3SLOT (cap)
+                  30 MEDIA_CONFIG_TYPE_CHASSIS_PIM_8CO) (cap)
+                  31 MEDIA_CONFIG_TYPE_CHASSIS_PIM_8SW) (cap)
+                  32 MEDIA_CONFIG_TYPE_CHASSIS_PIM_6GBIC) (cap)
+                  33 MEDIA_CONFIG_TYPE_CHASSIS_PIM_12SW_1GBIC) (cap)
+                  34 MEDIA_CONFIG_TYPE_CHASSIS_PIM_11HSSDC_1GBIC) (cap)
+                  35 MEDIA_CONFIG_TYPE_CHASSIS_PIM_ILS(cap - inter-loop module)
+                  36 MEDIA_CONFIG_TYPE_SWITCH_1U_PIM_3GBIC) (cap jr)
+                Byte 0: numPowerSupply
+				  0  NUM_POWER_SUPPLY_0
+                  1  NUM_POWER_SUPPLY_1 
+                  2  NUM_POWER_SUPPLY_2
+				  3  NUM_POWER_SUPPLY_3 "
+           ::= { deviceEntry 18 }
+
+       devDescriptor OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (0..63))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+               "An ASCII string to identify this device."  
+           ::= { deviceEntry 19 }
+
+
+
+--
+-- policy group
+--
+--
+-- gbic group
+--
+
+       gbicTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF GBICEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+           "A table of serial GBIC information, indexed by device
+            and port.  Only GBIC-based devices must implement this
+            table.  Each port of a GBIC-based device will have a
+            corresponding row, regardless of whether or not the
+            port contains a serial GBIC; if the port does not
+            contain a serial GBIC or if the serial GBIC
+            information has not yet been fully read, then the
+            value of gbicEntryValid is 'invalid'.
+
+            The gbic device platforms requires a certain minimal
+            level of firmware to support serial GBIC information.
+            The FeatureMask object indicates whether or not this
+            feature is supported via the SGBIC bit.  If this
+            feature is not supported on a given device, then
+            the gbicEntryValid object will have the value
+            'invalid' for all ports on that device."
+           ::= { gbic 1 }
+
+       gbicEntry OBJECT-TYPE
+           SYNTAX    GBICEntry
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+                "GBIC table entry"
+           INDEX     { gbicDeviceIndex, gbicPortIndex }
+           ::= { gbicTable 1 }
+       
+       GBICEntry ::= 
+           SEQUENCE {
+               gbicDeviceIndex            INTEGER,
+               gbicPortIndex              INTEGER,
+               gbicEntryValid             INTEGER,
+               gbicInfo                   OCTET STRING
+           }
+
+       gbicDeviceIndex OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+                "An identifier which uniquely identifies a device."
+           ::= { gbicEntry 1 }
+       
+       gbicPortIndex OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+                "An identifier which uniquely identifies a device port."
+           ::= { gbicEntry 2 }
+
+       gbicEntryValid OBJECT-TYPE
+           SYNTAX    INTEGER {
+                         invalid(0),
+                         valid(1)
+                     }
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+                "A flag that indicates whether or not this entry
+                contains valid information."
+           ::= { gbicEntry 3 }
+
+       gbicInfo OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (128))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An encoded string that provides information for the
+               serial GBIC associated with this entry's device and
+               port indices.  This value is only valid if the
+               associated gbicEntryValid value is 1."
+           ::= { gbicEntry 4 }
+
+--
+-- hub group
+--
+--   
+-- capChas group
+--
+--
+-- capChas Table
+--
+       capChasTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF CapChasEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "A table of Capellix chassis devices currently connected to the
+               same agent."
+           ::= { capChas 1 }
+
+       capChasEntry OBJECT-TYPE
+           SYNTAX    CapChasEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "capChas table entry"
+           INDEX     { capChasDeviceID }
+           ::= { capChasTable 1 }
+       
+       CapChasEntry ::= 
+           SEQUENCE {
+               capChasDeviceID               INTEGER,
+               capChasFeatureMask            OCTET STRING,
+               capChasEventStatus            OCTET STRING,
+               capChasLedStatus              OCTET STRING, 
+               capChasModuleStatus           OCTET STRING,
+               capChasWorldWideName          OCTET STRING,
+               capChasTemperature            INTEGER,
+               capChasTempMaxAllowed         INTEGER,
+               capChasTempMaxThreshold       INTEGER,
+               capChasSANDoctor				 INTEGER
+           }
+       
+       capChasDeviceID OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies this device."
+           ::= { capChasEntry 1 }
+       
+       capChasFeatureMask OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (1))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "A bitmask indicating the features supported on this
+               device.  Certain MIB objects are supported only if the
+               underlying feature is supported, as indicated by this
+               object.  Feature support may differ between devices due
+               to hardware or software versions.  
+
+               At the present time all features are enabled, so this object is
+               meaningless.
+               "
+           ::= { capChasEntry 2 }
+
+       capChasEventStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (2))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "This 2 byte bit-mapped register defines the asynchronous
+               events that can occur on the chassis.  
+               When this object is read the 'Chassis Event' bit in 
+               the devEventStatus object will be reset to zero.
+               Values: 0 = no fault,  1 = fault.
+               Register Definition:
+               BYTE 0
+                 Bit 0: Fan 1 fault (left-most fan, from back of chassis)   
+                 Bit 1: Fan 2 fault    
+                 Bit 2: Fan 3 fault    
+                 Bit 3: Fan 4 fault (right-most fan, from back of chassis)
+                 Bit 4: Power Supply 1 fault
+                 Bit 5: Power Supply 2 fault (if high availability unit) 
+                 Bit 6: Power Supply 3 fault (if high availability unit) 
+                 Bit 7: Reserved               
+               BYTE 1
+                 Bit 0: Temperature fault
+                 Bits 1-3: Reserved:  
+                 Bit 4: POST fault
+                 Bits 5-7: Reserved:  
+               "
+           ::= { capChasEntry 3 }
+
+       capChasLedStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (2))
+           ACCESS    read-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "This bitmapped object indicates state of each 
+               of the chassis LEDs.
+               Values: 0 = LED is OFF,  1 = LED in ON. 
+               Register Definition:
+               BYTE 0:
+                 Bit 0: power LED 
+                 Bit 1: fault LED 
+                 Bit 2: initialization LED        
+                 Bit 3-7: Reserved
+               BYTE 1:
+                 Bit 0: fan tray 1 LED 
+                 Bit 1: fan tray 2 LED 
+                 Bit 2-3: Reserved
+                 Bit 4: power supply 1 LED        
+                 Bit 5: power supply 2 LED
+                 Bit 6: power supply 3 LED
+                 Bit 7: Reserved
+               "
+           ::= { capChasEntry 4 }
+ 
+       capChasModuleStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (2))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+               "This bitmapped object indicates the presence of optional chassis 
+               modules (PIMs, power supplies, fan trays) that may or may not be
+               installed in the chassis. A value of '1' indicates the presence
+               of a module.
+               When this object is read the 'Configuration Event' bit in 
+               the devEventStatus object will be reset to zero.
+  
+               Register Definition:
+               BYTE 0:
+                 Bit 0: slot 1 PIM presence    
+                 Bit 1: slot 2 PIM presence    
+                 Bit 2: slot 3 PIM presence    
+                 Bit 3: Reserved
+                 Bit 4: fan tray 1 presence 
+                 Bit 5: fan tray 2 presence 
+                 Bit 6-7: reserved        
+               BYTE 1:
+                 Bit 0: power supply 1 presence        
+                 Bit 1: power supply 2 presence
+                 Bit 2: power supply 3 presence
+                 Bit 3-7: Reserved
+               "
+           ::= { capChasEntry 5 }
+
+       capChasWorldWideName OBJECT-TYPE
+           SYNTAX    OCTET STRING  (SIZE (0..16))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "World Wide Name associated with this chassis."
+           ::= { capChasEntry 6 }
+ 
+       capChasTemperature OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Internal Temperature of the chassis (in degrees C)."
+           ::= { capChasEntry 7 }
+
+       capChasTempMaxAllowed OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Maximum Allowable Internal Temperature of the chassis ."
+           ::= { capChasEntry 8 }
+
+       capChasTempMaxThreshold OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "User-configurable Maximum Internal Temperature Threshold
+               of the chassis."
+           ::= { capChasEntry 9 }
+
+       capChasSANDoctor OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "User-configurable SAN Doctor function of the chassis."
+           ::= { capChasEntry 10 }
+
+--
+-- Capellix Chassis Slot Table
+--
+       capChasSlotTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF CapChasSlotEntry 
+           ACCESS	    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               ""
+           ::= { capChas 2 }
+
+       capChasSlotEntry OBJECT-TYPE
+           SYNTAX    CapChasSlotEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "Capellix chassis slot table entry"
+           INDEX     { capChasDevID, capChasSlotNum }
+           ::= { capChasSlotTable 1 }
+       
+       CapChasSlotEntry ::= 
+           SEQUENCE {
+           capChasDevID              INTEGER,
+           capChasSlotNum            INTEGER,
+           capChasPimDevID           INTEGER,
+           capSlotPimType            OCTET STRING,
+           capSlotPimStatus          INTEGER,
+           capSlotPimIPaddr          IpAddress
+       }
+
+       capChasDevID OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies the Capellix chassis
+               that contains this PIM."
+           ::= { capChasSlotEntry 1 }
+       
+       capChasSlotNum OBJECT-TYPE
+           SYNTAX    INTEGER (1..3)
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The slot index of this PIM on this chassis."
+           ::= { capChasSlotEntry 2 }
+
+       capChasPimDevID OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies this PIM in the 
+               proxy domain.  If this value is 0, this PIM is not 
+               managealbe by this chassis."
+           ::= { capChasSlotEntry 3 }
+
+       capSlotPimType OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (4))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Description data for this PIM
+               The enumeration of the bytes in this object are identicial 
+               to that defined in the object devType."
+           ::= { capChasSlotEntry 4 }
+ 
+       capSlotPimStatus OBJECT-TYPE
+           SYNTAX    INTEGER {
+                         unknown(0),
+						 empty(1),
+                         present-and-active(2),
+                         present-but-inactive(3)
+                     }
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The value of this object indicates the general status of 
+                this PIM."
+           ::= { capChasSlotEntry 5 }
+ 
+       capSlotPimIPaddr OBJECT-TYPE
+          SYNTAX     IpAddress
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The (potential) IP address of this PIM.  If a PIM does not
+                support an IP address, this value is 0."
+           ::= { capChasSlotEntry 6 }
+ 
+
+--   
+-- Capellix PIM group
+--
+--
+-- Capellix PIM  Table
+--
+       capPimTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF CapPimEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "A table of Capellix chassis PIMs currently connected to the
+               same agent."
+           ::= { capPim 1 }
+
+       capPimEntry OBJECT-TYPE
+           SYNTAX    CapPimEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "capPim table entry"
+           INDEX     { capPimDeviceID }
+           ::= { capPimTable 1 }
+       
+       CapPimEntry ::= 
+           SEQUENCE {
+               capPimDeviceID             INTEGER,
+               capPimFeatureMask          OCTET STRING,
+               capPimEventStatus          OCTET STRING,
+               capPimLedStatus            OCTET STRING, 
+               capPimPortAttributes       OCTET STRING, 
+               capPimPortStatus           OCTET STRING
+      }
+       
+       capPimDeviceID OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies this PIM."
+           ::= { capPimEntry 1 }
+       
+       capPimFeatureMask OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (1))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "A bitmask indicating the features supported on this
+               device.  Certain MIB objects are supported only if the
+               underlying feature is supported, as indicated by this
+               object.  Feature support may differ between devices due
+               to hardware or software versions.  
+
+               At the present time all features are enabled, so this object is
+               meaningless.
+               "
+           ::= { capPimEntry 2 }
+
+       capPimEventStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (2))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "This 2 byte bit-mapped register defines the asynchronous
+               events that can occur on the PIM.  
+               When this object is read the 'PIM Event' bit in 
+               the devEventStatus object will be reset to zero.
+               Register Definition:
+               BYTE 0: 
+                 Bit  0: power supply temperature
+                 Bit  1: power level
+                 Bit  2: POST fault
+                 Bit  3-7: reserved 
+               BYTE 1:  Reserved
+               " 
+           ::= { capPimEntry 3 }
+
+       capPimLedStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (3))
+           ACCESS    read-only 
+           STATUS    mandatory
+           DESCRIPTION
+               "This bitmapped object indicates state of each of the PIM LEDs.
+               Values: 0 = LED is OFF,  1 = LED in ON. 
+               Register Definition:
+               BYTE 0: 
+                 Bit  0: power LED 
+                 Bit  1: fault LED 
+                 Bit  2-7: reserved 
+               BYTES 1-2: PIM port LEDs 
+                 BYTE 1, Bits 0-7 = ports 1-8
+                 BYTE 2, Bits 0-7 = ports 9-16
+			    Note that this object is not supported in this release
+				of the MIB
+			   "
+           ::= { capPimEntry 4 }
+ 
+       capPimPortAttributes OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (16))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+               "A 16 byte bitmapped octet string that describes the attributes
+                of each of the ports on this PIM.  
+                Bytes 0 - 15 describe ports 1 - 16 respectively.  
+                Register Definition:
+                Bit Meaning
+                --- -------
+                7   Reserved (IntraComm)
+                6-0 Media type: 
+                    0 = GBIC Optical ShortWave 
+                    1 = GBIC Optical LongWave 
+                    2 = GBIC Optical ShortWave 
+                    3 = GBIC Copper Style DB-9 connector 
+                    4 = reserved
+                    5 = GBIC Copper Style-2 connector (from parallel ID)
+                    6 = GBIC type information available via serial ID
+                    7 = No GBIC installed
+                    8 = Fixed Copper DB9
+                    9 = Fixed Optical ShortWare - 1.06 Gigabit
+                   10 = Fixed Optical High Density
+				   11 = Unknown
+                   12 = Fixed Copper HSSDC
+               "
+           ::= { capPimEntry 5 }
+
+       capPimPortStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (16))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+               "This 16 byte bitmapped object describes the status of 
+               each of the ports on the PIM.  
+               The layout of the bits in each byte is as follows: 
+               Bit  Meaning
+               ---  -------
+               3-0  encoded state:
+                     0: No GBIC installed
+                     1: Force bypassed by Management
+                     2: Bypassed due to no incomming signal
+                     3: Bypassed due to no outgoin signal
+                     4: Bypassed due to fault: K28.5 denstiy
+                     5: Bypassed due to fault: Running disparity
+                     6: Bypassed due to fault: Mis-aligned K28.5
+                     7: Bypassed due to fault: RLE
+					 8: Bypassed because port is not in any zone
+                     9: Bypassed waiting Cut-In authorization
+                    10: Enabled and initializing
+					11: Enabled and active
+					12: Force bypassed by SAN Doctor
+
+               When this object is read the 'Port Event' bit in 
+               the devEventStatus object will be reset to zero."
+           ::= { capPimEntry 6 }
+
+
+--
+-- 
+--
+       capPortTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF CapPortEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "A table of port objects for the Capellix PIM's"
+           ::= { capPim 2 }
+
+       capPortEntry OBJECT-TYPE
+           SYNTAX    CapPortEntry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "cap port table entry"
+           INDEX     { capPortDeviceID, capPortIndex }
+           ::= { capPortTable 1 }
+       
+       CapPortEntry ::= 
+           SEQUENCE {
+             capPortDeviceID                    INTEGER,
+             capPortIndex                       INTEGER,
+             capPortType                        INTEGER,
+             capPortForcedBypass                INTEGER,
+             capPortLipType                     INTEGER,
+             capPortAlpaCount                   INTEGER,
+             capPortAlpaBitmap                  OCTET STRING,
+             capPortLipInitiatorCount           INTEGER 
+           }
+
+       capPortDeviceID OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies the capellix PIM
+               that contains this port."
+           ::= { capPortEntry 1 }
+       
+       capPortIndex OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The index of this port on the device."
+           ::= { capPortEntry 2 }
+       
+       capPortType OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION 
+               " Port Type
+                 0: unknown
+                 1: initiator
+                 2: target
+                 3: both initator and target
+               "
+           ::= { capPortEntry 3 }
+
+       capPortForcedBypass OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION 
+               " Force Port Bypass Control
+                 0: forced port bypass mode is DISABLED
+                 1: forced port bypass mode is ENABLED
+               "
+           ::= { capPortEntry 4 }
+
+
+       capPortLipType OBJECT-TYPE
+           SYNTAX    INTEGER 
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION 
+               " Lip Generation Type
+                 0: generate LIP F7 (if LIP generation is enabled) 
+                 1: generate LIP F8 (if LIP generation is enabled) 
+               "
+           ::= { capPortEntry 5 }
+
+
+      capPortAlpaCount OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+           "The total number of detected ALPAs for this port.
+               indicates detection of ALPA 1, and so on.  This count is
+           cleared upon either loop initialization
+               or bypass of this port.  Bit values can also be cleared
+               manually via capAlpaClear."
+           ::= { capPortEntry 6 }
+
+       capPortAlpaBitmap OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (16))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION 
+               "Bitmap of ALPAs detected on this port.  Bytes 0-15 form an 
+               LoopID bitmap similar in form to the bitmaps used in 
+               FC-AL address assignment (LIFA/LIPA/LIHA/LISA).  
+               If bit 7 of byte 0 is set, then
+               LoopID 0 has been detected on this port.  Bit 6 of byte 0
+               indicates detection of LoopID 1, and so on.  This is bitmap is
+               cleared upon either loop initialization
+               or bypass of this port." 
+           ::= { capPortEntry 7 }
+
+      capPortLipInitiatorCount OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "Counts the number of times that this port was the
+               first to detect a LIP during loop initialization."
+           ::= { capPortEntry 8 }
+                 
+
+
+
+
+--
+-- trap group
+--
+
+--
+-- trap IP address Table
+--
+       trapIPaddrTable OBJECT-TYPE
+           SYNTAX    SEQUENCE OF TrapIPentry
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "A table of IP addresses to which traps should be sent."
+           ::= { traps 1 }
+
+       trapIPentry OBJECT-TYPE
+           SYNTAX    TrapIPentry 
+           ACCESS    not-accessible
+           STATUS    mandatory
+           DESCRIPTION
+               "trap table entry"
+           INDEX     { trapIndex }
+           ::= { trapIPaddrTable 1 }
+       
+       TrapIPentry ::= 
+           SEQUENCE {
+               trapIndex              INTEGER,
+               trapIPaddr             IpAddress
+           }
+       
+       trapIndex OBJECT-TYPE
+           SYNTAX    INTEGER (0..255)
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "An identifier which uniquely identifies the device to
+               send the trap to."
+           ::= { trapIPentry 1 }
+
+       trapIPaddr OBJECT-TYPE
+           SYNTAX    IpAddress
+           ACCESS    read-write
+           STATUS    mandatory
+           DESCRIPTION
+               "The IP address of the device to send the trap to. To
+                add an entry to the list of Trap IP addresses, a write
+                should be done to index 0. To delete an entry from the
+                list of Trap IP addresses, a write should be done to
+                the desired index to be deleted with the IpAddress to
+                be deleted. This will cause the Trap IP address table
+                to shrink by one entry.
+
+                To read the list of Trap IP addresses, indexes
+                starting at 1 and incrementing should be used. An
+                error indication will be returned when the end of the
+                table is reached."
+           ::= { trapIPentry 2 }
+
+
+--
+-- Generic Trap objects. These OIDs can be incorporated into the traps
+-- listed below. Note these objects must be generic enough to cover all
+-- IntraCom devices. This means that the OCTET STRINGs defined here must
+-- be large enough to handle the largest size of the specific
+-- implementation of the generic object. Since trapDevType is included in
+-- all of the traps listed below, the Trap Server can always tell how to
+-- interpret the generic trap objects.
+--
+
+       trapDevID OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The deviceID of the device with the trap condition."
+           ::= { traps 2 }
+
+       trapDevType OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (4))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The type of device with the trap condition. The
+                definition of this field is identical to devType."
+           ::= { traps 3 }
+
+       trapDevEventStatus OBJECT-TYPE
+           SYNTAX    INTEGER (0..255)
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The event status of the device with the trap
+                condition. The definition of this field is identical
+                to devEventStatus."
+           ::= { traps 4 }
+
+       trapDevEnvironmentStatus OBJECT-TYPE
+         SYNTAX    OCTET STRING (SIZE (4))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The environmental status of the device with the trap
+                condition. The definition of this field depends on the
+                type of device for which this trap was sent. "
+           ::= { traps 5 }
+
+       trapDevPortStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (36))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The port status of the device with the trap
+                condition. The definition of this field depends on the
+                type of device for whom this trap was sent. 
+                The assumption is that the port status
+                for each port fits in 1 byte."
+           ::= { traps 6 }
+
+       trapDevPortAttributes OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (36))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The port attributes of the device with the trap
+                condition. The definition of this field depends on the
+                type of device for whom this trap was sent. 
+                The assumption is that the port
+                attributes for each port fits in 1 byte."
+           ::= { traps 7 }
+
+       trapDevConfigStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (4))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The Configuration Status of the device with the trap
+                condition. The definition of this field depends on the
+                type of device for whom this trap was sent. Examples
+                of this event include inserting or removing a plug-in
+                card."
+           ::= { traps 8 }
+
+       trapDevLIPStatus OBJECT-TYPE
+           SYNTAX    OCTET STRING (SIZE (7))
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The Lip status of the device with the trap
+                condition. The definition of this field depends on the
+                type of device for whom this trap was sent. Examples
+                of this event include changes to the m5LIPStatus
+                field."
+           ::= { traps 9 }
+
+
+       trapMaxNumberTrapTargets OBJECT-TYPE
+           SYNTAX    INTEGER
+           ACCESS    read-only
+           STATUS    mandatory
+           DESCRIPTION
+               "The maximumnum number of IP addresses that can be specified
+                as recepients of traps that are sent from this device."
+           ::= { traps 10}
+
+
+--
+-- The traps themselves, which incorporate the objects described above.
+--
+
+       trapLIPStatus TRAP-TYPE
+           ENTERPRISE  capChas
+           VARIABLES   { trapDevID, trapDevType, trapDevLIPStatus }
+           DESCRIPTION
+               "Information to be sent describing an LIP trap from an
+               IntraCom device.  Note that this trap may not be 
+               supported on some Gadzoox devices"
+           ::= 1
+
+       trapMgmtTopologyChange TRAP-TYPE
+           ENTERPRISE  capChas
+           VARIABLES   { trapDevID, trapDevType }
+           DESCRIPTION
+               "Information to be sent describing an topology change
+        trap from an IntraCom device (subcode=2)"
+           ::= 2
+
+       trapEnvironment TRAP-TYPE
+           ENTERPRISE  capChas
+           VARIABLES   { trapDevID, trapDevType, trapDevEnvironmentStatus }
+           DESCRIPTION
+               "Information to be sent describing an environmental
+        trap from an IntraCom device (subcode=3)"
+           ::= 3
+
+       trapPortStatus TRAP-TYPE
+           ENTERPRISE  capChas
+           VARIABLES   { trapDevID, trapDevType, trapDevPortStatus, 
+             trapDevPortAttributes  }
+           DESCRIPTION
+               "Information to be sent describing an port status trap
+        from an IntraCom device (subcode=4)"
+           ::= 4
+
+       trapConfigurationStatus TRAP-TYPE
+           ENTERPRISE  capChas
+           VARIABLES   { trapDevID, trapDevType, trapDevConfigStatus }
+           DESCRIPTION
+               "Information to be sent describing an configuration
+           trap from an IntraCom device (subcode=5)"
+           ::= 5
+
+END
+
+-- ************************************************************************** --

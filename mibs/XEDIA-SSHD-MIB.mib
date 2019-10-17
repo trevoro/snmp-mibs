@@ -1,0 +1,749 @@
+XEDIA-SSHD-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS 
+    RowStatus, DisplayString
+        FROM SNMPv2-TC
+
+    MODULE-IDENTITY, OBJECT-TYPE, IpAddress,  
+    Integer32, Counter32, TimeTicks
+        FROM SNMPv2-SMI
+
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+
+    xediaMibs, LongDisplayString
+        FROM XEDIA-REG
+    ;    
+
+xediaSshDMIB MODULE-IDENTITY
+    LAST-UPDATED "9908142200Z" -- April 14, 1998   
+    ORGANIZATION "Xedia Corp."
+    CONTACT-INFO
+        "support@xedia.com"
+    DESCRIPTION
+        "This module defines Secure Shell Daemon configuration and 
+         statistics for Xedia AP devices."
+    ::= { xediaMibs 35 }
+
+-- SSHD-Top-level organization of the MIB
+
+xSshDObjects          OBJECT IDENTIFIER ::= { xediaSshDMIB 1 }
+xSshDConformance      OBJECT IDENTIFIER ::= { xediaSshDMIB 2 }
+
+-- Secure Shell Daemon Objects
+
+-- ********************************
+-- * Top level breakdown of groups
+-- ********************************
+xSshDGlobal          OBJECT IDENTIFIER ::= { xSshDObjects 1 }
+xSshDSession         OBJECT IDENTIFIER ::= { xSshDObjects 2 }
+xSshDClientKeys      OBJECT IDENTIFIER ::= { xSshDObjects 3 }
+
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- ~ Global SSH Daemon
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+xSshDGlobalCfg       OBJECT IDENTIFIER ::= { xSshDGlobal 1 }
+xSshDGlobalOper      OBJECT IDENTIFIER ::= { xSshDGlobal 2 }
+xSshDGlobalStats     OBJECT IDENTIFIER ::= { xSshDGlobal 3 }
+
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- ~ Individual Session info
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+xSshDSessionOper     OBJECT IDENTIFIER ::= { xSshDSession 1 }
+
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- ~ Client key infor/config
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+xSshDClientKeyStats  OBJECT IDENTIFIER ::= { xSshDClientKeys 1 }
+xSshDClientKeyTable  OBJECT IDENTIFIER ::= { xSshDClientKeys 2 }
+
+-- *************************************
+-- * Secure Shell Daemon Global Config
+-- *************************************
+--
+xsshdCfgAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    enabled(1),
+                    disabled(2),
+                    testing(3),
+                    disabledDown(4)
+                }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The administrative status of Secure Shell in the router. 
+         The value of:
+                'enabled' - indicates that the ssh daemon will process 
+                            requests from clients.  If there are enough
+                            node resources, and the host/user pass authentication,
+                            then the user will be allowed to log into the CL.I
+                'disable' - indicates that the ssh daemon will not
+                            process requests from clients.  Existing sessions 
+                            will not be torn down.
+                'testing' - will process requests from clients, and periodically
+                            output a test pattern if the client is authenticated.
+           'disabledDown' - indicates that the ssh daemon will not process requests
+                            from clients, and, at system initialization, the ssh
+                            daemon will NOT be started.  This can be used to free
+                            up node resources if ssh is not going to be used.  
+                            Existing sessions will not be torn down.
+                                                                                      
+          The ssh daemon can only be started at intialization time.  So, if it was
+          set to 'disabledDown' and the daemon never started, a full node boot will
+          be required to enable the ssh daemon."
+    DEFVAL      { enabled }
+    ::= { xSshDGlobalCfg 1 }
+
+xsshdCfgListenPort OBJECT-TYPE
+    SYNTAX      INTEGER(1..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The tcp port number that will be used to listen for requests.
+         Changing this parameter will require a node boot to take affect."
+    DEFVAL      { 22 }
+    ::= { xSshDGlobalCfg 2 }
+
+xsshdCfgKeyName OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The name of the PKI key-pair that is configured in the box
+         for use by SSH.  It SHOULD be a DSA formatted key.  If this
+         index is left blank, the first available key will be used."
+    DEFVAL { "" }
+    ::= { xSshDGlobalCfg 3 }
+
+xsshdCfgMaxSessions OBJECT-TYPE
+    SYNTAX      INTEGER(1..9)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum number of SSH sessions allowed at one time."
+    DEFVAL      { 2 }
+    ::= { xSshDGlobalCfg 4 }
+
+xsshdCfgSessionEvents OBJECT-TYPE
+    SYNTAX      INTEGER { enabled(1), disabled(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The overall control of session event generation that is used
+         in conjuction with the normal system event filters.  If the session
+         flag is 'disabled' no session events will be sent.  If the
+         flag is 'enabled' the normal event filter mechanisms will
+         still be used to customize input/output of the events."
+    DEFVAL      { enabled }
+    ::= { xSshDGlobalCfg 5 }
+
+xsshdCfgUserAuthControl OBJECT-TYPE
+    SYNTAX      INTEGER { none(1), passwordUserTable(2), publicKey(3), publicKeyORpassword(4) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The method of authentication for users.  If 'password' is used,
+         then the user will be looked up and authenticated using the 
+         general 'authentication user table'.  If 'publicKey' is used, then
+	 the client/user public key will be looked up in the SSH Client-Key table.  "
+    DEFVAL      { none }
+    ::= { xSshDGlobalCfg 6 }
+
+xsshdCfgHostAuthControl OBJECT-TYPE
+    SYNTAX      INTEGER { none(1), hostList(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The method of authentication for client machines.  If 'list' is
+         used, then the client address is validated against the
+         accept/deny list of clients."
+    DEFVAL      { none }
+    ::= { xSshDGlobalCfg 7 }
+
+xsshdCfgEncryptionControl OBJECT-TYPE
+    SYNTAX      BIT STRING { none(0), des(1), des3(2) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object controls the ciphers that are allowed to be used
+         during negotiation with a client."
+ -- DEFVAL      { des | des3 }
+    ::= { xSshDGlobalCfg 8 }
+
+xsshdCfgMacControl OBJECT-TYPE
+    SYNTAX      BIT STRING { none(0), sha(1), sha96(2), md5(3), md596(4) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object controls the hmac algorithms are allowed to be used
+         during negotiation with a client."
+ -- DEFVAL      { sha | md5 }
+    ::= { xSshDGlobalCfg 9 }
+
+xsshdCfgCompressionControl OBJECT-TYPE
+    SYNTAX      BIT STRING { none(0), zlib(1) } 
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The methods of compression that can be negotiated."
+ -- DEFVAL      { none }
+    ::= { xSshDGlobalCfg 10 }
+
+xsshdCfgPasswordRetry OBJECT-TYPE
+    SYNTAX      INTEGER(0..10)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of times a user can re-enter a password before
+         the user is considered to be invalid."
+    DEFVAL      { 2 }
+    ::= { xSshDGlobalCfg 11 }
+
+xsshdCfgAuthGraceTime OBJECT-TYPE
+    SYNTAX      INTEGER(10..600)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The total number of seconds allowd for host/user authentication.  In most
+         cases only a few seconds is needed.  But, in the case of user/password
+         authentication, the user may 'stall' the session by not supplying
+         a password in a timely manner.  This object roughly defines the
+         number of seconds to wait for the entire authentication process
+         to complete.  It is NOT an exact number of seconds.  The authentication
+         status is checked as a background task (specific timer interval) for
+         each session thread.  Therefore, it MAY take a few seconds beyond
+         the configured value for the connection to be terminated."
+    DEFVAL      { 20 }
+    ::= { xSshDGlobalCfg 12 }
+
+xsshdCfgIdleTimeOut OBJECT-TYPE
+    SYNTAX      INTEGER(0..1440)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The number of minutes without any user input, that is 
+	 allowed, before disconnecting a session.  Setting this value
+	 to zero disables the idle-timeout feature."
+    DEFVAL      { 2 }
+    ::= { xSshDGlobalCfg 13 }
+
+xsshdCfgHostAcceptList OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The list of clients that are allowed to connect to the
+         server.  This list is only used if the host control 
+         is set. 
+            
+         The list can be made up of individual addresses separated or
+         address ranges, with each component being separated by a comma.
+         
+         ie  '1.2.3.4, 1.2.5.0-1.2.5.30' "
+    DEFVAL { "" }
+    ::= { xSshDGlobalCfg 14 }
+
+xsshdCfgHostDenyList OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The list of clients that are not allowed to connect to the
+         server.  This list is only used if the host control 
+         is set.
+                  	 
+         The list can be made up of individual addresses separated or
+         address ranges, with each component being separated by a comma.
+         
+         ie  '1.2.3.4, 1.2.5.0-1.2.5.30' "
+    DEFVAL { "" }
+    ::= { xSshDGlobalCfg 15 }
+
+xsshdCfgDbgTraceLevel OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The numeric value that is used to apply 'trace-levels' of the 
+         debug events.  It's intended to be used by Xedia Support
+         only when normal events and statistics are not able to 
+         provide enough information to properly debug problems
+         in the field."
+    DEFVAL      { 0 }
+    ::= { xSshDGlobalCfg 16 }
+
+xsshdCfgPresentedKeyTypes OBJECT-TYPE
+    SYNTAX      INTEGER{ dsa(1), dsaAndRsa(2), dsaAllowRsa(3) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object controls which ssh key types will be presented 
+	 to the client during negotiation. Since 'dsa' support is 
+	 mandatiory, and 'rsa' support is optional, the administrator 
+	 will have some control over what is presented to the clients.
+	
+	 If 'dsa' is chosen, only 'ssh-dss' will be presented to the
+	 client for negotiation.  If 'dsaAndRsa' is selected, both
+	 formats will be presented to the client 'ssh-rsa,ssh-dss'.
+	 But, when 'dsaAllowRsa' is used, ssh-rsa will only be
+	 presented to the client when the ssh daemon is using an
+	 rsa formatted key."
+    DEFVAL      { dsaAllowRsa }
+    ::= { xSshDGlobalCfg 17 }
+
+-- *************************************
+-- * General SSH Operation status
+-- *************************************
+--
+xsshdOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    upEnable(1),
+                    upDisable(2),
+                    upTesting(3),
+                    notRunning(4)
+                }
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The operational status of Secure Shell in the router. "
+    ::= { xSshDGlobalOper 1 }
+
+xsshdOperCipherList OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The list of Ciphers configured." 
+    ::= { xSshDGlobalOper 2 }
+
+xsshdOperCiphers OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The list of Ciphers that can be negotiated base on 
+         what functions are available with the current version of software." 
+    ::= { xSshDGlobalOper 3 }
+
+xsshdOperMacList OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The list of MAC algorithms configured." 
+    ::= { xSshDGlobalOper 4 }
+
+xsshdOperMacs OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The list of MAC algorithms that can be negotiated based on
+         what functions are available with the current version of software." 
+    ::= { xSshDGlobalOper 5 }
+
+xsshdOperCompressionList OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The list of Compression algorithms configured." 
+    ::= { xSshDGlobalOper 6 }
+
+xsshdOperCompressions OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The list of Compression algorithms that can be negotiated based on
+         what functions are available with the current version of software." 
+    ::= { xSshDGlobalOper 7 }
+
+xsshdOperHostAcceptList OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The operational list of clients that are allowed to connect to the
+         server."
+    ::= { xSshDGlobalOper 8 }
+
+xsshdOperHostDenyList OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The operational list of clients that are not allowed to connect to the
+         server."
+    ::= { xSshDGlobalOper 9 }
+
+xsshdOperPresentedKeyTypes OBJECT-TYPE
+    SYNTAX      DisplayString 
+    MAX-ACCESS  read-only 
+    STATUS      current
+    DESCRIPTION
+        "The operational list of key types presented to the client for 
+         negotiation."
+    ::= { xSshDGlobalOper 10 }
+
+-- *************************************
+-- * General SSHD statistics
+-- *************************************
+--
+xsshdStatsCurrentSessionCount OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The number of current SSH sessions in progress."
+    ::= { xSshDGlobalStats 1 }
+
+xsshdStatsTotalSessionCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The total number of SSH session requests."
+    ::= { xSshDGlobalStats 2 }
+
+xsshdStatsSessionSuccessCount OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The total number of SSH sessions that were able to
+         to obtain all necessary resources, and authenticate
+         the user and host.  (basically, allowed to initiate 
+         a CLI session)"
+    ::= { xSshDGlobalStats 3 }
+
+xsshdStatsSessionAuthFails OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The number of session authentication failures."
+    ::= { xSshDGlobalStats 4 }
+
+xsshdStatsSessionResourceFails OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The number of session resource failures.  This statistic 
+         is incremented for memory and system resource failures as
+         well as when the maximum number of SSH sessions prohibits
+         a session from being established."
+    ::= { xSshDGlobalStats 5 }
+
+-- *************************************
+-- * Session Operational/Stats Info
+-- *************************************
+--
+xsshdSessionTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsshdSessionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A list of active SSH sessions entries"
+    ::= { xSshDSessionOper 1 }
+ 
+xsshdSessionEntry     OBJECT-TYPE
+    SYNTAX      XsshdSessionEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An entry containing information about an SSH session"
+    INDEX    { xsshdSessionIndex }
+    ::= { xsshdSessionTable 1 }
+
+XsshdSessionEntry ::=
+    SEQUENCE {
+      -- 
+      -- Status
+      -- 
+      xsshdSessionIndex              INTEGER,
+      xsshdSessionRemoteIpAddress    IpAddress,
+      xsshdSessionRemoteNode         DisplayString,
+      xsshdSessionRemoteUser         DisplayString,
+      xsshdSessionNegotiation        DisplayString,
+      xsshdSessionTime               TimeTicks,
+      xsshdSessionUiBytesIn          Counter32,
+      xsshdSessionUiBytesOut         Counter32,
+      xsshdSessionRowStatus          INTEGER
+    }
+
+xsshdSessionIndex OBJECT-TYPE
+    SYNTAX      INTEGER (1..10) 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The index of the session."
+    ::= { xsshdSessionEntry 1 }
+
+xsshdSessionRemoteIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress 
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The ip address of the connected client."
+    ::= { xsshdSessionEntry 2 }
+
+xsshdSessionRemoteNode OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The node identifier of the connected client."
+    ::= { xsshdSessionEntry 3 }
+
+xsshdSessionRemoteUser OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The remote user of the session."
+    ::= { xsshdSessionEntry 4 }
+
+xsshdSessionNegotiation OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The negotiated results of the session."
+    ::= { xsshdSessionEntry 5 }
+
+xsshdSessionTime OBJECT-TYPE
+    SYNTAX      TimeTicks 
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of 1/100 seconds that the session has been connected."
+    ::= { xsshdSessionEntry 6 }
+
+xsshdSessionUiBytesIn OBJECT-TYPE
+    SYNTAX      Counter32 
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of data bytes passed to the internal user interface
+	 up from the Secure Shell layer."
+    ::= { xsshdSessionEntry 7 }
+
+xsshdSessionUiBytesOut OBJECT-TYPE
+    SYNTAX      Counter32 
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of data bytes passed from the internal user interface
+	 down to the Secure Shell layer."
+    ::= { xsshdSessionEntry 8 }
+
+xsshdSessionRowStatus OBJECT-TYPE
+    SYNTAX      INTEGER { active(1), destroy(6) }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The status of the entry.  The only operations that are allowed
+         are 'active' and 'destroy'.  Existing sessions can be set to
+         'active' which causes no change.  And, existing sessions can
+         be set to 'destroy' to abort the particular session."
+    ::= { xsshdSessionEntry 9 }
+
+
+-- ****************************************************************
+-- Client Key Information
+-- ****************************************************************
+--
+-- Statistics
+-- 
+xsshdClientKeyCountTotal OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The number of configured SSH Client keys."
+    ::= { xSshDClientKeyStats 1 }
+
+xsshdClientKeyCountActive OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  read-only  
+    STATUS      current
+    DESCRIPTION
+        "The number of active SSH Client keys."
+    ::= { xSshDClientKeyStats 2 }
+
+--
+-- Key Table
+-- 
+xsshdClientKeyTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF XsshdClientKeyEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "A list of active SSH sessions entries"
+    ::= { xSshDClientKeyTable 1 }
+ 
+xsshdClientKeyEntry     OBJECT-TYPE
+    SYNTAX      XsshdClientKeyEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+            "An entry containing information about an SSH session"
+    INDEX    { xsshdClientKeyIpAddress, xsshdClientKeyUser }
+    ::= { xsshdClientKeyTable 1 }
+
+XsshdClientKeyEntry ::=
+    SEQUENCE {
+      xsshdClientKeyIpAddress        IpAddress,
+      xsshdClientKeyUser             DisplayString,
+      xsshdClientKeyData             LongDisplayString,
+      xsshdClientKeyRowStatus        RowStatus
+    }
+
+xsshdClientKeyIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress 
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The ip address of the client associated with the key entry."
+    ::= { xsshdClientKeyEntry 1 }
+
+xsshdClientKeyUser OBJECT-TYPE
+    SYNTAX      DisplayString(SIZE (1..32))
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the user associated with the key entry."
+    ::= { xsshdClientKeyEntry 2 }
+
+xsshdClientKeyData OBJECT-TYPE
+    SYNTAX      LongDisplayString(SIZE (0..2048)) 
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The key data for the associated host/user."
+    DEFVAL      { "" }
+    ::= { xsshdClientKeyEntry 3 }
+
+xsshdClientKeyRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The status of the entry. "
+    DEFVAL      { active }
+    ::= { xsshdClientKeyEntry 4 }
+
+-- ****************************************************************
+-- Conformance Information
+-- ****************************************************************
+
+xsshdCompliances OBJECT IDENTIFIER ::= { xSshDConformance 1 }
+xsshdGroups      OBJECT IDENTIFIER ::= { xSshDConformance 2 }
+
+--
+-- Compliance Statements
+--
+xsshdCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION
+        "The compliance statement for all agents that support this
+        MIB. A compliant agent implements all objects defined in this
+        MIB."
+    MODULE  -- this module
+    MANDATORY-GROUPS {
+        xsshdAllGroup
+    }
+    ::= { xsshdCompliances 1 }
+
+--
+-- All Object Groups
+--
+xsshdAllGroup OBJECT-GROUP
+    OBJECTS {
+       -- ******************************
+       -- SSH Global info
+       -- ******************************
+       --
+       -- Global configuration 
+       --
+       xsshdCfgAdminStatus,
+       xsshdCfgListenPort,
+       xsshdCfgKeyName, 
+       xsshdCfgMaxSessions,
+       xsshdCfgSessionEvents,
+       xsshdCfgUserAuthControl,
+       xsshdCfgHostAuthControl,
+       xsshdCfgEncryptionControl,
+       xsshdCfgMacControl,
+       xsshdCfgCompressionControl,
+       xsshdCfgPasswordRetry,
+       xsshdCfgAuthGraceTime,
+       xsshdCfgIdleTimeOut,
+       xsshdCfgHostAcceptList,
+       xsshdCfgHostDenyList,
+       xsshdCfgDbgTraceLevel,
+       xsshdCfgPresentedKeyTypes,
+       --
+       -- Global Operational
+       --
+       xsshdOperStatus,
+       xsshdOperCipherList,
+       xsshdOperCiphers,
+       xsshdOperMacList,
+       xsshdOperMacs,
+       xsshdOperCompressionList,
+       xsshdOperCompressions,
+       xsshdOperHostAcceptList, 
+       xsshdOperHostDenyList,
+       xsshdOperPresentedKeyTypes,
+       --
+       -- Global Stats
+       --
+       xsshdStatsCurrentSessionCount,
+       xsshdStatsTotalSessionCount,
+       xsshdStatsSessionSuccessCount,
+       xsshdStatsSessionAuthFails,
+       xsshdStatsSessionResourceFails,
+
+       -- ******************************
+       -- SSH Session info
+       -- ******************************
+       -- 
+       -- Server Operational 
+       -- 
+       -- xsshdSessionIndex,
+       xsshdSessionRemoteIpAddress,
+       xsshdSessionRemoteNode,
+       xsshdSessionRemoteUser,
+       xsshdSessionNegotiation,
+       xsshdSessionTime,
+       xsshdSessionUiBytesIn,
+       xsshdSessionUiBytesOut,
+       xsshdSessionRowStatus,
+
+       -- ******************************
+       -- SSH Client Key  
+       -- ******************************
+       --
+       -- Statistics
+       --
+       xsshdClientKeyCountTotal,
+       xsshdClientKeyCountActive,
+       --
+       -- Client Key Table 
+       --
+       -- xsshdClientKeyIpAddress,
+       -- xsshdClientKeyUser,
+       xsshdClientKeyData,
+       xsshdClientKeyRowStatus
+
+    }
+    STATUS      current
+    DESCRIPTION
+        "The set of all accessible objects in this MIB."
+    ::= { xsshdGroups 1 }
+
+END
+

@@ -1,0 +1,472 @@
+-- *****************************************************************
+-- REDSTONE-SNMP-MIB
+--
+-- Redstone Communications Inc. Enterprise MIB
+-- SNMP MIB
+--
+-- Copyright 1998-1999 Redstone Communications, Incorporated.
+-- All Rights Reserved.
+-- *****************************************************************
+
+REDSTONE-SNMP-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	TEXTUAL-CONVENTION FROM SNMPv2-TC
+    MODULE-IDENTITY,
+    OBJECT-TYPE,
+    Integer32,
+    Counter32,
+    Unsigned32,
+    IpAddress
+        FROM SNMPv2-SMI
+
+    DisplayString,
+    RowStatus
+        FROM SNMPv2-TC
+
+    MODULE-COMPLIANCE,
+    OBJECT-GROUP
+        FROM SNMPv2-CONF
+
+    rsMgmt
+        FROM REDSTONE-SMI;
+
+rsSnmpMIB  MODULE-IDENTITY
+    LAST-UPDATED "9907270000Z"
+    ORGANIZATION "Redstone Communications, Inc."
+    CONTACT-INFO
+            "Redstone Communications, Inc.
+
+            5 Carlisle Road
+            Westford MA 01886
+            USA
+
+            +1-978-692-1999
+
+            mib@redstonecom.com"
+    DESCRIPTION
+        "MIB objects for configuring SNMP-based management 
+        access into Redstone Communications Inc. products."
+    REVISION      "9907270000Z"
+    DESCRIPTION
+        "Add missing IMPLIED keyword to the INDEX clause of rsSnmpCommunityEntry."
+    REVISION      "9801010000Z"
+    DESCRIPTION
+        "Initial version of this MIB module."
+    ::= { rsMgmt 16 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Textual conventions
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+RsSnmpCommunityName ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "An SNMP community name.
+        
+        The character repertoire of the string is restricted to printable,
+        non-whitespace characters."
+    SYNTAX  DisplayString(SIZE(1..31))
+
+RsSnmpTrapMask ::= TEXTUAL-CONVENTION
+    STATUS      current
+    DESCRIPTION
+        "This octet string is interpreted as a bit mask, in which
+        each bit corresponds to a category of SNMP trap.
+
+        The DESCRIPTION clause of a MIB object having this 
+        SYNTAX should specify the semantics of bit values
+        '1' and '0'.
+
+        Bit definitions are as follows, where bit 31 is the
+        most significant bit of the first octet, and bit 0
+        is the least significant bit of the fourth octet:
+        
+        Bit     Category
+        -----   -----------------------------------------------
+         0      SNMP standard coldStart/warmStart/authenticationFailure
+         1      SNMP standard linkUp/linkDown
+         2      Platform inventory.
+         3      Environment (power, temperature, fan).
+         4      Bulkstats / accounting
+         5-31   Undefined."
+    SYNTAX  OCTET STRING (SIZE(4))
+
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- MIB Structure
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+rsSnmpObjects       OBJECT IDENTIFIER ::= { rsSnmpMIB 1 }
+rsSnmpConformance   OBJECT IDENTIFIER ::= { rsSnmpMIB 2 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Managed objects
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- Object Groups
+--
+rsSnmpGeneral       OBJECT IDENTIFIER ::= { rsSnmpObjects 1 }
+rsSnmpCommunity     OBJECT IDENTIFIER ::= { rsSnmpObjects 2 }
+rsSnmpTrap          OBJECT IDENTIFIER ::= { rsSnmpObjects 3 }
+rsSnmpAuthFailId    OBJECT IDENTIFIER ::= { rsSnmpObjects 4 }
+
+
+-- 
+-- General objects
+-- 
+rsSnmpMaxPduSize OBJECT-TYPE
+    SYNTAX      Integer32(484..8192)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The maximum sized SNMP PDU, in bytes, that this agent
+        is capable of handling. The default is 1500 bytes.
+        The posssibility of IP fragmentation should be considered
+        when setting this object to large values."
+    ::= { rsSnmpGeneral 1 }
+
+--
+-- SNMP Community Objects
+--
+rsSnmpCommunityTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsSnmpCommunityEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table of SNMP management clients.
+        
+        Authentic SNMP clients are identified by a combination
+        community name and IP address.
+
+        Upon receipt of an SNMP request, this table is scanned for
+        a matching community name. If an entry containing a matching
+        community name is found, the entry's IP access list, if nonzero,
+        is used to validate the source IP address received in the request;
+        else, if the IP access list number in the matching entry is zero,
+        the source IP address is accepted.
+
+        Finally, the type of SNMP request is validated with respect to
+        the access privilege of the matching entry (e.g. a SET Request
+        is rejected for an entry having read-only privilege).
+        
+        Use of this table constitutes 'trivial authentication',
+        i.e. no mechanism is employed to confirm the received SNMP
+        request was indeed originated by the host identified by the
+        IP source address."
+    ::= { rsSnmpCommunity 1 }
+
+rsSnmpCommunityEntry OBJECT-TYPE
+    SYNTAX      RsSnmpCommunityEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table entry describing an authentic SNMP Community."
+    INDEX   { IMPLIED rsSnmpCommunityName }
+    ::= {rsSnmpCommunityTable 1 }
+
+RsSnmpCommunityEntry ::= SEQUENCE {
+    rsSnmpCommunityName                 RsSnmpCommunityName,
+    rsSnmpCommunityRowStatus            RowStatus,
+    rsSnmpCommunityPrivilege            INTEGER,
+    rsSnmpCommunityAccessList           Integer32
+}
+
+rsSnmpCommunityName OBJECT-TYPE
+    SYNTAX      RsSnmpCommunityName
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "An SNMP community name."
+    ::= { rsSnmpCommunityEntry 1 }
+
+rsSnmpCommunityRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table.
+        Only 'createAndGo' and 'destroy' enumeration values
+        are supported."
+    ::= { rsSnmpCommunityEntry 2 }
+
+rsSnmpCommunityPrivilege OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    readOnly(1),
+                    readWrite(2),
+                    admin(3)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The access privileges for a SNMP Community authenticated
+        by this entry.
+
+        readOnly    Read-only access to nonadministrative portions of MIB.
+        readWrite   Read-write access to nonadministrative portions of MIB.
+        admin       Read-write access to entire MIB.
+
+        'Administrative' portions of the MIB are those portions that
+        pertain to management access into the managed device."
+    DEFVAL { readOnly }
+    ::= { rsSnmpCommunityEntry 3 }
+
+rsSnmpCommunityAccessList OBJECT-TYPE
+    SYNTAX      Integer32(0..10000)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "If nonzero, the number of an IP access list that describes the
+        IP hosts permitted SNMP management access to this device via the
+        corresponding community name contained in this entry."
+    ::= { rsSnmpCommunityEntry 4 }
+
+--
+-- SNMP Trap Filter Objects
+--
+rsSnmpTrapGlobalFilter OBJECT-TYPE
+    SYNTAX      RsSnmpTrapMask
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "This object provides global control over trap
+        generation by this agent. For each bit position,
+        a '1' or '0' indicates the corresponding trap
+        category is enabled or disabled, respectively."
+    ::= { rsSnmpTrap 1 }
+
+rsSnmpTrapSource OBJECT-TYPE
+    SYNTAX      Integer32(0..2147483647)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The ifIndex of the interface whose IP address
+        is used as the source IP address for outbound
+        SNMP traps.
+
+        If zero, no interface is specified, the mechanism for
+        selecting a source IP address is implementation-dependent,
+        and may vary with each trap sent."
+    ::= { rsSnmpTrap 2 }
+
+rsSnmpTrapHostTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF RsSnmpTrapHostEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Table of SNMP Trap recipient."
+    ::= { rsSnmpTrap 3 }
+
+rsSnmpTrapHostEntry OBJECT-TYPE
+    SYNTAX      RsSnmpTrapHostEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table entry describing an SNMP Trap recipient."
+    INDEX   { rsSnmpTrapHostIpAddress }
+    ::= {rsSnmpTrapHostTable 1 }
+
+RsSnmpTrapHostEntry ::= SEQUENCE {
+    rsSnmpTrapHostIpAddress         IpAddress,
+    rsSnmpTrapHostRowStatus         RowStatus,
+    rsSnmpTrapHostUdpPort           Integer32,
+    rsSnmpTrapHostCommunity         RsSnmpCommunityName,
+    rsSnmpTrapHostProtocolVersion   INTEGER,
+    rsSnmpTrapHostFilter            RsSnmpTrapMask,
+    rsSnmpTrapHostSends             Counter32
+}
+
+rsSnmpTrapHostIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "IP address of an authorized SNMP Trap recipient.
+        This must be a host IP address."
+    ::= { rsSnmpTrapHostEntry 1 }
+
+rsSnmpTrapHostRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Controls creation/deletion of entries in this table.
+        Only 'createAndGo' and 'destroy' enumeration values
+        are supported."
+    ::= { rsSnmpTrapHostEntry 2 }
+
+rsSnmpTrapHostUdpPort OBJECT-TYPE
+    SYNTAX      Integer32(1..65535)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The destination UDP port to which traps will be sent."
+    DEFVAL { 162 } -- default UDP port for SNMP trap
+    ::= { rsSnmpTrapHostEntry 3 }
+
+rsSnmpTrapHostCommunity OBJECT-TYPE
+    SYNTAX      RsSnmpCommunityName
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "An SNMP community name to be used in traps sent to
+        this destination."
+    ::= { rsSnmpTrapHostEntry 4 }
+
+rsSnmpTrapHostProtocolVersion OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    v1(0),
+                    v2c(1)
+                }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The format of the SNMP trap PDU to be sent to this
+        trap destination.
+        
+        v1      Trap-PDU defined in RFC1157, encapsulated in Message
+                structure also defined in RFC1157.
+
+        v2c     SNMPv2-Trap-PDU defined in RFC1905, encapsulated in
+                Message structure defined in RFC1901."
+    DEFVAL { v1 }
+    ::= { rsSnmpTrapHostEntry 5 }
+
+rsSnmpTrapHostFilter OBJECT-TYPE
+    SYNTAX      RsSnmpTrapMask
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Bit mask designating the specific trap types
+        enabled for transmission to this trap destination.
+        For each bit position, a '1' or '0' indicates the 
+        corresponding trap type is enabled or disabled,
+        respectively.
+
+        Note, trap generation is further constrained by
+        the value rsSnmpTrapGlobalFilter."
+    ::= { rsSnmpTrapHostEntry 6 }
+
+rsSnmpTrapHostSends OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of traps submitted for transmission
+        to this destination."
+    ::= { rsSnmpTrapHostEntry 7 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Traps & Trap Control
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+--
+-- No traps are defined in this MIB.
+--
+-- SNMP authentication failures can cause the SNMP standard
+-- 'authenticationFailure' trap to be generated. This trap and
+-- its associated control object are defined in SNMPv2-MIB (RFC 1907).
+-- The following objects are included in that trap to identify the
+-- host that failed authentication.
+--
+rsSnmpAuthFailIdIpAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+        "The source IP address contained in a received SNMP request that
+        failed authentication."
+    ::= { rsSnmpAuthFailId 1 }
+
+rsSnmpAuthFailIdUdpPort OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+        "The source UDP port contained in a received SNMP request that
+        failed authentication."
+    ::= { rsSnmpAuthFailId 2 }
+
+rsSnmpAuthFailIdCommunity OBJECT-TYPE
+    SYNTAX      OCTET STRING
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+        "The SNMP community contained in a received SNMP request that
+        failed authentication."
+    ::= { rsSnmpAuthFailId 3 }
+
+rsSnmpAuthFailIdReason OBJECT-TYPE
+    SYNTAX      INTEGER {
+                    other(0),
+                    badCommunityName(1),
+                    badCommmunityUse(2),
+                    hostDenied(3)
+                }
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION
+        "The reason a received SNMP request failed authentication:
+        
+        other               Unspecified reason.
+
+        badCommunityName    The community is not recognized.
+
+        badCommunityUse     The community does not have privilege for   
+                            the SNMP request type (e.g. SET request
+                            with a community having read-only privilege).
+
+        hostDenied          The host IP address was denied by the
+                            community's associated access list."
+    ::= { rsSnmpAuthFailId 4 }
+
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+-- Conformance information
+-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+rsSnmpCompliances OBJECT IDENTIFIER ::= { rsSnmpConformance 1 }
+rsSnmpGroups      OBJECT IDENTIFIER ::= { rsSnmpConformance 2 }
+
+-- compliance statements
+
+rsSnmpCompliance MODULE-COMPLIANCE
+        STATUS  current
+        DESCRIPTION
+                "The compliance statement for entities which implement
+                the Redstone SNMP MIB."
+        MODULE  -- this module
+                MANDATORY-GROUPS { rsSnmpGroup }
+        ::= { rsSnmpCompliances 1 }
+
+-- units of conformance
+
+rsSnmpGroup OBJECT-GROUP
+        OBJECTS {
+        -- General objects
+        rsSnmpMaxPduSize,
+
+        -- Manager objects
+        rsSnmpCommunityName,
+        rsSnmpCommunityRowStatus,
+        rsSnmpCommunityPrivilege,
+        rsSnmpCommunityAccessList,
+
+        -- Trap objects
+        rsSnmpTrapGlobalFilter,
+        rsSnmpTrapSource,
+
+        rsSnmpTrapHostRowStatus,
+        rsSnmpTrapHostUdpPort,
+        rsSnmpTrapHostCommunity,
+        rsSnmpTrapHostProtocolVersion,
+        rsSnmpTrapHostFilter,
+        rsSnmpTrapHostSends
+    }
+    STATUS  current
+    DESCRIPTION
+        "A collection of management objects pertaining
+        to SNMP Agent capability in a Redstone product."
+        ::= { rsSnmpGroups 1 }
+
+END

@@ -1,0 +1,3082 @@
+-- **********************************************************************
+--          LSERIES-TAPE-LIBRARY-MIB (1.3.6.1.4.1.1211.1.12)
+--
+--      (c)2002, Storage Technology Corporation, Louisville, CO
+--                       All Rights Reserved
+-- **********************************************************************
+--
+-- Please do not manually modify the revision history.  This is managed
+-- by the 'version-inc' build script, and the mib version, date and 
+-- comments will be placed by the build script.
+--
+-- REVISION HISTORY
+--
+-- 2.02   :  Mar 24, 2003
+--   Added media error traps to snmp
+--
+-- 2.01   :  Mar 24, 2003
+--   Added Media statistics to snmp. This SCN only adds the Media Statistics Table and does NOT include sending a trap when a new media statistic is generated ( this will be done in a later SCN).  
+--
+-- 2.00   :  Sep 17, 2002
+--   Removed INDEX from lserAgentTrapSinkTable, lserLibLogTable (issue# 769241)
+--
+-- 1.04   :  Sep 17, 2002
+--   Correct the order of the version numbers in Lseries.mib. Use ifm to determine library's ip address in snmp-get-myaddr.c
+--
+-- 1.03   :  Aug  8, 2002
+--   Added SNMP support for WWN.
+--
+-- 1.02   :  Jun 14, 2002
+--   Added lserCapName to lserCapEntry
+--
+--   A note was added to lserLibCleanEnabled indicating that that feature is
+--   not available on all libraries.
+--
+-- 1.01   :  May 20, 2002
+--   lserHdwNumSupplies was changed to read-only
+--
+-- 1.00   :  Jan 18, 2002
+--   First edition initial release
+--
+--
+--
+-- **********************************************************************
+
+LSERIES-TAPE-LIBRARY-MIB DEFINITIONS ::=
+BEGIN
+IMPORTS     
+    enterprises, Counter
+                  FROM RFC1155-SMI
+    OBJECT-TYPE   FROM RFC-1212
+    TRAP-TYPE     FROM RFC-1215;
+
+storagetek          OBJECT IDENTIFIER ::= { enterprises 1211 }
+products            OBJECT IDENTIFIER ::= { storagetek  1  }
+lseriesTapeLibrary  OBJECT IDENTIFIER ::= { products 12 }
+lserAgent           OBJECT IDENTIFIER ::= { lseriesTapeLibrary 1 }
+lserTrap            OBJECT IDENTIFIER ::= { lseriesTapeLibrary 2 }
+lserLibrary         OBJECT IDENTIFIER ::= { lseriesTapeLibrary 3 }
+lserDrives          OBJECT IDENTIFIER ::= { lseriesTapeLibrary 4 }
+lserCaps            OBJECT IDENTIFIER ::= { lseriesTapeLibrary 5 }
+lserPassThru        OBJECT IDENTIFIER ::= { lseriesTapeLibrary 6 }
+lserInventory       OBJECT IDENTIFIER ::= { lseriesTapeLibrary 7 }
+lserStorage         OBJECT IDENTIFIER ::= { lseriesTapeLibrary 8 }
+lserPlayground      OBJECT IDENTIFIER ::= { lseriesTapeLibrary 9 }
+lserHardwareMonitor OBJECT IDENTIFIER ::= { lseriesTapeLibrary 10 }
+
+
+-- *******************************************************************
+--
+-- Type Definition
+--
+-- *******************************************************************
+
+LserSnmpPort        ::= INTEGER ( 161 | 1024..65535 )
+LserSnmpTrapPort    ::= INTEGER ( 162 | 1024..65535 )
+LserCmdClear        ::= INTEGER { noaction(1), clear(2) }
+LserDeviceStatus    ::= INTEGER { unknown(1), ok(2), error(3), warning(4) }
+LserMediaErrorType  ::= INTEGER { load(1), unload(2), error(3), unknown(4) }
+
+
+-- *******************************************************************
+--
+--  LSeries Library Embedded Agent Data
+--
+-- *******************************************************************
+
+lserAgentRevision  OBJECT-TYPE
+    SYNTAX  OCTET STRING ( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "The firmware version of the embedded agent."
+::= { lserAgent 1 }
+
+lserAgentBootDate  OBJECT-TYPE
+    SYNTAX  OCTET STRING ( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The date & time when the agent initialized."
+::= { lserAgent 3 }
+
+lserAgentURL  OBJECT-TYPE
+    SYNTAX  OCTET STRING ( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "URL for web based management"
+::= { lserAgent 4 }
+
+lserAgentPort  OBJECT-TYPE
+    --
+    -- When changed, value is effective after next IPL
+    --
+    SYNTAX  LserSnmpPort
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "UDP port number that the agent will listen on"
+::= { lserAgent 6 }
+
+lserAgentCommunity  OBJECT-TYPE
+    --
+    -- When changed, value is effective after next IPL
+    --
+    SYNTAX  OCTET STRING ( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The agent default community"
+
+-- Unless  the community is  set to  public (initial),  each incomming
+-- message  will  be challenged  to  match  the  community string  for
+-- authentication.  The LSeries agent  will not respond to the request
+-- if the community string doesn't exactly match.  If the community is
+-- left  unchanged  (or  reset)   then  no  check  is  performed.   As
+-- configuration changes are not granted on community string matching,
+-- the  LSeries  agent uses  the  same  community  for both  SETs  and
+-- GETs. See note below for lserLibConfigPassword.
+
+::= { lserAgent 7 }
+
+lserAgentTrapSink  OBJECT IDENTIFIER
+::= { lserAgent 8 } 
+
+lserAgentTrapSinkClear OBJECT-TYPE
+    --
+    -- Clear action will take effect after next IPL
+    --
+    SYNTAX LserCmdClear
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION  "Set to 2 to clear the trap recipient list."
+::= { lserAgentTrapSink 1 }
+
+lserAgentTrapSinkNum OBJECT-TYPE
+    SYNTAX INTEGER ( 0..12 )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of trap recipients in the table"
+::= { lserAgentTrapSink 2 }
+
+lserAgentTrapSinkTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserAgentTrapSinkEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "Trap recipients table"
+::= { lserAgentTrapSink 3 }
+
+lserAgentTrapSinkEntry OBJECT-TYPE
+    SYNTAX  LserAgentTrapSinkEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "Trap recipients table entry"
+    INDEX  { lserAgentTrapSinkTableIndex }
+::= { lserAgentTrapSinkTable 1 }
+
+LserAgentTrapSinkEntry ::= SEQUENCE
+{
+lserAgentTrapSinkTableIndex INTEGER,
+lserAgentTrapSinkNetName    OCTET STRING,
+lserAgentTrapSinkPort       INTEGER,
+lserAgentTrapSinkCommunity  OCTET STRING,
+lserAgentTrapSinkVersion    INTEGER,
+lserAgentTrapSinkClearEntry INTEGER
+}
+
+lserAgentTrapSinkTableIndex OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Index into the trap recipients table"
+::= { lserAgentTrapSinkEntry 1 }
+
+lserAgentTrapSinkNetName OBJECT-TYPE
+    --
+    -- When changed, value is effective after next IPL
+    -- note: Setting this variable with an index equal to lserAgentTrapSinkNum
+    --         plus one, will add a new entry in the table with all values set
+    --         to default.
+    --
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The recipent's network host name"
+::= { lserAgentTrapSinkEntry 2 }
+
+lserAgentTrapSinkPort OBJECT-TYPE
+    --
+    -- When changed, value is effective after next IPL
+    -- Default - 162
+    --
+    SYNTAX  LserSnmpTrapPort
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "UDP port for the recipient to receive notification"
+::= { lserAgentTrapSinkEntry 3 }
+
+lserAgentTrapSinkCommunity OBJECT-TYPE
+    --
+    -- When changed, value is effective after next IPL
+    -- Default - lserAgentCommunity value
+    --
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The recipient community"
+::= { lserAgentTrapSinkEntry 4 }
+
+lserAgentTrapSinkVersion OBJECT-TYPE
+    --
+    -- When changed, value is effective after next IPL
+    -- Default - snmpV1
+    --
+    SYNTAX  INTEGER { snmpV1(1), snmpV2(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Supported trap version for the recipient (V2 also includes V1 traps)"
+::= { lserAgentTrapSinkEntry 5 }
+
+lserAgentTrapSinkClearEntry OBJECT-TYPE
+    --
+    -- Clear action will take effect after next IPL --
+    --
+    SYNTAX  LserCmdClear
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Set to 2 to clear/remove the trap recipient entry"
+::= { lserAgentTrapSinkEntry 6 }
+
+
+-- *******************************************************************
+-- lserTrap Definitions
+--
+-- Traps are organized in to the following numeric ranges
+--
+--    1   thru 10    - Generic traps
+--    11  thru 20    - Agent releated traps
+--    21  thru 100   - Device related traps
+--    101 and above  - Media related traps
+--
+-- *******************************************************************
+
+
+lserTrapText  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..256) ) 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "A trap displayString varbind"
+::= { lserTrap 1 }
+
+lserTrapSeverity  OBJECT-TYPE
+    SYNTAX  INTEGER { error(1), warning(2), info(3), configuration(4) } 
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The report level/severity for a TRAP"
+::= { lserTrap 2 }
+
+lserTrapError  TRAP-TYPE
+    ENTERPRISE  lseriesTapeLibrary 
+    VARIABLES   { lserTrapText, lserTrapSeverity }
+    DESCRIPTION "An error trap - condition which is critical to machine operation encountered"
+::= 1
+
+lserTrapWarning  TRAP-TYPE
+    ENTERPRISE  lseriesTapeLibrary 
+    VARIABLES   { lserTrapText, lserTrapSeverity }
+    DESCRIPTION "A warning trap - condition which may need attention has been encountered"
+::= 2
+
+lserTrapInformation  TRAP-TYPE
+    ENTERPRISE  lseriesTapeLibrary
+    VARIABLES   { lserTrapText, lserTrapSeverity }
+    DESCRIPTION "An information trap - information is presented for activity monitoring"
+::= 3
+
+lserTrapConfiguration  TRAP-TYPE
+    ENTERPRISE  lseriesTapeLibrary
+    VARIABLES   { lserTrapText, lserTrapSeverity }
+    DESCRIPTION "A configuration trap - reporting machine configuration activity"
+::= 4
+
+lserTrapAgentStart TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES { lserAgentBootDate }
+    DESCRIPTION "This trap is sent when the agent starts"
+::= 11
+
+--
+-- Library status related traps : Traps 21 to 25
+--
+-- These traps are sent when the status of the library changes.
+
+lserTrapLibStatusGood TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES
+    {
+    lserLibState,
+    lserLibStkBaseModel,
+    lserLibSerialNumber,
+    lserLibNetworkName
+    }
+    DESCRIPTION "This trap is sent when the library status changes to Good"
+::= 21
+
+lserTrapLibStatusCheck TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary 
+    VARIABLES
+    {
+    lserLibState,
+    lserLibStkBaseModel,
+    lserLibSerialNumber,
+    lserLibNetworkName
+    }
+    DESCRIPTION "This trap is sent when the library status changes to a check condition (error, warning, unknown ...)"
+::= 25
+
+--
+-- Drive status traps : Traps 41 to 45
+--
+-- These traps are sent when the status of a drive changes
+
+lserTrapDrvStatusGood TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES
+    {
+    lserLibNetworkName,
+    lserDriveState,
+    lserDriveIndex,
+    lserDriveSerialNum
+    }
+    DESCRIPTION "This trap sent when a drive status changes to good"
+::= 41
+
+lserTrapDrvStatusCheck TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES
+    {
+    lserLibNetworkName,
+    lserDriveState,
+    lserDriveIndex,
+    lserDriveSerialNum
+    }
+    DESCRIPTION "This trap sent when a drive status changes to a check condition (error, warning, unknown ...)"
+::= 45
+
+--
+-- CAP status traps : Traps 61 to 65
+--
+-- These traps are sent when the status of a CAP changes
+
+lserTrapCapStatusGood TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES
+    {
+    lserLibNetworkName,
+    lserCapState,
+    lserCapIndex
+    }
+    DESCRIPTION "This trap sent when a CAP status changes to good"
+::= 61
+
+lserTrapCapStatusOpen TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES
+    {
+    lserLibNetworkName,
+    lserCapState,
+    lserCapIndex
+    }
+    DESCRIPTION "This trap sent when a CAP status changes to open"
+::= 63
+
+lserTrapCapStatusCheck TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES
+    {
+    lserLibNetworkName,
+    lserCapState,
+    lserCapIndex
+    }
+    DESCRIPTION "This trap sent when a CAP status changes to a check condition (error, warning, unknown ...)"
+::= 65
+
+--
+-- PTP status traps : Traps 81 to 85
+--
+-- These traps are sent when the status of a PTP changes
+
+lserTrapPtpStatusGood TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES
+    {
+    lserLibNetworkName,
+    lserPtpState,
+    lserPtpIndex
+    }
+    DESCRIPTION "This trap sent when a PTP status changes to good"
+::= 81
+
+lserTrapPtpStatusCheck TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES
+    {
+    lserLibNetworkName,
+    lserPtpState,
+    lserPtpIndex
+    }
+    DESCRIPTION "This trap sent when a PTP status changes to a check condition (error, warning, unknown ...)"
+::= 85
+
+
+--
+-- Media traps : 101 and above
+--
+-- These traps are sent when media events are detected
+
+lserTrapMediaStat TRAP-TYPE
+    ENTERPRISE lseriesTapeLibrary
+    VARIABLES {  
+                lserMediaErrorTapeLabel      ,
+                lserMediaErrorDriveSerialNum ,
+                lserMediaErrorDateTime       ,
+                lserLibMediaErrorEnum        ,
+                lserMediaErrorOccurrenceCount
+              }
+    DESCRIPTION "This trap is sent when a media statistic is generated"
+::= 101
+
+-- *******************************************************************
+-- The lserLibrary
+--   This tree includes elements which are global to the library
+--   such as statistics, network information, uptime, etc.
+-- *******************************************************************
+
+lserLibStkBaseModel  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The StorageTek Model Name - see lserLibPersonality for vendor specific model data"
+::= { lserLibrary 1 }
+
+lserLibConfigPassword  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION  "Password to enable configuration actions"
+
+-- A  successful write  to  this field  is required  prior  to any  change in  the
+-- configuration of the library.  If the candidate value matches the current admin
+-- password  of the  library,  then  configuration changes  are  authorized for  a
+-- limited time (5  minutes). A valid password should be  re-submitted in order to
+-- elongate the grant period.
+
+::= { lserLibrary 2 }
+
+lserLibVersion  OBJECT IDENTIFIER 
+::= { lserLibrary 3 }
+
+lserLibVersionFirmRev  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's embedded firmware version"
+::= { lserLibVersion 1 }
+
+lserLibVersionFirmDate  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's embedded firmware build date"
+::= { lserLibVersion 2 }
+
+lserLibVersionBootRev  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's boot software/OS version"
+::= { lserLibVersion 3 }
+
+lserLibVersionFibre  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's fibre channel driver version"
+::= { lserLibVersion 4 }
+
+lserLibVersionHardware  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's controller hardware version"
+::= { lserLibVersion 5 }
+
+
+lserLibSerialNumber  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library serial number"
+::= { lserLibrary 4 }
+
+lserLibHostInterface  OBJECT IDENTIFIER
+::= { lserLibrary 5 }
+
+lserLibHostInterfaceType  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's type of host interface"
+::= { lserLibHostInterface 1 }
+
+
+lserLibConfig  OBJECT IDENTIFIER 
+::= { lserLibrary 6 }
+
+lserLibCfgNumPanels  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of logical panels"
+::= { lserLibConfig 1 }
+
+lserLibCfgNumHandCells  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of logical hands"
+::= { lserLibConfig 2 }
+
+lserLibCfgMinHandAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Minimum element ID of logical hands"
+::= { lserLibConfig 3 }
+
+lserLibCfgMaxHandAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Maximum element ID of logical hands"
+::= { lserLibConfig 4 }
+
+lserLibCfgNumPlayCells  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of playground cells"
+::= { lserLibConfig 5 }
+
+lserLibCfgMinPlayAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Minimum element ID of playground cells"
+::= { lserLibConfig 6 }
+
+lserLibCfgMaxPlayAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Maximum element ID of playground cells"
+::= { lserLibConfig 7 }
+
+lserLibCfgNumCaps  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of cartridge access ports (CAPs)"
+::= { lserLibConfig 8 }
+
+lserLibCfgNumCapColumns  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of columns within CAPs"
+::= { lserLibConfig 9 }
+
+lserLibCfgNumCapCells  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of CAP cells"
+::= { lserLibConfig 10 }
+
+lserLibCfgMinCapAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Minimum element ID of CAP cells"
+::= { lserLibConfig 11 }
+
+lserLibCfgMaxCapAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Maximum element ID of CAP cells"
+::= { lserLibConfig 12 }
+
+lserLibCfgNumDriveColumns  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of drive columns"
+::= { lserLibConfig 13 }
+
+lserLibCfgNumDrives  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of tape drives"
+::= { lserLibConfig 14 }
+
+lserLibCfgMinDriveAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Minimum element ID of tape drives"
+::= { lserLibConfig 15 }
+
+lserLibCfgMaxDriveAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Maximum element ID of tape drives"
+::= { lserLibConfig 16 }
+
+lserLibCfgNumStorageCells  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of storage cells"
+::= { lserLibConfig 17 }
+
+lserLibCfgMinStorageAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Minimum element ID of storage cells"
+::= { lserLibConfig 18 }
+
+lserLibCfgMaxStorageAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Maximum element ID of storage cells"
+::= { lserLibConfig 19 }
+
+lserLibCfgNumPtps  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of pass through ports (PTPs)"
+::= { lserLibConfig 20 }
+
+lserLibCfgNumPtpColumns  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of columns within PTPs"
+::= { lserLibConfig 21 }
+
+lserLibCfgNumPtpCells  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of PTP cells"
+::= { lserLibConfig 22 }
+
+lserLibCfgMinPtpAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Minimum element ID of PTP cells"
+::= { lserLibConfig 23 }
+
+lserLibCfgMaxPtpAddr  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Maximum element ID of PTP cells"
+::= { lserLibConfig 24 }
+
+lserLibState  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's state"
+::= { lserLibrary 7 }
+
+lserLibStatusEnum OBJECT-TYPE
+    SYNTAX  LserDeviceStatus
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The Library's operational state - reported as an enumeration"
+::= { lserLibrary 8 }
+
+lserLibLog  OBJECT IDENTIFIER
+::= { lserLibrary 9 } 
+
+lserLibLogClear OBJECT-TYPE
+    SYNTAX LserCmdClear
+    ACCESS read-write
+    STATUS mandatory
+    DESCRIPTION  "Set to 2 to clear the event log"
+::= { lserLibLog 1 }
+
+lserLibLogNumFscs OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of log entries in the log table"
+::= { lserLibLog 2 }
+
+lserLibLogTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserLibLogEntry  
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "Event Log Table"
+::= { lserLibLog 3 }
+
+lserLibLogEntry OBJECT-TYPE
+    SYNTAX  LserLibLogEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "FSC log table entry"
+    INDEX  { lserLibLogTableIndex }
+::= { lserLibLogTable 1 }
+
+LserLibLogEntry ::= SEQUENCE
+{
+lserLibLogTableIndex    INTEGER,
+lserLibLogFscNumber     INTEGER,
+lserLibLogMechanism     OCTET STRING,
+lserLibLogFscCount      INTEGER,
+lserLibLogDateTime      OCTET STRING,
+lserLibLogSummary       OCTET STRING,
+lserLibLogText          OCTET STRING,
+lserLibLogClearEntry    INTEGER,
+lserLibLogSeverity      INTEGER
+}
+
+lserLibLogTableIndex  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Index into the log table"
+::= { lserLibLogEntry 1 }
+
+lserLibLogFscNumber  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The fault symptom code (FSC) of the log entry"
+::= { lserLibLogEntry 2 }
+
+lserLibLogMechanism  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The mechanism associated with the log entry"
+::= { lserLibLogEntry 3 }
+
+lserLibLogFscCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of occurances of the log entry"
+::= { lserLibLogEntry 4 }
+
+lserLibLogDateTime OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) ) 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Log entry's date/time in 'MM:DD:YYYY HH:MM:SS' form"
+::= { lserLibLogEntry 5 }
+
+lserLibLogSummary  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..256) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Summary description of the log event"
+::= { lserLibLogEntry 6 }
+
+lserLibLogText  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..1024) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Description of the log event"
+::= { lserLibLogEntry 7 }
+
+lserLibLogClearEntry  OBJECT-TYPE
+    SYNTAX  LserCmdClear
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Set to 2 to clear/remove the log entry"
+::= { lserLibLogEntry 8 }
+
+lserLibLogSeverity  OBJECT-TYPE
+    SYNTAX  INTEGER { silent(1), error(2), warning(3), info(4) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Enumeration indicating severity of the log event"
+::= { lserLibLogEntry 9 }
+
+lserLibDeviceID  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library's SCSI or Fibre Bus ID"
+::= { lserLibrary 10 }
+
+lserLibFastLoad  OBJECT-TYPE
+    SYNTAX  INTEGER { disabled(1), enabled(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library's fast load option"
+::= { lserLibrary 11 }
+
+lserLibLocation  OBJECT IDENTIFIER
+::= { lserLibrary 12 }
+
+lserLibLocatContact  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The primary contact for administration"
+::= { lserLibLocation 1 }
+
+lserLibLocatStreet  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Location/Site - street address"
+::= { lserLibLocation 2 }
+
+lserLibLocatState  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Location/Site - state/province"
+::= { lserLibLocation 3 }
+
+lserLibLocatZip  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Location/Site - zip code (or other data)"
+::= { lserLibLocation 4 }
+
+lserLibLocatCountry  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Location/Site - country"
+::= { lserLibLocation 5 }
+
+lserLibLocatDescr  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Location/site - description/misc"
+::= { lserLibLocation 6 }
+
+lserLibLocatCity  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Location/Site - city"
+::= { lserLibLocation 7 }
+
+lserLibNetwork  OBJECT IDENTIFIER
+::= { lserLibrary 13 }
+
+lserLibNetworkIpAddr  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..15) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library's IP Address"
+::= { lserLibNetwork 1 }
+
+lserLibNetworkGateway  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..15) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library network's internet gateway"
+::= { lserLibNetwork 2 }
+
+lserLibNetworkEthAddr  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's physical 48 bit ethernet address"
+::= { lserLibNetwork 3 }
+
+lserLibNetworkName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..15) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library's network host name"
+::= { lserLibNetwork 4 }
+
+lserLibNetworkNetmask  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..15) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library's network internet address netmask"
+::= { lserLibNetwork 5 }
+
+lserLibNetworkFibrePresent  OBJECT-TYPE
+    SYNTAX  INTEGER { notpresent(1), present(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Indication of library's fibre channel interface"
+::= { lserLibNetwork 6 }
+
+lserLibNetworkFibreID  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "World wide ID of fibre channel interface"
+::= { lserLibNetwork 7 }
+
+lserLibNetworkFibreNumPorts  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of Fibre ports installed in the library"
+::= { lserLibNetwork 8 }
+
+lserLibNetworkDhcpEnabled  OBJECT-TYPE
+    SYNTAX  INTEGER { disabled(1), enabled(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "DHCP IP address/name client lookup service status"
+::= { lserLibNetwork 9 }
+
+lserLibNetworkDomainName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..64) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library's network domain name"
+::= { lserLibNetwork 10 }
+
+lserLibNetworkPrimaryDNS  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..15) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library network's primary DNS server"
+::= { lserLibNetwork 11 }
+
+lserLibNetworkSecondaryDNS  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..15) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The library network's secondary DNS server"
+::= { lserLibNetwork 12 }
+
+
+lserLibStatistics  OBJECT IDENTIFIER
+::= { lserLibrary 14 }
+
+lserLibStatsNumIPL  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of machine initializations"
+::= { lserLibStatistics 1 }
+
+lserLibStatsNumDoorOpens  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of times the service door has been opened"
+::= { lserLibStatistics 2 }
+
+lserLibStatsNumGetRetries  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of get retries"
+::= { lserLibStatistics 3 }
+
+lserLibStatsNumGetFails  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of get failures"
+::= { lserLibStatistics 4 }
+
+lserLibStatsNumPutRetries  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of put retries"
+::= { lserLibStatistics 5 }
+
+lserLibStatsNumPutFails  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of put failures"
+::= { lserLibStatistics 6 }
+
+lserLibStatsNumLabelRetries  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of label read retries"
+::= { lserLibStatistics 7 }
+
+lserLibStatsNumLabelFails  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of label read failures"
+::= { lserLibStatistics 8 }
+
+lserLibStatsNumTargetRetries  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of target read retries"
+::= { lserLibStatistics 9 }
+
+lserLibStatsNumTargetFails  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of target read failures"
+::= { lserLibStatistics 10 }
+
+lserLibStatsNumMoves  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of cartridge moves"
+::= { lserLibStatistics 11 }
+
+lserLibStatsNumMounts  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of mounts"
+::= { lserLibStatistics 12 }
+
+lserLibStatsNumTargetReads  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of target reads"
+::= { lserLibStatistics 13 }
+
+lserLibStatsNumEmptyReads  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of empty cell reads"
+::= { lserLibStatistics 14 }
+
+lserLibStatsNumLabelReads  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of label reads"
+::= { lserLibStatistics 15 }
+
+lserLibStats5minuteSample   OBJECT IDENTIFIER
+::= { lserLibStatistics 16 }
+
+lserLibStats5minSampleCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of 5 minute usage samples"
+::= { lserLibStats5minuteSample 1 }
+
+lserLibStats5minIdle  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where there were no drive mounts"
+::= { lserLibStats5minuteSample 2 }
+
+lserLibStats5min1to25  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 1-25 mounts were performed"
+::= { lserLibStats5minuteSample 3 }
+
+lserLibStats5min26to50  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 26-50 mounts were performed"
+::= { lserLibStats5minuteSample 4 }
+
+lserLibStats5min51to75  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 51-75 mounts were performed"
+::= { lserLibStats5minuteSample 5 }
+
+lserLibStats5min76to100  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 76-100 mounts were performed"
+::= { lserLibStats5minuteSample 6 }
+
+lserLibStats5min101to125  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 101-125 mounts were performed"
+::= { lserLibStats5minuteSample 7 }
+
+lserLibStats5min126to150  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 126-150 mounts were performed"
+::= { lserLibStats5minuteSample 8 }
+
+lserLibStats5min151to175  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 151-175 mounts were performed"
+::= { lserLibStats5minuteSample 9 }
+
+lserLibStats5min176to200  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 176-200 mounts were performed"
+::= { lserLibStats5minuteSample 10 }
+
+lserLibStats5min201to225  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 201-225 mounts were performed"
+::= { lserLibStats5minuteSample 11 }
+
+lserLibStats5min226to250  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 226-250 mounts were performed"
+::= { lserLibStats5minuteSample 12 }
+
+lserLibStats5min251to300  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 251-300 mounts were performed"
+::= { lserLibStats5minuteSample 13 }
+
+lserLibStats5min301to350  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 301-350 mounts were performed"
+::= { lserLibStats5minuteSample 14 }
+
+lserLibStats5min351to400  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 351-400 mounts were performed"
+::= { lserLibStats5minuteSample 15 }
+
+lserLibStats5min401to450  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 401-450 mounts were performed"
+::= { lserLibStats5minuteSample 16 }
+
+lserLibStats5min451to500  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 451-500 mounts were performed"
+::= { lserLibStats5minuteSample 17 }
+
+lserLibStats5min501to550  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 501-550 mounts were performed"
+::= { lserLibStats5minuteSample 18 }
+
+lserLibStats5min551to600  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 551-600 mounts were performed"
+::= { lserLibStats5minuteSample 19 }
+
+lserLibStats5min601to650  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 601-650 mounts were performed"
+::= { lserLibStats5minuteSample 20 }
+
+lserLibStats5min651to700  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 651-700 mounts were performed"
+::= { lserLibStats5minuteSample 21 }
+
+lserLibStats5minOver700  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where over 700 mounts were performed"
+::= { lserLibStats5minuteSample 22 }
+
+
+lserLibStats15minuteSample  OBJECT IDENTIFIER
+::= { lserLibStatistics 17 }
+
+lserLibStats15minSampleCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The overall number of 15 minute usage samples"
+::= { lserLibStats15minuteSample 1 }
+
+lserLibStats15minIdle  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where there were no drive mounts"
+::= { lserLibStats15minuteSample 2 }
+
+lserLibStats15min1to25  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 1-25 mounts were performed"
+::= { lserLibStats15minuteSample 3 }
+
+lserLibStats15min26to50  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 26-50 mounts were performed"
+::= { lserLibStats15minuteSample 4 }
+
+lserLibStats15min51to75  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 51-75 mounts were performed"
+::= { lserLibStats15minuteSample 5 }
+
+lserLibStats15min76to100  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 76-100 mounts were performed"
+::= { lserLibStats15minuteSample 6 }
+
+lserLibStats15min101to125  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 101-125 mounts were performed"
+::= { lserLibStats15minuteSample 7 }
+
+lserLibStats15min126to150  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 126-150 mounts were performed"
+::= { lserLibStats15minuteSample 8 }
+
+lserLibStats15min151to175  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 151-175 mounts were performed"
+::= { lserLibStats15minuteSample 9 }
+
+lserLibStats15min176to200  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 176-200 mounts were performed"
+::= { lserLibStats15minuteSample 10 }
+
+lserLibStats15min201to225  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 201-225 mounts were performed"
+::= { lserLibStats15minuteSample 11 }
+
+lserLibStats15min226to250  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 226-250 mounts were performed"
+::= { lserLibStats15minuteSample 12 }
+
+lserLibStats15min251to300  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 251-300 mounts were performed"
+::= { lserLibStats15minuteSample 13 }
+
+lserLibStats15min301to350  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 301-350 mounts were performed"
+::= { lserLibStats15minuteSample 14 }
+
+lserLibStats15min351to400  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 351-400 mounts were performed"
+::= { lserLibStats15minuteSample 15 }
+
+lserLibStats15min401to450  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 401-450 mounts were performed"
+::= { lserLibStats15minuteSample 16 }
+
+lserLibStats15min451to500  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 451-500 mounts were performed"
+::= { lserLibStats15minuteSample 17 }
+
+lserLibStats15min501to550  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 501-550 mounts were performed"
+::= { lserLibStats15minuteSample 18 }
+
+lserLibStats15min551to600  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 551-600 mounts were performed"
+::= { lserLibStats15minuteSample 19 }
+
+lserLibStats15min601to650  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 601-650 mounts were performed"
+::= { lserLibStats15minuteSample 20 }
+
+lserLibStats15min651to700  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where 651-700 mounts were performed"
+::= { lserLibStats15minuteSample 21 }
+
+lserLibStats15minOver700  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of sample periods where over 700 mounts were performed"
+::= { lserLibStats15minuteSample 22 }
+
+
+lserLibStatsGlobalClear  OBJECT-TYPE
+    SYNTAX  LserCmdClear
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Clear global statistics by writing value of clear(2)"
+::= { lserLibStatistics 18 }
+
+
+lserLibMediaErrors  OBJECT IDENTIFIER
+::= { lserLibStatistics 19 }
+
+lserMediaErrorCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of media statistics in the table"
+::= { lserLibMediaErrors 1 }
+
+lserLibMediaErrorTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserLibMediaErrorEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of media statistics"
+::= { lserLibMediaErrors 2 }
+
+lserLibMediaErrorEntry OBJECT-TYPE
+    SYNTAX  LserLibMediaErrorEntry
+    ACCESS  not-accessible
+    STATUS  mandatory  
+    DESCRIPTION  "A media error statistic"
+    INDEX { lserMediaErrorIndex }
+::= { lserLibMediaErrorTable 1 }
+
+LserLibMediaErrorEntry ::= SEQUENCE
+{
+lserMediaErrorIndex              INTEGER     ,
+lserMediaErrorTapeLabel          OCTET STRING,
+lserMediaErrorDriveSerialNum     OCTET STRING,
+lserMediaErrorDateTime           OCTET STRING,
+lserLibMediaErrorEnum            INTEGER     ,
+lserMediaErrorOccurrenceCount    INTEGER 
+}
+
+lserMediaErrorIndex OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Index into the media statistic table"
+::= { lserLibMediaErrorEntry 1 }
+
+lserMediaErrorTapeLabel  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The tape label of media statistic"
+::= { lserLibMediaErrorEntry 2 }
+
+lserMediaErrorDriveSerialNum  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive serial number of media statistic"
+::= { lserLibMediaErrorEntry 3 }
+
+lserMediaErrorDateTime  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Log entry's date/time in 'MM:DD:YYYY HH:MM:SS' form"
+::= { lserLibMediaErrorEntry 4 }
+
+lserLibMediaErrorEnum OBJECT-TYPE
+    SYNTAX  LserMediaErrorType
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The type of media error - reported as an enumeration"
+::= { lserLibMediaErrorEntry 5 }
+
+lserMediaErrorOccurrenceCount OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Occurrence count for media statistic"
+::= { lserLibMediaErrorEntry 6 }
+
+lserLibDate  OBJECT IDENTIFIER
+::= { lserLibrary 15 }
+
+lserLibDateMonth  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Date: month"
+::= { lserLibDate 1 }
+
+lserLibDateDay  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Date: day of the month"
+::= { lserLibDate 2 }
+
+lserLibDateYear  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Date: year (reported with 4 digits)"
+::= { lserLibDate 3 }
+
+lserLibDateHour  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Time: hour"
+::= { lserLibDate 4 }
+
+lserLibDateMinute  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Time: minute"
+::= { lserLibDate 5 }
+
+lserLibDateSecond  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Time: second"
+::= { lserLibDate 6 }
+
+lserLibDateString OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Library's date/time in 'MM:DD:YYYY HH:MM:SS' form"
+::= { lserLibDate 7 }
+
+
+lserLibPersonality  OBJECT IDENTIFIER
+::= { lserLibrary 16 }
+
+lserLibPersonVendor  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library vendor name"
+::= { lserLibPersonality 1 }
+
+lserLibPersonModel  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library model name"
+::= { lserLibPersonality 2 }
+
+lserLibPersonWebEnabled  OBJECT-TYPE
+    SYNTAX  INTEGER { disabled(1), enabled(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Web Management feature status"
+::= { lserLibPersonality 3 }
+
+lserLibPersonLibSize OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Library size configuration"
+::= { lserLibPersonality 4 }
+
+
+lserLibCleaning  OBJECT IDENTIFIER
+::= { lserLibrary 17 }
+
+lserLibCleanEnabled  OBJECT-TYPE
+    SYNTAX  INTEGER { disabled(1), enabled(2) }
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Auto clean feature configuration. Not all libraries support this feature, please refer to user documentation."
+::= { lserLibCleaning 1 }
+
+lserLibCleanNumCartTypes  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of unique cartridge types supported"
+::= { lserLibCleaning 2 }
+
+lserLibCleanWarnTable  OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserLibCleanWarnEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "Table of clean count warning thresholds"
+::= { lserLibCleaning 3 }
+
+lserLibCleanWarnEntry OBJECT-TYPE
+    SYNTAX  LserLibCleanWarnEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "Clean count warning thresh table entry"
+    INDEX  { lserLibCleanWarnIndex }
+::= { lserLibCleanWarnTable 1 }
+
+LserLibCleanWarnEntry ::= SEQUENCE
+{
+lserLibCleanWarnIndex   INTEGER,
+lserLibCleanCartType    OCTET STRING,
+lserLibCleanWarnCount   INTEGER
+}
+
+lserLibCleanWarnIndex  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Index into clean warning thresh table"
+::= { lserLibCleanWarnEntry 1 }
+
+lserLibCleanCartType  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Name of cartridge type (DLT, 9840, etc)"
+::= { lserLibCleanWarnEntry 2 }
+
+lserLibCleanWarnCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Configured warn count threshold"
+::= { lserLibCleanWarnEntry 3 }
+
+lserLibCleanNumCarts  OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Count of the clean cartridges in the library"
+::= { lserLibCleaning 4 }
+
+lserLibCleanCartTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserLibCleanCartEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of cleaning cartridges in the library"
+::= { lserLibCleaning 5 }
+
+lserLibCleanCartEntry OBJECT-TYPE
+    SYNTAX  LserLibCleanCartEntry
+    ACCESS  not-accessible
+    STATUS  mandatory  
+    DESCRIPTION  "A cleaning cartridge"
+    INDEX { lserCleanCartIndex }
+::= { lserLibCleanCartTable 1 }
+
+LserLibCleanCartEntry ::= SEQUENCE
+{
+lserCleanCartIndex              INTEGER,
+lserCleanCartLabel              OCTET STRING,
+lserCleanCartType               OCTET STRING,
+lserCleanCartLocationElementID  INTEGER,
+lserCleanCartHostAccessible     INTEGER,
+lserCleanCartUsageCount         INTEGER
+}
+
+lserCleanCartIndex  OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "Integer index into the cleaning cart table"
+::= { lserLibCleanCartEntry 1 }
+
+lserCleanCartLabel  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The clean cartridge label"
+::= { lserLibCleanCartEntry 2 }
+
+lserCleanCartType  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The clean cartridge type"
+::= { lserLibCleanCartEntry 3 }
+
+lserCleanCartLocationElementID  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The clean cartridge location - element ID"
+::= { lserLibCleanCartEntry 4 }
+
+lserCleanCartHostAccessible  OBJECT-TYPE
+    SYNTAX  INTEGER { true(1), false(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Indication of host accessible status"
+::= { lserLibCleanCartEntry 5 }
+
+lserCleanCartUsageCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of times that the cartridge has been used to clean"
+::= { lserLibCleanCartEntry 6 }
+
+-- *******************************************************************
+-- The lserDrives
+--   This tree describes the drive elements of the library.  Data
+--   which is reported includes load status, SCSI ID, etc.
+-- *******************************************************************
+
+lserDriveCount OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Count of the drives in the drive table"
+::= { lserDrives 1 }
+
+lserDriveTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserDriveEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of drives"
+::= { lserDrives 2 }
+
+lserDriveEntry OBJECT-TYPE
+    SYNTAX  LserDriveEntry
+    ACCESS  not-accessible
+    STATUS  mandatory  
+    DESCRIPTION  "A tape drive"
+    INDEX { lserDriveIndex }
+::= { lserDriveTable 1 }
+
+LserDriveEntry ::= SEQUENCE
+{
+lserDriveIndex              INTEGER,
+lserDriveElementID          INTEGER,
+lserDriveRowInLib           INTEGER,
+lserDriveColInLib           INTEGER,
+lserDriveType               OCTET STRING,
+lserDriveVendor             OCTET STRING,
+lserDriveSerialNum          OCTET STRING,
+lserDriveInterfaceType      INTEGER,
+lserDriveID                 INTEGER,
+lserDriveState              OCTET STRING,
+lserDriveStatusEnum         LserDeviceStatus,
+lserDriveCodeVer            OCTET STRING,
+lserDriveVersion            OCTET STRING,
+lserDriveFirmwareVer        OCTET STRING,
+lserDriveGetRetries         INTEGER,
+lserDrivePutRetries         INTEGER,
+lserDriveCommandClean       INTEGER,
+lserDriveCellStatusEnum     INTEGER,
+lserDriveCellStatusText     OCTET STRING,
+lserDriveCellContentLabel   OCTET STRING,
+lserDriveCellContentType    OCTET STRING,
+lserDriveIdleSeconds        INTEGER,
+lserDriveNumMounts          INTEGER,
+lserDriveUsageSampleCount   INTEGER,
+lserDriveUsageMinimum       INTEGER,
+lserDriveUsage5min          INTEGER,
+lserDriveUsage5to10         INTEGER,
+lserDriveUsage10to30        INTEGER,
+lserDriveUsage30to60        INTEGER,
+lserDriveUsageMaximum       INTEGER 
+}
+
+lserDriveIndex  OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "Integer index into the drive table"
+::= { lserDriveEntry 1 }
+
+lserDriveElementID  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Element ID of the drive"
+::= { lserDriveEntry 2 }
+
+lserDriveRowInLib  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Physical row position of the drive"
+::= { lserDriveEntry 3 }
+
+lserDriveColInLib  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Physical column position of the drive"
+::= { lserDriveEntry 4 }
+
+lserDriveType  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The drive's type, e.g. STK9840, DLT7000"
+::= { lserDriveEntry 5 }
+
+lserDriveVendor  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive's vendor, e.g. STK, Quantum"
+::= { lserDriveEntry 6 }
+
+lserDriveSerialNum  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive's serial number"
+::= { lserDriveEntry 7 }
+
+lserDriveInterfaceType  OBJECT-TYPE
+    SYNTAX  INTEGER { unknown(1), scsi(2), fibre(3) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive's physical data transport type"
+::= { lserDriveEntry 8 }
+
+lserDriveID  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The drive's SCSI ID or Fibre Port assignment"
+::= { lserDriveEntry 9 }
+
+lserDriveState  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive's state (empty, loaded, needs cleaning, etc)"
+::= { lserDriveEntry 10 }
+
+lserDriveStatusEnum  OBJECT-TYPE
+    SYNTAX  LserDeviceStatus
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive's operational status in enumerated form"
+::= { lserDriveEntry 11 }
+
+lserDriveCodeVer  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive's code version"
+::= { lserDriveEntry 12 }
+
+lserDriveVersion  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive's version"
+::= { lserDriveEntry 13 }
+
+lserDriveFirmwareVer  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The drive's firmware version"
+::= { lserDriveEntry 14 }
+
+lserDriveGetRetries  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of mount retries performed to the drive"
+::= { lserDriveEntry 15 }
+
+lserDrivePutRetries  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of dismount retries performed to the drive"
+::= { lserDriveEntry 16 }
+
+lserDriveCommandClean  OBJECT-TYPE
+    SYNTAX  INTEGER { enable(1), cancel(2) } 
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Signal to clean/cancel cleaning of the drive"
+::= { lserDriveEntry 17 }
+
+lserDriveCellStatusEnum  OBJECT-TYPE
+    SYNTAX  INTEGER { unknown(1), empty(2), full(3) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The status of the drive's cell presented as an enumeration"
+::= { lserDriveEntry 18 }
+
+lserDriveCellStatusText  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The status of the drive's cell"
+::= { lserDriveEntry 19 }
+
+lserDriveCellContentLabel  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The label of the cart in the drive (zero len string if empty, '??????' if unreadable)"
+::= { lserDriveEntry 20 }
+
+lserDriveCellContentType  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The type of cartridge in the drive (zero len string if empty)"
+::= { lserDriveEntry 21 }
+
+lserDriveIdleSeconds  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of seconds that the drive has been idle (unmounted)"
+::= { lserDriveEntry 24 }
+
+lserDriveNumMounts  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of mounts to the drive"
+::= { lserDriveEntry 25 }
+
+lserDriveUsageSampleCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Total number of usage samples for this drive"
+::= { lserDriveEntry 26 }
+
+lserDriveUsageMinimum  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where drive usage was less than 30 seconds"
+::= { lserDriveEntry 27 }
+
+lserDriveUsage5min  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where drive usage was between 30 secs and 5 minutes"
+::= { lserDriveEntry 28 }
+
+lserDriveUsage5to10  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where drive usage was between 5 and 10 minutes"
+::= { lserDriveEntry 29 }
+
+lserDriveUsage10to30  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where drive usage was between 10 and 30 minutes"
+::= { lserDriveEntry 30 }
+
+lserDriveUsage30to60  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where drive usage was between 30 and 60 minutes"
+::= { lserDriveEntry 31 }
+
+lserDriveUsageMaximum  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where drive usage was greater than 60 minutes"
+::= { lserDriveEntry 32 }
+
+lserDriveFibreCount OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Count of drives in the fibre drive table"
+::= { lserDrives 3 }
+
+lserDriveFibreTable   OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserDriveFibreEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of fibre drives"
+::= { lserDrives 4 }
+
+lserDriveFibreEntry     OBJECT-TYPE
+    SYNTAX   LserDriveFibreEntry
+    ACCESS   not-accessible
+    STATUS   mandatory
+    DESCRIPTION  "A fibre drive"
+    INDEX  { lserDriveFibreIndex}
+::= { lserDriveFibreTable 1 }
+
+LserDriveFibreEntry ::= SEQUENCE
+{
+lserDriveFibreIndex                 INTEGER,
+lserDriveFibreSerialNum             OCTET STRING,
+lserDriveFibreNodeName              OCTET STRING,
+lserDriveFibrePortCount             INTEGER,
+
+lserDriveFibrePortAWWN              OCTET STRING,
+lserDriveFibrePortAAddressingMode   INTEGER,
+lserDriveFibrePortAPortEnabled      INTEGER,
+lserDriveFibrePortALoopId           INTEGER,
+lserDriveFibrePortAPortSpeed        INTEGER,
+
+lserDriveFibrePortBWWN              OCTET STRING,
+lserDriveFibrePortBAddressingMode   INTEGER,
+lserDriveFibrePortBPortEnabled      INTEGER,
+lserDriveFibrePortBLoopId           INTEGER,
+lserDriveFibrePortBPortSpeed        INTEGER
+}
+
+-- Local type definitions
+LserDriveFibreLoopId      ::= INTEGER ( 0 | 1..125 ) -- 0 is for soft addressing
+LserDriveFibreSpeed       ::= INTEGER { unknown(1), oneGbit(2), twoGbit(3)  }
+LserDriveFibreAddressing  ::= INTEGER { hard(1), soft(2) }
+
+lserDriveFibreIndex   OBJECT-TYPE
+    SYNTAX INTEGER
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Integer index into the fibre drive table"
+::={lserDriveFibreEntry 1}
+
+lserDriveFibreSerialNum   OBJECT-TYPE
+    SYNTAX OCTET STRING( SIZE(0..32) )
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "The drive's serial number"
+::={lserDriveFibreEntry 2}
+
+lserDriveFibreNodeName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Drive's fibre node name"
+::= { lserDriveFibreEntry 3 }
+
+lserDriveFibrePortCount  OBJECT-TYPE
+    SYNTAX  INTEGER { single(1), dual(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of active ports in the drive"
+::= { lserDriveFibreEntry 4 }
+
+lserDriveFibrePortAWWN   OBJECT-TYPE
+    SYNTAX OCTET STRING ( SIZE(0..32) )
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port A - World wide name"
+::={lserDriveFibreEntry 5}
+
+lserDriveFibrePortAAddressingMode   OBJECT-TYPE
+    SYNTAX LserDriveFibreAddressing
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "PortA's addressing mode"
+::={lserDriveFibreEntry 6}
+
+lserDriveFibrePortAPortEnabled   OBJECT-TYPE
+    SYNTAX INTEGER { disabled(1), enabled(2) }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port A - is port enabled"
+::={lserDriveFibreEntry 7}
+
+lserDriveFibrePortALoopId   OBJECT-TYPE
+    SYNTAX LserDriveFibreLoopId 
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port A - loop id"
+::={lserDriveFibreEntry 8}
+
+lserDriveFibrePortAPortSpeed   OBJECT-TYPE
+    SYNTAX LserDriveFibreSpeed
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port A - port speed"
+::={lserDriveFibreEntry 9}
+
+lserDriveFibrePortBWWN   OBJECT-TYPE
+    SYNTAX OCTET STRING( SIZE(0..32) )
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port B - World wide name"
+::={lserDriveFibreEntry 10}
+
+lserDriveFibrePortBAddressingMode   OBJECT-TYPE
+    SYNTAX LserDriveFibreAddressing
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port B - is hard addressed"
+::={lserDriveFibreEntry 11}
+
+
+
+lserDriveFibrePortBPortEnabled   OBJECT-TYPE
+    SYNTAX  INTEGER { disabled(1), enabled(2) }
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port B - is port enabled"
+::={lserDriveFibreEntry 12}
+
+lserDriveFibrePortBLoopId   OBJECT-TYPE
+    SYNTAX LserDriveFibreLoopId
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port B - Loop id"
+::={lserDriveFibreEntry 13}
+
+lserDriveFibrePortBPortSpeed   OBJECT-TYPE
+    SYNTAX LserDriveFibreSpeed
+    ACCESS read-only
+    STATUS mandatory
+    DESCRIPTION "Port B - Port speed" ::={lserDriveFibreEntry 14}
+
+lserDriveWWNEnabled   OBJECT-TYPE
+    SYNTAX  INTEGER { disabled(1), enabled(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The library's World Wide Name option. Can only be set in CLI, please refer to user documentation."
+::= { lserDrives 5 }
+
+-- *******************************************************************
+-- The lserCaps 
+--   This tree describes the CAP elements of the library.  Data
+--   which is reported includes cap position and status
+-- *******************************************************************
+
+lserCapCount OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Count of the CAPs in the CAP table"
+::= { lserCaps 1 }
+
+lserCapTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserCapEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of cartridge access ports"
+::= { lserCaps 2 }
+
+lserCapEntry OBJECT-TYPE
+    SYNTAX  LserCapEntry
+    ACCESS  not-accessible
+    STATUS  mandatory  
+    DESCRIPTION  "A cartridge access port (CAP)"
+    INDEX { lserCapIndex }
+::= { lserCapTable 1 }
+
+LserCapEntry ::= SEQUENCE
+{
+lserCapIndex                INTEGER,
+lserCapAccessibility        OCTET STRING,
+lserCapAccessStateEnum      INTEGER,
+lserCapState                OCTET STRING,
+lserCapStatusEnum           LserDeviceStatus,
+lserCapUsageGetSampleCount  INTEGER,
+lserCapUsageGetIdle         INTEGER,
+lserCapUsageGet1            INTEGER,
+lserCapUsageGet2            INTEGER,
+lserCapUsageGet3            INTEGER,
+lserCapUsageGet4            INTEGER,
+lserCapUsageGet5            INTEGER,
+lserCapUsageGet6to10        INTEGER,
+lserCapUsageGet11to15       INTEGER,
+lserCapUsageGet16to20       INTEGER,
+lserCapUsageGet21toMax      INTEGER,
+lserCapUsagePutSampleCount  INTEGER,
+lserCapUsagePutIdle         INTEGER,
+lserCapUsagePut1            INTEGER,
+lserCapUsagePut2            INTEGER,
+lserCapUsagePut3            INTEGER,
+lserCapUsagePut4            INTEGER,
+lserCapUsagePut5            INTEGER,
+lserCapUsagePut6to10        INTEGER,
+lserCapUsagePut11to15       INTEGER,
+lserCapUsagePut16to20       INTEGER,
+lserCapUsagePut21toMax      INTEGER,
+lserCapName                 OCTET STRING
+}
+
+lserCapIndex  OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "Integer index into the CAP table"
+::= { lserCapEntry 1 }
+
+lserCapAccessibility  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The accessibility of a CAP (open allow/prevent)"
+::= { lserCapEntry 2 }
+
+lserCapAccessStateEnum  OBJECT-TYPE
+    SYNTAX  INTEGER { unknown(1), open(2), close(3) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The access state of the cap presented as an enumeration"
+::= { lserCapEntry 3 }
+
+lserCapState  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The physical state of the CAP"
+::= { lserCapEntry 4 }
+
+lserCapStatusEnum  OBJECT-TYPE
+    SYNTAX  LserDeviceStatus
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The operational status of the CAP presented as an enumeration"
+::= { lserCapEntry 5 }
+
+lserCapUsageGetSampleCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of usage samples for this CAP for gets"
+::= { lserCapEntry 8 }
+
+lserCapUsageGetIdle  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was idle for gets"
+::= { lserCapEntry 9 }
+
+lserCapUsageGet1  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 1 time for gets"
+::= { lserCapEntry 10 }
+
+lserCapUsageGet2  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 2 times for gets"
+::= { lserCapEntry 11 }
+
+lserCapUsageGet3  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 3 times for gets"
+::= { lserCapEntry 12 }
+
+lserCapUsageGet4  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 4 times for gets"
+::= { lserCapEntry 13 }
+
+lserCapUsageGet5  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 5 times for gets"
+::= { lserCapEntry 14 }
+
+lserCapUsageGet6to10  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 6-10 times for gets"
+::= { lserCapEntry 15 }
+
+lserCapUsageGet11to15  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 11-15 times for gets"
+::= { lserCapEntry 16 }
+
+lserCapUsageGet16to20  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 16-20 times for gets"
+::= { lserCapEntry 17 }
+
+lserCapUsageGet21toMax  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used more than 20 times for gets"
+::= { lserCapEntry 18 }
+
+lserCapUsagePutSampleCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of usage samples for this CAP for puts"
+::= { lserCapEntry 19 }
+
+lserCapUsagePutIdle  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was idle for puts"
+::= { lserCapEntry 20 }
+
+lserCapUsagePut1  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 1 time for puts"
+::= { lserCapEntry 21 }
+
+lserCapUsagePut2  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 2 times for puts"
+::= { lserCapEntry 22 }
+
+lserCapUsagePut3  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 3 times for puts"
+::= { lserCapEntry 23 }
+
+lserCapUsagePut4  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 4 times for puts"
+::= { lserCapEntry 24 }
+
+lserCapUsagePut5  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 5 times for puts"
+::= { lserCapEntry 25 }
+
+lserCapUsagePut6to10  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 6-10 times for puts"
+::= { lserCapEntry 26 }
+
+lserCapUsagePut11to15  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 11-15 times for puts"
+::= { lserCapEntry 27 }
+
+lserCapUsagePut16to20  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used 16-20 times for puts"
+::= { lserCapEntry 28 }
+
+lserCapUsagePut21toMax  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of samples where the cap was used more than 20 times for puts"
+::= { lserCapEntry 29 }
+
+
+lserCapName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The CAP name"
+::= { lserCapEntry 30 }
+
+-- *******************************************************************
+-- lserPassThru 
+--   This tree describes the pass-through port elements of the
+--   library (if any)
+-- *******************************************************************
+
+lserPtpCount OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Count of the pass-through ports in the library"
+::= { lserPassThru 1 }
+
+lserPtpTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserPtpEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of pass-through ports"
+::= { lserPassThru 2 }
+
+lserPtpEntry OBJECT-TYPE
+    SYNTAX  LserPtpEntry
+    ACCESS  not-accessible
+    STATUS  mandatory  
+    DESCRIPTION  "A pass-through port (PTP)"
+    INDEX { lserPtpIndex }
+::= { lserPtpTable 1 }
+
+LserPtpEntry ::= SEQUENCE
+{
+lserPtpIndex                  INTEGER,
+lserPtpState                  OCTET STRING,
+lserPtpStatusEnum             LserDeviceStatus,
+lserPtpSerialNumber           OCTET STRING,
+lserPtpPartNumber             OCTET STRING,
+lserPtpFirmwareVersion        OCTET STRING,
+lserPtpFirmwareDate           OCTET STRING,
+lserPtpSoftwareResetCount     Counter,
+lserPtpDoorOpenCount          Counter,
+lserPtpInitializationCount    Counter,
+lserPtpInoperativeCount       Counter,
+lserPtpGoodCommandCount       Counter,
+lserPtpFailCommandCount       Counter,
+lserPtpGoodEmptyMotionCount   Counter,
+lserPtpFailEmptyMotionCount   Counter,
+lserPtpGoodPartMotionCount    Counter,
+lserPtpFailPartMotionCount    Counter,
+lserPtpGoodFullMotionCount    Counter,
+lserPtpFailFullMotionCount    Counter,
+lserPtpCompLibNetworkIpAddr   OCTET STRING,
+lserPtpCompLibNetworkName     OCTET STRING,
+lserPtpCompLibSerialNumber    OCTET STRING,
+lserPtpCompLibPartNumber      OCTET STRING,
+lserPtpCompLibVendorName      OCTET STRING,
+lserPtpCompLibModelName       OCTET STRING,
+lserPtpCompLibFirmwareVersion OCTET STRING,
+lserPtpCompLibFirmwareDate    OCTET STRING
+}
+
+lserPtpIndex  OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "Integer index into the PTP table"
+::= { lserPtpEntry 1 }
+
+lserPtpState  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The state of the PTP"
+::= { lserPtpEntry 2 }
+
+lserPtpStatusEnum OBJECT-TYPE
+    SYNTAX  LserDeviceStatus
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The PTP's operational state - reported as an enumeration"
+
+--  Unless  lserPtpStatusEnum is reported  ok(2), Ptp  information and
+--  statistics may not be  considered relevant if no-communication was
+--  established with the controller.   In such a situation, subsequent
+--  Ptp variables  will be zero'ed  and returned either  as null-value
+--  (INTEGER) or empty string (OCTET STRING).
+
+::= { lserPtpEntry 3 }
+
+lserPtpSerialNumber  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The PTP's controller serial number"
+::= { lserPtpEntry 4 }
+
+lserPtpPartNumber  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The PTP's controller part number"
+::= { lserPtpEntry 5 }
+
+lserPtpFirmwareVersion  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The PTP's embedded firmware version"
+::= { lserPtpEntry 6 }
+
+lserPtpFirmwareDate  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The PTP's embedded firmware build date"
+::= { lserPtpEntry 7 }
+
+lserPtpSoftwareResetCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of times the PTP's embedded firmware has been initialized"
+::= { lserPtpEntry 8 }
+
+lserPtpDoorOpenCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of times a service door has been opened (either library)"
+::= { lserPtpEntry 9 }
+
+lserPtpInitializationCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of times the PTP has been initialized"
+::= { lserPtpEntry 10 }
+
+lserPtpInoperativeCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of times PTP has been inoperative"
+::= { lserPtpEntry 11 }
+
+lserPtpGoodCommandCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of commands successfully processed by the PTP"
+::= { lserPtpEntry 12 }
+
+lserPtpFailCommandCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of failed commands processed by the PTP"
+::= { lserPtpEntry 13 }
+
+lserPtpGoodEmptyMotionCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of successful PTP motions with empty transport elements"
+::= { lserPtpEntry 14 }
+
+lserPtpFailEmptyMotionCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of unsuccessful PTP motions with empty transport elements"
+::= { lserPtpEntry 15 }
+
+lserPtpGoodPartMotionCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of successful partially populated PTP motions"
+::= { lserPtpEntry 16 }
+
+lserPtpFailPartMotionCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of unsuccessful partially populated PTP motions"
+::= { lserPtpEntry 17 }
+
+lserPtpGoodFullMotionCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of successful fully populated PTP motions"
+::= { lserPtpEntry 18 }
+
+lserPtpFailFullMotionCount  OBJECT-TYPE
+    SYNTAX  Counter
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The number of unsuccessful fully populated PTP motions"
+::= { lserPtpEntry 19 }
+
+lserPtpCompLibNetworkIpAddr  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..15) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The companion library's IP Address"
+::= { lserPtpEntry 20 }
+
+lserPtpCompLibNetworkName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..15) )
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "The companion library's network host name"
+::= { lserPtpEntry 21 }
+
+lserPtpCompLibSerialNumber  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The companion library's controller serial number"
+::= { lserPtpEntry 22 }
+
+lserPtpCompLibPartNumber  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The companion library's controller part number"
+::= { lserPtpEntry 23 }
+
+lserPtpCompLibVendorName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The companion library's vendor name"
+::= { lserPtpEntry 24 }
+
+lserPtpCompLibModelName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The companion library's model name"
+::= { lserPtpEntry 25 }
+
+lserPtpCompLibFirmwareVersion  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The companion library's embedded firmware version"
+::= { lserPtpEntry 26 }
+
+lserPtpCompLibFirmwareDate  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The companion library's embedded firmware build date"
+::= { lserPtpEntry 27 }
+
+
+-- *******************************************************************
+-- The lserInventory 
+--   This tree describes the tape elements in the library.  Data
+--   which is reported includes label, cartridge type, and position
+-- *******************************************************************
+
+lserTapeCount OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Count of the cartridges in the inventory table"
+::= { lserInventory 1 }
+
+lserTapeTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserTapeEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of cartridges in the library"
+::= { lserInventory 2 }
+
+lserTapeEntry OBJECT-TYPE
+    SYNTAX  LserTapeEntry
+    ACCESS  not-accessible
+    STATUS  mandatory  
+    DESCRIPTION  "A cartridge"
+    INDEX { lserTapeIndex }
+::= { lserTapeTable 1 }
+
+LserTapeEntry ::= SEQUENCE
+{
+lserTapeIndex               INTEGER,
+lserTapeLabel               OCTET STRING,
+lserTapeType                OCTET STRING,
+lserTapeLocationElementID   INTEGER,
+lserTapeHostAccessible      INTEGER
+}
+
+lserTapeIndex  OBJECT-TYPE
+    SYNTAX  INTEGER 
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "Integer index into the inventory table"
+::= { lserTapeEntry 1 }
+
+lserTapeLabel  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The cartridge label"
+::= { lserTapeEntry 2 }
+
+lserTapeType  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The cartridge type"
+::= { lserTapeEntry 3 }
+
+lserTapeLocationElementID  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory  
+    DESCRIPTION  "The cartridge location - element ID"
+::= { lserTapeEntry 4 }
+
+lserTapeHostAccessible  OBJECT-TYPE
+    SYNTAX  INTEGER { true(1), false(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Indication of host accessible status"
+::= { lserTapeEntry 5 }
+
+-- *******************************************************************
+-- The lserStorage
+--   This tree describes the storage elements in the library.  Data
+--   which is reported includes contents (if any), host accessibility
+--   (true/false), get/put retry statistics
+-- *******************************************************************
+
+lserCellCount OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Count of the storage elements in the cell table"
+::= { lserStorage 1 }
+
+lserCellTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserCellEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of storage elements in the library"
+::= { lserStorage 2 }
+
+lserCellEntry OBJECT-TYPE
+    SYNTAX  LserCellEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A storage element"
+    INDEX { lserCellIndex }
+::= { lserCellTable 1 }
+
+LserCellEntry ::= SEQUENCE
+{
+lserCellIndex           INTEGER,
+lserCellElementID       INTEGER,
+lserCellHostAccessible  INTEGER,
+lserCellContentStatus   OCTET STRING,
+lserCellContentLabel    OCTET STRING,
+lserCellContentType     OCTET STRING,
+lserCellGetRetryCount   INTEGER,
+lserCellPutRetryCount   INTEGER
+}
+
+lserCellIndex  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Integer index into the storage cell table"
+::= { lserCellEntry 1 }
+
+lserCellElementID  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Element ID of the storage cell"
+::= { lserCellEntry 2 }
+
+lserCellHostAccessible  OBJECT-TYPE
+    SYNTAX  INTEGER { true(1), false(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Indication of host accessible status"
+::= { lserCellEntry 3 }
+
+lserCellContentStatus  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The status of the cell (EMPTY, READABLE, etc.)"
+::= { lserCellEntry 4 }
+
+lserCellContentLabel  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The label of the cart in the cell (zero len string if empty, '??????' if unreadable)"
+::= { lserCellEntry 5 }
+
+lserCellContentType  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The type of the cartridge in the cell (zero len string if empty)"
+::= { lserCellEntry 6 }
+
+lserCellGetRetryCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of get retries performed from this cell"
+::= { lserCellEntry 7 }
+
+lserCellPutRetryCount  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of put retries performed to this cell"
+::= { lserCellEntry 8 }
+
+lserStorageFreeCells  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of available (empty) storage cells in the library"
+::= { lserStorage 3 }
+
+
+-- *******************************************************************
+-- The lserPlayground OID tree
+--   This tree describes the playground elements in the library.  Data
+--   reported are the cell contents (if any).
+-- *******************************************************************
+
+lserPlayCellCount OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Count of the playground elements in the cell table"
+::= { lserPlayground 1 }
+
+lserPlayCellTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserPlayCellEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of playground elements in the library"
+::= { lserPlayground 2 }
+
+lserPlayCellEntry OBJECT-TYPE
+    SYNTAX  LserPlayCellEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A playground element"
+    INDEX { lserPlayCellIndex }
+::= { lserPlayCellTable 1 }
+
+LserPlayCellEntry ::= SEQUENCE
+{
+lserPlayCellIndex           INTEGER,
+lserPlayCellElementID       INTEGER,
+lserPlayCellContentStatus   OCTET STRING,
+lserPlayCellContentLabel    OCTET STRING,
+lserPlayCellContentType     OCTET STRING
+}
+
+lserPlayCellIndex  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Integer index into the playground cell table"
+::= { lserPlayCellEntry 1 }
+
+lserPlayCellElementID  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Element ID of the playground cell"
+::= { lserPlayCellEntry 2 }
+
+lserPlayCellContentStatus  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The status of the cell (EMPTY, READABLE, etc.)"
+::= { lserPlayCellEntry 3 }
+
+lserPlayCellContentLabel  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The label of the cartridge in the cell (zero len string if empty, '??????' if unreadable)"
+::= { lserPlayCellEntry 4 }
+
+lserPlayCellContentType  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "The type of the cartridge in the cell (zero len string if empty)"
+::= { lserPlayCellEntry 5 }
+
+
+-- *******************************************************************
+-- The lserHardwareMonitor OID tree
+--   This tree describes the library's hardware monitoring sensors
+-- *******************************************************************
+
+lserHdwNumTempSensors OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of temperature sensors in the library"
+::= { lserHardwareMonitor 1 }
+
+lserHdwTempSensorTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserHdwTempSensorEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of the library's temperature sensors"
+::= { lserHardwareMonitor 2 }
+
+lserHdwTempSensorEntry OBJECT-TYPE
+    SYNTAX  LserHdwTempSensorEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A temperature sensor"
+    INDEX { lserHdwTempSensorIndex }
+::= { lserHdwTempSensorTable 1 }
+
+LserHdwTempSensorEntry ::= SEQUENCE
+{
+lserHdwTempSensorIndex          INTEGER,
+lserHdwTempSensorName           OCTET STRING,
+lserHdwTempSensorCurrentTemp    INTEGER,
+lserHdwTempSensorHighTemp       INTEGER,
+lserHdwTempSensorWarnThreshold  INTEGER,
+lserHdwTempSensorFailThreshold  INTEGER
+}
+
+lserHdwTempSensorIndex  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Integer index into the temperature sensor table"
+::= { lserHdwTempSensorEntry 1 }
+
+lserHdwTempSensorName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Name of the temperature sensor"
+::= { lserHdwTempSensorEntry 2 }
+
+lserHdwTempSensorCurrentTemp  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Current/Present temperature reading"
+::= { lserHdwTempSensorEntry 3 }
+
+lserHdwTempSensorHighTemp  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Storage area peak temp since last machine boot"
+::= { lserHdwTempSensorEntry 4 }
+
+lserHdwTempSensorWarnThreshold  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Temp threshold for automated warning"
+::= { lserHdwTempSensorEntry 5 }
+
+lserHdwTempSensorFailThreshold  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-write
+    STATUS  mandatory
+    DESCRIPTION  "Temp threshold for automated library activity shutdown"
+::= { lserHdwTempSensorEntry 6 }
+
+lserHdwNumFans OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of monitored fans in the library"
+::= { lserHardwareMonitor 3 }
+
+lserHdwFanTable OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserHdwFanEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of the library's fans"
+::= { lserHardwareMonitor 4 }
+
+lserHdwFanEntry OBJECT-TYPE
+    SYNTAX  LserHdwFanEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A fan"
+    INDEX { lserHdwFanIndex }
+::= { lserHdwFanTable 1 }
+
+LserHdwFanEntry ::= SEQUENCE
+{
+lserHdwFanIndex         INTEGER,
+lserHdwFanName          OCTET STRING,
+lserHdwFanOperational   INTEGER
+}
+
+lserHdwFanIndex  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Integer index into the fan table"
+::= { lserHdwFanEntry 1 }
+
+lserHdwFanName  OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Name of the fan"
+::= { lserHdwFanEntry 2 }
+
+lserHdwFanOperational  OBJECT-TYPE
+    SYNTAX  INTEGER { failed(1), normal(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Operational state of the fan"
+::= { lserHdwFanEntry 3 }
+
+
+lserHdwNumSupplies  OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Number of power supplies installed in the library"
+::= { lserHardwareMonitor 5 }
+
+lserHdwSupplyTable  OBJECT-TYPE
+    SYNTAX  SEQUENCE OF LserHdwSupplyEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION  "A table of the library's power supplies"
+::= { lserHardwareMonitor 6 }
+
+lserHdwSupplyEntry  OBJECT-TYPE
+    SYNTAX  LserHdwSupplyEntry
+    ACCESS  not-accessible
+    STATUS  mandatory
+    DESCRIPTION "A power supply"
+    INDEX { lserHdwSupplyIndex }
+::= { lserHdwSupplyTable 1 }
+
+LserHdwSupplyEntry ::= SEQUENCE
+{
+lserHdwSupplyIndex          INTEGER,
+lserHdwSupplyName           OCTET STRING,
+lserHdwSupplyInstalled      INTEGER,
+lserHdwSupplyOperational    INTEGER
+}
+
+lserHdwSupplyIndex OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Integer index into the power supply table"
+::= { lserHdwSupplyEntry 1 }
+
+lserHdwSupplyName OBJECT-TYPE
+    SYNTAX  OCTET STRING( SIZE(0..32) )
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION  "Name of the power supply"
+::= { lserHdwSupplyEntry 2 }
+
+lserHdwSupplyInstalled OBJECT-TYPE
+    SYNTAX  INTEGER { notinstalled(1), installed(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Indicates if the supply is installed(2) or not(1)"
+::= { lserHdwSupplyEntry 3 }
+
+lserHdwSupplyOperational OBJECT-TYPE
+    SYNTAX  INTEGER { failed(1), normal(2) }
+    ACCESS  read-only
+    STATUS  mandatory
+    DESCRIPTION "Indicates if the supply is OK(2), meaningless if not-installed"
+::= { lserHdwSupplyEntry 4 }
+
+
+END
+

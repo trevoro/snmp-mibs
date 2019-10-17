@@ -1,0 +1,1817 @@
+-- Based on ISDN MIB and Dial Control MIB Implementation Specification (Rev 2.0,
+-- dated 5/16/97).
+-- 
+-- MIB Revision : 1.0 dated 6-26-97
+-- Change Desc. : Initial submittal - R. Carmona. 
+-- 
+-- MIB Revision : 1.1 dated 10-7-97
+-- Change Desc. : Replaced MPA with 4400 - B. Jafari. 
+-- 
+-- *** RELEASE 3.0 ***
+-- MIB Revision : 1.2 dated 6-26-98
+-- Change Desc. : Removed and/or replaced "4400" with 
+--				  "access device" wherever possible.
+--				  Obsoleted the following counter reset 
+--				  tables and object:
+--				    mcmIsdnSigStatsCntrTable 
+--				    mcmIsdnLapdCntrTable 
+--				    mcmDialCtlPeerStatsGaugeTable 
+--				    mcmCallHistoryTableResetCmd 
+--				  Added the enumeration "active and 
+--				  the access to "read-write" for the
+--				  row status objects:
+--					nvmIsdnDirectoryStatus 
+--					nvmDialCtlPeerCfgStatus - A. Llanes.
+--
+--*** RELEASE 3.1 *****
+-- MIB Revision : 1.3 dated 8-14-98
+-- Change Desc. : Merge from R2.1 BRI
+-- PASSPORT 4400 RELEASE 2.1 ****** 
+-- MIB Revision : 1.2 dated 1-29-97
+-- Change Desc. : Initial modifications for Release 2.1.
+--                The qsig option was added to the
+--                isdnSignalingProtocol object. - S. Gaur. 
+-- 
+
+MICOM-ISDN-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	DisplayString
+		FROM RFC1213-MIB
+	OBJECT-TYPE
+		FROM RFC-1212
+	ifIndex
+		FROM IF-MIB
+	dialCtlPeerCfgId, callActiveSetupTime, callActiveIndex
+		FROM DIAL-CONTROL-MIB
+	micom-oscar 
+		FROM MICOM-OSCAR-MIB;
+
+
+-- group OBJECT IDENTIFIERs
+
+	micom-isdn			OBJECT IDENTIFIER ::= {micom-oscar 24}
+	configuration			OBJECT IDENTIFIER ::= {micom-isdn 1}
+	control				OBJECT IDENTIFIER ::= {micom-isdn 2}
+
+
+--  This MIB file contains the following:
+--	1) Proprietary and "Parallel" ("nvm") Group/Table definitions
+--	  corresponding to RFC2127 MIB objects. (config related objects)
+--	2) Proprietary and "Parallel" ("nvm") Group/Table definitions
+--	  corresponding to RFC2128 MIB objects. (config related objects)
+--	3) Control Group/Table definitions corresponding to RFC2127 MIB.
+--	4) Control Group/Table definitions corresponding to RFC2128 MIB.
+
+
+--  **************************************************
+--  1) Proprietary and "Parallel" ("nvm") Group/Table definitions
+--  corresponding to RFC2127 MIB objects. (config related objects)
+--  **************************************************
+
+--  ISDN physical interface group from RFC2127 MIB.
+--  This group describes physical basic rate interfaces.
+--  "Parallel" Configuration Parameter ("nvm") Table.
+
+--  ISDN Basic Rate Table.
+
+nvmIsdnBasicRateTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF NvmIsdnBasicRateEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Table containing configuration and operational \
+		  parameters for all physical Basic Rate interfaces \
+		  on this managed device. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { configuration 1 }
+
+nvmIsdnBasicRateEntry OBJECT-TYPE
+	SYNTAX  NvmIsdnBasicRateEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the ISDN Basic Rate Table. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { ifIndex }
+	::= { nvmIsdnBasicRateTable  1 }
+
+NvmIsdnBasicRateEntry ::= SEQUENCE {
+	nvmIsdnBasicRateLineTopology		INTEGER,
+	nvmIsdnBasicRateSignalMode		INTEGER
+	}
+
+nvmIsdnBasicRateLineTopology OBJECT-TYPE
+	SYNTAX  INTEGER {
+		pointToPoint(1),
+		pointToMultipoint(2)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The line topology to be used for this interface. \
+		  Note that setting nvmIsdnBasicRateIfType to isdns(75) \
+		  does not necessarily mean a line topology of \
+		  point-to-multipoint. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnBasicRateEntry  1 }
+
+nvmIsdnBasicRateSignalMode OBJECT-TYPE
+	SYNTAX  INTEGER {
+		dialup(1),
+		leased(2)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The signaling channel operational mode for this \
+		  interface.  If dialup(1), there is a signaling channel \
+		  on this interface and the corresponding operational \
+		  object, isdnBasicRateSignalMode (see rfc2127.mib), \
+		  will be active(1).  If leased(2), a signaling channel \
+		  is not available and the corresponding operational \
+		  object, isdnBasicRateSignalMode, will be inactive(2). \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnBasicRateEntry  2 }
+
+
+-- ISDN signaling group from RFC2127 MIB.
+-- "Parallel" Configuration Parameter ("nvm") Table.
+
+-- signaling channel configuration table
+-- There is one entry in this table for each Terminal Endpoint
+-- (link layer connection to the switch).
+-- Usually, there is one endpoint per D channel. In some
+-- cases, however, there can be multiple endpoints.
+-- Thus, entries in this table can be created and deleted.
+-- (Creation and deletion of rows not implemented for the 
+--  access device product.)
+-- This also means the creation of an associated ifEntry.
+--
+-- D channel backup and NFAS trunks are handled using the
+-- ifStack table.
+-- In case of D channel backup, there are multiple
+-- Data Link Layer (LAPD) interfaces. Only one interface is
+-- active; all others are dormant(5).
+-- In case of NFAS trunks, one lower interface is the
+-- LAPD interface, while the other lower interfaces are physical
+-- interfaces.
+-- If directory number and calling address differ from each other
+-- or multiple directory numbers are being used,
+-- the isdnDirectoryTable has to be used to enter such
+-- directory numbers.
+
+nvmIsdnSignalingTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF NvmIsdnSignalingEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = ISDN signaling table containing configuration and \
+		  operational parameters for all ISDN signaling \
+		  channels on this managed device. (Configuration) ;
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { configuration 2 }
+
+nvmIsdnSignalingEntry OBJECT-TYPE
+	SYNTAX  NvmIsdnSignalingEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the ISDN Signaling Table. To create a \
+		  new entry, only nvmIsdnSignalingProtocol needs to be \
+		  specified before nvmIsdnSignalingStatus can become \
+		  active(1). (Configuration) ;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { nvmIsdnSignalingIndex }
+	::= { nvmIsdnSignalingTable  1 }
+
+NvmIsdnSignalingEntry ::= SEQUENCE {
+	nvmIsdnSignalingIndex			INTEGER,
+	nvmIsdnSignalingProtocol		INTEGER,
+	nvmIsdnSignalingCallingAddress		DisplayString,
+	nvmIsdnSignalingSubAddress		DisplayString,
+	nvmIsdnSignalingInfoTrapEnable		INTEGER
+	}
+
+nvmIsdnSignalingIndex OBJECT-TYPE
+	SYNTAX  INTEGER (1..2147483647)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The index value which uniquely identifies an entry \
+		  in the nvmIsdnSignalingTable. (Configuration);
+	   HELP = This managed object corresponds to the port index used \
+		  in the ICM ('primary' and 'backup' ports supported).;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnSignalingEntry  1 }
+
+nvmIsdnSignalingProtocol OBJECT-TYPE
+	SYNTAX  INTEGER {
+	dss1(2),	-- ITU DSS1 (formerly CCITT) Q.931
+	etsi(3),	-- Europe / ETSI ETS300-102 plus supplementary 
+			-- services(ETSI 300-xxx) note that NET3, NET5 
+			-- define test procedures for ETS300-102 and have
+			-- been replaced by I-CTR 3 and I-CTR 4.
+	ess5(6),		-- U.S.A. / AT&T 5ESS
+	dms100(7),	-- U.S.A. / Northern Telecom DMS100
+	ni1(9),		-- U.S.A. / National ISDN 1 (BRI)
+	vn2(12),	-- France / VN2
+	vn3(13),	-- France / VN3
+	ins64(17),	-- Japan  / NTT INS64
+	itr6(19),	-- Germany/ 1TR6 (BRI, PRI)
+        qsig(23)        -- Q.SIG     
+	}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The particular protocol type supported by the \
+		  switch providing access to the ISDN network \
+		  to which this signaling channel is connected. 
+		  (Configuration);
+	   HELP = Enumerations supported by access device are 2, 3, 6, 7, \
+		  9, 12, 13, 17, and 19.;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnSignalingEntry  2 }
+
+nvmIsdnSignalingCallingAddress OBJECT-TYPE
+	SYNTAX  DisplayString (SIZE (0..131))
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The ISDN Address to be assigned to this signaling \
+		  channel. More specifically, this is the 'Calling Address \
+		  information element' as being passed to the switch \
+		  in outgoing call setup messages. \
+		  It can be an EAZ (1TR6), a calling number (DSS1, \
+		  ETSI)or any other number necessary to identify a \
+		  signaling interface. If there is no such number defined \
+		  or required, this is a zero length string. It is represented \
+		  in DisplayString form. \
+		  Incoming calls can also be identified by this number. \
+		  If the Directory Number, i.e. the Called Number in \
+		  incoming calls, is different to this number, the \
+		  isdnDirectoryTable has to be used to specify all \
+		  possible Directory Numbers. \
+		  The format of this information largely depends on the \
+		  type of switch or PBX the device is connected to. Therefore, \
+		  the detailed format of this information is not \
+		  specified and is implementation dependent. \
+		  If possible, the agent should implement this information \
+		  using the E.164 number format. In this case, the number \
+		  must start with '+'. Otherwise, IA5 number digits must \
+		  be used. (Configuration) ;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	REFERENCE
+		"ITU-T E.164, Q.931 chapter 4.5.10"
+	DEFVAL  { "" }
+	::= { nvmIsdnSignalingEntry  3 }
+
+nvmIsdnSignalingSubAddress OBJECT-TYPE
+	SYNTAX  DisplayString (SIZE (0..131))
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Supplementary information to the ISDN address assigned \
+		  to this signaling channel. Usually, this is the \
+		  subaddress as defined in Q.931. \
+		  If there is no such number defined or required, this is \
+		  a zero length string. \
+		  The subaddress is used for incoming calls as well as \
+		  for outgoing calls. \
+		  The subaddress is an user supplied string of up to 20 \
+		  IA5 characters and is transmitted transparently through \
+		  the network. (Configuration) ;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	REFERENCE
+		"ITU-T I.330, Q.931 chapter 4.5.11"
+	DEFVAL  { "" }
+	::= { nvmIsdnSignalingEntry  4 }
+
+nvmIsdnSignalingInfoTrapEnable OBJECT-TYPE
+	SYNTAX  INTEGER {
+		enabled(1),
+		disabled(2)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Indicates whether isdnMibCallInformation traps \
+		  should be generated for calls on this signaling \
+		  channel. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL  { disabled }
+	::= { nvmIsdnSignalingEntry  5 }
+
+
+-- The LAPD table (Operational objects, "mcm")
+-- This table contains additional parameters to the LAPD table defined
+-- in the RFC2127 MIB.
+--  Proprietary Operational Parameter ("mcm") Table.
+
+mcmIsdnLapdTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmIsdnLapdEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Table containing configuration and statistics \
+		  information for all LAPD (D channel Data Link) \
+		  interfaces on this managed device. \
+		  Only statistical information which is not already being \
+		  counted in the ifTable is being defined in this table. \
+		  This table is an extension to the LAPD table resident in \
+		  the RFC2127 MIB. (Operational)
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { configuration 3 }
+
+mcmIsdnLapdEntry OBJECT-TYPE
+	SYNTAX  McmIsdnLapdEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the LAPD Table.  (Extensions to LAPD \
+		  table in RFC2127 MIB.) (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { ifIndex }
+	::= { mcmIsdnLapdTable  1 }
+
+McmIsdnLapdEntry ::= SEQUENCE {
+	mcmIsdnLapdTxwinsiz		INTEGER,
+	mcmIsdnLapdRxwinsiz		INTEGER,
+	mcmIsdnLapdTxfrmsiz		INTEGER,
+	mcmIsdnLapdRxfrmsiz		INTEGER,
+	mcmIsdnLapdTimert200		INTEGER,
+	mcmIsdnLapdTimert201		INTEGER,
+	mcmIsdnLapdTimert202		INTEGER,
+	mcmIsdnLapdTimert203		INTEGER,
+	mcmIsdnLapdTimertm20		INTEGER,
+	mcmIsdnLapdn200			INTEGER,
+	mcmIsdnLapdn202			INTEGER,
+	mcmIsdnLapdnm20			INTEGER
+	}
+
+mcmIsdnLapdTxwinsiz OBJECT-TYPE
+	SYNTAX  INTEGER (1..128)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the transmit \
+		  window size (maximum number of outstanding \
+		  unacknowledged information frames. (Operational);
+	   HELP = Default values: 7 for PRI, 1 for BRI with SAPI=0, \
+		  3 for BRI with other SAPIs.;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnLapdEntry  1 }
+
+mcmIsdnLapdRxwinsiz OBJECT-TYPE
+	SYNTAX  INTEGER (1..128)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the receive \
+		  window size (maximum number of outstanding \
+		  unacknowledged information frames. (Operational);
+	   HELP = Default values: 7 for PRI, 1 for BRI with SAPI=0, \
+		  3 for BRI with other SAPIs.;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnLapdEntry  2 }
+
+mcmIsdnLapdTxfrmsiz OBJECT-TYPE
+	SYNTAX  INTEGER (1..300)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the maximum \
+		  transmit frame size (in bytes). (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnLapdEntry  3 }
+
+mcmIsdnLapdRxfrmsiz OBJECT-TYPE
+	SYNTAX  INTEGER (1..300)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the maximum \
+		  receive frame size (in bytes). (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnLapdEntry  4 }
+
+mcmIsdnLapdTimert200 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  T200 value (in milliseconds).  T200 is the time \
+		  to wait for an acknowledgment to a frame \
+		  before initiating recovery. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 1000 }
+	::= { mcmIsdnLapdEntry  5 }
+
+mcmIsdnLapdTimert201 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  T201 value (in milliseconds).  T201 is the minimum \
+		  time between the transmission of the TEI identity \
+		  check messages. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 1000 }
+	::= { mcmIsdnLapdEntry  6 }
+
+mcmIsdnLapdTimert202 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  T202 value (in milliseconds).  T201 is the minimum \
+		  time between the transmission of the TEI identity \
+		  request messages. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 2000 }
+	::= { mcmIsdnLapdEntry  7 }
+
+mcmIsdnLapdTimert203 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  T203 value (in milliseconds).  T203 is the maximum \
+		  time allowed without frames being exchanged. \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 10000 }
+	::= { mcmIsdnLapdEntry  8 }
+
+mcmIsdnLapdTimertm20 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  TM20 value (in milliseconds) for TEI management. \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnLapdEntry  9 }
+
+mcmIsdnLapdn200 OBJECT-TYPE
+	SYNTAX  INTEGER (0..500)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the Retry \
+		  Counter N200.  This is the maximum number \
+		  of retransmissions of a frame. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 3 }
+	::= { mcmIsdnLapdEntry  10 }
+
+mcmIsdnLapdn202 OBJECT-TYPE
+	SYNTAX  INTEGER (1..500)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the Retry \
+		  Counter N202.  This is the maximum number \
+		  of transmissions of a TEI identity request \
+		  message. (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 3 }
+	::= { mcmIsdnLapdEntry  11 }
+
+mcmIsdnLapdnm20 OBJECT-TYPE
+	SYNTAX  INTEGER (0..500)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the Retry \
+		  Counter NM20 (for TEI management). \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnLapdEntry  12 }
+
+
+-- The LAPD table (Configuration objects, "nvm")
+-- This table contains additional parameters to the LAPD table defined
+-- in the RFC2127 MIB.
+--  "Parallel" Configuration Parameter ("nvm") Table.
+
+nvmIsdnLapdTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF NvmIsdnLapdEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Table containing configuration and statistics \
+		  information for all LAPD (D channel Data Link) \
+		  interfaces on this managed device. \
+		  Only statistical information which is not already being \
+		  counted in the ifTable is being defined in this table. \
+		  This table is an extension to the LAPD table resident in \
+		  the RFC2127 MIB. (Configuration)
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { configuration 4 }
+
+nvmIsdnLapdEntry OBJECT-TYPE
+	SYNTAX  NvmIsdnLapdEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the LAPD Table.  (Extensions to LAPD \
+		  table in RFC2127 MIB.) (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { ifIndex }
+	::= { nvmIsdnLapdTable  1 }
+
+NvmIsdnLapdEntry ::= SEQUENCE {
+	nvmIsdnLapdTxwinsiz		INTEGER,
+	nvmIsdnLapdRxwinsiz		INTEGER,
+	nvmIsdnLapdTxfrmsiz		INTEGER,
+	nvmIsdnLapdRxfrmsiz		INTEGER,
+	nvmIsdnLapdTimert200		INTEGER,
+	nvmIsdnLapdTimert201		INTEGER,
+	nvmIsdnLapdTimert202		INTEGER,
+	nvmIsdnLapdTimert203		INTEGER,
+	nvmIsdnLapdTimertm20		INTEGER,
+	nvmIsdnLapdn200			INTEGER,
+	nvmIsdnLapdn202			INTEGER,
+	nvmIsdnLapdnm20			INTEGER
+	}
+
+nvmIsdnLapdTxwinsiz OBJECT-TYPE
+	SYNTAX  INTEGER (1..128)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the transmit \
+		  window size (maximum number of outstanding \
+		  unacknowledged information frames. (Configuration);
+	   HELP = Default values: 7 for PRI, 1 for BRI with SAPI=0, \
+		  3 for BRI with other SAPIs.;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnLapdEntry  1 }
+
+nvmIsdnLapdRxwinsiz OBJECT-TYPE
+	SYNTAX  INTEGER (1..128)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the receive \
+		  window size (maximum number of outstanding \
+		  unacknowledged information frames. (Configuration);
+	   HELP = Default values: 7 for PRI, 1 for BRI with SAPI=0, \
+		  3 for BRI with other SAPIs.;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnLapdEntry  2 }
+
+nvmIsdnLapdTxfrmsiz OBJECT-TYPE
+	SYNTAX  INTEGER (1..300)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the maximum \
+		  transmit frame size (in bytes). (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnLapdEntry  3 }
+
+nvmIsdnLapdRxfrmsiz OBJECT-TYPE
+	SYNTAX  INTEGER (1..300)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the maximum \
+		  receive frame size (in bytes). (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnLapdEntry  4 }
+
+nvmIsdnLapdTimert200 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  T200 value (in milliseconds).  T200 is the time \
+		  to wait for an acknowledgment to a frame \
+		  before initiating recovery. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 1000 }
+	::= { nvmIsdnLapdEntry  5 }
+
+nvmIsdnLapdTimert201 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  T201 value (in milliseconds).  T201 is the minimum \
+		  time between the transmission of the TEI identity \
+		  check messages. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 1000 }
+	::= { nvmIsdnLapdEntry  6 }
+
+nvmIsdnLapdTimert202 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  T202 value (in milliseconds).  T201 is the minimum \
+		  time between the transmission of the TEI identity \
+		  request messages. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 2000 }
+	::= { nvmIsdnLapdEntry  7 }
+
+nvmIsdnLapdTimert203 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  T203 value (in milliseconds).  T203 is the maximum \
+		  time allowed without frames being exchanged. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 10000 }
+	::= { nvmIsdnLapdEntry  8 }
+
+nvmIsdnLapdTimertm20 OBJECT-TYPE
+	SYNTAX  INTEGER (1..600000)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the timer \
+		  TM20 value (in milliseconds) for TEI management. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnLapdEntry  9 }
+
+nvmIsdnLapdn200 OBJECT-TYPE
+	SYNTAX  INTEGER (0..500)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the Retry \
+		  Counter N200.  This is the maximum number \
+		  of retransmissions of a frame. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 3 }
+	::= { nvmIsdnLapdEntry  10 }
+
+nvmIsdnLapdn202 OBJECT-TYPE
+	SYNTAX  INTEGER (1..500)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the Retry \
+		  Counter N202.  This is the maximum number \
+		  of transmissions of a TEI identity request \
+		  message. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL { 3 }
+	::= { nvmIsdnLapdEntry  11 }
+
+nvmIsdnLapdnm20 OBJECT-TYPE
+	SYNTAX  INTEGER (0..500)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the Retry \
+		  Counter NM20 (for TEI management). \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnLapdEntry  12 }
+
+
+-- The Terminal Endpoint table from RFC2127 MIB.
+--  "Parallel" Configuration Parameter ("nvm") Table.
+
+-- This table is required only if TEI values or SPID numbers
+-- have to be entered.
+
+nvmIsdnEndpointTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF NvmIsdnEndpointEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Table containing configuration for Terminal \
+		  Endpoints. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { configuration 5 }
+
+nvmIsdnEndpointEntry OBJECT-TYPE
+	SYNTAX  NvmIsdnEndpointEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the Terminal Endpoint Table. The value \
+		  of nvmIsdnEndpointIfType must be supplied for a row \
+		  in this table to become active. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { nvmIsdnEndpointIndex }
+	::= { nvmIsdnEndpointTable  1 }
+
+NvmIsdnEndpointEntry ::= SEQUENCE {
+	nvmIsdnEndpointIndex		INTEGER,
+	nvmIsdnEndpointTeiType		INTEGER,
+	nvmIsdnEndpointTeiValue		INTEGER,
+	nvmIsdnEndpointSpid		DisplayString
+	}
+
+nvmIsdnEndpointIndex OBJECT-TYPE
+	SYNTAX  INTEGER (1..2147483647)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The index value which uniquely identifies an entry \
+		  in the nvmIsdnEndpointTable. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnEndpointEntry  1 }
+
+nvmIsdnEndpointTeiType OBJECT-TYPE
+	SYNTAX  INTEGER {
+		dynamic(1),
+		static(2)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The type of TEI (Terminal Endpoint Identifier) \
+		  used for this Terminal Endpoint. In case of dynamic(1), \
+		  the TEI value is selected by the switch. In \
+		  case of static(2), a valid TEI value has to be \
+		  entered in the nvmIsdnEndpointTeiValue object. \
+		  The default value for this object depends on the \
+		  interface type as well as the Terminal Endpoint type. \
+		  On Primary Rate interfaces the default value is \
+		  static(2). On Basic Rate interfaces the default value \
+		  is dynamic(1) for isdn(63) Terminal Endpoints and \
+		  static(2) for x25ple(40) Terminal Endpoints. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnEndpointEntry  2 }
+
+nvmIsdnEndpointTeiValue OBJECT-TYPE
+	SYNTAX  INTEGER (0..127)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The TEI (Terminal Endpoint Identifier) value \
+		  for this Terminal Endpoint. If nvmIsdnEndpointTeiType \
+		  is set to static(2), valid numbers are 0..63, \
+		  while otherwise the value is set internally. \
+		  The default value of this object is 0 for static \
+		  TEI assignment. \
+		  The default value for dynamic TEI assignment is also \
+		  0 as long as no TEI has been assigned. After TEI \
+		  assignment, the assigned TEI value is returned. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnEndpointEntry  3 }
+
+nvmIsdnEndpointSpid OBJECT-TYPE
+	SYNTAX  DisplayString (SIZE (0..131))
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The Service profile IDentifier (SPID) information \
+		  for this Terminal Endpoint. \
+		  The SPID is composed of 9-20 numeric characters. \
+		  This information has to be defined in addition to \
+		  the local number for some switch protocol types, \
+		  e.g. Bellcore NI-1 and NI-2. \
+		  If this object is not required, it is a \
+		  zero length string. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	REFERENCE
+	"Bellcore SR-NWT-001953, Generic Guidelines for ISDN
+	  Terminal Equipment on Basic Access Interfaces,
+	  Chapter 8.5.1."
+	DEFVAL  { "" }
+	::= { nvmIsdnEndpointEntry  4 }
+
+
+-- The Directory Number group from RFC2127 MIB.
+-- "Parallel" Configuration Parameter ("nvm") Table.
+
+nvmIsdnDirectoryTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF NvmIsdnDirectoryEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Table containing Directory Numbers. 
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_CFG ;"
+	::= { configuration 6 }
+
+nvmIsdnDirectoryEntry OBJECT-TYPE
+	SYNTAX  NvmIsdnDirectoryEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the Directory Number Table. All objects \
+		  in an entry must be set for a new row to become active. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { nvmIsdnDirectoryIndex }
+	::= { nvmIsdnDirectoryTable  1 }
+
+NvmIsdnDirectoryEntry ::= SEQUENCE {
+	nvmIsdnDirectoryIndex		INTEGER,
+	nvmIsdnDirectoryNumber		DisplayString,
+	nvmIsdnDirectorySigIndex	INTEGER,
+	nvmIsdnDirectoryStatus		INTEGER
+	}
+
+nvmIsdnDirectoryIndex OBJECT-TYPE
+	SYNTAX  INTEGER (1..'7fffffff'h)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The index value which uniquely identifies an entry \
+		  in the nvmIsdnDirectoryTable. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnDirectoryEntry  1 }
+
+nvmIsdnDirectoryNumber OBJECT-TYPE
+	SYNTAX  DisplayString (SIZE (0..131))
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = A Directory Number. Directory Numbers are used \
+		  to identify incoming calls on the signaling \
+		  channel given in nvmIsdnDirectorySigIndex. \
+		  The format of this information largely depends on the \
+		  type of switch or PBX the device is connected to. \
+		  Therefore, the detailed format of this information is \
+		  not specified and is implementation dependent. \
+		  If possible, the agent should implement this information \
+		  using the E.164 number format. In this case, the number \
+		  must start with '+'. Otherwise, IA5 number digits must \
+		  be used. (Configuration);
+	   HELP = This ICM variable contains the remote address for which \
+		  incoming calls are handled.;
+	   CAPABILITIES = ;"
+	REFERENCE
+		"ITU-T E.164, Q.931 chapter 4.5.10"
+	::= { nvmIsdnDirectoryEntry  2 }
+
+nvmIsdnDirectorySigIndex OBJECT-TYPE
+	SYNTAX  INTEGER (1..2147483647)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An index pointing to an ISDN signaling channel. \
+		  Incoming calls are accepted on this \
+		  signaling channel if the nvmIsdnDirectoryNumber is \
+		  presented as Called Number in the SETUP message. \
+		  (Configuration);
+	   HELP = This is an index to a link in the dialCtlPeerCfg table \
+		  (and not an index to a signaling channel).  The ICM \
+		  changes the meaning of this managed object in order \
+		  to be able to extract the link for which the directory \
+		  number is specified.;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnDirectoryEntry  3 }
+
+nvmIsdnDirectoryStatus OBJECT-TYPE
+	SYNTAX  INTEGER {
+		add(1),
+		delete(2),
+		active (3)
+		}
+	ACCESS  read-write 
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = For software releases prior to 3.0 \
+		  this object only supported enumerations of \
+		  add and delete with an access of write-only. \
+	   	  This object is used to create and delete rows in the \
+		  nvmIsdnDirectoryTable. Upon creation of a row, the \
+		  the row status is internally set to 'active'. \ 
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmIsdnDirectoryEntry  4 }
+
+
+
+--  **************************************************
+--  2) Proprietary and "Parallel" ("nvm") Group/Table definitions
+--  corresponding to RFC2128 MIB objects. (config related objects)
+--  **************************************************
+
+--  Dial Control - General configuration group from RFC2128 MIB.
+--  "Parallel" Configuration Parameter ("nvm") Group.
+
+nvmDialCtlConfiguration OBJECT IDENTIFIER ::= { configuration 7 }
+
+nvmDialCtlAcceptMode OBJECT-TYPE
+	SYNTAX  INTEGER {
+		acceptNone(1),
+		acceptAll(2),
+		acceptKnown(3)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The security level for acceptance of incoming calls. \
+		  acceptNone(1)  - incoming calls will not be accepted. \
+		  acceptAll(2)   - incoming calls will be accepted, even. \
+		  if there is no matching entry in the nvmDialCtlPeerCfgTable. \
+		  acceptKnown(3) - incoming calls will be accepted only \
+		  if there is a matching entry in the nvmDialCtlPeerCfgTable. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	::= { nvmDialCtlConfiguration  1 }
+
+nvmDialCtlTrapEnable OBJECT-TYPE
+	SYNTAX  INTEGER {
+		enabled(1),
+		disabled(2)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = This object indicates whether nvmDialCtlPeerCallInformation \
+		  and nvmDialCtlPeerCallSetup traps should be generated for \
+		  all peers. If the value of this object is enabled(1), \
+		  traps will be generated for all peers. If the value \
+		  of this object is disabled(2), traps will be generated \
+		  only for peers having nvmDialCtlPeerCfgTrapEnable set \
+		  to enabled(1). (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	DEFVAL  { disabled }
+	::= { nvmDialCtlConfiguration  2 }
+
+
+--  Dial Control Peer group - Operational Parameter ("mcm") Table.
+--  This table contains an additional proprietary parameter, 
+--  mcmDialCtlPeerCfgBchannel, to the Dial Control Peer Group table 
+--  defined in the RFC2128 MIB.
+--  Proprietary Operational Parameter ("mcm") Table.
+
+mcmDialCtlPeerCfgTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmDialCtlPeerCfgEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The list of peers from which the managed device \
+		  will accept calls or to which it will place them. \
+		  This table is an extension to the Peer Group table \
+		  resident in the RFC2128 MIB. (Operational)
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	::= { configuration 8 }
+
+mcmDialCtlPeerCfgEntry OBJECT-TYPE
+	SYNTAX  McmDialCtlPeerCfgEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = An entry in the Peer Group Table.  (Extension to \
+		  Peer Group table in RFC2128 MIB. (Operational);\
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { mcmDialCtlPeerCfgId,  ifIndex }
+	::= { mcmDialCtlPeerCfgTable  1 }
+
+McmDialCtlPeerCfgEntry ::= SEQUENCE {
+	mcmDialCtlPeerCfgId			INTEGER,
+	mcmDialCtlPeerCfgBchannel		INTEGER
+	}
+
+mcmDialCtlPeerCfgId OBJECT-TYPE
+	SYNTAX  INTEGER (1..2147483647)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = This object identifies a single peer. There may \
+		  be several entries in this table for one peer, \
+		  defining different ways of reaching this peer. \
+		  Thus, there may be several entries in this table \
+		  with the same value of mcmDialCtlPeerCfgId. \
+		  Multiple entries for one peer may be used to support \
+		  multilink as well as backup lines. \
+		  A single peer will be identified by a unique value \
+		  of this object. Several entries for one peer MUST \
+		  have the same value of mcmDialCtlPeerCfgId, but different \
+		  ifEntries and thus different values of ifIndex. \
+		  (Operational);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmDialCtlPeerCfgEntry  1 }
+
+mcmDialCtlPeerCfgBchannel OBJECT-TYPE
+	SYNTAX  INTEGER (0..32)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the B channel to be used \
+		  for leased lines. (Operational);
+	   HELP = Note: 0 = 'any'.  This managed object is not part of the \
+		  original Dial Control MIB (RFC2128).  This proprietary \
+		  object was added for ICM purposes.;
+	   CAPABILITIES = ;"
+	::= { mcmDialCtlPeerCfgEntry  2 }
+
+
+--  Dial Control Peer group - "Parallel" Configuration Parameter ("nvm")
+--  Table.
+--  This table contains the "parallel" configuration parameters from the Dial
+--  Control Peer Group table in the RFC2128 MIB, as well as an additional 
+--  "parallel" proprietary parameter (nvmDialCtlPeerCfgBchannel).
+
+nvmDialCtlPeerCfgTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF NvmDialCtlPeerCfgEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The list of peers from which the managed device \
+		  will accept calls or to which it will place them. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	::= { configuration 9 }
+
+nvmDialCtlPeerCfgEntry OBJECT-TYPE
+	SYNTAX  NvmDialCtlPeerCfgEntry
+	ACCESS  not-accessible
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Configuration data for a single Peer. This entry is \
+		  effectively permanent, and contains information \
+		  to identify the peer, how to connect to the peer, \
+		  how to identify the peer and its permissions. \
+		  The value of nvmDialCtlPeerCfgOriginateAddress must be \
+		  specified before a new row in this table can become \
+		  active(1). Any writeable parameters in an existing entry \
+		  can be modified while the entry is active. The modification \
+		  will take effect when the peer in question will be \
+		  called the next time. \
+		  An entry in this table can only be created if the \
+		  associated ifEntry already exists. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { nvmDialCtlPeerCfgId,  ifIndex }
+	::= { nvmDialCtlPeerCfgTable  1 }
+
+NvmDialCtlPeerCfgEntry ::= SEQUENCE {
+	nvmDialCtlPeerCfgId			INTEGER,
+	nvmDialCtlPeerCfgBchannel		INTEGER,
+	nvmDialCtlPeerCfgLowerIf		INTEGER,
+	nvmDialCtlPeerCfgOriginateAddress	DisplayString,
+	nvmDialCtlPeerCfgSubAddress		DisplayString,
+	nvmDialCtlPeerCfgClosedUserGroup	DisplayString,
+	nvmDialCtlPeerCfgSpeed			INTEGER,
+	nvmDialCtlPeerCfgInfoType		INTEGER,
+	nvmDialCtlPeerCfgPermission		INTEGER,
+	nvmDialCtlPeerCfgCallRetries		INTEGER,
+	nvmDialCtlPeerCfgRetryDelay		INTEGER,
+	nvmDialCtlPeerCfgFailureDelay		INTEGER,
+	nvmDialCtlPeerCfgTrapEnable		INTEGER,
+	nvmDialCtlPeerCfgStatus			INTEGER
+	}
+
+nvmDialCtlPeerCfgId OBJECT-TYPE
+	SYNTAX  INTEGER (1..2147483647)
+	ACCESS  read-only
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = This object identifies a single peer. There may \
+		  be several entries in this table for one peer, \
+		  defining different ways of reaching this peer. \
+		  Thus, there may be several entries in this table \
+		  with the same value of nvmDialCtlPeerCfgId. \
+		  Multiple entries for one peer may be used to support \
+		  multilink as well as backup lines. \
+		  A single peer will be identified by a unique value \
+		  of this object. Several entries for one peer MUST \
+		  have the same value of nvmDialCtlPeerCfgId, but different \
+		  ifEntries and thus different values of ifIndex. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmDialCtlPeerCfgEntry  1 }
+
+nvmDialCtlPeerCfgBchannel OBJECT-TYPE
+	SYNTAX  INTEGER (0..32)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The value of this object specifies the B channel to be used \
+		  for leased lines. (Configuration);
+	   HELP = Note: 0 = 'any'.  This managed object is not part of the \
+		  original Dial Control MIB (RFC2128).  This proprietary \
+		  object was added for ICM purposes.;
+	   CAPABILITIES = ;"
+	::= { nvmDialCtlPeerCfgEntry  2 }
+
+nvmDialCtlPeerCfgLowerIf OBJECT-TYPE
+	SYNTAX  INTEGER (0..255)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = ifIndex value of an interface the peer will have to be \
+		  called on. For example, on an ISDN interface, this can be \
+		  the ifIndex value of a D channel or the ifIndex value of a \
+		  B channel, whatever is appropriate for a given peer. \
+		  As an example, for Basic Rate leased lines it will be \
+		  necessary to specify a B channel ifIndex, while for \
+		  semi-permanent connections the D channel ifIndex has \
+		  to be specified. \
+		  If the interface can be dynamically assigned, this object \
+		  has a value of zero. (Configuration);
+	   HELP = The LowerIf is the ifIndex value of a D channel index \
+		  (primary or backup port for a semi-permanent connection), \
+		  or the ifIndex value of a B channel for a leased line.;
+	   CAPABILITIES = ;"
+	DEFVAL  { 0 }
+	::= { nvmDialCtlPeerCfgEntry  3 }
+
+nvmDialCtlPeerCfgOriginateAddress OBJECT-TYPE
+	SYNTAX  DisplayString (SIZE (0..131))
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Call Address at which the peer will be called. \
+		  Think of this as the set of characters following 'ATDT ' \
+		  or the 'phone number' included in a D channel call request. \
+		  The structure of this information will be switch type \
+		  specific. If there is no address information required \
+		  for reaching the peer, i.e., for leased lines, \
+		  this object will be a zero length string. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmDialCtlPeerCfgEntry  4 }
+
+nvmDialCtlPeerCfgSubAddress OBJECT-TYPE
+	SYNTAX  DisplayString (SIZE (0..131))
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Subaddress at which the peer will be called. \
+		  If the subaddress is undefined for the given media or \
+		  unused, this is a zero length string. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL  { "" }
+	::= { nvmDialCtlPeerCfgEntry  5 }
+
+nvmDialCtlPeerCfgClosedUserGroup OBJECT-TYPE
+	SYNTAX  DisplayString (SIZE (0..131))
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Closed User Group at which the peer will be called. \
+		  If the Closed User Group is undefined for the given media \
+		  or unused, this is a zero length string. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	REFERENCE
+		"Q.931, chapter 4.6.1."
+	DEFVAL  { "" }
+	::= { nvmDialCtlPeerCfgEntry  6 }
+
+nvmDialCtlPeerCfgSpeed OBJECT-TYPE
+	SYNTAX  INTEGER (0..2147483647)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The desired information transfer speed in bits/second \
+		  when calling this peer. \
+		  The detailed media specific information, e.g. information \
+		  type and information transfer rate for ISDN circuits, \
+		  has to be extracted from this object. \
+		  If the transfer speed to be used is unknown or the default \
+		  speed for this type of interfaces, the value of this object \
+		  may be zero. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL  { 0 }
+	::= { nvmDialCtlPeerCfgEntry  7 }
+
+nvmDialCtlPeerCfgInfoType OBJECT-TYPE
+	SYNTAX  INTEGER {
+		other(1),
+		speech(2),
+		unrestrictedDigital(3),
+		unrestrictedDigital56(4),
+		restrictedDigital(5),
+		audio31(6),
+		audio7(7),
+		video(8),
+		packetSwitched(9),
+		fax(10)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The Information Transfer Capability to be used when \
+		  calling this peer. \
+		  speech(2) refers to a non-data connection, whereas \
+		  audio31(6) and audio7(7) refer to data mode \
+		  connections. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL  { other }
+	::= { nvmDialCtlPeerCfgEntry  8 }
+
+nvmDialCtlPeerCfgPermission OBJECT-TYPE
+	SYNTAX  INTEGER {
+		originate(1),
+		answer(2),
+		both(3),
+		none(5)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = Applicable permissions. callback(4) either rejects the \
+		  call and then calls back, or uses the 'Reverse charging' \
+		  information element if it is available. \
+		  Note that callback(4) is supposed to control charging, not \
+		  security, and applies to callback prior to accepting a \
+		  call. Callback for security reasons can be handled using \
+		  PPP callback. (Configuration);
+	   HELP = Access device ISDN does not support 'callback(4)'.  The value \
+		  'originate' is for outgoing calls.  The value 'answer' is \
+		  for incoming calls.;
+	   CAPABILITIES = ;"
+	DEFVAL  { both }
+	::= { nvmDialCtlPeerCfgEntry  9 }
+
+nvmDialCtlPeerCfgCallRetries OBJECT-TYPE
+	SYNTAX  INTEGER (0..2147483647)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The number of calls to a non-responding address \
+		  that may be made. A retry count of zero means \
+		  there is no bound. The intent is to bound \
+		  the number of successive calls to an address \
+		  which is inaccessible, or which refuses those calls. \
+		  Some countries regulate the number of call retries \
+		  to a given peer that can be made. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL  { 0 }
+	::= { nvmDialCtlPeerCfgEntry  10 }
+
+nvmDialCtlPeerCfgRetryDelay OBJECT-TYPE
+	SYNTAX  INTEGER (0..2147483647)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The time in seconds between call retries if a peer \
+		  cannot be reached. \
+		  A value of zero means that call retries may be done \
+		  without any delay. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL  { 0 }
+	::= { nvmDialCtlPeerCfgEntry  11 }
+
+nvmDialCtlPeerCfgFailureDelay OBJECT-TYPE
+	SYNTAX  INTEGER (0..2147483647)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The time in seconds after which call attempts are \
+		  to be placed again after a peer has been noticed \
+		  to be unreachable, i.e. after nvmDialCtlPeerCfgCallRetries \
+		  unsuccessful call attempts. \
+		  A value of zero means that a peer will not be called \
+		  again after nvmDialCtlPeerCfgCallRetries unsuccessful call \
+		  attempts. (Configuration);
+	   HELP = This value is the time to wait with another call \
+		  retry after nvmDialCtlPeerCfgCallRetries unsuccessful \
+		  calls.  ICM uses the default value of zero, which means \
+		  that a peer will not be called again after \
+		  nvmDialCtlPeerCfgCallRetriesattempts.  The whole call \
+		  retry logic will be implemented.;
+	   CAPABILITIES = ;"
+	DEFVAL  { 0 }
+	::= { nvmDialCtlPeerCfgEntry  12 }
+
+nvmDialCtlPeerCfgTrapEnable OBJECT-TYPE
+	SYNTAX  INTEGER {
+		enabled(1),
+		disabled(2)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = This object indicates whether dialCtlPeerCallInformation \
+		  and dialCtlPeerCallSetup traps should be generated for \
+		  this peer. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	DEFVAL  { disabled }
+	::= { nvmDialCtlPeerCfgEntry  13 }
+
+nvmDialCtlPeerCfgStatus OBJECT-TYPE
+	SYNTAX  INTEGER {
+		add(1),
+		delete(2),
+		active (3)
+		}
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = For software releases prior to 3.0 \
+		  this object only supported enumerations of \
+		  add and delete with an access of write-only. \
+	   	  This object is used to create and delete rows in the \
+		  nvmDialCtlPeerCfgTable. Upon creation of a row, the \
+		  the row status is internally set to 'active'. \
+		  (Configuration);
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { nvmDialCtlPeerCfgEntry  14 }
+
+
+--  Dial Control Call History group from RFC2128 MIB.
+--  "Parallel" Configuration Parameter ("nvm").
+
+nvmCallHistoryTableMaxLength OBJECT-TYPE
+	SYNTAX  INTEGER (0..127)
+	ACCESS  read-write
+	STATUS  mandatory
+	DESCRIPTION
+	  "NAME = ;
+	   DESC = The upper limit on the number of entries that the \
+		  callHistoryTable may contain.  A value of 0 \
+		  will prevent any history from being retained. When \
+		  this table is full, the oldest entry will be deleted \
+		  and the new one will be created. (Configuration);
+	   HELP = ;
+	   CAPABILITIES = NET_CFG, VPN_DISP ;"
+	::= { configuration 10 }
+
+
+
+--  *******************************************************
+--  3) Control Group/Table definitions corresponding to RFC2127 MIB.
+--  *******************************************************
+
+--  the ISDN Statistics Counter Reset Group (Operational Parameters - Control)
+
+--  The ISDN Signaling Statistics Counter Reset Table
+
+mcmIsdnSigStatsCntrTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmIsdnSigStatsCntrEntry
+	ACCESS  not-accessible
+	STATUS  obsolete 
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  The ISDN Signaling Statistics counter reset table.; 
+	   HELP = ;
+	   CAPABILITIES = NET_OPER, VPN_OPER;"
+	::= { control 1 }
+
+mcmIsdnSigStatsCntrEntry OBJECT-TYPE
+	SYNTAX  McmIsdnSigStatsCntrEntry
+	ACCESS  not-accessible
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  An entry in the ISDN Signaling Statistics counter \
+		  	  reset table.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { mcmIsdnSigStatsCntrIndex }
+	::= { mcmIsdnSigStatsCntrTable 1 }
+
+McmIsdnSigStatsCntrEntry ::= SEQUENCE {
+	mcmIsdnSigStatsCntrIndex 	INTEGER,
+	mcmIsdnSigStatsCntrAction 	INTEGER
+	}
+
+mcmIsdnSigStatsCntrIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..2147483647)
+	ACCESS	read-only
+	STATUS	obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  The value of this object represents a unique \
+		  	  identifier used as the index into the \
+		  	  ISDN Signaling Statistics counter reset table. \
+		  	  This index specifies the particular row of counter \
+		  	  objects to be reset (objects defined in the ISDN \
+		  	  Signaling Statistics table in the MIB file rfc2127.mib). \
+		  	  This index has the identical value as the object \
+		  	  isdnSignalingIndex (also defined in the MIB \
+		  	  file rfc2127.mib).;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnSigStatsCntrEntry 1 }
+
+mcmIsdnSigStatsCntrAction OBJECT-TYPE
+	SYNTAX  INTEGER { 
+		reset (1) 
+		}
+	ACCESS	write-only
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  Setting this object to reset(1) will zero \
+		  	  the values of a specific row of counters in \
+		  	  the ISDN Signaling Statistics table defined \
+		  	  in the MIB file rfc2127.mib.;
+	   HELP = When set to reset(1), a row containing \
+		  the following counter objects are reset: \
+		     isdnSigStatsInCalls \
+		     isdnSigStatsInConnected \
+		     isdnSigStatsOutCalls \
+		     isdnSigStatsOutConnected \
+		     isdnSigStatsChargedUnits;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnSigStatsCntrEntry 2 }
+
+
+-- The ISDN LAPD Counter Reset Table
+
+mcmIsdnLapdCntrTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmIsdnLapdCntrEntry
+	ACCESS  not-accessible
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  The ISDN LAPD counter reset table.; 
+	   HELP = ;
+	   CAPABILITIES = NET_OPER, VPN_OPER;"
+	::= { control 2 }
+
+mcmIsdnLapdCntrEntry OBJECT-TYPE
+	SYNTAX  McmIsdnLapdCntrEntry
+	ACCESS  not-accessible
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  An entry in the ISDN LAPD counter \
+		  	  reset table.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { mcmIsdnLapdCntrIndex }
+	::= { mcmIsdnLapdCntrTable 1 }
+
+McmIsdnLapdCntrEntry ::= SEQUENCE {
+	mcmIsdnLapdCntrIndex 		INTEGER,
+	mcmIsdnLapdCntrAction 		INTEGER
+	}
+
+mcmIsdnLapdCntrIndex OBJECT-TYPE
+	SYNTAX	INTEGER (1..255)
+	ACCESS	read-only
+	STATUS	obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  The value of this object represents a unique \
+		  	  identifier used as the index into the ISDN \
+		  	  LAPD counter reset table.  This index specifies \
+		  	  the particular row of counter objects to be reset \
+		  	  (objects defined in the ISDN LAPD table in the \
+		  	  MIB file rfc2127.mib).  This index has the \
+		  	  identical value as the object ifIndex (defined in \
+		  	  the IF-MIB).;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnLapdCntrEntry 1 }
+
+mcmIsdnLapdCntrAction OBJECT-TYPE
+	SYNTAX  INTEGER { 
+		reset (1) 
+		}
+	ACCESS	write-only
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  Setting this object to reset(1) will zero \
+		  	  the values of a specific row of counters in \
+		  	  the ISDN LAPD table defined in the MIB \
+		  	  file rfc2127.mib.;
+	   HELP = When set to reset(1), a row containing \
+		  the following counter objects are reset: \
+		     isdnLapdPeerSabme \
+		     isdnLapdRecvdFrmr;
+	   CAPABILITIES = ;"
+	::= { mcmIsdnLapdCntrEntry 2 }
+
+
+
+--  *******************************************************
+--  4) Control Group/Table definitions corresponding to RFC2128 MIB.
+--  *******************************************************
+
+--  the Dial Control Statistics Reset Group (Operational Parameters - Control)
+
+--  The Dial Control Peer Statistics Gauge Reset Table
+
+mcmDialCtlPeerStatsGaugeTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmDialCtlPeerStatsGaugeEntry
+	ACCESS  not-accessible
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  The Dial Control Peer Statistics gauge reset table.; 
+	   HELP = ;
+	   CAPABILITIES = NET_OPER, VPN_OPER;"
+	::= { control 3 }
+
+mcmDialCtlPeerStatsGaugeEntry OBJECT-TYPE
+	SYNTAX  McmDialCtlPeerStatsGaugeEntry
+	ACCESS  not-accessible
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  An entry in the Dial Control Peer Statistics gauge \
+		  	  reset table.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { dialCtlPeerCfgId, ifIndex }
+	::= { mcmDialCtlPeerStatsGaugeTable 1 }
+
+McmDialCtlPeerStatsGaugeEntry ::= SEQUENCE {
+	mcmDialCtlPeerStatsGaugeAction 		INTEGER
+	}
+
+mcmDialCtlPeerStatsGaugeAction OBJECT-TYPE
+	SYNTAX  INTEGER { 
+		reset (1) 
+		}
+	ACCESS	write-only
+	STATUS	obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  Setting this object to reset(1) will zero \
+		  	  the values of a specific row of gauges in \
+		  	  the Dial Control Peer Statistics table defined \
+		  	  in the MIB file rfc2128.mib.;
+	   HELP = When set to reset(1), a row containing \
+		  the following counter objects are reset: \
+		     dialCtlPeerStatsConnectTime \
+		     dialCtlPeerStatsChargedUnits \
+		     dialCtlPeerStatsSuccessCalls \
+		     dialCtlPeerStatsFailCalls \
+		     dialCtlPeerStatsAcceptCalls \
+		     dialCtlPeerStatsRefuseCalls;
+	   CAPABILITIES = ;"
+	::= { mcmDialCtlPeerStatsGaugeEntry 1 }
+
+
+--  The Dial Control Call Active Gauge Reset Table
+
+mcmCallActiveGaugeTable OBJECT-TYPE
+	SYNTAX  SEQUENCE OF McmCallActiveGaugeEntry
+	ACCESS  not-accessible
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  The Dial Control Call Active gauge reset table.; 
+	   HELP = ;
+	   CAPABILITIES = NET_OPER, VPN_OPER;"
+	::= { control 4 }
+
+mcmCallActiveGaugeEntry OBJECT-TYPE
+	SYNTAX  McmCallActiveGaugeEntry
+	ACCESS  not-accessible
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  An entry in the Dial Control Call Active gauge \
+		  	  reset table.;
+	   HELP = ;
+	   CAPABILITIES = ;"
+	INDEX   { callActiveSetupTime, callActiveIndex }
+	::= { mcmCallActiveGaugeTable 1 }
+
+McmCallActiveGaugeEntry ::= SEQUENCE {
+	mcmCallActiveGaugeAction 		INTEGER
+	}
+
+mcmCallActiveGaugeAction OBJECT-TYPE
+	SYNTAX  INTEGER { 
+		reset (1) 
+		}
+	ACCESS  write-only
+	STATUS  obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  Setting this object to reset(1) will zero \
+		  	  the values of a specific row of gauges in \
+		  	  the Dial Control Call Active table defined \
+		  	  in the MIB file rfc2128.mib.;
+	   HELP = When set to reset(1), a row containing \
+		  the following counter objects are reset: \
+		     callActiveChargedUnits \
+		     callActiveTransmitPackets \
+		     callActiveTransmitBytes \
+		     callActiveReceivePackets \
+		     callActiveReceiveBytes;
+	   CAPABILITIES = ;"
+	::= { mcmCallActiveGaugeEntry 1 }
+
+
+--  The Dial Control Call History Reset Group
+--  This 'group' provides the Call History Table Reset command object.
+
+mcmCallHistoryTableResetCmd OBJECT-TYPE
+	SYNTAX	INTEGER {
+		reset(1)
+		}
+	ACCESS	write-only
+	STATUS	obsolete
+	DESCRIPTION
+	  "NAME = ;
+       DESC = This table was obsoleted as of release \
+	      	  3.0; and is included here only to support \
+	          backwards compatibility for software \
+	          versions prior to release 3.0. \
+	   		  Setting this object to reset(1) will clear \
+		  	  the entire Dial Control Call History table \
+		  	  defined in the MIB file rfc2128.mib.;
+	   HELP = ;
+	   CAPABILITIES = NET_OPER, VPN_OPER;"
+	::= { control 5 }
+
+END
